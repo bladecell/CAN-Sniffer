@@ -1,13 +1,14 @@
 {
   "C_Cpp.intelliSenseEngine": "default",
-  "idf.espIdfPathWin": "C:\\Users\\kubai\\esp\\v5.2\\esp-idf",
-  "idf.pythonInstallPath": "C:\\Users\\kubai\\.espressif\\tools\\idf-python\\3.11.2\\python.exe",
+  "idf.espIdfPathWin": "C:\\Users\\jpojsl\\esp\\v5.5.1\\esp-idf",
+  "idf.pythonInstallPath": "C:\\Users\\jpojsl\\.espressif\\tools\\idf-python\\3.11.2\\python.exe",
   "idf.openOcdConfigs": [
     "board/esp32s3-builtin.cfg"
   ],
   "idf.portWin": "COM4",
-  "idf.toolsPathWin": "C:\\Users\\kubai\\.espressif",
+  "idf.toolsPathWin": "C:\\Users\\jpojsl\\.espressif",
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32s3"
-  }
+  },
+  "idf.flashType": "JTAG"
 }
