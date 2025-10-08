@@ -4,6 +4,9 @@
 #include <map>
 #include <cstdint>
 
+#define OBD2_FUNCTIONAL_ID       0x7DF
+#define OBD2_RESPONSE_BASE_ID    0x7E8
+
 enum OBDMode {
     MODE_CURRENT_DATA = 0x01,
     MODE_FREEZE_FRAME = 0x02,
@@ -43,16 +46,12 @@ struct PIDInfo {
     const char* name;
     const char* unit;
     const char* description;
-    
     float (*formula)(const uint8_t* data, uint8_t len);
-    
-    // Metadata
     uint8_t expectedBytes;
     float minValue;
     float maxValue;
     uint16_t updateInterval_ms;
     uint8_t priority;
-    bool isSupported;
 };
 
 struct PIDData {
@@ -60,42 +59,5 @@ struct PIDData {
     uint32_t lastUpdated;
     bool isValid;
     uint8_t data[8];
+    bool isSupported;
 };
-
-struct PIDEntry {
-    PIDInfo info;
-    PIDData data;
-};
-
-static const std::map<uint8_t, PIDEntry> PIDDatabase = {
-            {PID_ENGINE_LOAD, {
-                MODE_CURRENT_DATA, PID_ENGINE_LOAD, 
-                "Engine Load", "%", "Calculated engine load",
-                OBDFormulas::engineLoad, 1, 0.0f, 100.0f, 100, 2, false
-            }},
-            {PID_COOLANT_TEMP, {
-                MODE_CURRENT_DATA, PID_COOLANT_TEMP,
-                "Coolant Temp", "°C", "Engine coolant temperature",
-                OBDFormulas::coolantTemp, 1, -40.0f, 215.0f, 1000, 3, false
-            }},
-            {PID_ENGINE_RPM, {
-                MODE_CURRENT_DATA, PID_ENGINE_RPM,
-                "Engine RPM", "RPM", "Engine speed",
-                OBDFormulas::engineRPM, 2, 0.0f, 16383.75f, 50, 1, false
-            }},
-            // ... more PIDs
-        };
-
-namespace OBDFormulas {
-    inline float engineLoad(const uint8_t* data, uint8_t len) {
-        return len >= 1 ? (data[0] * 100.0f) / 255.0f : -1.0f;
-    }
-    
-    inline float coolantTemp(const uint8_t* data, uint8_t len) {
-        return len >= 1 ? data[0] - 40 : -1.0f;
-    }
-    
-    inline float engineRPM(const uint8_t* data, uint8_t len) {
-        return len >= 2 ? ((data[0] * 256) + data[1]) / 4.0f : -1.0f;
-    }
-}

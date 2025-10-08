@@ -106,10 +106,15 @@ esp_err_t CanDriver::transmit(twai_frame_t* tx_msg, int timeout_ms) {
         ESP_LOGE(TAG, "tx_msg is NULL!");
         return ESP_ERR_INVALID_ARG;
     }
-
+    ESP_LOGD(TAG, "Transmitting message with ID: 0x%08X", tx_msg->header.id);
+    ESP_LOGD(TAG, "Data buffer: ");
+    for (size_t i = 0; i < tx_msg->buffer_len; i++) {
+        ESP_LOGD(TAG, "0x%02X ", tx_msg->buffer[i]);
+    }
     esp_err_t ret = twai_node_transmit(node_hdl, tx_msg, 0);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Transmitting message failed: %s", esp_err_to_name(ret));
+        return ret;
     }
     return ESP_OK;
 }
@@ -123,6 +128,11 @@ esp_err_t CanDriver::receive(CanDriver::can_frame& frame, int timeout_ms) {
     TickType_t ticks = (timeout_ms == 0) ? 0 : pdMS_TO_TICKS(timeout_ms);
     
     if (xQueueReceive(rx_queue, &frame, ticks) == pdTRUE) {
+        ESP_LOGD(TAG, "Received message with ID: 0x%08X", frame.id);
+        ESP_LOGD(TAG, "Data buffer: ");
+        for (size_t i = 0; i < frame.length; i++) {
+            ESP_LOGD(TAG, "0x%02X ", frame.data[i]);
+        }
         return ESP_OK;
     }
     
