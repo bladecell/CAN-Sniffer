@@ -6,6 +6,7 @@
 
 #define OBD2_FUNCTIONAL_ID       0x7DF
 #define OBD2_RESPONSE_BASE_ID    0x7E8
+#define PID_DATA_LENGTH         8
 
 enum OBDMode {
     MODE_CURRENT_DATA = 0x01,
@@ -40,6 +41,24 @@ enum OBDPID {
     PID_ENGINE_RPM = 0x0C,
 };
 
+const char PERCENTAGE[] = "%";
+const char KPA[] = "kPa";
+const char PA[] = "Pa";
+const char RPM[] = "rpm";
+const char KPH[] = "km/h";
+const char DEGREES_BEFORE_TDC[] = "° before TDC";
+const char GRAMS_PER_SECOND[] = "grams/sec";
+const char SECONDS[] = "seconds";
+const char RATIO[] = "ratio";
+const char COUNT[] = "count";
+const char KM[] = "km";
+const char VOLTS[] = "V";
+const char MINUTES[] = "minutes";
+const char GPS[] = "g/s";
+const char DEGREES[] = "°";
+const char DEGREES_CELCIUS[] = "°C";
+const char LPH[] = "L/h";
+
 struct PIDInfo {
     uint8_t mode;
     uint8_t pid;
@@ -47,17 +66,30 @@ struct PIDInfo {
     const char* unit;
     const char* description;
     float (*formula)(const uint8_t* data, uint8_t len);
-    uint8_t expectedBytes;
     float minValue;
     float maxValue;
-    uint16_t updateInterval_ms;
     uint8_t priority;
 };
 
 struct PIDData {
     float value;
     uint32_t lastUpdated;
-    bool isValid;
-    uint8_t data[8];
+    uint8_t data[PID_DATA_LENGTH];
     bool isSupported;
+    bool isValid;
+    uint16_t updateInterval_ms;
 };
+
+namespace OBDFormulas {
+    inline float engineLoad(const uint8_t* data, uint8_t len) {
+        return len >= 4 ? (data[3] * 100.0f) / 255.0f : -1.0f;
+    }
+    
+    inline float coolantTemp(const uint8_t* data, uint8_t len) {
+        return len >= 4 ? data[3] - 40 : -1.0f;
+    }
+    
+    inline float engineRPM(const uint8_t* data, uint8_t len) {
+        return len >= 5 ? ((data[3] << 8) | data[4]) / 4.0f : -1.0f;
+    }
+}

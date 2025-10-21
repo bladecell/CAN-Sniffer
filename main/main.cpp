@@ -38,32 +38,44 @@ extern "C" void app_main(void) {
 
     ESP_LOGI(TAG, "CAN driver initialized");
 
+    for(int delay = 10; delay > 0; delay--) {
+        ESP_LOGI(TAG, "Starting OBD-II in %d...", delay);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+
     led.blink(2);
 
     OBD2 obd2(canDriver);
     obd2.init();
 
     for(;;) {
-        obd2.query_supported_pids(PID_PIDS_SUPPORTED_1_20);
-        if (obd2.is_supported(PID_ENGINE_RPM)) {
-            ESP_LOGI(TAG, "Engine RPM PID is supported");
+        
+        obd2.req(PID_ENGINE_RPM);
+        obd2.req(PID_ENGINE_LOAD);
+        obd2.req(PID_COOLANT_TEMP);
+
+        if (obd2.isValid(PID_ENGINE_RPM)) {
+            float rpm = obd2.getValue(PID_ENGINE_RPM);
+            ESP_LOGI(TAG, "Engine RPM: %.2f %s", rpm, obd2.getUnit(PID_ENGINE_RPM));
         } else {
-            ESP_LOGI(TAG, "Engine RPM PID is NOT supported");
+            ESP_LOGW(TAG, "Engine RPM data is not valid");
         }
-        if (obd2.is_supported(PID_ENGINE_LOAD)) {
-            ESP_LOGI(TAG, "Engine Load PID is supported");
+
+        if (obd2.isValid(PID_ENGINE_LOAD)) {
+            float load = obd2.getValue(PID_ENGINE_LOAD);
+            ESP_LOGI(TAG, "Engine Load: %.2f %s", load, obd2.getUnit(PID_ENGINE_LOAD));
         } else {
-            ESP_LOGI(TAG, "Engine Load PID is NOT supported");
+            ESP_LOGW(TAG, "Engine Load data is not valid");
         }
-        if (obd2.is_supported(PID_COOLANT_TEMP)) {
-            ESP_LOGI(TAG, "Coolant Temp PID is supported");
+
+        if (obd2.isValid(PID_COOLANT_TEMP)) {
+            float temp = obd2.getValue(PID_COOLANT_TEMP);
+            ESP_LOGI(TAG, "Coolant Temperature: %.2f %s", temp, obd2.getUnit(PID_COOLANT_TEMP));
         } else {
-            ESP_LOGI(TAG, "Coolant Temp PID is NOT supported");
+            ESP_LOGW(TAG, "Coolant Temperature data is not valid");
         }
+
         vTaskDelay(pdMS_TO_TICKS(5000));
     }
-    
-
-
 }
 

@@ -9,33 +9,54 @@
 
 class OBD2 {
     public:
-        explicit OBD2(CanDriver& can_driver) : can_driver(can_driver), connected(false), continuousRunning(false) {}
+        //TODO can_driver callback for connection lost
+        explicit OBD2(CanDriver& CanDriver);
+        ~OBD2();
+
         esp_err_t init();
-        esp_err_t query_supported_pids(uint8_t pid_group);
-        bool is_supported(uint8_t pid);
-        const PIDData* get_pid_data(uint8_t pid) const;
+        esp_err_t getSuppPids(uint8_t pidGroup);
+        bool isSup(uint8_t pid);
+        bool pidExists(uint8_t pid) const;
+        esp_err_t req(uint8_t pid);
+
+        uint8_t getmode(uint8_t pid) const;
+        const char* getName(uint8_t pid) const;
+        const char* getUnit(uint8_t pid) const;
+        const char* getDescription(uint8_t pid) const;
+        float getMinValue(uint8_t pid) const;
+        float getMaxValue(uint8_t pid) const;
+        uint8_t getPriority(uint8_t pid) const;
+
+        float getValue(uint8_t pid) const;
+        uint32_t getLastUpdated(uint8_t pid) const;
+        esp_err_t getData(uint8_t pid, uint8_t* outData) const;
+        uint16_t getUpdateInterval(uint8_t pid) const;
+        bool isValid(uint8_t pid) const;
+
+        esp_err_t setUpdateInterval(uint8_t pid, uint16_t interval_ms);
+        esp_err_t setValid(uint8_t pid, bool valid);
+        esp_err_t setIsSupported(uint8_t pid, bool supported);
+
+
+
     private:
-        esp_err_t query_msg(uint8_t mode, uint8_t pid, uint8_t len, CanDriver::can_frame& rx_frame, uint32_t timeout_ms = 1000);
-        CanDriver& can_driver;
+        CanDriver& canDriver;
         bool connected;
         bool continuousRunning;
-        static const std::map<uint8_t, PIDInfo> pid_def;
-        std::map<uint8_t, PIDData> pid_data;
+        mutable SemaphoreHandle_t mtx_;
+
+        static const std::map<uint8_t, PIDInfo> PID_DEF;
+        std::map<uint8_t, PIDData> pidData;
+
+        void initDef();
+
+
+        esp_err_t queryMsg(uint8_t mode, uint8_t pid, uint8_t len, CanDriver::CanFrame& rxFrame, uint32_t timeout_ms = 1000);
         
-        void init_definitions();
+        esp_err_t updateData(uint8_t pid, const CanDriver::CanFrame& frame);
+        esp_err_t getData(uint8_t pid, PIDData& pd) const;
+
         
 };
 
-namespace OBDFormulas {
-    inline float engineLoad(const uint8_t* data, uint8_t len) {
-        return len >= 1 ? (data[0] * 100.0f) / 255.0f : -1.0f;
-    }
-    
-    inline float coolantTemp(const uint8_t* data, uint8_t len) {
-        return len >= 1 ? data[0] - 40 : -1.0f;
-    }
-    
-    inline float engineRPM(const uint8_t* data, uint8_t len) {
-        return len >= 2 ? ((data[0] * 256) + data[1]) / 4.0f : -1.0f;
-    }
-}
+
