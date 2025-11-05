@@ -1,5 +1,9 @@
-build/
-sdkconfig
-sdkconfig.old
-managed_components/
-~$OBDII-PIDs.xlsx
+sw/.devcontainer/
+sw/.vscode/
+sw/build/
+sw/sdkconfig
+sw/sdkconfig.old
+sw/managed_components/
+sw/dependencies.lock
+sw/~$OBDII-PIDs.xlsx
+sw/OBDII-PIDs.xlsx

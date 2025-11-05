@@ -4,11 +4,12 @@
 #include <map>
 #include <cstdint>
 
-#define OBD2_FUNCTIONAL_ID       0x7DF
-#define OBD2_RESPONSE_BASE_ID    0x7E8
-#define PID_DATA_LENGTH         8
+#define OBD2_FUNCTIONAL_ID 0x7DF
+#define OBD2_RESPONSE_BASE_ID 0x7E8
+#define PID_DATA_LENGTH 8
 
-enum OBDMode {
+enum OBDMode
+{
     MODE_CURRENT_DATA = 0x01,
     MODE_FREEZE_FRAME = 0x02,
     MODE_DTCS = 0x03,
@@ -21,7 +22,8 @@ enum OBDMode {
     MODE_PERMANENT_DTCS = 0x0A
 };
 
-enum OBDResponse {
+enum OBDResponse
+{
     RESPONSE_CURRENT_DATA = 0x41,
     RESPONSE_FREEZE_FRAME = 0x42,
     RESPONSE_DTCS = 0x43,
@@ -34,7 +36,8 @@ enum OBDResponse {
     RESPONSE_PERMANENT_DTCS = 0x4A
 };
 
-enum OBDPID {
+enum OBDPID
+{
     PID_PIDS_SUPPORTED_1_20 = 0x00,
     PID_ENGINE_LOAD = 0x04,
     PID_COOLANT_TEMP = 0x05,
@@ -59,19 +62,21 @@ const char DEGREES[] = "°";
 const char DEGREES_CELCIUS[] = "°C";
 const char LPH[] = "L/h";
 
-struct PIDInfo {
+struct PIDInfo
+{
     uint8_t mode;
     uint8_t pid;
-    const char* name;
-    const char* unit;
-    const char* description;
-    float (*formula)(const uint8_t* data, uint8_t len);
+    const char *name;
+    const char *unit;
+    const char *description;
+    float (*formula)(const uint8_t *data, uint8_t len);
     float minValue;
     float maxValue;
     uint8_t priority;
 };
 
-struct PIDData {
+struct PIDData
+{
     float value;
     uint32_t lastUpdated;
     uint8_t data[PID_DATA_LENGTH];
@@ -80,16 +85,20 @@ struct PIDData {
     uint16_t updateInterval_ms;
 };
 
-namespace OBDFormulas {
-    inline float engineLoad(const uint8_t* data, uint8_t len) {
+namespace OBDFormulas
+{
+    inline float engineLoad(const uint8_t *data, uint8_t len)
+    {
         return len >= 4 ? (data[3] * 100.0f) / 255.0f : -1.0f;
     }
-    
-    inline float coolantTemp(const uint8_t* data, uint8_t len) {
+
+    inline float coolantTemp(const uint8_t *data, uint8_t len)
+    {
         return len >= 4 ? data[3] - 40 : -1.0f;
     }
-    
-    inline float engineRPM(const uint8_t* data, uint8_t len) {
+
+    inline float engineRPM(const uint8_t *data, uint8_t len)
+    {
         return len >= 5 ? ((data[3] << 8) | data[4]) / 4.0f : -1.0f;
     }
 }
