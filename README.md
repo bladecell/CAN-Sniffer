@@ -3,6 +3,8 @@
 An open-source vehicle diagnostics and data logging project based on the ESP32-S3 and SN65HVD230 CAN transceiver.  
 This project enables real-time vehicle data monitoring, OBD-II diagnostics, and fault code management through a web interface hosted on the ESP.
 
+![Render Image](https://github.com/bladecell/CAN-Sniffer/blob/04f474c9713baed74a16c7adc6aa91a1fa6a33a9/hw/img/can-sniffer.png?raw=true)
+
 ---
 
 ## Hardware Overview
