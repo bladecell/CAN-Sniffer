@@ -7,6 +7,12 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "driver/gpio.h"
+#include <atomic>
+
+#define STATE_NOT_INITIALIZED 0
+#define STATE_BUS_OFF 10
+#define STATE_NOT_CONNECTED 20
+#define STATE_CONNECTED 40
 
 class CanDriver
 {
@@ -42,14 +48,19 @@ public:
 
     bool isInitialized() const
     {
-        return initialized;
+        return canState.load() != STATE_NOT_INITIALIZED;
+    }
+
+    bool isBusConnected() const
+    {
+        return canState.load() == STATE_CONNECTED;
     }
 
     void debug_mode(bool enable)
     {
         gpio_reset_pin(LBK_PIN);
         gpio_set_direction(LBK_PIN, GPIO_MODE_OUTPUT);
-        initialized = false;
+        deinit();
         if (enable)
         {
             nodeConfig.flags.enable_self_test = 1;
@@ -78,10 +89,20 @@ public:
 
     esp_err_t flushRxQueue();
 
+    typedef void (*ConnectionCallback)(void *arg, bool connected);
+    void setConnectionCallback(ConnectionCallback callback, void *arg);
+
+protected:
+    void notifyConnectionChange(bool connected);
+
 private:
     // Callbacks
     static bool IRAM_ATTR twai_rx_cb(twai_node_handle_t handle,
                                      const twai_rx_done_event_data_t *edata,
+                                     void *user_ctx);
+
+    static bool IRAM_ATTR twai_tx_cb(twai_node_handle_t handle,
+                                     const twai_tx_done_event_data_t *edata,
                                      void *user_ctx);
 
     static bool IRAM_ATTR twai_state_change_cb(twai_node_handle_t handle,
@@ -92,6 +113,10 @@ private:
                                           const twai_error_event_data_t *edata,
                                           void *user_ctx);
 
+    // Connection Callback
+    ConnectionCallback connectionCallback = nullptr;
+    void *callbackArg;
+
     // Twai Configuration
     twai_onchip_node_config_t nodeConfig{};
     twai_node_handle_t nodeHdl;
@@ -101,4 +126,14 @@ private:
     // RX Queue
     QueueHandle_t rxQueue;
     size_t RX_QUEUE_SIZE;
+
+    // Bus checks
+    esp_err_t pingBus();
+    std::atomic<uint32_t> consecutiveStuffErrors = 1;
+    std::atomic<uint32_t> consecutiveAckErrors = 1;
+    void healthCheckTask();
+    std::atomic<uint8_t> canState = STATE_NOT_INITIALIZED;
+    static void healthCheckTaskWrapper(void *param);
+    TaskHandle_t healthCheckTaskHandle = nullptr;
+    uint32_t pingPeriodMs = 2000;
 };

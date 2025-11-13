@@ -62,7 +62,7 @@ const char DEGREES[] = "°";
 const char DEGREES_CELCIUS[] = "°C";
 const char LPH[] = "L/h";
 
-struct PIDInfo
+struct PIDInfo_t
 {
     uint8_t mode;
     uint8_t pid;
@@ -75,7 +75,7 @@ struct PIDInfo
     uint8_t priority;
 };
 
-struct PIDData
+struct PIDData_t
 {
     float value;
     uint32_t lastUpdated;

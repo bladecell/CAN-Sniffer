@@ -23,7 +23,6 @@ esp_err_t CanDriver::init()
     {
         return ESP_OK;
     }
-
     // Create RX Queue
     rxQueue = xQueueCreate(RX_QUEUE_SIZE, sizeof(CanDriver::CanFrame));
     if (rxQueue == nullptr)
@@ -42,7 +41,7 @@ esp_err_t CanDriver::init()
 
     // Register Callbacks
     twai_event_callbacks_t cbs = {
-        .on_tx_done = NULL,
+        .on_tx_done = twai_tx_cb,
         .on_rx_done = twai_rx_cb,
         .on_state_change = twai_state_change_cb,
         .on_error = twai_bus_err_cb,
@@ -55,22 +54,6 @@ esp_err_t CanDriver::init()
         return ret;
     }
 
-    // twai_timing_advanced_config_t timing_config = {
-    //     .brp = 10,              // prescaler, 80MHz/10 = 8MHz -> 125 ns per tq
-    //     .prop_seg = 1,          // propagation segment
-    //     .tseg_1 = 11,           // phase segment 1
-    //     .tseg_2 = 3,            // phase segment 2
-    //     .sjw = 2,               // resynchronization jump width
-    //     .triple_sampling = false
-    // };
-    // ret = twai_node_reconfig_timing(nodeHdl, &timing_config, NULL);
-
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Configuring TWAI timing failed: %s", esp_err_to_name(ret));
-        return ret;
-    }
-
     // Start TWAI Instance
     ret = twai_node_enable(nodeHdl);
     if (ret != ESP_OK)
@@ -79,8 +62,23 @@ esp_err_t CanDriver::init()
         return ret;
     }
 
+    // Start health check monitoring task
+    BaseType_t taskCreated = xTaskCreate(
+        healthCheckTaskWrapper,
+        "can_health_check",
+        4096,
+        this,
+        3,
+        &healthCheckTaskHandle);
+
+    if (taskCreated != pdPASS)
+    {
+        ESP_LOGE(TAG, "Failed to create health check task");
+        return ESP_FAIL;
+    }
     // Initialization successful
-    initialized = true;
+    canState.store(STATE_NOT_CONNECTED);
+    xTaskNotifyGive(healthCheckTaskHandle);
     return ESP_OK;
 }
 
@@ -89,6 +87,13 @@ esp_err_t CanDriver::deinit()
     if (!isInitialized())
     {
         return ESP_OK;
+    }
+
+    if (healthCheckTaskHandle)
+    {
+        xTaskNotifyGive(healthCheckTaskHandle);
+        vTaskDelete(healthCheckTaskHandle);
+        healthCheckTaskHandle = nullptr;
     }
 
     esp_err_t ret = twai_node_delete(nodeHdl);
@@ -100,6 +105,8 @@ esp_err_t CanDriver::deinit()
 
     flushRxQueue();
 
+    canState.store(STATE_NOT_INITIALIZED);
+    xTaskNotifyGive(healthCheckTaskHandle);
     return ESP_OK;
 }
 
@@ -117,6 +124,11 @@ twai_node_status_t CanDriver::getStatus()
 
 esp_err_t CanDriver::transmit(twai_frame_t *tx_msg, int timeout_ms)
 {
+    if (!isInitialized() || !isBusConnected())
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
     if (tx_msg == nullptr)
     {
         ESP_LOGE(TAG, "tx_msg is NULL!");
@@ -136,7 +148,7 @@ esp_err_t CanDriver::transmit(twai_frame_t *tx_msg, int timeout_ms)
 
 esp_err_t CanDriver::receive(CanDriver::CanFrame &frame, int timeout_ms)
 {
-    if (!isInitialized() || !rxQueue)
+    if (!isInitialized() || !rxQueue || !isBusConnected())
     {
         return ESP_ERR_INVALID_STATE;
     }
@@ -186,12 +198,61 @@ bool IRAM_ATTR CanDriver::twai_rx_cb(twai_node_handle_t handle,
     return woken == pdTRUE;
 }
 
+bool IRAM_ATTR CanDriver::twai_tx_cb(twai_node_handle_t handle,
+                                     const twai_tx_done_event_data_t *edata,
+                                     void *user_ctx)
+{
+    CanDriver *driver = static_cast<CanDriver *>(user_ctx);
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    if (edata->is_tx_success)
+    {
+        driver->consecutiveStuffErrors.store(0);
+        driver->consecutiveAckErrors.store(0);
+        if (!driver->isBusConnected())
+        {
+            if (driver->healthCheckTaskHandle != nullptr)
+            {
+                vTaskNotifyGiveFromISR(driver->healthCheckTaskHandle, &xHigherPriorityTaskWoken);
+            }
+        }
+    }
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+    return false;
+}
+
 bool IRAM_ATTR CanDriver::twai_state_change_cb(twai_node_handle_t handle,
                                                const twai_state_change_event_data_t *edata,
                                                void *user_ctx)
 {
     const char *twai_state_name[] = {"error_active", "error_warning", "error_passive", "bus_off"};
-    ESP_EARLY_LOGW(TAG, "state changed: %s -> %s", twai_state_name[edata->old_sta], twai_state_name[edata->new_sta]);
+    ESP_EARLY_LOGD(TAG, "state changed: %s -> %s", twai_state_name[edata->old_sta], twai_state_name[edata->new_sta]);
+
+    CanDriver *driver = static_cast<CanDriver *>(user_ctx);
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    if (edata->new_sta == TWAI_ERROR_ACTIVE)
+    {
+        ESP_EARLY_LOGI(TAG, "CAN bus connected - node recovered");
+        driver->canState.store(STATE_NOT_CONNECTED);
+        if (driver->healthCheckTaskHandle != nullptr)
+        {
+            vTaskNotifyGiveFromISR(driver->healthCheckTaskHandle, &xHigherPriorityTaskWoken);
+        }
+    }
+
+    if (edata->new_sta == TWAI_ERROR_BUS_OFF)
+    {
+        ESP_EARLY_LOGW(TAG, "CAN bus off - node disconnected");
+        driver->canState.store(STATE_BUS_OFF);
+        if (driver->healthCheckTaskHandle != nullptr)
+        {
+            vTaskNotifyGiveFromISR(driver->healthCheckTaskHandle, &xHigherPriorityTaskWoken);
+        }
+    }
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
     return false;
 }
 
@@ -199,43 +260,53 @@ bool IRAM_ATTR CanDriver::twai_bus_err_cb(twai_node_handle_t handle,
                                           const twai_error_event_data_t *edata,
                                           void *user_ctx)
 {
+    CanDriver *driver = static_cast<CanDriver *>(user_ctx);
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    // Log specific errors (your existing code)
     if (edata->err_flags.arb_lost)
-    {
-        ESP_EARLY_LOGW(TAG, "Arbitration lost - another node won bus access");
-    }
-
+        ESP_EARLY_LOGD(TAG, "Arbitration lost");
     if (edata->err_flags.bit_err)
-    {
-        ESP_EARLY_LOGE(TAG, "Bit error - dominant/recessive mismatch");
-    }
-
+        ESP_EARLY_LOGD(TAG, "Bit error");
     if (edata->err_flags.form_err)
-    {
-        ESP_EARLY_LOGE(TAG, "Frame format error - protocol violation");
-    }
+        ESP_EARLY_LOGD(TAG, "Frame format error");
+    if (edata->err_flags.stuff_err)
+        ESP_EARLY_LOGD(TAG, "Bit stuffing error");
+    if (edata->err_flags.ack_err)
+        ESP_EARLY_LOGD(TAG, "No acknowledgment");
 
+    // Stuff errors = likely floating lines (no bus connected)
     if (edata->err_flags.stuff_err)
     {
-        ESP_EARLY_LOGE(TAG, "Bit stuffing error - protocol violation");
-    }
+        driver->consecutiveStuffErrors.fetch_add(1);
+        ESP_EARLY_LOGD(TAG, "Consecutive stuff errors: %u", driver->consecutiveStuffErrors.load());
 
+        if (driver->isBusConnected())
+        {
+            {
+                if (driver->healthCheckTaskHandle != nullptr)
+                {
+                    vTaskNotifyGiveFromISR(driver->healthCheckTaskHandle, &xHigherPriorityTaskWoken);
+                }
+            }
+        }
+    }
+    // ACK errors = no response (no other devices)
     if (edata->err_flags.ack_err)
     {
-        ESP_EARLY_LOGW(TAG, "No acknowledgment - no other nodes responded");
+        driver->consecutiveAckErrors.fetch_add(1);
+        ESP_EARLY_LOGD(TAG, "Consecutive ACK errors: %u", driver->consecutiveAckErrors.load());
+
+        if (driver->isBusConnected())
+        {
+            if (driver->healthCheckTaskHandle != nullptr)
+            {
+                vTaskNotifyGiveFromISR(driver->healthCheckTaskHandle, &xHigherPriorityTaskWoken);
+            }
+        }
     }
 
-    // Access the combined error flags using val
-    if (edata->err_flags.val != 0)
-    {
-        ESP_EARLY_LOGW(TAG, "Bus error occurred: 0x%x", edata->err_flags.val);
-    }
-
-    // // Perform recovery or other actions as needed
-    // esp_err_t ret = twai_node_recover(handle);
-    // if (ret != ESP_OK) {
-    //     ESP_EARLY_LOGE(TAG, "TWAI node recovery failed: %s", esp_err_to_name(ret));
-    // }
-
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
     return false;
 }
 
@@ -257,4 +328,128 @@ esp_err_t CanDriver::flushRxQueue()
 
     xQueueReset(rxQueue);
     return ESP_OK;
+}
+
+esp_err_t CanDriver::pingBus()
+{
+
+    uint8_t txData[1] = {0x00};
+    twai_frame_t tx = {};
+
+    tx.header.id = 0x7FF;
+    tx.header.dlc = twaifd_len2dlc(sizeof(txData));
+    tx.header.ide = false;
+    tx.header.rtr = 0;
+    tx.header.fdf = 0;
+    tx.header.brs = 0;
+    tx.header.esi = 0;
+    tx.header.timestamp = 0;
+    tx.header.trigger_time = 0;
+
+    tx.buffer = txData;
+    tx.buffer_len = sizeof(txData);
+
+    esp_err_t ret = twai_node_transmit(nodeHdl, &tx, 0);
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
+
+    return ESP_OK;
+}
+
+void CanDriver::healthCheckTaskWrapper(void *param)
+{
+    CanDriver *driver = static_cast<CanDriver *>(param);
+    driver->healthCheckTask();
+}
+
+void CanDriver::healthCheckTask()
+{
+    u_int8_t prevState = STATE_NOT_INITIALIZED;
+    while (true)
+    {
+        switch (canState.load())
+        {
+        case STATE_NOT_INITIALIZED:
+        {
+            // Wait until initialized
+            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+            break;
+        }
+        case STATE_NOT_CONNECTED:
+        {
+            // Ping the bus periodically
+            esp_err_t ret = pingBus();
+            if (ret != ESP_OK)
+            {
+                ESP_LOGW(TAG, "CAN bus ping failed: %s", esp_err_to_name(ret));
+            }
+            ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(pingPeriodMs));
+            if (consecutiveAckErrors.load() == 0 && consecutiveStuffErrors.load() == 0)
+            {
+                ESP_LOGI(TAG, "CAN bus connected");
+                canState.store(STATE_CONNECTED);
+                notifyConnectionChange(true);
+            }
+            break;
+        }
+        case STATE_CONNECTED:
+        {
+            // Monitor for errors
+            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+            if (consecutiveAckErrors.load() > 3)
+            {
+                ESP_LOGW(TAG, "CAN bus disconnected due to ACK errors");
+                canState.store(STATE_NOT_CONNECTED);
+                notifyConnectionChange(false);
+            }
+            else if (consecutiveStuffErrors.load() > 3)
+            {
+                ESP_LOGW(TAG, "CAN bus disconnected due to stuffing errors");
+                canState.store(STATE_NOT_CONNECTED);
+                notifyConnectionChange(false);
+            }
+            break;
+        }
+        case STATE_BUS_OFF:
+        {
+            if (prevState == STATE_CONNECTED)
+            {
+                notifyConnectionChange(false);
+            }
+
+            // Attempt recovery
+            ESP_LOGI(TAG, "Attempting CAN bus recovery from BUS OFF");
+            esp_err_t ret = twai_node_recover(nodeHdl);
+            if (ret != ESP_OK)
+            {
+                ESP_LOGW(TAG, "CAN bus recovery failed: %s", esp_err_to_name(ret));
+            }
+            ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(5000));
+            break;
+        }
+        default:
+            ESP_LOGW(TAG, "Unknown state: %d", canState.load());
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            break;
+        }
+        prevState = canState.load();
+    }
+    healthCheckTaskHandle = nullptr;
+    vTaskDelete(NULL);
+}
+
+void CanDriver::setConnectionCallback(ConnectionCallback callback, void *arg)
+{
+    connectionCallback = callback;
+    callbackArg = arg;
+}
+
+void CanDriver::notifyConnectionChange(bool connected)
+{
+    if (connectionCallback != nullptr)
+    {
+        connectionCallback(callbackArg, connected);
+    }
 }

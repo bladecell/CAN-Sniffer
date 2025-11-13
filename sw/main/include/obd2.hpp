@@ -39,17 +39,25 @@ public:
 
 private:
     CanDriver &canDriver;
-    bool connected;
     bool continuousRunning;
     mutable SemaphoreHandle_t mtx_;
 
-    static const std::map<uint8_t, PIDInfo> PID_DEF;
-    std::map<uint8_t, PIDData> pidData;
+    static const std::map<uint8_t, PIDInfo_t> PID_DEF;
+    std::map<uint8_t, PIDData_t> pidData;
 
     void initDef();
 
     esp_err_t queryMsg(uint8_t mode, uint8_t pid, uint8_t len, CanDriver::CanFrame &rxFrame, uint32_t timeout_ms = 1000);
 
     esp_err_t updateData(uint8_t pid, const CanDriver::CanFrame &frame);
-    esp_err_t getData(uint8_t pid, PIDData &pd) const;
+    esp_err_t getData(uint8_t pid, PIDData_t &pd) const;
+
+    // Callback
+    bool pidsInitialized{false};
+
+    static void onCanStateChange(void *arg, bool connected);
+
+    // Handle connection events
+    void handleCanConnected();
+    void handleCanDisconnected();
 };

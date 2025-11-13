@@ -39,7 +39,7 @@ extern "C" void app_main(void)
 
     ESP_LOGI(TAG, "CAN driver initialized");
 
-    for (int delay = 10; delay > 0; delay--)
+    for (int delay = 5; delay > 0; delay--)
     {
         ESP_LOGI(TAG, "Starting OBD-II in %d...", delay);
         vTaskDelay(pdMS_TO_TICKS(1000));
@@ -52,6 +52,17 @@ extern "C" void app_main(void)
 
     for (;;)
     {
+        if (!canDriver.isBusConnected())
+        {
+            ESP_LOGW(TAG, "CAN bus is not connected");
+            led.blink(1);
+            vTaskDelay(pdMS_TO_TICKS(5000));
+            continue;
+        }
+        else
+        {
+            led.off();
+        }
 
         obd2.req(PID_ENGINE_RPM);
         obd2.req(PID_ENGINE_LOAD);
@@ -62,29 +73,17 @@ extern "C" void app_main(void)
             float rpm = obd2.getValue(PID_ENGINE_RPM);
             ESP_LOGI(TAG, "Engine RPM: %.2f %s", rpm, obd2.getUnit(PID_ENGINE_RPM));
         }
-        else
-        {
-            ESP_LOGW(TAG, "Engine RPM data is not valid");
-        }
 
         if (obd2.isValid(PID_ENGINE_LOAD))
         {
             float load = obd2.getValue(PID_ENGINE_LOAD);
             ESP_LOGI(TAG, "Engine Load: %.2f %s", load, obd2.getUnit(PID_ENGINE_LOAD));
         }
-        else
-        {
-            ESP_LOGW(TAG, "Engine Load data is not valid");
-        }
 
         if (obd2.isValid(PID_COOLANT_TEMP))
         {
             float temp = obd2.getValue(PID_COOLANT_TEMP);
             ESP_LOGI(TAG, "Coolant Temperature: %.2f %s", temp, obd2.getUnit(PID_COOLANT_TEMP));
-        }
-        else
-        {
-            ESP_LOGW(TAG, "Coolant Temperature data is not valid");
         }
 
         vTaskDelay(pdMS_TO_TICKS(5000));
