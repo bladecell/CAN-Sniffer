@@ -26,7 +26,7 @@ extern "C" void app_main(void)
 
     CanDriver canDriver(CanDriver::Bitrate::BITRATE_500K, CAN_TX_GPIO, CAN_RX_GPIO, CAN_LBK_GPIO);
     // Initialize the CAN driver
-    canDriver.debug_mode(false); // Enable loopback for testing
+    canDriver.debug_mode(true); // Enable loopback for testing
     esp_err_t ret = canDriver.init();
     if (ret != ESP_OK)
     {

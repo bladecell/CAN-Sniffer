@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+
 #include "esp_twai.h"
 #include "esp_twai_onchip.h"
 #include "esp_err.h"
@@ -7,12 +9,15 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "driver/gpio.h"
-#include <atomic>
 
 #define STATE_NOT_INITIALIZED 0
 #define STATE_BUS_OFF 10
 #define STATE_NOT_CONNECTED 20
 #define STATE_CONNECTED 40
+
+#define HEALTH_CHECK_TASK_PRIO 3 // Periodic monitoring
+
+#define CORE_ID_CAN_TASKS 0
 
 class CanDriver
 {
@@ -46,12 +51,12 @@ public:
         nodeConfig.bit_timing.ssp_permill = 0;
     }
 
-    bool isInitialized() const
+    inline bool isInitialized() const
     {
         return canState.load() != STATE_NOT_INITIALIZED;
     }
 
-    bool isBusConnected() const
+    inline bool isBusConnected() const
     {
         return canState.load() == STATE_CONNECTED;
     }

@@ -36,13 +36,28 @@ enum OBDResponse
     RESPONSE_PERMANENT_DTCS = 0x4A
 };
 
-enum OBDPID
+typedef enum
 {
     PID_PIDS_SUPPORTED_1_20 = 0x00,
     PID_ENGINE_LOAD = 0x04,
     PID_COOLANT_TEMP = 0x05,
     PID_ENGINE_RPM = 0x0C,
-};
+    PID_PIDS_SUPPORTED_21_40 = 0x20,
+    PID_PIDS_SUPPORTED_41_60 = 0x40,
+    PID_PIDS_SUPPORTED_61_80 = 0x60,
+    PID_PIDS_SUPPORTED_81_A0 = 0x80,
+    PID_PIDS_SUPPORTED_A1_C0 = 0xA0,
+    PID_PIDS_SUPPORTED_C1_E0 = 0xC0
+} OBDPID;
+
+const std::vector<OBDPID> SUPPORTED_PID_MAKERS = {
+    PID_PIDS_SUPPORTED_1_20,
+    PID_PIDS_SUPPORTED_21_40,
+    PID_PIDS_SUPPORTED_41_60,
+    PID_PIDS_SUPPORTED_61_80,
+    PID_PIDS_SUPPORTED_81_A0,
+    PID_PIDS_SUPPORTED_A1_C0,
+    PID_PIDS_SUPPORTED_C1_E0};
 
 const char PERCENTAGE[] = "%";
 const char KPA[] = "kPa";
@@ -62,6 +77,15 @@ const char DEGREES[] = "°";
 const char DEGREES_CELCIUS[] = "°C";
 const char LPH[] = "L/h";
 
+typedef enum
+{
+    UPDATE_DISABLED = 0,
+    UPDATE_FAST = 100,
+    UPDATE_MEDIUM = 500,
+    UPDATE_SLOW = 2000,
+    UPDATE_CUSTOM = 0xFFFF
+} UpdateRate;
+
 struct PIDInfo_t
 {
     uint8_t mode;
@@ -73,6 +97,7 @@ struct PIDInfo_t
     float minValue;
     float maxValue;
     uint8_t priority;
+    UpdateRate updateInterval_ms;
 };
 
 struct PIDData_t
@@ -82,7 +107,8 @@ struct PIDData_t
     uint8_t data[PID_DATA_LENGTH];
     bool isSupported;
     bool isValid;
-    uint16_t updateInterval_ms;
+    UpdateRate updateInterval_ms;
+    SemaphoreHandle_t semaphore;
 };
 
 namespace OBDFormulas

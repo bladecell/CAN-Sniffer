@@ -2,9 +2,15 @@
 #pragma once
 
 #include <math.h>
+#include <vector>
+#include <algorithm>
+
+#include "esp_err.h"
+#include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+
 #include "obd2_utils.hpp"
 #include "can_driver.hpp"
-#include "esp_err.h"
 
 class OBD2
 {
@@ -14,8 +20,8 @@ public:
     ~OBD2();
 
     esp_err_t init();
-    esp_err_t getSuppPids(uint8_t pidGroup);
-    bool isSup(uint8_t pid);
+    esp_err_t getSuppPids();
+    bool isSup(uint8_t pid) const;
     bool pidExists(uint8_t pid) const;
     esp_err_t req(uint8_t pid);
 
@@ -27,15 +33,18 @@ public:
     float getMaxValue(uint8_t pid) const;
     uint8_t getPriority(uint8_t pid) const;
 
-    float getValue(uint8_t pid) const;
+    float getValue(uint8_t pid, uint32_t timeout_ms = 500) const;
     uint32_t getLastUpdated(uint8_t pid) const;
-    esp_err_t getData(uint8_t pid, uint8_t *outData) const;
+    esp_err_t getRawData(uint8_t pid, uint8_t *outData) const;
     uint16_t getUpdateInterval(uint8_t pid) const;
     bool isValid(uint8_t pid) const;
 
-    esp_err_t setUpdateInterval(uint8_t pid, uint16_t interval_ms);
+    esp_err_t setUpdateInterval(uint8_t pid, UpdateRate interval_ms);
     esp_err_t setValid(uint8_t pid, bool valid);
     esp_err_t setIsSupported(uint8_t pid, bool supported);
+    esp_err_t setLastUpdated(uint8_t pid, uint32_t lastUpdated);
+    void startContinuousMode();
+    void stopContinuousMode();
 
 private:
     CanDriver &canDriver;
@@ -45,12 +54,25 @@ private:
     static const std::map<uint8_t, PIDInfo_t> PID_DEF;
     std::map<uint8_t, PIDData_t> pidData;
 
+    std::map<uint8_t, bool> pidGroupStatus;
+    SemaphoreHandle_t xPidConnectedSemaphore = NULL;
+
     void initDef();
 
-    esp_err_t queryMsg(uint8_t mode, uint8_t pid, uint8_t len, CanDriver::CanFrame &rxFrame, uint32_t timeout_ms = 1000);
+    esp_err_t queryMsg(uint8_t mode, uint8_t pid, uint8_t len = 0x02);
 
-    esp_err_t updateData(uint8_t pid, const CanDriver::CanFrame &frame);
+    esp_err_t updateData(const CanDriver::CanFrame &frame);
     esp_err_t getData(uint8_t pid, PIDData_t &pd) const;
+
+    // Polling Task
+    void pollTask();
+    static void pollTaskWrapper(void *param);
+    TaskHandle_t PollTaskHandle{nullptr};
+
+    // Receiving Task
+    void receiveTask();
+    static void receiveTaskWrapper(void *param);
+    TaskHandle_t ReceiveTaskHandle{nullptr};
 
     // Callback
     bool pidsInitialized{false};
@@ -60,4 +82,10 @@ private:
     // Handle connection events
     void handleCanConnected();
     void handleCanDisconnected();
+    SemaphoreHandle_t xBusConnectionSemaphore = NULL;
+
+    // Frame Parsing
+    esp_err_t parseCurrentData(const CanDriver::CanFrame &f);
+    esp_err_t parseRecFrame(const CanDriver::CanFrame &f);
+    esp_err_t parseSupportedPIDs(const CanDriver::CanFrame &f);
 };

@@ -63,13 +63,14 @@ esp_err_t CanDriver::init()
     }
 
     // Start health check monitoring task
-    BaseType_t taskCreated = xTaskCreate(
+    BaseType_t taskCreated = xTaskCreatePinnedToCore(
         healthCheckTaskWrapper,
         "can_health_check",
         4096,
         this,
-        3,
-        &healthCheckTaskHandle);
+        HEALTH_CHECK_TASK_PRIO,
+        &healthCheckTaskHandle,
+        CORE_ID_CAN_TASKS);
 
     if (taskCreated != pdPASS)
     {
@@ -194,6 +195,8 @@ bool IRAM_ATTR CanDriver::twai_rx_cb(twai_node_handle_t handle,
             ESP_EARLY_LOGW(TAG, "RX queue full, message dropped");
         }
     }
+
+    // TODO add simulation of BUS output when in debug mode by changing the reponse data here
 
     return woken == pdTRUE;
 }
