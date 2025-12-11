@@ -3,10 +3,16 @@
 
 #include <map>
 #include <cstdint>
+#include <vector>
+#include <array>
+#include "can_driver.hpp"
 
 #define OBD2_FUNCTIONAL_ID 0x7DF
 #define OBD2_RESPONSE_BASE_ID 0x7E8
 #define PID_DATA_LENGTH 8
+#define VIN_LENGTH 17
+#define PID_REQUEST_DELAY_MS MIN_TRANSMIT_PERIOD_MS
+#define RESPONSE_ID_OFFSET 8
 
 enum OBDMode
 {
@@ -47,17 +53,9 @@ typedef enum
     PID_PIDS_SUPPORTED_61_80 = 0x60,
     PID_PIDS_SUPPORTED_81_A0 = 0x80,
     PID_PIDS_SUPPORTED_A1_C0 = 0xA0,
-    PID_PIDS_SUPPORTED_C1_E0 = 0xC0
+    PID_PIDS_SUPPORTED_C1_E0 = 0xC0,
+    PID_VIN = 0x02
 } OBDPID;
-
-const std::vector<OBDPID> SUPPORTED_PID_MAKERS = {
-    PID_PIDS_SUPPORTED_1_20,
-    PID_PIDS_SUPPORTED_21_40,
-    PID_PIDS_SUPPORTED_41_60,
-    PID_PIDS_SUPPORTED_61_80,
-    PID_PIDS_SUPPORTED_81_A0,
-    PID_PIDS_SUPPORTED_A1_C0,
-    PID_PIDS_SUPPORTED_C1_E0};
 
 const char PERCENTAGE[] = "%";
 const char KPA[] = "kPa";
@@ -79,11 +77,10 @@ const char LPH[] = "L/h";
 
 typedef enum
 {
-    UPDATE_DISABLED = 0,
-    UPDATE_FAST = 100,
-    UPDATE_MEDIUM = 500,
-    UPDATE_SLOW = 2000,
-    UPDATE_CUSTOM = 0xFFFF
+    UPDATE_STATIC = 16,
+    UPDATE_FAST = 256,
+    UPDATE_MEDIUM = 1024,
+    UPDATE_SLOW = 4096,
 } UpdateRate;
 
 struct PIDInfo_t
@@ -102,14 +99,31 @@ struct PIDInfo_t
 
 struct PIDData_t
 {
+    uint32_t id;
     float value;
     uint32_t lastUpdated;
     uint8_t data[PID_DATA_LENGTH];
     bool isSupported;
     bool isValid;
     UpdateRate updateInterval_ms;
-    SemaphoreHandle_t semaphore;
+    SemaphoreHandle_t mtx_;
 };
+
+typedef struct
+{
+    char vin[18];
+    uint32_t lastUpdated;
+    bool isValid;
+    SemaphoreHandle_t mtx_;
+} VINData_t;
+
+typedef struct
+{
+    std::vector<uint16_t> confirmed;
+    std::vector<uint16_t> pending;
+    std::vector<uint16_t> permanent;
+    SemaphoreHandle_t mtx_;
+} DTCData_t;
 
 namespace OBDFormulas
 {

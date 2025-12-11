@@ -5,6 +5,33 @@
 
 static const char *TAG = "CAN_DRIVER";
 
+CanDriver::CanDriver(
+    Bitrate bitrate,
+    gpio_num_t tx_pin,
+    gpio_num_t rx_pin,
+    gpio_num_t lbk_pin,
+    bool debug,
+    uint32_t tx_queue_depth,
+    size_t rx_queue_size)
+{
+    nodeConfig.io_cfg.tx = tx_pin;
+    nodeConfig.io_cfg.rx = rx_pin;
+    nodeConfig.bit_timing.bitrate = static_cast<uint32_t>(bitrate);
+    nodeConfig.tx_queue_depth = tx_queue_depth;
+    nodeHdl = NULL;
+    nodeRecord.bus_err_num = 0;
+    RX_QUEUE_SIZE = rx_queue_size;
+    LBK_PIN = lbk_pin;
+    nodeConfig.bit_timing.sp_permill = 800;
+    nodeConfig.bit_timing.ssp_permill = 0;
+
+    esp_err_t ret = init(debug);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to initialize CAN driver: %s", esp_err_to_name(ret));
+    }
+}
+
 CanDriver::~CanDriver()
 {
     (void)deinit();
@@ -16,13 +43,27 @@ CanDriver::~CanDriver()
     }
 }
 
-esp_err_t CanDriver::init()
+void CanDriver::setDebugMode(bool enable)
+{
+    gpio_reset_pin(LBK_PIN);
+    gpio_set_direction(LBK_PIN, GPIO_MODE_OUTPUT);
+    nodeConfig.flags.enable_self_test = enable ? 1 : 0;
+    nodeConfig.flags.enable_loopback = enable ? 1 : 0;
+    gpio_set_level(LBK_PIN, enable ? 1 : 0);
+    debug_mode = enable ? 1 : 0;
+    enable ? start_sim_task(this) : stop_sim_task();
+}
+
+esp_err_t CanDriver::init(bool debug)
 {
     esp_err_t ret;
     if (isInitialized())
     {
         return ESP_OK;
     }
+
+    setDebugMode(debug);
+
     // Create RX Queue
     rxQueue = xQueueCreate(RX_QUEUE_SIZE, sizeof(CanDriver::CanFrame));
     if (rxQueue == nullptr)
@@ -33,6 +74,7 @@ esp_err_t CanDriver::init()
 
     // Create TWAI Instance
     ret = twai_new_node_onchip(&nodeConfig, &nodeHdl);
+
     if (ret != ESP_OK)
     {
         ESP_LOGE(TAG, "Creating TWAI Controller instance failed: %s", esp_err_to_name(ret));
@@ -53,6 +95,14 @@ esp_err_t CanDriver::init()
         ESP_LOGE(TAG, "Registering TWAI event callbacks failed: %s", esp_err_to_name(ret));
         return ret;
     }
+
+    // Configure Mask Filter for OBD-II
+    twai_mask_filter_config_t mfilter_cfg = {};
+    mfilter_cfg.id = 0b011100000000;   // 0b111 11100000
+    mfilter_cfg.mask = 0b011100000000; // 0b111 11100000
+    mfilter_cfg.is_ext = false;        // Standard 11-bit IDs
+
+    ESP_ERROR_CHECK(twai_node_config_mask_filter(nodeHdl, 0, &mfilter_cfg));
 
     // Start TWAI Instance
     ret = twai_node_enable(nodeHdl);
@@ -96,7 +146,7 @@ esp_err_t CanDriver::deinit()
         vTaskDelete(healthCheckTaskHandle);
         healthCheckTaskHandle = nullptr;
     }
-
+    twai_node_disable(nodeHdl);
     esp_err_t ret = twai_node_delete(nodeHdl);
     if (ret != ESP_OK)
     {
@@ -105,9 +155,8 @@ esp_err_t CanDriver::deinit()
     }
 
     flushRxQueue();
-
+    stop_sim_task();
     canState.store(STATE_NOT_INITIALIZED);
-    xTaskNotifyGive(healthCheckTaskHandle);
     return ESP_OK;
 }
 
@@ -125,6 +174,8 @@ twai_node_status_t CanDriver::getStatus()
 
 esp_err_t CanDriver::transmit(twai_frame_t *tx_msg, int timeout_ms)
 {
+    static uint32_t lastSendTime_ms = 0;
+
     if (!isInitialized() || !isBusConnected())
     {
         return ESP_ERR_INVALID_STATE;
@@ -135,15 +186,30 @@ esp_err_t CanDriver::transmit(twai_frame_t *tx_msg, int timeout_ms)
         ESP_LOGE(TAG, "tx_msg is NULL!");
         return ESP_ERR_INVALID_ARG;
     }
-    ESP_LOGD(TAG, "Transmitting message with ID: 0x%08X", tx_msg->header.id);
-    ESP_LOGD(TAG, "Data buffer: ");
-    ESP_LOG_BUFFER_HEX_LEVEL(TAG, tx_msg->buffer, tx_msg->buffer_len, ESP_LOG_DEBUG);
-    esp_err_t ret = twai_node_transmit(nodeHdl, tx_msg, 0);
+
+    LOG_CAN_FRAME(TAG, "TX -> ", tx_msg->header.id, tx_msg->buffer);
+
+    uint32_t currentTime_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    uint32_t timeSinceLastSend = currentTime_ms - lastSendTime_ms;
+
+    if (timeSinceLastSend < MIN_TRANSMIT_PERIOD_MS)
+    {
+        uint32_t delay_ms = MIN_TRANSMIT_PERIOD_MS - timeSinceLastSend;
+
+        vTaskDelay(pdMS_TO_TICKS(delay_ms));
+
+        currentTime_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    }
+    lastSendTime_ms = currentTime_ms;
+
+    esp_err_t ret = twai_node_transmit(nodeHdl, tx_msg, pdMS_TO_TICKS(timeout_ms));
+
     if (ret != ESP_OK)
     {
         ESP_LOGE(TAG, "Transmitting message failed: %s", esp_err_to_name(ret));
         return ret;
     }
+
     return ESP_OK;
 }
 
@@ -158,9 +224,7 @@ esp_err_t CanDriver::receive(CanDriver::CanFrame &frame, int timeout_ms)
 
     if (xQueueReceive(rxQueue, &frame, ticks) == pdTRUE)
     {
-        ESP_LOGD(TAG, "Received message with ID: 0x%08X", frame.id);
-        ESP_LOGD(TAG, "Data buffer: ");
-        ESP_LOG_BUFFER_HEX_LEVEL(TAG, frame.data, frame.length, ESP_LOG_DEBUG);
+        LOG_CAN_FRAME(TAG, "RX <- ", frame.id, frame.data);
         return ESP_OK;
     }
 
@@ -190,13 +254,30 @@ bool IRAM_ATTR CanDriver::twai_rx_cb(twai_node_handle_t handle,
     {
         frame.id = rx_frame.header.id;
         frame.length = rx_frame.header.dlc;
-        if (xQueueSendFromISR(driver->rxQueue, &frame, &woken) != pdTRUE)
+        if (driver->debug_mode)
         {
-            ESP_EARLY_LOGW(TAG, "RX queue full, message dropped");
+            if (frame.length < 2)
+            {
+                return false;
+            }
+            if (xDataSimTaskHandle != NULL)
+            {
+
+                xTaskNotifyFromISR(
+                    xDataSimTaskHandle, // Directly use the global handle
+                    (uint32_t)frame.data[2],
+                    eSetValueWithOverwrite,
+                    &woken);
+            }
+        }
+        else
+        {
+            if (xQueueSendFromISR(driver->rxQueue, &frame, &woken) != pdTRUE)
+            {
+                ESP_EARLY_LOGW(TAG, "RX queue full, message dropped");
+            }
         }
     }
-
-    // TODO add simulation of BUS output when in debug mode by changing the reponse data here
 
     return woken == pdTRUE;
 }
@@ -456,3 +537,5 @@ void CanDriver::notifyConnectionChange(bool connected)
         connectionCallback(callbackArg, connected);
     }
 }
+
+// TODO: Kdyz se to pripoji do auta tak se resetuji stuff errors na 0 a v ten moment jsou i ack na 0 -> BUS connected ale pak je ack 1 coz znamena disconnected

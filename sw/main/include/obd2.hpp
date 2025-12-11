@@ -10,9 +10,14 @@
 #include "freertos/FreeRTOS.h"
 
 #include "obd2_utils.hpp"
+#include "obd2_dtb.hpp"
 #include "can_driver.hpp"
+#include "utilities.h"
 
-class OBD2
+#define POLL_TASK_PERIOD_MS MIN_TRANSMIT_PERIOD_MS
+#define ERR_ACCUMULATE(result, expr) ((result) = (result) ?: (expr))
+
+class OBD2 : public OBD2DTB
 {
 public:
     // TODO can_driver callback for connection lost
@@ -20,54 +25,36 @@ public:
     ~OBD2();
 
     esp_err_t init();
-    esp_err_t getSuppPids();
-    bool isSup(uint8_t pid) const;
-    bool pidExists(uint8_t pid) const;
+    void getSuppPids();
+    bool isPidInit() const;
     esp_err_t req(uint8_t pid);
 
-    uint8_t getmode(uint8_t pid) const;
-    const char *getName(uint8_t pid) const;
-    const char *getUnit(uint8_t pid) const;
-    const char *getDescription(uint8_t pid) const;
-    float getMinValue(uint8_t pid) const;
-    float getMaxValue(uint8_t pid) const;
-    uint8_t getPriority(uint8_t pid) const;
-
-    float getValue(uint8_t pid, uint32_t timeout_ms = 500) const;
-    uint32_t getLastUpdated(uint8_t pid) const;
-    esp_err_t getRawData(uint8_t pid, uint8_t *outData) const;
-    uint16_t getUpdateInterval(uint8_t pid) const;
-    bool isValid(uint8_t pid) const;
-
-    esp_err_t setUpdateInterval(uint8_t pid, UpdateRate interval_ms);
-    esp_err_t setValid(uint8_t pid, bool valid);
-    esp_err_t setIsSupported(uint8_t pid, bool supported);
-    esp_err_t setLastUpdated(uint8_t pid, uint32_t lastUpdated);
     void startContinuousMode();
     void stopContinuousMode();
+
+    esp_err_t requestVIN();
+    esp_err_t requestConfirmedDTCs();
+    esp_err_t requestPendingDTCs();
+    esp_err_t requestPermanentDTCs();
 
 private:
     CanDriver &canDriver;
     bool continuousRunning;
-    mutable SemaphoreHandle_t mtx_;
 
-    static const std::map<uint8_t, PIDInfo_t> PID_DEF;
-    std::map<uint8_t, PIDData_t> pidData;
+    // PID Definitions and Data Storage
 
-    std::map<uint8_t, bool> pidGroupStatus;
     SemaphoreHandle_t xPidConnectedSemaphore = NULL;
+    SemaphoreHandle_t xPidRequestSemaphoreCounting = NULL;
+    esp_err_t setPidSuppStatus(uint8_t groupIndex, bool supported);
 
-    void initDef();
-
-    esp_err_t queryMsg(uint8_t mode, uint8_t pid, uint8_t len = 0x02);
-
-    esp_err_t updateData(const CanDriver::CanFrame &frame);
-    esp_err_t getData(uint8_t pid, PIDData_t &pd) const;
+    esp_err_t queryMsg(uint32_t id, uint8_t mode, uint8_t pid, uint8_t len = 0x02);
 
     // Polling Task
     void pollTask();
+    void pollStatic();
     static void pollTaskWrapper(void *param);
     TaskHandle_t PollTaskHandle{nullptr};
+    std::atomic<bool> pollStaticGroup = false;
 
     // Receiving Task
     void receiveTask();
@@ -86,6 +73,13 @@ private:
 
     // Frame Parsing
     esp_err_t parseCurrentData(const CanDriver::CanFrame &f);
+    esp_err_t parseDTCs(std::vector<CanDriver::CanFrame> &frames, uint8_t mode);
+    esp_err_t decodeDTC(uint8_t hi, uint8_t lo);
     esp_err_t parseRecFrame(const CanDriver::CanFrame &f);
     esp_err_t parseSupportedPIDs(const CanDriver::CanFrame &f);
+    esp_err_t captureMultiFrame(const CanDriver::CanFrame &f);
+    esp_err_t parseMultiFrame(std::vector<CanDriver::CanFrame> &frames);
+    esp_err_t parseVehicleInfoMultiFrame(std::vector<CanDriver::CanFrame> &frames);
+    esp_err_t parseVINMultiFrame(std::vector<CanDriver::CanFrame> &frames);
+    inline esp_err_t sendFlowControlFrame(uint32_t id);
 };

@@ -10,6 +10,8 @@
 #include "freertos/queue.h"
 #include "driver/gpio.h"
 
+#include "obd2_simulator.hpp"
+
 #define STATE_NOT_INITIALIZED 0
 #define STATE_BUS_OFF 10
 #define STATE_NOT_CONNECTED 20
@@ -18,6 +20,14 @@
 #define HEALTH_CHECK_TASK_PRIO 3 // Periodic monitoring
 
 #define CORE_ID_CAN_TASKS 0
+#define MIN_TRANSMIT_PERIOD_MS 8 // Minimum time between consecutive transmissions in milliseconds
+
+#define LOG_CAN_FRAME(LOG_TAG, DIR, CAN_ID, DATA_PTR)                    \
+    ESP_LOGD(LOG_TAG, "%s %X %02X %02X %02X %02X %02X %02X %02X %02X",   \
+             DIR,                                                        \
+             CAN_ID,                                                     \
+             (DATA_PTR)[0], (DATA_PTR)[1], (DATA_PTR)[2], (DATA_PTR)[3], \
+             (DATA_PTR)[4], (DATA_PTR)[5], (DATA_PTR)[6], (DATA_PTR)[7])
 
 class CanDriver
 {
@@ -37,19 +47,10 @@ public:
         uint8_t data[8];
         size_t length;
     };
-    explicit CanDriver(Bitrate bitrate = Bitrate::BITRATE_500K, gpio_num_t tx_pin = GPIO_NUM_5, gpio_num_t rx_pin = GPIO_NUM_4, gpio_num_t lbk_pin = GPIO_NUM_6, uint32_t tx_queue_depth = 5U, size_t rx_queue_size = 20)
-    {
-        nodeConfig.io_cfg.tx = tx_pin;
-        nodeConfig.io_cfg.rx = rx_pin;
-        nodeConfig.bit_timing.bitrate = static_cast<uint32_t>(bitrate);
-        nodeConfig.tx_queue_depth = tx_queue_depth;
-        nodeHdl = NULL;
-        nodeRecord.bus_err_num = 0;
-        RX_QUEUE_SIZE = rx_queue_size;
-        LBK_PIN = lbk_pin;
-        nodeConfig.bit_timing.sp_permill = 800;
-        nodeConfig.bit_timing.ssp_permill = 0;
-    }
+
+    bool debug_mode;
+
+    explicit CanDriver(Bitrate bitrate = Bitrate::BITRATE_500K, gpio_num_t tx_pin = GPIO_NUM_5, gpio_num_t rx_pin = GPIO_NUM_4, gpio_num_t lbk_pin = GPIO_NUM_6, bool debug = false, uint32_t tx_queue_depth = 20U, size_t rx_queue_size = 20);
 
     inline bool isInitialized() const
     {
@@ -61,26 +62,9 @@ public:
         return canState.load() == STATE_CONNECTED;
     }
 
-    void debug_mode(bool enable)
-    {
-        gpio_reset_pin(LBK_PIN);
-        gpio_set_direction(LBK_PIN, GPIO_MODE_OUTPUT);
-        deinit();
-        if (enable)
-        {
-            nodeConfig.flags.enable_self_test = 1;
-            nodeConfig.flags.enable_loopback = 1;
-            gpio_set_level(LBK_PIN, 1);
-        }
-        else
-        {
-            nodeConfig.flags.enable_self_test = 0;
-            nodeConfig.flags.enable_loopback = 0;
-            gpio_set_level(LBK_PIN, 0);
-        }
-    }
+    void setDebugMode(bool enable);
 
-    esp_err_t init();
+    esp_err_t init(bool debug = false);
 
     esp_err_t deinit();
 
@@ -96,6 +80,11 @@ public:
 
     typedef void (*ConnectionCallback)(void *arg, bool connected);
     void setConnectionCallback(ConnectionCallback callback, void *arg);
+
+    QueueHandle_t getRxQueueHandle()
+    {
+        return rxQueue;
+    }
 
 protected:
     void notifyConnectionChange(bool connected);
