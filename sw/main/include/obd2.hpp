@@ -74,7 +74,7 @@ private:
     // Frame Parsing
     esp_err_t parseCurrentData(const CanDriver::CanFrame &f);
     esp_err_t parseDTCs(std::vector<CanDriver::CanFrame> &frames, uint8_t mode);
-    esp_err_t decodeDTC(uint8_t hi, uint8_t lo);
+
     esp_err_t parseRecFrame(const CanDriver::CanFrame &f);
     esp_err_t parseSupportedPIDs(const CanDriver::CanFrame &f);
     esp_err_t captureMultiFrame(const CanDriver::CanFrame &f);

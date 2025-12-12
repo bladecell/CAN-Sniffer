@@ -438,7 +438,7 @@ esp_err_t OBD2::parseDTCs(std::vector<CanDriver::CanFrame> &frames, uint8_t mode
             idx = 3;
             break;
         case 1:
-            dtc_rem = frame.data[4];
+            dtc_rem = frame.data[3];
             idx = 4;
             break;
         case 2:
@@ -643,6 +643,7 @@ inline esp_err_t OBD2::sendFlowControlFrame(uint32_t id)
 {
     return queryMsg(id, 0x00, 0x00, 0x30);
 }
+
 esp_err_t OBD2::parseMultiFrame(std::vector<CanDriver::CanFrame> &frames)
 {
     if (frames.empty())
@@ -663,7 +664,7 @@ esp_err_t OBD2::parseMultiFrame(std::vector<CanDriver::CanFrame> &frames)
         ret = parseDTCs(frames, RESPONSE_DTCS);
         break;
     case RESPONSE_CLEAR_DTCS:
-        ret = parseDTCs(frames, RESPONSE_DTCS);
+        // NOT IMPLEMENTED
         break;
     case RESPONSE_PENDING_DTCS:
         ret = parseDTCs(frames, RESPONSE_DTCS);
@@ -672,7 +673,7 @@ esp_err_t OBD2::parseMultiFrame(std::vector<CanDriver::CanFrame> &frames)
         ret = parseVehicleInfoMultiFrame(frames);
         break;
     case RESPONSE_PERMANENT_DTCS:
-        // NOT IMPLEMENTED
+        ret = parseDTCs(frames, RESPONSE_DTCS);
         break;
     default:
         return ESP_ERR_NOT_SUPPORTED;

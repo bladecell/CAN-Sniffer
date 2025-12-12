@@ -262,10 +262,10 @@ bool IRAM_ATTR CanDriver::twai_rx_cb(twai_node_handle_t handle,
             }
             if (xDataSimTaskHandle != NULL)
             {
-
+                uint32_t sd = (frame.data[1] << 8) | frame.data[2];
                 xTaskNotifyFromISR(
                     xDataSimTaskHandle, // Directly use the global handle
-                    (uint32_t)frame.data[2],
+                    sd,
                     eSetValueWithOverwrite,
                     &woken);
             }

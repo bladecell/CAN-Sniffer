@@ -15,7 +15,7 @@
 #include "led_status.hpp"
 #include "obd2.hpp"
 
-#define DEBUG_MODE 0
+#define DEBUG_MODE 1
 
 static const char *TAG = "APP_MAIN";
 static LedError led(LED_GPIO);
@@ -60,10 +60,28 @@ extern "C" void app_main(void)
         break;
     }
     ESP_LOGI(TAG, "PID OK");
-    obd2.requestConfirmedDTCs();
-    vTaskDelay(pdMS_TO_TICKS(5000));
 
-    // const char *vin = nullptr;
+    obd2.requestConfirmedDTCs();
+    vTaskDelay(pdMS_TO_TICKS(3000));
+    std::vector<std::string> dtc = obd2.getDTC(MODE_DTCS);
+
+    if (dtc.empty())
+    {
+        ESP_LOGI("DTC", "No DTC active");
+    }
+    else
+    {
+        std::string all_dtc;
+        for (const auto &d : dtc)
+        {
+            if (!all_dtc.empty())
+                all_dtc += ", ";
+            all_dtc += d;
+        }
+        ESP_LOGI("DTC", "%s", all_dtc.c_str());
+    }
+
+    // std::string vin;
 
     // bool vinflag = false;
 
@@ -90,9 +108,9 @@ extern "C" void app_main(void)
     //         vinflag = true;
     //     }
 
-    //     if (vin != nullptr)
+    //     if (!vin.empty())
     //     {
-    //         ESP_LOGI(TAG, "Vehicle VIN: %s", vin);
+    //         ESP_LOGI("VIN", "%s", vin.c_str());
     //     }
     //     else
     //     {

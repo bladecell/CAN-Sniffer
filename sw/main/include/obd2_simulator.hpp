@@ -20,4 +20,5 @@ void dataSimTask(CanDriver &canDriver);
 void dataSimTaskWrapper(void *param);
 void start_sim_task(CanDriver *driver);
 void stop_sim_task();
+void sendVIN(bool multiframe_in_progress);
 uint32_t sinDataSim(uint32_t t_ms, float frequency, uint32_t size);

@@ -26,7 +26,8 @@ public:
     float getMinValue(uint8_t pid) const;
     float getMaxValue(uint8_t pid) const;
     uint8_t getPriority(uint8_t pid) const;
-    const char *getVIN() const;
+    std::string getVIN() const;
+    std::vector<std::string> getDTC(uint8_t mode);
 
     float getValue(uint8_t pid, uint32_t timeout_ms = 500) const;
     uint32_t getLastUpdated(uint8_t pid) const;
@@ -42,7 +43,7 @@ public:
     esp_err_t setId(uint8_t pid, uint32_t id);
     esp_err_t setDTC(uint16_t rawDTC, uint8_t mode);
     esp_err_t clearDTC(uint8_t mode);
-    esp_err_t decodeDTC(uint8_t hi, uint8_t lo);
+    std::string decodeDTC(uint16_t rawDTC);
 
     // PID Definitions and Data Storage
     static const std::map<uint8_t, PIDInfo_t> PID_DEF;

@@ -285,23 +285,22 @@ esp_err_t OBD2DTB::getRawData(uint8_t pid, uint8_t *outData) const
     return ESP_OK;
 }
 
-const char *OBD2DTB::getVIN() const
+std::string OBD2DTB::getVIN() const
 {
     if (xSemaphoreTake(vinData.mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
     {
-        return nullptr;
+        return ""; // Return empty string on timeout
     }
 
-    if (!vinData.isValid)
+    std::string result;
+
+    if (vinData.isValid)
     {
-        xSemaphoreGive(vinData.mtx_);
-        return nullptr;
+        result = std::string(vinData.vin); // Copy while protected
     }
-
-    const char *vin = vinData.vin;
 
     xSemaphoreGive(vinData.mtx_);
-    return vin;
+    return result; // Return copy (thread-safe)
 }
 
 uint16_t OBD2DTB::getUpdateInterval(uint8_t pid) const
@@ -411,26 +410,43 @@ esp_err_t OBD2DTB::setId(uint8_t pid, uint32_t id)
 
 esp_err_t OBD2DTB::setDTC(uint16_t rawDTC, uint8_t mode)
 {
-    if (xSemaphoreTake(dtcData.mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
+    if (rawDTC == 0)
+    {
+        return ESP_OK;
+    }
+
+    if (xSemaphoreTake(dtcData.mtx_, pdMS_TO_TICKS(100)) != pdTRUE)
     {
         return ESP_ERR_TIMEOUT;
     }
+
+    std::string dtcCode = decodeDTC(rawDTC);
+    std::vector<std::string> *target = nullptr;
 
     switch (mode)
     {
     case MODE_DTCS:
     case RESPONSE_DTCS:
-        dtcData.confirmed.push_back(rawDTC);
+        target = &dtcData.confirmed;
         break;
     case MODE_PENDING_DTCS:
     case RESPONSE_PENDING_DTCS:
-        dtcData.pending.push_back(rawDTC);
+        target = &dtcData.pending;
         break;
     case MODE_PERMANENT_DTCS:
     case RESPONSE_PERMANENT_DTCS:
-        dtcData.permanent.push_back(rawDTC);
+        target = &dtcData.permanent;
         break;
+    default:
+        xSemaphoreGive(dtcData.mtx_);
+        return ESP_ERR_INVALID_ARG;
     }
+
+    if (std::find(target->begin(), target->end(), dtcCode) == target->end())
+    {
+        target->push_back(dtcCode);
+    }
+
     xSemaphoreGive(dtcData.mtx_);
     return ESP_OK;
 }
@@ -462,4 +478,72 @@ esp_err_t OBD2DTB::clearDTC(uint8_t mode)
     }
     xSemaphoreGive(dtcData.mtx_);
     return ESP_OK;
+}
+
+std::string OBD2DTB::decodeDTC(uint16_t rawDTC)
+{
+    if (rawDTC == 0)
+    {
+        return "No DTC";
+    }
+    char dtc[6];
+    uint8_t type_bits = (rawDTC >> 14) & 0x03;
+
+    uint8_t first_digit = (rawDTC >> 12) & 0x03;
+
+    uint16_t last_digits = rawDTC & 0x0FFF;
+
+    char prefix;
+    switch (type_bits)
+    {
+    case 0:
+        prefix = 'P';
+        break; // Powertrain
+    case 1:
+        prefix = 'C';
+        break; // Chassis
+    case 2:
+        prefix = 'B';
+        break; // Body
+    case 3:
+        prefix = 'U';
+        break; // Network
+    default:
+        return "No DTC";
+    }
+
+    // Format the DTC string: Letter + 4 digits
+    snprintf(dtc, sizeof(dtc), "%c%01X%03X", prefix, first_digit, last_digits);
+
+    return std::string(dtc);
+}
+
+std::vector<std::string> OBD2DTB::getDTC(uint8_t mode)
+{
+    std::vector<std::string> result;
+
+    if (xSemaphoreTake(dtcData.mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
+    {
+        ESP_LOGW(TAG, "Failed to get dtc");
+        return result;
+    }
+
+    switch (mode)
+    {
+    case MODE_DTCS:
+    case RESPONSE_DTCS:
+        result = dtcData.confirmed;
+        break;
+    case MODE_PENDING_DTCS:
+    case RESPONSE_PENDING_DTCS:
+        result = dtcData.pending;
+        break;
+    case MODE_PERMANENT_DTCS:
+    case RESPONSE_PERMANENT_DTCS:
+        result = dtcData.permanent;
+        break;
+    }
+
+    xSemaphoreGive(dtcData.mtx_);
+    return result;
 }

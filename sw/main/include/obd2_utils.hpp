@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <vector>
 #include <array>
+#include <string>
 #include "can_driver.hpp"
 
 #define OBD2_FUNCTIONAL_ID 0x7DF
@@ -119,9 +120,9 @@ typedef struct
 
 typedef struct
 {
-    std::vector<uint16_t> confirmed;
-    std::vector<uint16_t> pending;
-    std::vector<uint16_t> permanent;
+    std::vector<std::string> confirmed;
+    std::vector<std::string> pending;
+    std::vector<std::string> permanent;
     SemaphoreHandle_t mtx_;
 } DTCData_t;
 
