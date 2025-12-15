@@ -15,7 +15,7 @@
 #include "led_status.hpp"
 #include "obd2.hpp"
 
-#define DEBUG_MODE 1
+#define DEBUG_MODE 0
 
 static const char *TAG = "APP_MAIN";
 static LedError led(LED_GPIO);

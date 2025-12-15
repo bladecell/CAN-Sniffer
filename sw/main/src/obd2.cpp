@@ -1,8 +1,23 @@
-// obd2.cpp
+/**
+ * @file obd2.cpp
+ * @author bladecell (github@bum.anonaddy.com)
+ * @brief
+ * @version 0.1
+ * @date 2025-12-15
+ *
+ * @copyright Copyright (c) 2025
+ *
+ */
+
 #include "obd2.hpp"
 
 static const char *TAG = "OBD2";
 
+/**
+ * @brief Construct a new OBD2::OBD2 object
+ *
+ * @param canDriver
+ */
 OBD2::OBD2(CanDriver &canDriver)
     : canDriver(canDriver),
       continuousRunning(false),
@@ -104,6 +119,33 @@ esp_err_t OBD2::req(uint8_t pid)
     return ret;
 }
 
+/**
+ * @brief Sends an OBD-II query message over the CAN bus.
+ *
+ * This function constructs and transmits a standard OBD-II diagnostic request
+ * frame with an 11-bit identifier (Standard Frame Format). It is typically used
+ * to request data identified by a specific Mode and PID from a vehicle's ECU.
+ *
+ * The OBD-II request message data format is structured as:
+ * - **Byte 0:** Data Length Code (DLC), indicating the number of subsequent data bytes.
+ * - **Byte 1:** Diagnostic Test Mode (Service ID).
+ * - **Byte 2:** Parameter Identifier (PID).
+ * - **Bytes 3-7:** Reserved/Zero-padded.
+ *
+ *
+ *
+ * @param id The 11-bit CAN ID for the request. For OBD-II PIDs, this is usually 0x7DF
+ * for a functional broadcast request, or a specific physical request ID
+ * (e.g., 0x7E0, 0x7E1, etc.).
+ * @param mode The OBD-II Diagnostic Test Mode (Service ID) being requested (e.g., 0x01 for Show Current Data).
+ * @param pid The Parameter Identifier (PID) within the specified mode (e.g., 0x0C for Engine RPM).
+ * @param len The actual number of data bytes to be transmitted (Byte 0 of the payload). For standard PID requests,
+ * this is typically 0x02 (Mode + PID).
+ * @return esp_err_t
+ * - **ESP_ERR_INVALID_STATE:** If the CAN bus driver is not connected.
+ * - **ESP_OK:** If the message was successfully queued for transmission.
+ * - Other error codes from the underlying `canDriver.transmit` function.
+ */
 esp_err_t OBD2::queryMsg(uint32_t id, uint8_t mode, uint8_t pid, uint8_t len)
 {
     if (!canDriver.isBusConnected())
@@ -555,6 +597,7 @@ esp_err_t OBD2::requestPendingDTCs()
     return ret;
 }
 
+//
 esp_err_t OBD2::requestPermanentDTCs()
 {
     esp_err_t ret = queryMsg(OBD2_FUNCTIONAL_ID, MODE_PERMANENT_DTCS, 0x00);

@@ -203,6 +203,7 @@ float OBD2DTB::getMaxValue(uint8_t pid) const
 {
     return !pidExists(pid) ? NAN : PID_DEF.at(pid).maxValue;
 }
+
 uint8_t OBD2DTB::getPriority(uint8_t pid) const
 {
     return !pidExists(pid) ? 0 : PID_DEF.at(pid).priority;

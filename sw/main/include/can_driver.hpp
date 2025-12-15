@@ -21,6 +21,7 @@
 
 #define CORE_ID_CAN_TASKS 0
 #define MIN_TRANSMIT_PERIOD_MS 8 // Minimum time between consecutive transmissions in milliseconds
+#define HEALTHCHECK_PING_PERIOD_MS 2000
 
 #define LOG_CAN_FRAME(LOG_TAG, DIR, CAN_ID, DATA_PTR)                    \
     ESP_LOGD(LOG_TAG, "%s %X %02X %02X %02X %02X %02X %02X %02X %02X",   \
@@ -129,5 +130,4 @@ private:
     std::atomic<uint8_t> canState = STATE_NOT_INITIALIZED;
     static void healthCheckTaskWrapper(void *param);
     TaskHandle_t healthCheckTaskHandle = nullptr;
-    uint32_t pingPeriodMs = 2000;
 };

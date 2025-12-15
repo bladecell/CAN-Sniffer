@@ -451,6 +451,8 @@ void CanDriver::healthCheckTaskWrapper(void *param)
 void CanDriver::healthCheckTask()
 {
     u_int8_t prevState = STATE_NOT_INITIALIZED;
+    uint8_t successfulPingsCount = 0;
+
     while (true)
     {
         switch (canState.load())
@@ -469,12 +471,21 @@ void CanDriver::healthCheckTask()
             {
                 ESP_LOGW(TAG, "CAN bus ping failed: %s", esp_err_to_name(ret));
             }
-            ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(pingPeriodMs));
+            ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(HEALTHCHECK_PING_PERIOD_MS));
             if (consecutiveAckErrors.load() == 0 && consecutiveStuffErrors.load() == 0)
             {
-                ESP_LOGI(TAG, "CAN bus connected");
-                canState.store(STATE_CONNECTED);
-                notifyConnectionChange(true);
+                successfulPingsCount++;
+                if (successfulPingsCount >= 3)
+                {
+                    ESP_LOGI(TAG, "CAN bus connected");
+                    canState.store(STATE_CONNECTED);
+                    notifyConnectionChange(true);
+                    successfulPingsCount = 0;
+                }
+            }
+            else
+            {
+                successfulPingsCount = 0;
             }
             break;
         }
