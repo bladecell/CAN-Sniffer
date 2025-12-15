@@ -51,7 +51,6 @@ void dataSimTask(CanDriver &canDriver)
         0x0143, 0x8260, 0x4234, 0x0300, 0x0408,
         0x0506, 0x0101, 0x0113, 0x0335, 0x0401};
     uint32_t DTCs_to_send = (esp_random() % 10) + 1;
-    ESP_LOGW(TAG, "%u", DTCs_to_send);
 
     while (1)
     {
@@ -152,23 +151,23 @@ void dataSimTask(CanDriver &canDriver)
             }
             else
             {
-                std::vector<uint8_t> bits_to_send;
-                for (int i = 0; i <= DTCs_to_send; i++)
+                std::vector<uint8_t> bytes_to_send;
+                for (int i = 0; i < DTCs_to_send; i++)
                 {
-                    bits_to_send.push_back((dtcs[i] >> 8) & 0xFF);
-                    bits_to_send.push_back(dtcs[i] & 0xFF);
+                    bytes_to_send.push_back((dtcs[i] >> 8) & 0xFF);
+                    bytes_to_send.push_back(dtcs[i] & 0xFF);
                 }
-                uint16_t total_length = bits_to_send.size() + 2;
+                uint16_t total_length = bytes_to_send.size() + 2;
                 CanDriver::CanFrame response_frame = {};
                 response_frame.id = 0x7E8;
                 response_frame.data[0] = 0x10 | ((uint8_t)((total_length >> 8) & 0x0F));
                 response_frame.data[1] = (uint8_t)(total_length & 0xFF);
                 response_frame.data[2] = mode | 0x40;
                 response_frame.data[3] = (uint8_t)DTCs_to_send;
-                response_frame.data[4] = bits_to_send[0];
-                response_frame.data[5] = bits_to_send[1];
-                response_frame.data[6] = bits_to_send[2];
-                response_frame.data[7] = bits_to_send[3];
+                response_frame.data[4] = bytes_to_send[0];
+                response_frame.data[5] = bytes_to_send[1];
+                response_frame.data[6] = bytes_to_send[2];
+                response_frame.data[7] = bytes_to_send[3];
                 response_frame.length = PID_DATA_LENGTH; // Max length for CAN 2.0A
 
                 if (xQueueSend(canDriver.getRxQueueHandle(), &response_frame, 0) != pdTRUE)
@@ -194,17 +193,17 @@ void dataSimTask(CanDriver &canDriver)
                 if (!found)
                     continue;
 
-                uint8_t cf = ((DTCs_to_send - 2) * 2 + 7 - 1) / 7;
                 uint8_t bts_idx = 4;
+                uint8_t cf_idx = 1;
 
-                for (int i = 1; i <= cf; i++)
+                while (bts_idx < bytes_to_send.size())
                 {
                     CanDriver::CanFrame response_frame = {};
                     response_frame.id = 0x7E8;
-                    response_frame.data[0] = 0x20 + i;
-                    for (int j = 1; (bts_idx < bits_to_send.size()) && (j <= 7); j++)
+                    response_frame.data[0] = 0x20 + cf_idx++;
+                    for (int j = 1; (bts_idx < bytes_to_send.size()) && (j <= 7); j++)
                     {
-                        response_frame.data[j] = bits_to_send[bts_idx++];
+                        response_frame.data[j] = bytes_to_send[bts_idx++];
                     }
 
                     response_frame.length = PID_DATA_LENGTH; // Max length for CAN 2.0A

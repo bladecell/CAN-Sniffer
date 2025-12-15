@@ -565,6 +565,12 @@ esp_err_t OBD2::requestPermanentDTCs()
     return ret;
 }
 
+esp_err_t OBD2::requestClearDTCs()
+{
+    esp_err_t ret = queryMsg(OBD2_FUNCTIONAL_ID, MODE_CLEAR_DTCS, 0x00);
+    return ret;
+}
+
 esp_err_t OBD2::captureMultiFrame(const CanDriver::CanFrame &f)
 {
     static uint8_t MULTIDRAME_STATE = 99;

@@ -36,6 +36,7 @@ public:
     esp_err_t requestConfirmedDTCs();
     esp_err_t requestPendingDTCs();
     esp_err_t requestPermanentDTCs();
+    esp_err_t requestClearDTCs();
 
 private:
     CanDriver &canDriver;
