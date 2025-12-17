@@ -34,18 +34,18 @@ Schematics and PCB files are available in the `hw/` directory.
 
 ## Roadmap
 
-| Stage | Task                                             | Status      |
-| :---- | :----------------------------------------------- | :---------- |
-| 1     | Design and fabricate PCB                         | Completed   |
-| 2     | Test hardware and verify CAN transceiver         | Completed   |
-| 3     | Implement ESP32 TWAI CAN driver                  | Completed   |
-| 4     | Implement OBD-II driver for PID parsing          | In Progress |
-| 5     | Add DTC read/clear functionality                 | In Progress |
-| 6     | Create web server backend and API                | Planned     |
-| 7     | Define REST/JSON API for frontend                | Planned     |
-| 8     | Create Svelte frontend project (layout, routing) | Planned     |
-| 9     | Add data logging to SD card                      | Planned     |
-| 10    | Optimize for performance and stability           | Planned     |
+| Stage | Task                                             | Status     |
+| :---- | :----------------------------------------------- | :--------- |
+| 1     | Design and fabricate PCB                         | Completed  |
+| 2     | Test hardware and verify CAN transceiver         | Completed  |
+| 3     | Implement ESP32 TWAI CAN driver                  | Completed  |
+| 4     | Implement OBD-II driver for PID parsing          | Completed  |
+| 5     | Add DTC read/clear functionality                 | Completed  |
+| 6     | Create web server backend and API                | In Progres |
+| 7     | Define REST/JSON API for frontend                | In Progres |
+| 8     | Create Svelte frontend project (layout, routing) | In Progres |
+| 9     | Add data logging to SD card                      | Planned    |
+| 10    | Optimize for performance and stability           | Planned    |
 
 ---
 
