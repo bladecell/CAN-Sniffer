@@ -5,32 +5,7 @@
 
 static const char *TAG = "CAN_DRIVER";
 
-CanDriver::CanDriver(
-    Bitrate bitrate,
-    gpio_num_t tx_pin,
-    gpio_num_t rx_pin,
-    gpio_num_t lbk_pin,
-    bool debug,
-    uint32_t tx_queue_depth,
-    size_t rx_queue_size)
-{
-    nodeConfig.io_cfg.tx = tx_pin;
-    nodeConfig.io_cfg.rx = rx_pin;
-    nodeConfig.bit_timing.bitrate = static_cast<uint32_t>(bitrate);
-    nodeConfig.tx_queue_depth = tx_queue_depth;
-    nodeHdl = NULL;
-    nodeRecord.bus_err_num = 0;
-    RX_QUEUE_SIZE = rx_queue_size;
-    LBK_PIN = lbk_pin;
-    nodeConfig.bit_timing.sp_permill = 800;
-    nodeConfig.bit_timing.ssp_permill = 0;
-
-    esp_err_t ret = init(debug);
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Failed to initialize CAN driver: %s", esp_err_to_name(ret));
-    }
-}
+CanDriver::CanDriver() {}
 
 CanDriver::~CanDriver()
 {
@@ -54,15 +29,27 @@ void CanDriver::setDebugMode(bool enable)
     enable ? start_sim_task(this) : stop_sim_task();
 }
 
-esp_err_t CanDriver::init(bool debug)
+esp_err_t CanDriver::init(const Config &config)
 {
-    esp_err_t ret;
     if (isInitialized())
     {
         return ESP_OK;
     }
 
-    setDebugMode(debug);
+    nodeConfig.io_cfg.tx = config.tx_pin;
+    nodeConfig.io_cfg.rx = config.rx_pin;
+    nodeConfig.bit_timing.bitrate = static_cast<uint32_t>(config.bitrate);
+    nodeConfig.tx_queue_depth = config.tx_queue_depth;
+    nodeHdl = NULL;
+    nodeRecord.bus_err_num = 0;
+    RX_QUEUE_SIZE = config.rx_queue_size;
+    LBK_PIN = config.lbk_pin;
+    nodeConfig.bit_timing.sp_permill = 800;
+    nodeConfig.bit_timing.ssp_permill = 0;
+
+    esp_err_t ret;
+
+    setDebugMode(config.debug);
 
     // Create RX Queue
     rxQueue = xQueueCreate(RX_QUEUE_SIZE, sizeof(CanDriver::CanFrame));
@@ -128,7 +115,7 @@ esp_err_t CanDriver::init(bool debug)
         return ESP_FAIL;
     }
     // Initialization successful
-    canState.store(STATE_NOT_CONNECTED);
+    canState.store(STATE::NOT_CONNECTED);
     xTaskNotifyGive(healthCheckTaskHandle);
     return ESP_OK;
 }
@@ -156,7 +143,7 @@ esp_err_t CanDriver::deinit()
 
     flushRxQueue();
     stop_sim_task();
-    canState.store(STATE_NOT_INITIALIZED);
+    canState.store(STATE::NOT_INITIALIZED);
     return ESP_OK;
 }
 
@@ -319,7 +306,7 @@ bool IRAM_ATTR CanDriver::twai_state_change_cb(twai_node_handle_t handle,
     if (edata->new_sta == TWAI_ERROR_ACTIVE)
     {
         ESP_EARLY_LOGI(TAG, "CAN bus connected - node recovered");
-        driver->canState.store(STATE_NOT_CONNECTED);
+        driver->canState.store(STATE::NOT_CONNECTED);
         if (driver->healthCheckTaskHandle != nullptr)
         {
             vTaskNotifyGiveFromISR(driver->healthCheckTaskHandle, &xHigherPriorityTaskWoken);
@@ -329,7 +316,7 @@ bool IRAM_ATTR CanDriver::twai_state_change_cb(twai_node_handle_t handle,
     if (edata->new_sta == TWAI_ERROR_BUS_OFF)
     {
         ESP_EARLY_LOGW(TAG, "CAN bus off - node disconnected");
-        driver->canState.store(STATE_BUS_OFF);
+        driver->canState.store(STATE::BUS_OFF);
         if (driver->healthCheckTaskHandle != nullptr)
         {
             vTaskNotifyGiveFromISR(driver->healthCheckTaskHandle, &xHigherPriorityTaskWoken);
@@ -450,20 +437,20 @@ void CanDriver::healthCheckTaskWrapper(void *param)
 
 void CanDriver::healthCheckTask()
 {
-    u_int8_t prevState = STATE_NOT_INITIALIZED;
+    STATE prevState = STATE::NOT_INITIALIZED;
     uint8_t successfulPingsCount = 0;
 
     while (true)
     {
         switch (canState.load())
         {
-        case STATE_NOT_INITIALIZED:
+        case STATE::NOT_INITIALIZED:
         {
             // Wait until initialized
             ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
             break;
         }
-        case STATE_NOT_CONNECTED:
+        case STATE::NOT_CONNECTED:
         {
             // Ping the bus periodically
             esp_err_t ret = pingBus();
@@ -478,7 +465,7 @@ void CanDriver::healthCheckTask()
                 if (successfulPingsCount >= 3)
                 {
                     ESP_LOGI(TAG, "CAN bus connected");
-                    canState.store(STATE_CONNECTED);
+                    canState.store(STATE::CONNECTED);
                     notifyConnectionChange(true);
                     successfulPingsCount = 0;
                 }
@@ -489,27 +476,27 @@ void CanDriver::healthCheckTask()
             }
             break;
         }
-        case STATE_CONNECTED:
+        case STATE::CONNECTED:
         {
             // Monitor for errors
             ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
             if (consecutiveAckErrors.load() > 3)
             {
                 ESP_LOGW(TAG, "CAN bus disconnected due to ACK errors");
-                canState.store(STATE_NOT_CONNECTED);
+                canState.store(STATE::NOT_CONNECTED);
                 notifyConnectionChange(false);
             }
             else if (consecutiveStuffErrors.load() > 3)
             {
                 ESP_LOGW(TAG, "CAN bus disconnected due to stuffing errors");
-                canState.store(STATE_NOT_CONNECTED);
+                canState.store(STATE::NOT_CONNECTED);
                 notifyConnectionChange(false);
             }
             break;
         }
-        case STATE_BUS_OFF:
+        case STATE::BUS_OFF:
         {
-            if (prevState == STATE_CONNECTED)
+            if (prevState == STATE::CONNECTED)
             {
                 notifyConnectionChange(false);
             }
@@ -548,5 +535,3 @@ void CanDriver::notifyConnectionChange(bool connected)
         connectionCallback(callbackArg, connected);
     }
 }
-
-// TODO: Kdyz se to pripoji do auta tak se resetuji stuff errors na 0 a v ten moment jsou i ack na 0 -> BUS connected ale pak je ack 1 coz znamena disconnected

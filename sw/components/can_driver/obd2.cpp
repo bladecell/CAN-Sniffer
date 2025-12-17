@@ -18,11 +18,11 @@ static const char *TAG = "OBD2";
  *
  * @param canDriver
  */
-OBD2::OBD2(CanDriver &canDriver)
-    : canDriver(canDriver),
-      continuousRunning(false),
+OBD2::OBD2()
+    : continuousRunning(false),
       xPidConnectedSemaphore(xSemaphoreCreateBinary()),
-      xBusConnectionSemaphore(xSemaphoreCreateBinary())
+      xBusConnectionSemaphore(xSemaphoreCreateBinary()),
+      xRequestNextPIDSemaphore(xSemaphoreCreateBinary())
 {
     init();
 }
@@ -39,10 +39,10 @@ OBD2::~OBD2()
         vSemaphoreDelete(xBusConnectionSemaphore);
         xBusConnectionSemaphore = nullptr;
     }
-    if (xPidRequestSemaphoreCounting)
+    if (xRequestNextPIDSemaphore != nullptr)
     {
-        vSemaphoreDelete(xPidRequestSemaphoreCounting);
-        xPidRequestSemaphoreCounting = nullptr;
+        vSemaphoreDelete(xRequestNextPIDSemaphore);
+        xRequestNextPIDSemaphore = nullptr;
     }
 }
 
@@ -75,7 +75,7 @@ esp_err_t OBD2::init()
     if (canDriver.isBusConnected())
     {
         ESP_LOGI(TAG, "CAN bus already connected, getting supported PIDs");
-        getSuppPids();
+        requestSuppPids();
     }
     else
     {
@@ -86,9 +86,10 @@ esp_err_t OBD2::init()
     return ESP_OK;
 }
 
-void OBD2::getSuppPids()
+void OBD2::requestSuppPids()
 {
     esp_err_t ret;
+    xSemaphoreTake(xRequestNextPIDSemaphore, 0);
     for (uint8_t pid_marker = 0; pid_marker <= PID_PIDS_SUPPORTED_C1_E0; pid_marker += 0x20)
     {
         ret = queryMsg(OBD2_FUNCTIONAL_ID, MODE_CURRENT_DATA, pid_marker);
@@ -97,10 +98,12 @@ void OBD2::getSuppPids()
         {
             ESP_LOGW(TAG, "Failed to queue PID support query 0x%02X. Error: %d", pid_marker, ret);
         }
+        if (xSemaphoreTake(xRequestNextPIDSemaphore, pdMS_TO_TICKS(500)) != pdTRUE)
+        {
+            break;
+        }
     }
 
-    // Wait for all PID support responses
-    vTaskDelay(pdMS_TO_TICKS(PID_REQUEST_DELAY_MS));
     pidsInitialized = true;
     generatePollingGroups();
     xSemaphoreGive(xPidConnectedSemaphore);
@@ -201,7 +204,7 @@ void OBD2::handleCanConnected()
     if (!pidsInitialized)
     {
         ESP_LOGI(TAG, "Retrieving supported PIDs...");
-        getSuppPids();
+        requestSuppPids();
     }
 }
 
@@ -566,6 +569,10 @@ esp_err_t OBD2::parseSupportedPIDs(const CanDriver::CanFrame &f)
                     ret = ret2;
                 }
             }
+        }
+        if (supportedPIDs << 31)
+        {
+            xSemaphoreGive(xRequestNextPIDSemaphore);
         }
     }
     return ret;

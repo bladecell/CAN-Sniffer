@@ -12,11 +12,6 @@
 
 #include "obd2_simulator.hpp"
 
-#define STATE_NOT_INITIALIZED 0
-#define STATE_BUS_OFF 10
-#define STATE_NOT_CONNECTED 20
-#define STATE_CONNECTED 40
-
 #define HEALTH_CHECK_TASK_PRIO 3 // Periodic monitoring
 
 #define CORE_ID_CAN_TASKS 0
@@ -49,23 +44,48 @@ public:
         size_t length;
     };
 
+    enum class STATE
+    {
+        NOT_INITIALIZED = 0,
+        BUS_OFF = 10,
+        NOT_CONNECTED = 20,
+        CONNECTED = 40
+    };
+
     bool debug_mode;
 
-    explicit CanDriver(Bitrate bitrate = Bitrate::BITRATE_500K, gpio_num_t tx_pin = GPIO_NUM_5, gpio_num_t rx_pin = GPIO_NUM_4, gpio_num_t lbk_pin = GPIO_NUM_6, bool debug = false, uint32_t tx_queue_depth = 20U, size_t rx_queue_size = 20);
+    struct Config
+    {
+        Bitrate bitrate = Bitrate::BITRATE_500K;
+        gpio_num_t tx_pin = GPIO_NUM_5;
+        gpio_num_t rx_pin = GPIO_NUM_4;
+        gpio_num_t lbk_pin = GPIO_NUM_6;
+        bool debug = false;
+        uint32_t tx_queue_depth = 20U;
+        size_t rx_queue_size = 20;
+    };
+
+    static CanDriver &getInstance()
+    {
+        static CanDriver instance;
+        return instance;
+    }
+
+    CanDriver();
 
     inline bool isInitialized() const
     {
-        return canState.load() != STATE_NOT_INITIALIZED;
+        return canState.load() != STATE::NOT_INITIALIZED;
     }
 
     inline bool isBusConnected() const
     {
-        return canState.load() == STATE_CONNECTED;
+        return canState.load() == STATE::CONNECTED;
     }
 
     void setDebugMode(bool enable);
 
-    esp_err_t init(bool debug = false);
+    esp_err_t init(const Config &config);
 
     esp_err_t deinit();
 
@@ -91,6 +111,8 @@ protected:
     void notifyConnectionChange(bool connected);
 
 private:
+    CanDriver(const CanDriver &) = delete;
+    CanDriver &operator=(const CanDriver &) = delete;
     // Callbacks
     static bool IRAM_ATTR twai_rx_cb(twai_node_handle_t handle,
                                      const twai_rx_done_event_data_t *edata,
@@ -127,7 +149,7 @@ private:
     std::atomic<uint32_t> consecutiveStuffErrors = 1;
     std::atomic<uint32_t> consecutiveAckErrors = 1;
     void healthCheckTask();
-    std::atomic<uint8_t> canState = STATE_NOT_INITIALIZED;
+    std::atomic<STATE> canState = STATE::NOT_INITIALIZED;
     static void healthCheckTaskWrapper(void *param);
     TaskHandle_t healthCheckTaskHandle = nullptr;
 };

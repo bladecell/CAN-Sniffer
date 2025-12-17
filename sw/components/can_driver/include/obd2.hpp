@@ -22,7 +22,6 @@
 #include "obd2_utils.hpp"
 #include "obd2_dtb.hpp"
 #include "can_driver.hpp"
-#include "utilities.h"
 
 #define POLL_TASK_PERIOD_MS MIN_TRANSMIT_PERIOD_MS
 #define ERR_ACCUMULATE(result, expr) ((result) = (result) ?: (expr))
@@ -30,18 +29,24 @@
 class OBD2 : public OBD2DTB
 {
 public:
-    // TODO can_driver callback for connection lost
-    explicit OBD2(CanDriver &CanDriver);
+    OBD2();
     ~OBD2();
 
+    static OBD2 &getInstance()
+    {
+        static OBD2 instance;
+        return instance;
+    }
+
     esp_err_t init();
-    void getSuppPids();
+
     bool isPidInit() const;
     esp_err_t req(uint8_t pid);
 
     void startContinuousMode();
     void stopContinuousMode();
 
+    void requestSuppPids();
     esp_err_t requestVIN();
     esp_err_t requestConfirmedDTCs();
     esp_err_t requestPendingDTCs();
@@ -49,13 +54,14 @@ public:
     esp_err_t requestClearDTCs();
 
 private:
-    CanDriver &canDriver;
+    OBD2(const OBD2 &) = delete;
+    OBD2 &operator=(const OBD2 &) = delete;
+    CanDriver &canDriver = CanDriver::getInstance();
     bool continuousRunning;
 
     // PID Definitions and Data Storage
 
     SemaphoreHandle_t xPidConnectedSemaphore = NULL;
-    SemaphoreHandle_t xPidRequestSemaphoreCounting = NULL;
     esp_err_t setPidSuppStatus(uint8_t groupIndex, bool supported);
 
     esp_err_t queryMsg(uint32_t id, uint8_t mode, uint8_t pid, uint8_t len = 0x02);
@@ -81,6 +87,7 @@ private:
     void handleCanConnected();
     void handleCanDisconnected();
     SemaphoreHandle_t xBusConnectionSemaphore = NULL;
+    SemaphoreHandle_t xRequestNextPIDSemaphore = NULL;
 
     // Frame Parsing
     esp_err_t parseCurrentData(const CanDriver::CanFrame &f);

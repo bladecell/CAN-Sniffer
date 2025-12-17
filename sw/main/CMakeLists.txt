@@ -4,5 +4,6 @@ idf_component_register(
     SRCS ${SRC_FILES}
     INCLUDE_DIRS "include"
     REQUIRES driver
-    REQUIRES esp_driver_twai
+    REQUIRES can_driver wifi
+    PRIV_REQUIRES esp_http_server
 )

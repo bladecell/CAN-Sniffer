@@ -15,7 +15,7 @@
 #include "led_status.hpp"
 #include "obd2.hpp"
 
-#define DEBUG_MODE 0
+#define DEBUG_MODE 1
 
 static const char *TAG = "APP_MAIN";
 static LedError led(LED_GPIO);
@@ -26,9 +26,17 @@ extern "C" void app_main(void)
     esp_log_level_set("*", ESP_LOG_DEBUG);
     led.init();
 
-    CanDriver canDriver(CanDriver::Bitrate::BITRATE_500K, CAN_TX_GPIO, CAN_RX_GPIO, CAN_LBK_GPIO, DEBUG_MODE);
+    CanDriver::Config config = {
+        .bitrate = CanDriver::Bitrate::BITRATE_500K,
+        .tx_pin = CAN_TX_GPIO,
+        .rx_pin = CAN_RX_GPIO,
+        .lbk_pin = CAN_LBK_GPIO,
+        .debug = DEBUG_MODE,
+    };
 
-    if (!canDriver.isInitialized())
+    CanDriver::getInstance().init(config);
+
+    if (!CanDriver::getInstance().isInitialized())
     {
         led.error();
         return;
@@ -46,11 +54,12 @@ extern "C" void app_main(void)
 
     led.blink(2);
 
-    OBD2 obd2(canDriver);
+    OBD2 &obd2 = OBD2::getInstance();
+
     vTaskDelay(pdMS_TO_TICKS(2000));
     for (;;)
     {
-        if (!canDriver.isBusConnected() || !obd2.isPidInit())
+        if (!CanDriver::getInstance().isBusConnected() || !obd2.isPidInit())
         {
             ESP_LOGW(TAG, "CAN bus is not connected or PID not initialized");
             led.blink(1);

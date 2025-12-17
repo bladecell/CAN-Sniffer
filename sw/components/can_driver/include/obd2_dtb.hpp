@@ -10,7 +10,6 @@
 #include "freertos/FreeRTOS.h"
 
 #include "obd2_utils.hpp"
-#include "utilities.h"
 
 class OBD2DTB
 {
