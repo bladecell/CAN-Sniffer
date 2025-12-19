@@ -23,6 +23,10 @@
 #include "esp_log.h"
 #include "esp_err.h"
 #include "nvs_flash.h"
+#include "mdns.h"
+
+#define HOSTNAME "can-sniffer"
+#define MDNS_INSTANCE "ESP32 CAN Sniffer"
 
 class WIFI
 {
@@ -103,6 +107,8 @@ private:
     void handleClientDisconnected(wifi_event_ap_stadisconnected_t *event);
     void handleAPStart();
     void handleAPStop();
+
+    esp_err_t start_mdns_service();
 
     // State management
     void setState(State state);

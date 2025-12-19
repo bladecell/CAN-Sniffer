@@ -15,7 +15,7 @@
 #include "led_status.hpp"
 #include "obd2.hpp"
 
-#define DEBUG_MODE 1
+#define DEBUG_MODE 0
 
 static const char *TAG = "APP_MAIN";
 static LedError led(LED_GPIO);
@@ -23,6 +23,7 @@ static LedError led(LED_GPIO);
 // ----- app_main --------------------------------------------------------------
 extern "C" void app_main(void)
 {
+
     esp_log_level_set("*", ESP_LOG_DEBUG);
     led.init();
 
@@ -31,7 +32,9 @@ extern "C" void app_main(void)
         .tx_pin = CAN_TX_GPIO,
         .rx_pin = CAN_RX_GPIO,
         .lbk_pin = CAN_LBK_GPIO,
+        .rs_pin = CAN_RS_GPIO,
         .debug = DEBUG_MODE,
+        .rs_mode = CanDriver::RS_MODE::HIGH_SPEED,
     };
 
     CanDriver::getInstance().init(config);

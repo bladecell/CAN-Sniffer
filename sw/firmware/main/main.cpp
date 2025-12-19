@@ -4,6 +4,7 @@
 #include <string>
 #include "esp_http_server.h"
 #include "web_assets.h"
+#include "mdns.h"
 
 static const char *TAG = "APP_MAIN";
 

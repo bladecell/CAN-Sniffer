@@ -52,15 +52,23 @@ public:
         CONNECTED = 40
     };
 
+    enum class RS_MODE
+    {
+        HIGH_SPEED = 0,
+        SLOPE_CONTROL = 1,
+    };
+
     bool debug_mode;
 
     struct Config
     {
-        Bitrate bitrate = Bitrate::BITRATE_500K;
-        gpio_num_t tx_pin = GPIO_NUM_5;
-        gpio_num_t rx_pin = GPIO_NUM_4;
-        gpio_num_t lbk_pin = GPIO_NUM_6;
+        Bitrate bitrate;
+        gpio_num_t tx_pin;
+        gpio_num_t rx_pin;
+        gpio_num_t lbk_pin;
+        gpio_num_t rs_pin;
         bool debug = false;
+        RS_MODE rs_mode = RS_MODE::HIGH_SPEED;
         uint32_t tx_queue_depth = 20U;
         size_t rx_queue_size = 20;
     };

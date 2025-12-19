@@ -1,0 +1,63 @@
+# ESP-IDF build output
+build/
+*.bin
+*.elf
+*.map
+
+# Dependencies and managed components
+dependencies.lock
+managed_components/
+
+# Python virtual environment (if using)
+venv/
+.venv/
+env/
+ENV/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# IDE and editor files
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# CMake
+CMakeFiles/
+
+# Flash download tool logs
+flash_project_args
+
+# Core dumps
+*.core
+
+# OS files
+Thumbs.db
+.directory
+
+# Logs
+*.log
+
+# Certificates and keys (if you have any)
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Test coverage
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover

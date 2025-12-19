@@ -49,6 +49,10 @@ esp_err_t CanDriver::init(const Config &config)
 
     esp_err_t ret;
 
+    gpio_reset_pin(config.rs_pin);
+    gpio_set_direction(config.rs_pin, GPIO_MODE_OUTPUT);
+    gpio_set_level(config.rs_pin, static_cast<uint32_t>(config.rs_mode));
+
     setDebugMode(config.debug);
 
     // Create RX Queue
@@ -305,7 +309,7 @@ bool IRAM_ATTR CanDriver::twai_state_change_cb(twai_node_handle_t handle,
 
     if (edata->new_sta == TWAI_ERROR_ACTIVE)
     {
-        ESP_EARLY_LOGI(TAG, "CAN bus connected - node recovered");
+        ESP_EARLY_LOGI(TAG, "CAN bus on - node recovered");
         driver->canState.store(STATE::NOT_CONNECTED);
         if (driver->healthCheckTaskHandle != nullptr)
         {

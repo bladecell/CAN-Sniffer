@@ -114,7 +114,32 @@ esp_err_t WIFI::start()
     ESP_LOGI(TAG, "WiFi AP starting - SSID: %s, Channel: %d",
              m_config.ssid.c_str(), m_config.channel);
 
+    ret = start_mdns_service();
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "mDNS service start failed: %s", esp_err_to_name(ret));
+        setState(State::ERROR);
+        return ret;
+    }
+
     return ESP_OK;
+}
+
+esp_err_t WIFI::start_mdns_service()
+{
+    // initialize mDNS service
+    esp_err_t err = mdns_init();
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+
+    // set hostname
+    mdns_hostname_set(HOSTNAME);
+    // set default instance
+    mdns_instance_name_set(MDNS_INSTANCE);
+
+    return err;
 }
 
 esp_err_t WIFI::stop()
