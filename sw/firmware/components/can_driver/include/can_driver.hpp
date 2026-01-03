@@ -14,7 +14,7 @@
 
 #define HEALTH_CHECK_TASK_PRIO 3 // Periodic monitoring
 
-#define CORE_ID_CAN_TASKS 0
+#define CORE_ID_CAN_TASKS 1
 #define MIN_TRANSMIT_PERIOD_MS 8 // Minimum time between consecutive transmissions in milliseconds
 #define HEALTHCHECK_PING_PERIOD_MS 2000
 
@@ -157,7 +157,7 @@ private:
     std::atomic<uint32_t> consecutiveStuffErrors = 1;
     std::atomic<uint32_t> consecutiveAckErrors = 1;
     void healthCheckTask();
-    std::atomic<STATE> canState = STATE::NOT_INITIALIZED;
+    std::atomic<STATE> canState;
     static void healthCheckTaskWrapper(void *param);
     TaskHandle_t healthCheckTaskHandle = nullptr;
 };

@@ -5,7 +5,13 @@
 
 static const char *TAG = "CAN_DRIVER";
 
-CanDriver::CanDriver() {}
+CanDriver::CanDriver()
+{
+    canState.store(STATE::NOT_INITIALIZED);
+    healthCheckTaskHandle = nullptr;
+    rxQueue = nullptr;
+    nodeHdl = NULL;
+}
 
 CanDriver::~CanDriver()
 {
@@ -120,6 +126,7 @@ esp_err_t CanDriver::init(const Config &config)
     }
     // Initialization successful
     canState.store(STATE::NOT_CONNECTED);
+    vTaskDelay(pdMS_TO_TICKS(10));
     xTaskNotifyGive(healthCheckTaskHandle);
     return ESP_OK;
 }
@@ -407,6 +414,8 @@ esp_err_t CanDriver::flushRxQueue()
 
 esp_err_t CanDriver::pingBus()
 {
+    if (nodeHdl == NULL)
+        return ESP_FAIL;
 
     uint8_t txData[1] = {0x00};
     twai_frame_t tx = {};
@@ -424,13 +433,7 @@ esp_err_t CanDriver::pingBus()
     tx.buffer = txData;
     tx.buffer_len = sizeof(txData);
 
-    esp_err_t ret = twai_node_transmit(nodeHdl, &tx, 0);
-    if (ret != ESP_OK)
-    {
-        return ret;
-    }
-
-    return ESP_OK;
+    return twai_node_transmit(nodeHdl, &tx, 0);
 }
 
 void CanDriver::healthCheckTaskWrapper(void *param)
@@ -443,6 +446,12 @@ void CanDriver::healthCheckTask()
 {
     STATE prevState = STATE::NOT_INITIALIZED;
     uint8_t successfulPingsCount = 0;
+
+    // Initial Wait Barrier
+    // This ensures the task sits idle until init() calls xTaskNotifyGive()
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+    vTaskDelay(pdMS_TO_TICKS(50));
 
     while (true)
     {

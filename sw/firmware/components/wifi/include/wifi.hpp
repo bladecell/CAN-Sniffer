@@ -24,19 +24,19 @@
 #include "esp_err.h"
 #include "nvs_flash.h"
 #include "mdns.h"
+#include "esp_check.h"
 
 #define HOSTNAME "can-sniffer"
 #define MDNS_INSTANCE "ESP32 CAN Sniffer"
 
+// TODO Wifi Connected and disconnected callbacks
+
 class WIFI
 {
 public:
-    using ClientConnectCallback = std::function<void(const uint8_t *mac, uint8_t aid)>;
-    using ClientDisconnectCallback = std::function<void(const uint8_t *mac, uint8_t aid)>;
-    using APStartCallback = std::function<void()>;
-
     struct Config
     {
+        // AP settings
         std::string ssid;
         std::string password;
         uint8_t channel = 6;
@@ -45,6 +45,15 @@ public:
         bool ssid_hidden = false;
         bool pmf_required = true;
         uint32_t gtk_rekey_interval = 86400;
+
+        // STA settings
+        std::string sta_ssid = "";
+        std::string sta_password = "";
+        wifi_auth_mode_t sta_auth_mode = WIFI_AUTH_WPA2_PSK;
+
+        // Mode Selection
+        wifi_mode_t mode = WIFI_MODE_AP; // WIFI_MODE_AP, WIFI_MODE_STA, or WIFI_MODE_APSTA
+        uint8_t sta_max_retry = 5;
     };
 
     enum class State
@@ -54,7 +63,9 @@ public:
         STARTING,
         RUNNING,
         STOPPING,
-        ERROR
+        ERROR,
+        STA_CONNECTING,
+        STA_DISCONNECTED
     };
 
     struct ClientInfo
@@ -63,6 +74,12 @@ public:
         uint8_t aid;
         uint32_t connect_time;
     };
+
+    using ClientConnectCallback = std::function<void(const uint8_t *mac, uint8_t aid)>;
+    using ClientDisconnectCallback = std::function<void(const uint8_t *mac, uint8_t aid)>;
+    using APStartCallback = std::function<void()>;
+    using StaConnectedCallback = std::function<void(std::string ip)>;
+    using StaDisconnectedCallback = std::function<void()>;
 
     WIFI();
     ~WIFI();
@@ -77,12 +94,15 @@ public:
     esp_err_t init(const Config &config);
     esp_err_t start();
     esp_err_t stop();
+    esp_err_t switchToAP();
     void deinit();
 
     // Status
     State getState() const { return m_state; }
     bool isRunning() const { return m_state == State::RUNNING; }
-    std::string getIP() const;
+
+    std::string getApIP() const;
+    std::string getStaIP() const;
     std::string getSSID() const { return m_config.ssid; }
 
     // Client management
@@ -94,6 +114,8 @@ public:
     void onClientConnected(ClientConnectCallback callback);
     void onClientDisconnected(ClientDisconnectCallback callback);
     void onAPStarted(APStartCallback callback);
+    void onStaConnected(StaConnectedCallback callback);
+    void onStaDisconnected(StaDisconnectedCallback callback);
 
 private:
     WIFI(const WIFI &) = delete;
@@ -102,11 +124,17 @@ private:
     static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                                    int32_t event_id, void *event_data);
 
+    static void ip_event_handler(void *arg, esp_event_base_t event_base,
+                                 int32_t event_id, void *event_data);
+
     // Internal handlers
     void handleClientConnected(wifi_event_ap_staconnected_t *event);
     void handleClientDisconnected(wifi_event_ap_stadisconnected_t *event);
     void handleAPStart();
     void handleAPStop();
+    void handleStaConnected();
+    void handleStaDisconnected();
+    void handleStaGotIP(ip_event_got_ip_t *event);
 
     esp_err_t start_mdns_service();
 
@@ -120,21 +148,27 @@ private:
     State m_state;
 
     // Network interface
-    esp_netif_t *m_netif;
+    esp_netif_t *m_netif_ap;
+    esp_netif_t *m_netif_sta;
 
     // Event handlers
     esp_event_handler_instance_t m_wifi_event_handler;
+    esp_event_handler_instance_t m_ip_event_handler;
 
     // Callbacks
     std::vector<ClientConnectCallback> m_connect_callbacks;
     std::vector<ClientDisconnectCallback> m_disconnect_callbacks;
     std::vector<APStartCallback> m_start_callbacks;
+    std::vector<StaConnectedCallback> m_sta_connected_callbacks;
+    std::vector<StaDisconnectedCallback> m_sta_disconnected_callbacks;
 
     // Client tracking
     std::vector<ClientInfo> m_clients;
 
     // Synchronization
     mutable SemaphoreHandle_t m_mutex;
+
+    uint8_t m_retry_count = 0;
 
     // Helper methods
     void addClient(const uint8_t *mac, uint8_t aid);

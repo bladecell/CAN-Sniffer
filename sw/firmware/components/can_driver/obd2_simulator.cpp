@@ -18,7 +18,7 @@ void start_sim_task(CanDriver *driver)
         (void *)driver,
         tskIDLE_PRIORITY + 2,
         &xDataSimTaskHandle,
-        1);
+        CORE_ID_CAN_TASKS);
 
     if (result != pdPASS)
     {

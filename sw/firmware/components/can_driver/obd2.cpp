@@ -24,7 +24,6 @@ OBD2::OBD2()
       xBusConnectionSemaphore(xSemaphoreCreateBinary()),
       xRequestNextPIDSemaphore(xSemaphoreCreateBinary())
 {
-    init();
 }
 
 OBD2::~OBD2()
