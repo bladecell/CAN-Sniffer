@@ -43,6 +43,8 @@ public:
         void *arg;
     };
 
+    static inline const char *get_method_str(int method);
+
     esp_err_t queue_request(httpd_req_t *req);
     static esp_err_t async_handler(httpd_req_t *req);
 

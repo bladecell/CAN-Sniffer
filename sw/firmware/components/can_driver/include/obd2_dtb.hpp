@@ -4,6 +4,7 @@
 #include <math.h>
 #include <vector>
 #include <algorithm>
+#include <functional>
 
 #include "esp_err.h"
 #include "esp_log.h"
@@ -44,14 +45,25 @@ public:
     esp_err_t clearDTC(uint8_t mode);
     std::string decodeDTC(uint16_t rawDTC);
 
+    const std::map<uint8_t, PIDDef_t> &getPID_DEF() const
+    {
+        return this->PID_DEF;
+    }
+
+    uint32_t getPIDDataSize() const
+    {
+        return pidData.size();
+    }
+
     // PID Definitions and Data Storage
-    static const std::map<uint8_t, PIDInfo_t> PID_DEF;
+    static const std::map<uint8_t, PIDDef_t> PID_DEF;
     std::map<uint8_t, PIDData_t> pidData;
     VINData_t vinData;
     DTCData_t dtcData;
 
     esp_err_t updateData(const CanDriver::CanFrame &frame);
     esp_err_t getData(uint8_t pid, PIDData_t &pd) const;
+    esp_err_t getDef(uint8_t pid, PIDDef_t &pi) const;
 
     void generatePollingGroups();
     std::vector<uint8_t> vGroupFast;

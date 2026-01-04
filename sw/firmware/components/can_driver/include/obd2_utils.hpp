@@ -84,7 +84,7 @@ typedef enum
     UPDATE_SLOW = 4096,
 } UpdateRate;
 
-struct PIDInfo_t
+struct PIDDef_t
 {
     uint8_t mode;
     uint8_t pid;

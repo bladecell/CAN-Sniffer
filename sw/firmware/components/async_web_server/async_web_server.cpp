@@ -97,7 +97,7 @@ void AsyncWebServer::registerRoute(const char *uri, httpd_method_t method, Async
 
 esp_err_t AsyncWebServer::async_handler(httpd_req_t *req)
 {
-    ESP_LOGI(TAG, "uri: %s", req->uri);
+    ESP_LOGI(TAG, "%s uri: %s", get_method_str(req->method), req->uri);
 
     // add to the async request queue
     if (AsyncWebServer::getInstance().queue_request(req) == ESP_OK)
@@ -242,4 +242,25 @@ esp_err_t AsyncWebServer::start_workers(uint8_t num_workers, uint32_t stack_size
     }
 
     return ESP_OK;
+}
+
+inline const char *AsyncWebServer::get_method_str(int method)
+{
+    switch (method)
+    {
+    case HTTP_GET:
+        return "GET";
+    case HTTP_POST:
+        return "POST";
+    case HTTP_PUT:
+        return "PUT";
+    case HTTP_DELETE:
+        return "DELETE";
+    case HTTP_HEAD:
+        return "HEAD";
+    case HTTP_PATCH:
+        return "PATCH";
+    default:
+        return "UNKNOWN";
+    }
 }

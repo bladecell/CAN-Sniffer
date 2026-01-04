@@ -45,6 +45,7 @@ public:
 
     void startContinuousMode();
     void stopContinuousMode();
+    bool isContinuousRunning() const;
 
     void requestSuppPids();
     esp_err_t requestVIN();

@@ -61,6 +61,8 @@ esp_err_t CanDriver::init(const Config &config)
 
     setDebugMode(config.debug);
 
+    this->m_config = config;
+
     // Create RX Queue
     rxQueue = xQueueCreate(RX_QUEUE_SIZE, sizeof(CanDriver::CanFrame));
     if (rxQueue == nullptr)

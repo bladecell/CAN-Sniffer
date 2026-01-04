@@ -219,6 +219,11 @@ void OBD2::pollTaskWrapper(void *param)
     obd2->pollTask();
 }
 
+bool OBD2::isContinuousRunning() const
+{
+    return continuousRunning;
+}
+
 void OBD2::startContinuousMode()
 {
     if (continuousRunning)

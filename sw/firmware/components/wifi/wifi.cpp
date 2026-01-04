@@ -24,10 +24,10 @@ WIFI::WIFI()
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
     {
-        ESP_ERROR_CHECK(nvs_flash_erase());
+        ERROR_CHECK(nvs_flash_erase(), "Failed to erase NVS flash", setState(State::ERROR));
         ret = nvs_flash_init();
     }
-    ESP_ERROR_CHECK(ret);
+    ERROR_CHECK(ret, "Failed to initialize NVS", setState(State::ERROR));
 }
 
 WIFI::~WIFI()
@@ -49,15 +49,15 @@ esp_err_t WIFI::init(const Config &config)
 
     m_config = config;
 
-    ESP_ERROR_CHECK(esp_netif_init());
-    esp_err_t err = esp_event_loop_create_default();
-    if (err == ESP_ERR_INVALID_STATE)
+    ERROR_CHECK(esp_netif_init(), "Failed to initialize netif", return ESP_ERR_INVALID_STATE);
+    esp_err_t ret = esp_event_loop_create_default();
+    if (ret == ESP_ERR_INVALID_STATE)
     {
         ESP_LOGW(TAG, "Event loop already exists (skipping creation)");
     }
     else
     {
-        ESP_ERROR_CHECK(err);
+        ERROR_CHECK(ret, "Failed to create event loop", return ESP_ERR_INVALID_STATE);
     }
 
     if (m_config.mode == WIFI_MODE_AP || m_config.mode == WIFI_MODE_APSTA)
@@ -71,25 +71,17 @@ esp_err_t WIFI::init(const Config &config)
     }
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    esp_err_t ret = esp_wifi_init(&cfg);
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG, "WiFi init failed: %s", esp_err_to_name(ret));
-        setState(State::ERROR);
-        return ret;
-    }
+    ret = esp_wifi_init(&cfg);
+
+    ERROR_CHECK(ret, "WiFi init failed", goto err);
 
     ret = esp_event_handler_instance_register(WIFI_EVENT,
                                               ESP_EVENT_ANY_ID,
                                               &wifi_event_handler,
                                               this,
                                               &m_wifi_event_handler);
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Event handler registration failed");
-        setState(State::ERROR);
-        return ret;
-    }
+
+    ERROR_CHECK(ret, "Failed to register WIFI event handlers", goto err);
 
     ret = esp_event_handler_instance_register(IP_EVENT,
                                               IP_EVENT_STA_GOT_IP,
@@ -97,16 +89,39 @@ esp_err_t WIFI::init(const Config &config)
                                               this,
                                               &m_ip_event_handler);
 
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Event handler registration failed");
-        setState(State::ERROR);
-        return ret;
-    }
+    ERROR_CHECK(ret, "Failed to register IP event handlers", goto err);
 
     setState(State::INITIALIZED);
     ESP_LOGI(TAG, "WiFi AP Manager initialized");
     return ESP_OK;
+
+err:
+    setState(State::ERROR);
+    return ret;
+}
+
+esp_err_t WIFI::setAPConfig()
+{
+    wifi_config_t ap_config = {};
+    strncpy((char *)ap_config.ap.ssid, m_config.ssid.c_str(), sizeof(ap_config.ap.ssid));
+    strncpy((char *)ap_config.ap.password, m_config.password.c_str(), sizeof(ap_config.ap.password));
+    ap_config.ap.ssid_len = m_config.ssid.length();
+    ap_config.ap.channel = m_config.channel;
+    ap_config.ap.authmode = m_config.auth_mode;
+    ap_config.ap.ssid_hidden = m_config.ssid_hidden ? 1 : 0;
+    ap_config.ap.max_connection = m_config.max_connections;
+    ap_config.ap.pmf_cfg.required = m_config.pmf_required;
+    ap_config.ap.gtk_rekey_interval = m_config.gtk_rekey_interval;
+    return esp_wifi_set_config(WIFI_IF_AP, &ap_config);
+}
+
+esp_err_t WIFI::setSTAConfig()
+{
+    wifi_config_t sta_config = {};
+    strncpy((char *)sta_config.sta.ssid, m_config.sta_ssid.c_str(), sizeof(sta_config.sta.ssid));
+    strncpy((char *)sta_config.sta.password, m_config.sta_password.c_str(), sizeof(sta_config.sta.password));
+    sta_config.sta.threshold.authmode = m_config.sta_auth_mode;
+    return esp_wifi_set_config(WIFI_IF_STA, &sta_config);
 }
 
 esp_err_t WIFI::start()
@@ -119,45 +134,24 @@ esp_err_t WIFI::start()
 
     setState(State::STARTING);
 
-    ESP_ERROR_CHECK(esp_wifi_set_mode(m_config.mode));
+    ERROR_CHECK(esp_wifi_set_mode(m_config.mode), "Failed to set WiFi mode", goto err);
 
     // Configure AP
     if (m_config.mode == WIFI_MODE_AP || m_config.mode == WIFI_MODE_APSTA)
     {
-        wifi_config_t ap_config = {};
-        strncpy((char *)ap_config.ap.ssid, m_config.ssid.c_str(), sizeof(ap_config.ap.ssid));
-        strncpy((char *)ap_config.ap.password, m_config.password.c_str(), sizeof(ap_config.ap.password));
-        ap_config.ap.ssid_len = m_config.ssid.length();
-        ap_config.ap.channel = m_config.channel;
-        ap_config.ap.authmode = m_config.auth_mode;
-        ap_config.ap.ssid_hidden = m_config.ssid_hidden ? 1 : 0;
-        ap_config.ap.max_connection = m_config.max_connections;
-        ap_config.ap.pmf_cfg.required = m_config.pmf_required;
-        ap_config.ap.gtk_rekey_interval = m_config.gtk_rekey_interval;
-
-        ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
+        ERROR_CHECK(setAPConfig(), "Failed to set AP config", goto err);
         ESP_LOGI(TAG, "Configured AP Mode: %s", m_config.ssid.c_str());
     }
 
     // Configure STA
     if (m_config.mode == WIFI_MODE_STA || m_config.mode == WIFI_MODE_APSTA)
     {
-        wifi_config_t sta_config = {};
-        strncpy((char *)sta_config.sta.ssid, m_config.sta_ssid.c_str(), sizeof(sta_config.sta.ssid));
-        strncpy((char *)sta_config.sta.password, m_config.sta_password.c_str(), sizeof(sta_config.sta.password));
-        sta_config.sta.threshold.authmode = m_config.sta_auth_mode;
 
-        ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &sta_config));
+        ERROR_CHECK(setSTAConfig(), "Failed to set STA config", goto err);
         ESP_LOGI(TAG, "Configured STA Mode: %s", m_config.sta_ssid.c_str());
     }
 
-    esp_err_t ret = esp_wifi_start();
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG, "WiFi start failed");
-        setState(State::ERROR);
-        return ret;
-    }
+    ERROR_CHECK(esp_wifi_start(), "Failed to start WiFi", goto err);
 
     // Connect if STA mode is active
     if (m_config.mode == WIFI_MODE_STA || m_config.mode == WIFI_MODE_APSTA)
@@ -174,13 +168,12 @@ esp_err_t WIFI::start()
                  m_config.ssid.c_str(), m_config.channel);
     }
 
-    ret = start_mdns_service();
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG, "mDNS failed: %s", esp_err_to_name(ret));
-    }
+    ERROR_CHECK(start_mdns_service(), "mDNS failed", goto err);
 
     return ESP_OK;
+err:
+    setState(State::ERROR);
+    return ESP_FAIL;
 }
 
 esp_err_t WIFI::start_mdns_service()
@@ -390,27 +383,16 @@ esp_err_t WIFI::switchToAP()
         return ret;
     }
 
-    wifi_config_t ap_config = {};
-    strncpy((char *)ap_config.ap.ssid, m_config.ssid.c_str(), sizeof(ap_config.ap.ssid));
-    ap_config.ap.ssid_len = m_config.ssid.length();
-    ap_config.ap.channel = m_config.channel;
-    ap_config.ap.authmode = WIFI_AUTH_OPEN;
-    ap_config.ap.max_connection = m_config.max_connections;
+    ERROR_CHECK(setAPConfig(), "Failed to set AP config", goto err);
 
-    if (esp_err_t ret = esp_wifi_set_config(WIFI_IF_AP, &ap_config) != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Failed to set WiFi mode: %s", esp_err_to_name(ret));
-        return ret;
-    }
+    ERROR_CHECK(start(), "Failed to start AP", goto err);
 
-    esp_err_t ret = start();
+    setState(State::RUNNING);
 
-    if (ret == ESP_OK)
-    {
-        setState(State::RUNNING);
-    }
-
-    return ret;
+    return ESP_OK;
+err:
+    setState(State::ERROR);
+    return ESP_FAIL;
 }
 
 void WIFI::onClientConnected(ClientConnectCallback callback) { m_connect_callbacks.push_back(callback); }

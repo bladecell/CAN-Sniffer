@@ -29,10 +29,11 @@ esp_err_t setup_wifi()
 {
     // Configure
     WIFI::Config config;
-    config.ssid = "ESP32-AP";
-    config.password = "mypassword";
+    config.ssid = "CAN-SNIFFER-AP";
+    config.password = "";
     config.channel = 6;
     config.max_connections = 4;
+    config.auth_mode = WIFI_AUTH_OPEN;
     config.mode = WIFI_MODE_STA;
     config.sta_ssid = WIFI_SSID;
     config.sta_password = WIFI_PASSWORD;

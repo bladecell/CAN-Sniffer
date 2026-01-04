@@ -47,9 +47,9 @@ public:
     enum class STATE
     {
         NOT_INITIALIZED = 0,
-        BUS_OFF = 10,
-        NOT_CONNECTED = 20,
-        CONNECTED = 40
+        BUS_OFF = 1,
+        NOT_CONNECTED = 2,
+        CONNECTED = 3
     };
 
     enum class RS_MODE
@@ -91,6 +91,11 @@ public:
         return canState.load() == STATE::CONNECTED;
     }
 
+    STATE getState() const
+    {
+        return canState.load();
+    }
+
     void setDebugMode(bool enable);
 
     esp_err_t init(const Config &config);
@@ -106,6 +111,16 @@ public:
     size_t availableMessages();
 
     esp_err_t flushRxQueue();
+
+    twai_onchip_node_config_t getNodeConfig() const
+    {
+        return nodeConfig;
+    }
+
+    Config getConfig() const
+    {
+        return m_config;
+    }
 
     typedef void (*ConnectionCallback)(void *arg, bool connected);
     void setConnectionCallback(ConnectionCallback callback, void *arg);
@@ -147,6 +162,7 @@ private:
     twai_node_handle_t nodeHdl;
     twai_node_record_t nodeRecord{};
     gpio_num_t LBK_PIN;
+    Config m_config{};
 
     // RX Queue
     QueueHandle_t rxQueue;

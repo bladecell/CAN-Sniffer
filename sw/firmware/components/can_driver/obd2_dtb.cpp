@@ -35,9 +35,9 @@ void OBD2DTB::initDef()
     };
 };
 
-const std::map<uint8_t, PIDInfo_t> OBD2DTB::PID_DEF = {
+const std::map<uint8_t, PIDDef_t> OBD2DTB::PID_DEF = {
     {PID_ENGINE_LOAD,
-     PIDInfo_t{
+     PIDDef_t{
          .mode = MODE_CURRENT_DATA,
          .pid = PID_ENGINE_LOAD,
          .name = "Engine Load",
@@ -49,7 +49,7 @@ const std::map<uint8_t, PIDInfo_t> OBD2DTB::PID_DEF = {
          .priority = 2,
          .updateInterval_ms = UPDATE_FAST}},
     {PID_COOLANT_TEMP,
-     PIDInfo_t{
+     PIDDef_t{
          .mode = MODE_CURRENT_DATA,
          .pid = PID_COOLANT_TEMP,
          .name = "Coolant Temp",
@@ -61,7 +61,7 @@ const std::map<uint8_t, PIDInfo_t> OBD2DTB::PID_DEF = {
          .priority = 3,
          .updateInterval_ms = UPDATE_SLOW}},
     {PID_ENGINE_RPM,
-     PIDInfo_t{
+     PIDDef_t{
          .mode = MODE_CURRENT_DATA,
          .pid = PID_ENGINE_RPM,
          .name = "Engine RPM",
@@ -91,6 +91,20 @@ esp_err_t OBD2DTB::getData(uint8_t pid, PIDData_t &pd) const
     }
     xSemaphoreGive(pidData.at(pid).mtx_);
     return it != pidData.end() ? ESP_OK : ESP_ERR_NOT_FOUND;
+}
+
+esp_err_t OBD2DTB::getDef(uint8_t pid, PIDDef_t &pi) const
+{
+    if (!pidExists(pid))
+    {
+        return ESP_ERR_NOT_FOUND;
+    }
+    auto it = PID_DEF.find(pid);
+    if (it != PID_DEF.end())
+    {
+        pi = it->second;
+    }
+    return it != PID_DEF.end() ? ESP_OK : ESP_ERR_NOT_FOUND;
 }
 
 void OBD2DTB::generatePollingGroups()
