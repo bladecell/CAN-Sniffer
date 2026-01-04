@@ -1,11 +1,11 @@
 #include "middleware.hpp"
 #include "esp_check.h"
 
-cJSON *get_single_pid_json(uint8_t pid, const PIDDef_t &pi)
+cJSON *get_single_pid_def_json(const PIDDef_t &pi)
 {
     cJSON *item = cJSON_CreateObject();
 
-    cJSON_AddNumberToObject(item, "pid", pid);
+    cJSON_AddNumberToObject(item, "pid", pi.pid);
     cJSON_AddNumberToObject(item, "mode", pi.mode);
     cJSON_AddStringToObject(item, "name", pi.name ? pi.name : "");
     cJSON_AddStringToObject(item, "unit", pi.unit ? pi.unit : "");
@@ -18,7 +18,40 @@ cJSON *get_single_pid_json(uint8_t pid, const PIDDef_t &pi)
     return item;
 }
 
-cJSON *m_pid_data_json(int filter_id)
+cJSON *get_single_pid_data_json(uint8_t pid, const PIDData_t &pd)
+{
+    uint32_t id, lastUpdated, updateInterval;
+    float value;
+    bool isSupported, isValid;
+
+    if (xSemaphoreTake(pd.mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
+    {
+        return nullptr;
+    }
+
+    id = pd.id;
+    value = pd.value;
+    lastUpdated = pd.lastUpdated;
+    isSupported = pd.isSupported;
+    isValid = pd.isValid;
+    updateInterval = pd.updateInterval_ms;
+
+    xSemaphoreGive(pd.mtx_);
+
+    cJSON *item = cJSON_CreateObject();
+
+    cJSON_AddNumberToObject(item, "id", id);
+    cJSON_AddNumberToObject(item, "pid", pid);
+    cJSON_AddNumberToObject(item, "value", value);
+    cJSON_AddNumberToObject(item, "lastUpdated", lastUpdated);
+    cJSON_AddBoolToObject(item, "isSupported", isSupported);
+    cJSON_AddBoolToObject(item, "isValid", isValid);
+    cJSON_AddNumberToObject(item, "update_interval_ms", updateInterval);
+
+    return item;
+}
+
+cJSON *m_pid_def_json(int filter_id)
 {
     cJSON *root = cJSON_CreateObject();
     cJSON *data_array = cJSON_CreateArray();
@@ -31,7 +64,7 @@ cJSON *m_pid_data_json(int filter_id)
 
         if (it != pids.end())
         {
-            cJSON *item = get_single_pid_json(it->first, it->second);
+            cJSON *item = get_single_pid_def_json(it->second);
             if (item)
             {
                 cJSON_AddItemToArray(data_array, item);
@@ -43,7 +76,7 @@ cJSON *m_pid_data_json(int filter_id)
     {
         for (const auto &pair : OBD2::getInstance().getPID_DEF())
         {
-            cJSON *item = get_single_pid_json(pair.first, pair.second);
+            cJSON *item = get_single_pid_def_json(pair.second);
             if (item)
             {
                 cJSON_AddItemToArray(data_array, item);
@@ -58,10 +91,43 @@ cJSON *m_pid_data_json(int filter_id)
     return root;
 }
 
-cJSON *m_pid_poll_json()
+cJSON *m_pid_data_json(int filter_id)
 {
     cJSON *root = cJSON_CreateObject();
-    cJSON_AddBoolToObject(root, "running", OBD2::getInstance().isContinuousRunning());
+    cJSON *data_array = cJSON_CreateArray();
+    int count = 0;
+
+    if (filter_id >= 0)
+    {
+        const auto &pids = OBD2::getInstance().getPidData();
+        auto it = pids.find((uint8_t)filter_id);
+
+        if (it != pids.end())
+        {
+            cJSON *item = get_single_pid_data_json((uint8_t)it->first, it->second);
+            if (item)
+            {
+                cJSON_AddItemToArray(data_array, item);
+                count++;
+            }
+        }
+    }
+    else
+    {
+        for (const auto &pair : OBD2::getInstance().getPidData())
+        {
+            cJSON *item = get_single_pid_data_json((uint8_t)pair.first, pair.second);
+            if (item)
+            {
+                cJSON_AddItemToArray(data_array, item);
+                count++;
+            }
+        }
+    }
+
+    cJSON_AddItemToObject(root, "data", data_array);
+    cJSON_AddNumberToObject(root, "count", count);
+
     return root;
 }
 
@@ -106,4 +172,103 @@ cJSON *m_can_bus_json()
     cJSON_AddItemToObject(root, "node_status", node_status);
 
     return root;
+}
+
+cJSON *m_obdii_json()
+{
+    cJSON *root = cJSON_CreateObject();
+
+    // Add OBD-II information to the JSON object
+    cJSON_AddBoolToObject(root, "continuous_running", OBD2::getInstance().isContinuousRunning());
+    cJSON_AddBoolToObject(root, "pid_initialized", OBD2::getInstance().isPidInit());
+    cJSON_AddNumberToObject(root, "pid_def_count", OBD2::getInstance().getPIDDEFSize());
+    cJSON_AddNumberToObject(root, "pid_data_count", OBD2::getInstance().getPIDDataSize());
+
+    return root;
+}
+
+cJSON *m_vin_json()
+{
+    cJSON *root = cJSON_CreateObject();
+
+    cJSON_AddStringToObject(root, "vin", OBD2::getInstance().getVIN().c_str());
+
+    return root;
+}
+
+cJSON *m_dtc_json(int mode)
+{
+    cJSON *root = cJSON_CreateObject();
+    cJSON *items = cJSON_CreateArray();
+    int global_count = 0;
+
+    auto add_dtc_section = [&](int target_mode, const char *name)
+    {
+        if (mode == -1 || mode == target_mode)
+        {
+            global_count++;
+
+            cJSON *item = cJSON_CreateObject();
+            cJSON *section = cJSON_CreateArray();
+            int dtc_count = 0;
+
+            std::vector<std::string> dtc = OBD2::getInstance().getDTC(static_cast<uint8_t>(target_mode));
+
+            for (const auto &d : dtc)
+            {
+                cJSON_AddItemToArray(section, cJSON_CreateString(d.c_str()));
+                dtc_count++;
+            }
+
+            cJSON_AddNumberToObject(item, "mode", target_mode);
+            cJSON_AddStringToObject(item, "type", name);
+            cJSON_AddItemToObject(item, "dtc", section);
+            cJSON_AddNumberToObject(item, "dtc_count", dtc_count);
+
+            cJSON_AddItemToArray(items, item);
+        }
+    };
+
+    add_dtc_section(MODE_DTCS, "confirmed_dtcs");
+    add_dtc_section(MODE_PENDING_DTCS, "pending_dtcs");
+    add_dtc_section(MODE_PERMANENT_DTCS, "permanent_dtcs");
+
+    cJSON_AddItemToObject(root, "dtcs", items);
+    cJSON_AddNumberToObject(root, "count", global_count);
+
+    return root;
+}
+
+void m_vin_request()
+{
+    OBD2::getInstance().requestVIN();
+}
+
+void m_dtc_request(int mode)
+{
+    if (mode == -1)
+    {
+        OBD2::getInstance().requestConfirmedDTCs();
+        vTaskDelay(pdMS_TO_TICKS(350)); // delay to complete request above
+        OBD2::getInstance().requestPendingDTCs();
+        vTaskDelay(pdMS_TO_TICKS(350)); // delay to complete request above
+        OBD2::getInstance().requestPermanentDTCs();
+    }
+    else
+    {
+        switch (mode)
+        {
+        case MODE_DTCS:
+            OBD2::getInstance().requestConfirmedDTCs();
+            break;
+        case MODE_PENDING_DTCS:
+            OBD2::getInstance().requestPendingDTCs();
+            break;
+        case MODE_PERMANENT_DTCS:
+            OBD2::getInstance().requestPermanentDTCs();
+            break;
+        default:
+            break;
+        }
+    }
 }

@@ -9,14 +9,21 @@ esp_err_t setup_web_server()
     server_config.async_worker_task_priority = 5;
     server_config.async_worker_stack_size = 8192;
     server_config.httpd_config.uri_match_fn = httpd_uri_match_wildcard;
+    server_config.httpd_config.max_uri_handlers = 20;
 
     esp_err_t ret = AsyncWebServer::getInstance().start(server_config);
     AsyncWebServer::getInstance().registerRoute("/", HTTP_GET, index_handler, NULL);
-    AsyncWebServer::getInstance().registerRoute("/api/v1/pid_def/*", HTTP_GET, pid_def_index_handler, NULL);
-    AsyncWebServer::getInstance().registerRoute("/api/v1/pid_def", HTTP_GET, pid_def_index_handler, NULL);
-    AsyncWebServer::getInstance().registerRoute("/api/v1/pid_poll", HTTP_GET, pid_poll_index_handler, NULL);
-    AsyncWebServer::getInstance().registerRoute("/api/v1/pid_poll*", HTTP_POST, set_pid_poll_index_handler, NULL);
-    AsyncWebServer::getInstance().registerRoute("/api/v1/can_bus", HTTP_GET, can_bus_index_handler, NULL);
+    AsyncWebServer::getInstance().registerRoute("/api/v1/pid_def/*", HTTP_GET, g_pid_def_index_handler, NULL);
+    AsyncWebServer::getInstance().registerRoute("/api/v1/pid_def", HTTP_GET, g_pid_def_index_handler, NULL);
+    AsyncWebServer::getInstance().registerRoute("/api/v1/can_bus", HTTP_GET, g_can_bus_index_handler, NULL);
+    AsyncWebServer::getInstance().registerRoute("/api/v1/obd2", HTTP_GET, g_obdii_index_handler, NULL);
+    AsyncWebServer::getInstance().registerRoute("/api/v1/pid_data/*", HTTP_GET, g_pid_data_index_handler, NULL);
+    AsyncWebServer::getInstance().registerRoute("/api/v1/pid_data", HTTP_GET, g_pid_data_index_handler, NULL);
+    AsyncWebServer::getInstance().registerRoute("/api/v1/req/pid_poll*", HTTP_POST, p_pid_poll_data_index_handler, NULL);
+    AsyncWebServer::getInstance().registerRoute("/api/v1/vin", HTTP_GET, g_vin_index_handler, NULL);
+    AsyncWebServer::getInstance().registerRoute("/api/v1/dtc*", HTTP_GET, g_dtc_index_handler, NULL);
+    AsyncWebServer::getInstance().registerRoute("/api/v1/req/vin", HTTP_POST, p_vin_index_handler, NULL);
+    AsyncWebServer::getInstance().registerRoute("/api/v1/req/dtc*", HTTP_POST, p_dtc_index_handler, NULL);
 
     return ret;
 }
@@ -43,28 +50,43 @@ esp_err_t send_json_response(httpd_req_t *req, cJSON *root)
     return ret;
 }
 
-bool get_query_bool(httpd_req_t *req, const char *key, bool default_val)
+bool get_query_str(httpd_req_t *req, const char *key, char *out_val, size_t val_len)
 {
     size_t len = httpd_req_get_url_query_len(req) + 1;
     if (len <= 1)
-        return default_val;
+        return false;
 
     char *buf = (char *)malloc(len);
     if (!buf)
-        return default_val;
+        return false;
 
     httpd_req_get_url_query_str(req, buf, len);
-
-    char value[16] = {0};
-    bool result = default_val;
-
-    if (httpd_query_key_value(buf, key, value, sizeof(value)) == ESP_OK)
-    {
-        result = (strcasecmp(value, "true") == 0 || strcmp(value, "1") == 0);
-    }
-
+    esp_err_t err = httpd_query_key_value(buf, key, out_val, val_len);
     free(buf);
-    return result;
+
+    return (err == ESP_OK);
+}
+
+esp_err_t get_query_int(httpd_req_t *req, const char *key, int *value)
+{
+    char val[32];
+    if (get_query_str(req, key, val, sizeof(val)))
+    {
+        *value = atoi(val);
+        return ESP_OK;
+    }
+    return ESP_ERR_NOT_FOUND;
+}
+
+esp_err_t get_query_bool(httpd_req_t *req, const char *key, bool *value)
+{
+    char val[16];
+    if (get_query_str(req, key, val, sizeof(val)))
+    {
+        *value = (strcasecmp(val, "true") == 0 || strcmp(val, "1") == 0);
+        return ESP_OK;
+    }
+    return ESP_ERR_NOT_FOUND;
 }
 
 esp_err_t index_handler(httpd_req_t *req, void *arg)
@@ -81,11 +103,29 @@ esp_err_t index_handler(httpd_req_t *req, void *arg)
     return httpd_resp_send(req, (const char *)INDEX_HTML, INDEX_HTML_LEN);
 }
 
-esp_err_t pid_def_index_handler(httpd_req_t *req, void *arg)
+esp_err_t g_pid_def_index_handler(httpd_req_t *req, void *arg)
 {
     int target_pid = -1;
 
     if (sscanf(req->uri, "/api/v1/pid_def/%d", &target_pid) == 1)
+    {
+        if (target_pid < 0 || target_pid > 255)
+        {
+            ESP_LOGW(TAG, "Invalid PID requested: %d", target_pid);
+            return httpd_resp_send_404(req);
+        }
+    }
+
+    cJSON *root = m_pid_def_json(target_pid);
+
+    return send_json_response(req, root);
+}
+
+esp_err_t g_pid_data_index_handler(httpd_req_t *req, void *arg)
+{
+    int target_pid = -1;
+
+    if (sscanf(req->uri, "/api/v1/pid_data/%d", &target_pid) == 1)
     {
         if (target_pid < 0 || target_pid > 255)
         {
@@ -99,28 +139,79 @@ esp_err_t pid_def_index_handler(httpd_req_t *req, void *arg)
     return send_json_response(req, root);
 }
 
-esp_err_t pid_poll_index_handler(httpd_req_t *req, void *arg)
+esp_err_t p_pid_poll_data_index_handler(httpd_req_t *req, void *arg)
 {
-    cJSON *root = m_pid_poll_json();
-
-    return send_json_response(req, root);
-}
-
-esp_err_t set_pid_poll_index_handler(httpd_req_t *req, void *arg)
-{
-    bool running = get_query_bool(req, "running");
+    bool *running = (bool *)malloc(sizeof(bool));
+    if (get_query_bool(req, "running", running) != ESP_OK)
+    {
+        free(running);
+        esp_err_t ret = httpd_resp_send_404(req);
+        return ret;
+    }
 
     m_pid_poll_set_running(running);
 
     httpd_resp_set_status(req, "201 Created");
     esp_err_t ret = httpd_resp_send(req, NULL, 0);
+    free(running);
 
     return ret;
 }
 
-esp_err_t can_bus_index_handler(httpd_req_t *req, void *arg)
+esp_err_t g_can_bus_index_handler(httpd_req_t *req, void *arg)
 {
     cJSON *root = m_can_bus_json();
 
     return send_json_response(req, root);
+}
+
+esp_err_t g_obdii_index_handler(httpd_req_t *req, void *arg)
+{
+    cJSON *root = m_obdii_json();
+
+    return send_json_response(req, root);
+}
+
+esp_err_t g_vin_index_handler(httpd_req_t *req, void *arg)
+{
+    cJSON *root = m_vin_json();
+
+    return send_json_response(req, root);
+}
+
+esp_err_t g_dtc_index_handler(httpd_req_t *req, void *arg)
+{
+    int mode = -1;
+    if (get_query_int(req, "mode", &mode) != ESP_OK && (httpd_req_get_url_query_len(req) > 0))
+    {
+        esp_err_t ret = httpd_resp_send_404(req);
+        return ret;
+    }
+
+    cJSON *root = m_dtc_json(mode);
+
+    return send_json_response(req, root);
+}
+
+esp_err_t p_vin_index_handler(httpd_req_t *req, void *arg)
+{
+    m_vin_request();
+
+    httpd_resp_set_status(req, "201 Created");
+    return httpd_resp_send(req, NULL, 0);
+}
+
+esp_err_t p_dtc_index_handler(httpd_req_t *req, void *arg)
+{
+    int mode = -1;
+    if (get_query_int(req, "mode", &mode) != ESP_OK && (httpd_req_get_url_query_len(req) > 0))
+    {
+        esp_err_t ret = httpd_resp_send_404(req);
+        return ret;
+    }
+
+    m_dtc_request(mode);
+
+    httpd_resp_set_status(req, "201 Created");
+    return httpd_resp_send(req, NULL, 0);
 }

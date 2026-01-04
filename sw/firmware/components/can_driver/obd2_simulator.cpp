@@ -50,7 +50,7 @@ void dataSimTask(CanDriver &canDriver)
     std::vector<uint16_t> dtcs = {
         0x0143, 0x8260, 0x4234, 0x0300, 0x0408,
         0x0506, 0x0101, 0x0113, 0x0335, 0x0401};
-    uint32_t DTCs_to_send = (esp_random() % 10) + 1;
+    // uint32_t DTCs_to_send = (esp_random() % 10) + 1;
 
     while (1)
     {
@@ -129,6 +129,7 @@ void dataSimTask(CanDriver &canDriver)
         case MODE_PENDING_DTCS:
         case MODE_PERMANENT_DTCS:
         {
+            uint32_t DTCs_to_send = (esp_random() % 10) + 1;
             if (DTCs_to_send < 3)
             {
                 CanDriver::CanFrame response_frame = {};

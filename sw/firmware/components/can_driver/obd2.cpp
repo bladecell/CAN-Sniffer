@@ -405,7 +405,9 @@ esp_err_t OBD2::parseRecFrame(const CanDriver::CanFrame &f)
         return ret;
     }
 
-    switch (f.data[1])
+    uint8_t mode = f.data[1];
+
+    switch (mode)
     {
     case RESPONSE_CURRENT_DATA:
         ret = parseCurrentData(f);
@@ -413,21 +415,27 @@ esp_err_t OBD2::parseRecFrame(const CanDriver::CanFrame &f)
     case RESPONSE_DTCS:
     {
         std::vector<CanDriver::CanFrame> frame = {f};
-        ret = parseDTCs(frame, RESPONSE_DTCS);
+        ret = parseDTCs(frame, mode);
         break;
     }
     case RESPONSE_CLEAR_DTCS:
         // TODO parseClearDTCsAck(f);
         break;
     case RESPONSE_PENDING_DTCS:
-        // TODO parsePendingDTCs(f);
+    {
+        std::vector<CanDriver::CanFrame> frame = {f};
+        ret = parseDTCs(frame, mode);
         break;
+    }
     case RESPONSE_VEHICLE_INFO:
         // TODO parseVehicleInfo(f);
         break;
     case RESPONSE_PERMANENT_DTCS:
-        // TODO parsePermanentDTCs(f);
+    {
+        std::vector<CanDriver::CanFrame> frame = {f};
+        ret = parseDTCs(frame, mode);
         break;
+    }
     default:
         return ESP_ERR_NOT_SUPPORTED;
     }
@@ -721,19 +729,19 @@ esp_err_t OBD2::parseMultiFrame(std::vector<CanDriver::CanFrame> &frames)
         // NOT IMPLEMENTED
         break;
     case RESPONSE_DTCS:
-        ret = parseDTCs(frames, RESPONSE_DTCS);
+        ret = parseDTCs(frames, mode);
         break;
     case RESPONSE_CLEAR_DTCS:
         // NOT IMPLEMENTED
         break;
     case RESPONSE_PENDING_DTCS:
-        ret = parseDTCs(frames, RESPONSE_DTCS);
+        ret = parseDTCs(frames, mode);
         break;
     case RESPONSE_VEHICLE_INFO:
         ret = parseVehicleInfoMultiFrame(frames);
         break;
     case RESPONSE_PERMANENT_DTCS:
-        ret = parseDTCs(frames, RESPONSE_DTCS);
+        ret = parseDTCs(frames, mode);
         break;
     default:
         return ESP_ERR_NOT_SUPPORTED;

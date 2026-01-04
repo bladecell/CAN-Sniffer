@@ -482,12 +482,12 @@ esp_err_t OBD2DTB::clearDTC(uint8_t mode)
         break;
     case MODE_PENDING_DTCS:
     case RESPONSE_PENDING_DTCS:
-        dtcData.confirmed.clear();
+        dtcData.pending.clear();
         dtcData.pending.clear();
         break;
     case MODE_PERMANENT_DTCS:
     case RESPONSE_PERMANENT_DTCS:
-        dtcData.confirmed.clear();
+        dtcData.permanent.clear();
         dtcData.permanent.clear();
         break;
     }

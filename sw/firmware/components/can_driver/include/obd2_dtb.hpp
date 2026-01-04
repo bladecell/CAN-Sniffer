@@ -45,14 +45,35 @@ public:
     esp_err_t clearDTC(uint8_t mode);
     std::string decodeDTC(uint16_t rawDTC);
 
+    // Readonly access to databases
     const std::map<uint8_t, PIDDef_t> &getPID_DEF() const
     {
         return this->PID_DEF;
     }
 
+    const std::map<uint8_t, PIDData_t> &getPidData() const
+    {
+        return pidData;
+    }
+
+    const VINData_t &getVinData() const
+    {
+        return vinData;
+    }
+
+    const DTCData_t &getDtcData() const
+    {
+        return dtcData;
+    }
+
     uint32_t getPIDDataSize() const
     {
         return pidData.size();
+    }
+
+    uint32_t getPIDDEFSize() const
+    {
+        return PID_DEF.size();
     }
 
     // PID Definitions and Data Storage
