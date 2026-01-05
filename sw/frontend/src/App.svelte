@@ -1,8 +1,9 @@
 <script>
 	import Navigation from "./Navigation.svelte";
 	import Overview from "./Overview.svelte";
-	import LiveView from "./LiveView.svelte";
+	import Telemetry from "./Telemetry.svelte";
 	import Settings from "./Settings.svelte";
+	import Diagnostics from "./Diagnostics.svelte";
 
 	let activeTab = $state("dashboard");
 	let count = $state(0);
@@ -13,10 +14,12 @@
 <main class="main-content">
 	{#if activeTab === "overview"}
 		<Overview />
-	{:else if activeTab === "liveview"}
-		<LiveView />
+	{:else if activeTab === "telemetry"}
+		<Telemetry />
 	{:else if activeTab === "settings"}
 		<Settings />
+	{:else if activeTab === "diagnostics"}
+		<Diagnostics />
 	{/if}
 </main>
 
