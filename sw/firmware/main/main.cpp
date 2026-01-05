@@ -170,7 +170,7 @@ void t_request_sample(void *pvParameters)
 extern "C" void app_main(void)
 {
 
-    esp_log_level_set("*", ESP_LOG_INFO);
+    esp_log_level_set("CAN_DRIVER", ESP_LOG_DEBUG);
 
     // Component setup
     led.init();

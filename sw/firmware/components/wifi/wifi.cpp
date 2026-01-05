@@ -121,6 +121,8 @@ esp_err_t WIFI::setSTAConfig()
     strncpy((char *)sta_config.sta.ssid, m_config.sta_ssid.c_str(), sizeof(sta_config.sta.ssid));
     strncpy((char *)sta_config.sta.password, m_config.sta_password.c_str(), sizeof(sta_config.sta.password));
     sta_config.sta.threshold.authmode = m_config.sta_auth_mode;
+    sta_config.sta.pmf_cfg.capable = true;
+    sta_config.sta.pmf_cfg.required = false;
     return esp_wifi_set_config(WIFI_IF_STA, &sta_config);
 }
 
@@ -264,7 +266,7 @@ void WIFI::wifi_event_handler(void *arg, esp_event_base_t event_base,
         manager->handleStaConnected();
         break;
     case WIFI_EVENT_STA_DISCONNECTED:
-        manager->handleStaDisconnected();
+        manager->handleStaDisconnected((wifi_event_sta_disconnected_t *)event_data);
         break;
     default:
         break;
@@ -330,9 +332,12 @@ void WIFI::handleStaGotIP(ip_event_got_ip_t *event)
     }
 }
 
-void WIFI::handleStaDisconnected()
+void WIFI::handleStaDisconnected(wifi_event_sta_disconnected_t *event)
 {
     ESP_LOGI(TAG, "STA Disconnected");
+    ESP_LOGI("WIFI", "Disconnected! Reason: %s (%d)",
+             get_wifi_reason_str(event->reason),
+             event->reason);
     setState(State::STA_DISCONNECTED);
 
     for (auto &cb : m_sta_disconnected_callbacks)
@@ -470,4 +475,45 @@ std::string WIFI::getStaIP() const
 void WIFI::setState(State state)
 {
     m_state = state;
+}
+
+const char *WIFI::get_wifi_reason_str(uint8_t reason)
+{
+    switch (reason)
+    {
+    case WIFI_REASON_UNSPECIFIED:
+        return "UNSPECIFIED";
+    case WIFI_REASON_AUTH_EXPIRE:
+        return "AUTH_EXPIRE";
+    case WIFI_REASON_AUTH_LEAVE:
+        return "AUTH_LEAVE";
+    case WIFI_REASON_ASSOC_EXPIRE:
+        return "ASSOC_EXPIRE";
+    case WIFI_REASON_ASSOC_TOOMANY:
+        return "ASSOC_TOOMANY";
+    case WIFI_REASON_NOT_AUTHED:
+        return "NOT_AUTHED";
+    case WIFI_REASON_NOT_ASSOCED:
+        return "NOT_ASSOCED";
+    case WIFI_REASON_ASSOC_LEAVE:
+        return "ASSOC_LEAVE";
+    case WIFI_REASON_ASSOC_NOT_AUTHED:
+        return "ASSOC_NOT_AUTHED";
+    case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
+        return "4WAY_HANDSHAKE_TIMEOUT";
+    case WIFI_REASON_BEACON_TIMEOUT:
+        return "BEACON_TIMEOUT";
+    case WIFI_REASON_NO_AP_FOUND:
+        return "NO_AP_FOUND";
+    case WIFI_REASON_AUTH_FAIL:
+        return "AUTH_FAIL";
+    case WIFI_REASON_ASSOC_FAIL:
+        return "ASSOC_FAIL";
+    case WIFI_REASON_HANDSHAKE_TIMEOUT:
+        return "HANDSHAKE_TIMEOUT";
+    case WIFI_REASON_CONNECTION_FAIL:
+        return "CONNECTION_FAIL";
+    default:
+        return "UNKNOWN_REASON";
+    }
 }

@@ -23,3 +23,4 @@ esp_err_t p_pid_poll_data_index_handler(httpd_req_t *req, void *arg);
 esp_err_t p_clear_dtc_data_index_handler(httpd_req_t *req, void *arg);
 esp_err_t p_dtc_index_handler(httpd_req_t *req, void *arg);
 esp_err_t p_vin_index_handler(httpd_req_t *req, void *arg);
+esp_err_t p_clear_dtc_index_handler(httpd_req_t *req, void *arg);

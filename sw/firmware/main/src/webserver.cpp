@@ -24,6 +24,7 @@ esp_err_t setup_web_server()
     AsyncWebServer::getInstance().registerRoute("/api/v1/dtc*", HTTP_GET, g_dtc_index_handler, NULL);
     AsyncWebServer::getInstance().registerRoute("/api/v1/req/vin", HTTP_POST, p_vin_index_handler, NULL);
     AsyncWebServer::getInstance().registerRoute("/api/v1/req/dtc*", HTTP_POST, p_dtc_index_handler, NULL);
+    AsyncWebServer::getInstance().registerRoute("/api/v1/req/clear_dtc", HTTP_POST, p_clear_dtc_index_handler, NULL);
 
     return ret;
 }
@@ -211,6 +212,14 @@ esp_err_t p_dtc_index_handler(httpd_req_t *req, void *arg)
     }
 
     m_dtc_request(mode);
+
+    httpd_resp_set_status(req, "201 Created");
+    return httpd_resp_send(req, NULL, 0);
+}
+
+esp_err_t p_clear_dtc_index_handler(httpd_req_t *req, void *arg)
+{
+    m_clear_dtc_request();
 
     httpd_resp_set_status(req, "201 Created");
     return httpd_resp_send(req, NULL, 0);

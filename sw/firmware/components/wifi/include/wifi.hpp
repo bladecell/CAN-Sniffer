@@ -148,7 +148,7 @@ private:
     void handleAPStart();
     void handleAPStop();
     void handleStaConnected();
-    void handleStaDisconnected();
+    void handleStaDisconnected(wifi_event_sta_disconnected_t *event);
     void handleStaGotIP(ip_event_got_ip_t *event);
 
     esp_err_t start_mdns_service();
@@ -192,4 +192,5 @@ private:
     void addClient(const uint8_t *mac, uint8_t aid);
     void removeClient(const uint8_t *mac);
     ClientInfo *findClient(const uint8_t *mac);
+    const char *get_wifi_reason_str(uint8_t reason);
 };

@@ -272,3 +272,8 @@ void m_dtc_request(int mode)
         }
     }
 }
+
+void m_clear_dtc_request()
+{
+    OBD2::getInstance().requestClearDTCs();
+}
