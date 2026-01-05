@@ -1,6 +1,8 @@
 #include "webserver.hpp"
 
 static const char *TAG = "WEB_SERVER";
+// TODO
+//  upravit requesty, hlavne vztah mezi vycinatim cekanim na vycteni a vracenim dat pomoci asi mutexu
 
 esp_err_t setup_web_server()
 {
