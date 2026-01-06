@@ -535,6 +535,22 @@ esp_err_t OBD2::parseDTCs(std::vector<CanDriver::CanFrame> &frames, uint8_t mode
             break;
         }
     }
+
+    switch (mode)
+    {
+    case MODE_DTCS:
+        xSemaphoreGive(dtcData.confirmedReadySemaphore);
+        break;
+    case MODE_PENDING_DTCS:
+        xSemaphoreGive(dtcData.pendingReadySemaphore);
+        break;
+    case MODE_PERMANENT_DTCS:
+        xSemaphoreGive(dtcData.permanentReadySemaphore);
+        break;
+    default:
+        break;
+    }
+
     return ret;
 }
 
@@ -592,8 +608,61 @@ esp_err_t OBD2::parseSupportedPIDs(const CanDriver::CanFrame &f)
 
 esp_err_t OBD2::requestVIN()
 {
-    esp_err_t ret = queryMsg(OBD2_FUNCTIONAL_ID, MODE_VEHICLE_INFO, PID_VIN);
-    return ret;
+    if (vinData.vinReadySemaphore == NULL)
+    {
+        ESP_LOGE(TAG, "VIN semaphore not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    ESP_RETURN_ON_ERROR(queryMsg(OBD2_FUNCTIONAL_ID, MODE_VEHICLE_INFO, PID_VIN), TAG, "Failed to query request VIN message");
+
+    xSemaphoreTake(vinData.vinReadySemaphore, 0);
+
+    if (xSemaphoreTake(vinData.vinReadySemaphore, pdMS_TO_TICKS(2000)) != pdTRUE)
+    {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    return ESP_OK;
+}
+
+esp_err_t OBD2::requestDTC(uint8_t mode)
+{
+    SemaphoreHandle_t sem = NULL; // Local handle to work with
+
+    // 1. Assign the handle based on mode
+    switch (mode)
+    {
+    case MODE_DTCS:
+        sem = dtcData.confirmedReadySemaphore;
+        break;
+    case MODE_PENDING_DTCS:
+        sem = dtcData.pendingReadySemaphore;
+        break;
+    case MODE_PERMANENT_DTCS:
+        sem = dtcData.permanentReadySemaphore;
+        break;
+    default:
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (sem == NULL)
+    {
+        ESP_LOGE(TAG, "Semaphore for mode %02x not initialized!", mode);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    xSemaphoreTake(sem, 0);
+
+    ESP_RETURN_ON_ERROR(queryMsg(OBD2_FUNCTIONAL_ID, mode, 0x00), TAG, "Failed to query DTCs");
+
+    if (xSemaphoreTake(sem, pdMS_TO_TICKS(2000)) != pdTRUE)
+    {
+        ESP_LOGW(TAG, "DTC Request %s timed out", OBD2_MODE_TO_STR(mode));
+        return ESP_ERR_TIMEOUT;
+    }
+
+    return ESP_OK;
 }
 
 esp_err_t OBD2::requestConfirmedDTCs()
@@ -794,23 +863,27 @@ esp_err_t OBD2::parseVINMultiFrame(std::vector<CanDriver::CanFrame> &frames)
         }
     }
 
+    if (xSemaphoreTake(vinData.mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
+    {
+        xSemaphoreGive(vinData.vinReadySemaphore);
+        return ESP_ERR_TIMEOUT;
+    }
+
     if (vinIndex == VIN_LENGTH)
     {
-        if (xSemaphoreTake(vinData.mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
-        {
-            return ESP_ERR_TIMEOUT;
-        }
 
         memcpy(vinData.vin, vinBuffer, VIN_LENGTH);
-        vinData.lastUpdated = xTaskGetTickCount() * portTICK_PERIOD_MS;
         vinData.isValid = true;
-
-        xSemaphoreGive(vinData.mtx_);
     }
     else
     {
+        vinData.isValid = false;
         ret = ESP_ERR_INVALID_SIZE;
     }
+
+    vinData.lastUpdated = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    xSemaphoreGive(vinData.vinReadySemaphore);
+    xSemaphoreGive(vinData.mtx_);
 
     return ret;
 }

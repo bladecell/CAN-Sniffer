@@ -239,41 +239,75 @@ cJSON *m_dtc_json(int mode)
     return root;
 }
 
-void m_vin_request()
+cJSON *m_vin_request()
 {
-    OBD2::getInstance().requestVIN();
+    cJSON *root = cJSON_CreateObject();
+
+    if (OBD2::getInstance().requestVIN() == ESP_OK)
+    {
+        cJSON_AddStringToObject(root, "status", "success");
+    }
+    else
+    {
+        cJSON_AddStringToObject(root, "status", "error");
+    }
+
+    return root;
 }
 
-void m_dtc_request(int mode)
+cJSON *m_dtc_request(int mode)
 {
+    esp_err_t err = ESP_OK;
     if (mode == -1)
     {
-        OBD2::getInstance().requestConfirmedDTCs();
+        err |= OBD2::getInstance().requestConfirmedDTCs();
         vTaskDelay(pdMS_TO_TICKS(350)); // delay to complete request above
-        OBD2::getInstance().requestPendingDTCs();
+        err |= OBD2::getInstance().requestPendingDTCs();
         vTaskDelay(pdMS_TO_TICKS(350)); // delay to complete request above
-        OBD2::getInstance().requestPermanentDTCs();
+        err |= OBD2::getInstance().requestPermanentDTCs();
     }
     else
     {
         switch (mode)
         {
         case MODE_DTCS:
-            OBD2::getInstance().requestConfirmedDTCs();
+            err |= OBD2::getInstance().requestConfirmedDTCs();
             break;
         case MODE_PENDING_DTCS:
-            OBD2::getInstance().requestPendingDTCs();
+            err |= OBD2::getInstance().requestPendingDTCs();
             break;
         case MODE_PERMANENT_DTCS:
-            OBD2::getInstance().requestPermanentDTCs();
+            err |= OBD2::getInstance().requestPermanentDTCs();
             break;
         default:
+            err |= ESP_ERR_INVALID_ARG;
             break;
         }
     }
+    cJSON *root = cJSON_CreateObject();
+
+    if (err == ESP_OK)
+    {
+        cJSON_AddStringToObject(root, "status", "success");
+    }
+    else
+    {
+        cJSON_AddStringToObject(root, "status", "error");
+    }
+
+    return root;
 }
 
-void m_clear_dtc_request()
+cJSON *m_clear_dtc_request()
 {
-    OBD2::getInstance().requestClearDTCs();
+    cJSON *root = cJSON_CreateObject();
+    if (OBD2::getInstance().requestClearDTCs() == ESP_OK)
+    {
+        cJSON_AddStringToObject(root, "status", "success");
+    }
+    else
+    {
+        cJSON_AddStringToObject(root, "status", "error");
+    }
+    return root;
 }

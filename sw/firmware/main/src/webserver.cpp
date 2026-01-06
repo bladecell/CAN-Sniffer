@@ -1,8 +1,6 @@
 #include "webserver.hpp"
 
 static const char *TAG = "WEB_SERVER";
-// TODO
-//  upravit requesty, hlavne vztah mezi vycinatim cekanim na vycteni a vracenim dat pomoci asi mutexu
 
 esp_err_t setup_web_server()
 {
@@ -198,10 +196,10 @@ esp_err_t g_dtc_index_handler(httpd_req_t *req, void *arg)
 
 esp_err_t p_vin_index_handler(httpd_req_t *req, void *arg)
 {
-    m_vin_request();
+    cJSON *root = m_vin_request();
 
-    httpd_resp_set_status(req, "201 Created");
-    return httpd_resp_send(req, NULL, 0);
+    httpd_resp_set_status(req, "200 OK");
+    return send_json_response(req, root);
 }
 
 esp_err_t p_dtc_index_handler(httpd_req_t *req, void *arg)
@@ -213,10 +211,10 @@ esp_err_t p_dtc_index_handler(httpd_req_t *req, void *arg)
         return ret;
     }
 
-    m_dtc_request(mode);
+    cJSON *root = m_dtc_request(mode);
 
-    httpd_resp_set_status(req, "201 Created");
-    return httpd_resp_send(req, NULL, 0);
+    httpd_resp_set_status(req, "200 OK");
+    return send_json_response(req, root);
 }
 
 esp_err_t p_clear_dtc_index_handler(httpd_req_t *req, void *arg)

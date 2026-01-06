@@ -24,6 +24,7 @@ void OBD2DTB::initDef()
         .vin = {0},
         .lastUpdated = 0,
         .isValid = false,
+        .vinReadySemaphore = xSemaphoreCreateBinary(),
         .mtx_ = xSemaphoreCreateMutex(),
     };
 
@@ -31,6 +32,9 @@ void OBD2DTB::initDef()
         .confirmed = {},
         .pending = {},
         .permanent = {},
+        .confirmedReadySemaphore = xSemaphoreCreateBinary(),
+        .pendingReadySemaphore = xSemaphoreCreateBinary(),
+        .permanentReadySemaphore = xSemaphoreCreateBinary(),
         .mtx_ = xSemaphoreCreateMutex(),
     };
 };

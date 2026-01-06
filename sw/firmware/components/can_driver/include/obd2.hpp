@@ -18,6 +18,7 @@
 #include "esp_err.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "esp_check.h"
 
 #include "obd2_utils.hpp"
 #include "obd2_dtb.hpp"
@@ -52,6 +53,7 @@ public:
     esp_err_t requestConfirmedDTCs();
     esp_err_t requestPendingDTCs();
     esp_err_t requestPermanentDTCs();
+    esp_err_t requestDTC(uint8_t mode);
     esp_err_t requestClearDTCs();
 
 private:

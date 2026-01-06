@@ -10,9 +10,9 @@ cJSON *m_can_bus_json();
 cJSON *m_obdii_json();
 cJSON *m_vin_json();
 cJSON *m_dtc_json(int mode);
-void m_vin_request();
-void m_dtc_request(int mode);
-void m_clear_dtc_request();
+cJSON *m_vin_request();
+cJSON *m_dtc_request(int mode);
+cJSON *m_clear_dtc_request();
 
 cJSON *get_single_pid_def_json(const PIDDef_t &pi);
 cJSON *get_single_pid_data_json(uint8_t pid, const PIDData_t &pd);

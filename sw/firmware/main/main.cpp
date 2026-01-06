@@ -54,7 +54,7 @@ esp_err_t setup_obd()
 
     esp_err_t ret = CanDriver::getInstance().init(config);
 
-    vTaskDelay(pdMS_TO_TICKS(100));
+    vTaskDelay(pdMS_TO_TICKS(1000));
     if (ret != ESP_OK || !CanDriver::getInstance().isInitialized())
     {
         ESP_LOGE(TAG, "Failed to initialize CAN driver");
@@ -64,6 +64,8 @@ esp_err_t setup_obd()
     ESP_LOGI(TAG, "CAN driver initialized");
 
     ret |= OBD2::getInstance().init();
+
+    vTaskDelay(pdMS_TO_TICKS(1000));
 
     if (ret != ESP_OK)
     {

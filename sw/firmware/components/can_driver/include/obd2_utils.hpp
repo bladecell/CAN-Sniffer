@@ -15,6 +15,18 @@
 #define PID_REQUEST_DELAY_MS MIN_TRANSMIT_PERIOD_MS
 #define RESPONSE_ID_OFFSET 8
 
+#define OBD2_MODE_TO_STR(mode)                                                                             \
+    ((mode) == MODE_CURRENT_DATA ? "Current Data" : (mode) == MODE_FREEZE_FRAME     ? "Freeze Frame"       \
+                                                : (mode) == MODE_DTCS               ? "DTCs"               \
+                                                : (mode) == MODE_CLEAR_DTCS         ? "Clear DTCs"         \
+                                                : (mode) == MODE_TEST_RESULTS_O2    ? "O2 Test Results"    \
+                                                : (mode) == MODE_TEST_RESULTS_OTHER ? "Other Test Results" \
+                                                : (mode) == MODE_PENDING_DTCS       ? "Pending DTCs"       \
+                                                : (mode) == MODE_CONTROL            ? "Control"            \
+                                                : (mode) == MODE_VEHICLE_INFO       ? "Vehicle Info"       \
+                                                : (mode) == MODE_PERMANENT_DTCS     ? "Permanent DTCs"     \
+                                                                                    : "Unknown")
+
 enum OBDMode
 {
     MODE_CURRENT_DATA = 0x01,
@@ -115,6 +127,7 @@ typedef struct
     char vin[18];
     uint32_t lastUpdated;
     bool isValid;
+    SemaphoreHandle_t vinReadySemaphore;
     SemaphoreHandle_t mtx_;
 } VINData_t;
 
@@ -123,6 +136,9 @@ typedef struct
     std::vector<std::string> confirmed;
     std::vector<std::string> pending;
     std::vector<std::string> permanent;
+    SemaphoreHandle_t confirmedReadySemaphore;
+    SemaphoreHandle_t pendingReadySemaphore;
+    SemaphoreHandle_t permanentReadySemaphore;
     SemaphoreHandle_t mtx_;
 } DTCData_t;
 

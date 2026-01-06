@@ -6,7 +6,7 @@
     const tabs = [
         { id: "overview", icon: "home", label: "Overview" },
         { id: "telemetry", icon: "chart", label: "Telemetry" },
-        { id: "diagnostics", icon: "gear", label: "Diagnostics" },
+        { id: "diagnostics", icon: "engine", label: "Diagnostics" },
         { id: "settings", icon: "gear", label: "Settings" },
     ];
 </script>
