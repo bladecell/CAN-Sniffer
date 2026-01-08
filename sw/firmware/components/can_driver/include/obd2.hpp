@@ -55,6 +55,7 @@ public:
     esp_err_t requestPermanentDTCs();
     esp_err_t requestDTC(uint8_t mode);
     esp_err_t requestClearDTCs();
+    esp_err_t queryMsg(uint32_t id, uint8_t mode, uint8_t pid, uint8_t len = 0x02);
 
 private:
     OBD2(const OBD2 &) = delete;
@@ -66,8 +67,6 @@ private:
 
     SemaphoreHandle_t xPidConnectedSemaphore = NULL;
     esp_err_t setPidSuppStatus(uint8_t groupIndex, bool supported);
-
-    esp_err_t queryMsg(uint32_t id, uint8_t mode, uint8_t pid, uint8_t len = 0x02);
 
     // Polling Task
     void pollTask();

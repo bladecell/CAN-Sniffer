@@ -200,9 +200,10 @@ esp_err_t CanDriver::transmit(twai_frame_t *tx_msg, int timeout_ms)
 
         currentTime_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
     }
-    lastSendTime_ms = currentTime_ms;
 
     esp_err_t ret = twai_node_transmit(nodeHdl, tx_msg, pdMS_TO_TICKS(timeout_ms));
+
+    lastSendTime_ms = currentTime_ms;
 
     if (ret != ESP_OK)
     {

@@ -47,10 +47,16 @@ esp_err_t setup_wifi()
 esp_err_t setup_obd()
 {
     CanDriver::Config config;
-
-    Settings::getInstance().getCanConfig(config);
-
+    config.bitrate = CanDriver::Bitrate::BITRATE_500K;
+    config.rx_pin = CAN_RX_GPIO;
+    config.tx_pin = CAN_TX_GPIO;
+    config.lbk_pin = CAN_LBK_GPIO;
+    config.rs_pin = CAN_RS_GPIO;
     config.debug = DEBUG_MODE;
+
+    // Settings::getInstance().getCanConfig(config);
+
+    // config.debug = DEBUG_MODE;
 
     esp_err_t ret = CanDriver::getInstance().init(config);
 
@@ -177,11 +183,11 @@ extern "C" void app_main(void)
     // Component setup
     led.init();
 
-    if (setup_wifi() != ESP_OK)
-    {
-        led.error();
-        return;
-    }
+    // if (setup_wifi() != ESP_OK)
+    // {
+    //     led.error();
+    //     return;
+    // }
 
     if (setup_obd() != ESP_OK)
     {
@@ -189,15 +195,46 @@ extern "C" void app_main(void)
         return;
     }
 
-    if (setup_web_server() != ESP_OK)
-    {
-        led.error();
-        return;
-    }
+    // if (setup_web_server() != ESP_OK)
+    // {
+    //     led.error();
+    //     return;
+    // }
 
     ESP_LOGI(TAG, "Started OBD-II Reader...");
 
     led.blink(2);
+
+    for (int i = 5; i >= 1; i--)
+    {
+        ESP_LOGI(TAG, "Starting in %d", i);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+
+    ESP_LOGI(TAG, "Requesting Odometer value");
+
+    uint16_t did = 0xF4A6;
+    uint16_t id = 0x7E0;
+    uint8_t mode = 0x22;
+    uint8_t len = 0x03;
+
+    uint8_t txData[8] = {len, mode, (uint8_t)((did >> 8) & 0x0F), (uint8_t)(did & 0xFF), 0x00, 0x00, 0x00, 0x00};
+    twai_frame_t tx = {};
+
+    tx.header.id = id; // OBD-II  request ID
+    tx.header.dlc = twaifd_len2dlc(sizeof(txData));
+    tx.header.ide = false;      // Standard Frame Format (11-bit ID)
+    tx.header.rtr = 0;          // Data frame (not remote frame)
+    tx.header.fdf = 0;          // Classic CAN format
+    tx.header.brs = 0;          // No bit rate switching
+    tx.header.esi = 0;          // No error state indicator
+    tx.header.timestamp = 0;    // Not used for TX
+    tx.header.trigger_time = 0; // Not used for immediate transmission
+
+    tx.buffer = txData;
+    tx.buffer_len = sizeof(txData);
+
+    CanDriver::getInstance().transmit(&tx, 100);
 
     // xTaskCreate(t_request_sample, "request_sample", 4096, NULL, 5, NULL);
 }

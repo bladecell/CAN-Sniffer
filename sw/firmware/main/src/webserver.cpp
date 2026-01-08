@@ -219,8 +219,8 @@ esp_err_t p_dtc_index_handler(httpd_req_t *req, void *arg)
 
 esp_err_t p_clear_dtc_index_handler(httpd_req_t *req, void *arg)
 {
-    m_clear_dtc_request();
+    cJSON *root = m_clear_dtc_request();
 
-    httpd_resp_set_status(req, "201 Created");
-    return httpd_resp_send(req, NULL, 0);
+    httpd_resp_set_status(req, "200 OK");
+    return send_json_response(req, root);
 }
