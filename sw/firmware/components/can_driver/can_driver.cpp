@@ -96,12 +96,10 @@ esp_err_t CanDriver::init(const Config &config)
     }
 
     // Configure Mask Filter for OBD-II
-    twai_mask_filter_config_t mfilter_cfg = {};
-    mfilter_cfg.id = 0b011100000000;   // 0b111 11100000
-    mfilter_cfg.mask = 0b011100000000; // 0b111 11100000
-    mfilter_cfg.is_ext = false;        // Standard 11-bit IDs
-
-    ESP_ERROR_CHECK(twai_node_config_mask_filter(nodeHdl, 0, &mfilter_cfg));
+    if (config.filter)
+    {
+        ESP_ERROR_CHECK(twai_node_config_mask_filter(nodeHdl, 0, &config.mfilter_cfg));
+    }
 
     // Start TWAI Instance
     ret = twai_node_enable(nodeHdl);

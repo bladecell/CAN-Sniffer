@@ -71,6 +71,8 @@ public:
         RS_MODE rs_mode = RS_MODE::HIGH_SPEED;
         uint32_t tx_queue_depth = 20U;
         size_t rx_queue_size = 20;
+        bool filter = false;
+        twai_mask_filter_config_t mfilter_cfg = {};
     };
 
     static CanDriver &getInstance()

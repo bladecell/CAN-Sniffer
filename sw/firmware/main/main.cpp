@@ -6,6 +6,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_err.h"
+#include "esp_check.h"
 #include "esp_log.h"
 #include "driver/twai.h"
 #include "driver/gpio.h"
@@ -44,7 +45,7 @@ esp_err_t setup_wifi()
     return ret;
 }
 
-esp_err_t setup_obd()
+esp_err_t setup_can()
 {
     CanDriver::Config config;
     config.bitrate = CanDriver::Bitrate::BITRATE_500K;
@@ -53,6 +54,10 @@ esp_err_t setup_obd()
     config.lbk_pin = CAN_LBK_GPIO;
     config.rs_pin = CAN_RS_GPIO;
     config.debug = DEBUG_MODE;
+    config.filter = false;
+    config.mfilter_cfg.id = 0b011100000000;   // 0b111 11100000
+    config.mfilter_cfg.mask = 0b011100000000; // 0b111 11100000
+    config.mfilter_cfg.is_ext = false;        // Standard 11-bit IDs
 
     // Settings::getInstance().getCanConfig(config);
 
@@ -69,7 +74,12 @@ esp_err_t setup_obd()
 
     ESP_LOGI(TAG, "CAN driver initialized");
 
-    ret |= OBD2::getInstance().init();
+    return ESP_OK;
+}
+
+esp_err_t setup_obd()
+{
+    esp_err_t ret = OBD2::getInstance().init();
 
     vTaskDelay(pdMS_TO_TICKS(1000));
 
@@ -80,8 +90,10 @@ esp_err_t setup_obd()
     }
 
     ESP_LOGI(TAG, "OBD2 interface initialized");
+
     return ESP_OK;
 }
+
 void t_request_sample(void *pvParameters)
 {
     OBD2 &obd2 = OBD2::getInstance();
@@ -174,6 +186,27 @@ void t_request_sample(void *pvParameters)
     }
 }
 
+void send_can_message(uint16_t id, uint8_t *data, uint8_t len = 8)
+{
+
+    twai_frame_t tx = {};
+
+    tx.header.id = id; // OBD-II  request ID
+    tx.header.dlc = twaifd_len2dlc(len);
+    tx.header.ide = false;      // Standard Frame Format (11-bit ID)
+    tx.header.rtr = 0;          // Data frame (not remote frame)
+    tx.header.fdf = 0;          // Classic CAN format
+    tx.header.brs = 0;          // No bit rate switching
+    tx.header.esi = 0;          // No error state indicator
+    tx.header.timestamp = 0;    // Not used for TX
+    tx.header.trigger_time = 0; // Not used for immediate transmission
+
+    tx.buffer = data;
+    tx.buffer_len = len;
+
+    esp_err_t ret = CanDriver::getInstance().transmit(&tx, 100);
+}
+
 // ----- app_main --------------------------------------------------------------
 extern "C" void app_main(void)
 {
@@ -183,58 +216,68 @@ extern "C" void app_main(void)
     // Component setup
     led.init();
 
-    // if (setup_wifi() != ESP_OK)
-    // {
-    //     led.error();
-    //     return;
-    // }
+    esp_err_t (*setup_functions[])() = {
+        // setup_wifi,
+        setup_can,
+        // setup_obd,
+        // setup_web_server,
+    };
 
-    if (setup_obd() != ESP_OK)
+    for (size_t i = 0; i < sizeof(setup_functions) / sizeof(setup_functions[0]); i++)
     {
-        led.error();
-        return;
+        if (setup_functions[i]() != ESP_OK)
+        {
+            led.error();
+            return;
+        }
     }
 
-    // if (setup_web_server() != ESP_OK)
-    // {
-    //     led.error();
-    //     return;
-    // }
+    // UDS over TP2.0
 
-    ESP_LOGI(TAG, "Started OBD-II Reader...");
+    // TP2.0 Handshake
 
-    led.blink(2);
+    uint16_t id_handshake = 0x200;
+    uint8_t d_handshake[] = {0x01, 0xC0, 0x00, 0x10, 0x00, 0x03, 0x01, 0x3F};
 
-    for (int i = 5; i >= 1; i--)
+    send_can_message(id_handshake, d_handshake);
+
+    // Wait for a response
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    // Wait for Negotiation Response (0xD0)
+    bool negotiated = false;
+    uint32_t start = esp_log_timestamp();
+    uint16_t tx_id = 0;
+    uint16_t rx_id = 0;
+
+    while (esp_log_timestamp() - start < 1000)
     {
-        ESP_LOGI(TAG, "Starting in %d", i);
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        CanDriver::CanFrame f{};
+        if (CanDriver::getInstance().receive(f, pdMS_TO_TICKS(50)) == ESP_OK)
+        {
+            if ((f.id & 0xF00) == 0x200 && f.data[1] == 0xD0)
+            {
+                tx_id = 0x300 | f.data[4];
+                rx_id = 0x300 | f.data[5];
+                ESP_LOGI(TAG, "Negotiated! TX: 0x%X | RX: 0x%X", tx_id, rx_id);
+                negotiated = true;
+                break;
+            }
+        }
     }
 
-    ESP_LOGI(TAG, "Requesting Odometer value");
+    if (!negotiated)
+    {
+        ESP_LOGE(TAG, "Negotiation Failed");
+        while (1)
+            vTaskDelay(1000);
+    }
 
-    uint16_t did = 0xF4A6;
-    uint16_t id = 0x7E0;
-    uint8_t mode = 0x22;
-    uint8_t len = 0x03;
+    // Parameter request
+    uint16_t id_param_request = tx_id;
+    uint8_t d_param_request[] = {0xA0, 0x0F, 0x8A, 0xFF, 0x32, 0xFF, 0x00, 0x00};
 
-    uint8_t txData[8] = {len, mode, (uint8_t)((did >> 8) & 0x0F), (uint8_t)(did & 0xFF), 0x00, 0x00, 0x00, 0x00};
-    twai_frame_t tx = {};
-
-    tx.header.id = id; // OBD-II  request ID
-    tx.header.dlc = twaifd_len2dlc(sizeof(txData));
-    tx.header.ide = false;      // Standard Frame Format (11-bit ID)
-    tx.header.rtr = 0;          // Data frame (not remote frame)
-    tx.header.fdf = 0;          // Classic CAN format
-    tx.header.brs = 0;          // No bit rate switching
-    tx.header.esi = 0;          // No error state indicator
-    tx.header.timestamp = 0;    // Not used for TX
-    tx.header.trigger_time = 0; // Not used for immediate transmission
-
-    tx.buffer = txData;
-    tx.buffer_len = sizeof(txData);
-
-    CanDriver::getInstance().transmit(&tx, 100);
+    send_can_message(id_param_request, d_param_request);
 
     // xTaskCreate(t_request_sample, "request_sample", 4096, NULL, 5, NULL);
 }

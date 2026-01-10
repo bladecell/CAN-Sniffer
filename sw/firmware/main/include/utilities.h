@@ -1,8 +1,8 @@
 // utilities.h
 #pragma once
 
-// #define VERSION_1_1
-#define VERSION_1_2
+#define VERSION_1_1
+// #define VERSION_1_2
 
 // Pin configuration
 #ifdef VERSION_1_1
