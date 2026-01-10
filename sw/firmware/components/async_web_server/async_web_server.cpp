@@ -97,7 +97,7 @@ void AsyncWebServer::registerRoute(const char *uri, httpd_method_t method, Async
 
 esp_err_t AsyncWebServer::async_handler(httpd_req_t *req)
 {
-    ESP_LOGI(TAG, "%s uri: %s", get_method_str(req->method), req->uri);
+    ESP_LOGD(TAG, "%s uri: %s", get_method_str(req->method), req->uri);
 
     // add to the async request queue
     if (AsyncWebServer::getInstance().queue_request(req) == ESP_OK)
@@ -136,6 +136,7 @@ esp_err_t AsyncWebServer::queue_request(httpd_req_t *req)
     job.req = copy;
     job.handler = ctx->handler;
     job.arg = ctx->arg;
+    job.start_time_us = esp_timer_get_time();
 
     int ticks = 0;
 
@@ -178,6 +179,11 @@ void AsyncWebServer::worker_task()
 
                 // mark complete using the COPY
                 // This cleans up the memory allocated by 'begin' and closes/frees the socket usage
+                int64_t end_time = esp_timer_get_time();
+                int64_t duration_us = end_time - async_req.start_time_us;
+
+                ESP_LOGI(TAG, "%s processed in %.2f ms", async_req.req->uri, duration_us / 1000.0f);
+
                 if (httpd_req_async_handler_complete(async_req.req) != ESP_OK)
                 {
                     ESP_LOGE(TAG, "failed to complete async req");

@@ -14,6 +14,8 @@ cJSON *get_single_pid_def_json(const PIDDef_t &pi)
     cJSON_AddNumberToObject(item, "maxValue", pi.maxValue);
     cJSON_AddNumberToObject(item, "priority", pi.priority);
     cJSON_AddNumberToObject(item, "update_interval_ms", pi.updateInterval_ms);
+    cJSON_AddNumberToObject(item, "color", pi.color);
+    cJSON_AddStringToObject(item, "icon", pi.icon ? pi.icon : "");
 
     return item;
 }

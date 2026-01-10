@@ -12,4 +12,13 @@ export default defineConfig({
 		cssCodeSplit: false,
 		assetsInlineLimit: 100000000, // This will inline the favicon automatically
 	},
+	server: {
+		proxy: {
+			'/api': {
+				target: 'http://can-sniffer.local',
+				changeOrigin: true,
+				rewrite: (path) => path
+			}
+		}
+	}
 })

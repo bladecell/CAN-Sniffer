@@ -3,6 +3,7 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_check.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include <vector>
@@ -35,6 +36,7 @@ public:
         AsyncHandler handler;
         httpd_req_t *req;
         void *arg;
+        int64_t start_time_us;
     };
 
     struct RouteContext

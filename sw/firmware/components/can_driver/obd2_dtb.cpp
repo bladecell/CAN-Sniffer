@@ -51,7 +51,9 @@ const std::map<uint8_t, PIDDef_t> OBD2DTB::PID_DEF = {
          .minValue = 0.0f,
          .maxValue = 100.0f,
          .priority = 2,
-         .updateInterval_ms = UPDATE_FAST}},
+         .updateInterval_ms = UPDATE_FAST,
+         .color = 0xf59e0b,
+         .icon = "gauge"}},
     {PID_COOLANT_TEMP,
      PIDDef_t{
          .mode = MODE_CURRENT_DATA,
@@ -63,7 +65,9 @@ const std::map<uint8_t, PIDDef_t> OBD2DTB::PID_DEF = {
          .minValue = -40.0f,
          .maxValue = 215.0f,
          .priority = 3,
-         .updateInterval_ms = UPDATE_SLOW}},
+         .updateInterval_ms = UPDATE_SLOW,
+         .color = 0xef4444,
+         .icon = "thermometer"}},
     {PID_ENGINE_RPM,
      PIDDef_t{
          .mode = MODE_CURRENT_DATA,
@@ -75,7 +79,9 @@ const std::map<uint8_t, PIDDef_t> OBD2DTB::PID_DEF = {
          .minValue = 0.0f,
          .maxValue = 16383.75f,
          .priority = 1,
-         .updateInterval_ms = UPDATE_FAST}},
+         .updateInterval_ms = UPDATE_FAST,
+         .color = 0x3b82f6,
+         .icon = "droplet"}},
 };
 
 esp_err_t OBD2DTB::getData(uint8_t pid, PIDData_t &pd) const

@@ -6,36 +6,48 @@
         value = 0,
         unit = "%",
         icon = "gear",
-        status = "normal", // normal, warning, critical, inactive
         color = "#10b981",
+        min = 0,
+        max = 100,
+        supported = true,
+        valid = true,
     } = $props();
 
-    const statusColors = {
-        normal: "#10b981", // green
-        warning: "#f59e0b", // amber
-        critical: "#ef4444", // red
-        inactive: "#6b7280", // gray
-    };
+    // Reactive status calculation
+    const status = $derived(
+        !supported
+            ? "#6b7280"
+            : !valid
+              ? "#ef4444"
+              : ((value - min) / (max - min)) * 100 >= 20 &&
+                  ((value - min) / (max - min)) * 100 <= 80
+                ? "#10b981"
+                : "#f59e0b",
+    );
+
+    const displayValue = $derived(supported ? value : "···");
 </script>
 
 <article
     class="pid-card"
+    class:disabled={!supported}
     style="background: color-mix(in srgb, {color} 5%, transparent);"
 >
     <div class="card-header">
         <div
+            data-swapy-handle
             class="icon"
             style="background: color-mix(in srgb, {color} 20%, transparent);"
         >
             <Icon name={icon} size={32} />
         </div>
-        <div class="status" style="background: {statusColors[status]};"></div>
+        <div class="status" style="background: {status};"></div>
     </div>
 
     <div class="card-body">
         <span class="label">{label}</span>
         <div class="value">
-            <span class="number">{value}</span>
+            <span class="number">{displayValue}</span>
             <span class="unit">{unit}</span>
         </div>
     </div>
@@ -43,7 +55,6 @@
 
 <style>
     .pid-card {
-        /* background: var(--pico-card-background-color); */
         border: 1px solid var(--pico-muted-border-color);
         border-radius: 12px;
         padding: 16px;
@@ -56,6 +67,16 @@
     .pid-card:hover {
         transform: translateY(-2px);
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .pid-card.disabled {
+        opacity: 0.4;
+        filter: grayscale(100%);
+    }
+
+    .pid-card.disabled:hover {
+        transform: none;
+        box-shadow: none;
     }
 
     .card-header {
@@ -73,6 +94,7 @@
         width: 48px;
         border-radius: 10px;
         transition: transform 0.2s ease;
+        cursor: grab;
     }
 
     .pid-card:hover .icon {
@@ -84,6 +106,10 @@
         height: 10px;
         border-radius: 50%;
         animation: pulse 2s infinite;
+    }
+
+    .disabled .status {
+        animation: none;
     }
 
     .card-body {

@@ -18,6 +18,7 @@
 		"@fontsource/atkinson-hyperlegible": "^5.2.6",
 		"@picocss/pico": "^2.1.1",
 		"gsap": "^3.13.0",
-		"npm": "^11.7.0"
+		"npm": "^11.7.0",
+		"swapy": "^1.0.5"
 	}
 }

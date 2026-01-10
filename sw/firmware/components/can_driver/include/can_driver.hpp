@@ -183,4 +183,7 @@ private:
     std::atomic<STATE> canState;
     static void healthCheckTaskWrapper(void *param);
     TaskHandle_t healthCheckTaskHandle = nullptr;
+
+    // TX Rate Limiting
+    TickType_t last_tx_ticks = 0;
 };

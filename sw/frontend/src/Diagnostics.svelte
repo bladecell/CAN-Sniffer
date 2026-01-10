@@ -4,7 +4,7 @@
     async function requestDTC() {
         try {
             const response = await fetch(
-                "http://can-sniffer.local/api/v1/req/dtc?mode=" + selectedMode,
+                "/api/v1/req/dtc?mode=" + selectedMode,
                 {
                     method: "POST",
                 },

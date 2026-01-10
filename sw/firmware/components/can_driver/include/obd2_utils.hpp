@@ -109,6 +109,8 @@ struct PIDDef_t
     float maxValue;
     uint8_t priority;
     UpdateRate updateInterval_ms;
+    uint32_t color;
+    const char *icon;
 };
 
 struct PIDData_t

@@ -191,6 +191,7 @@ extern "C" void app_main(void)
 {
 
     esp_log_level_set("CAN_DRIVER", ESP_LOG_DEBUG);
+    esp_log_level_set("ASYNC_WEB_SERVER", ESP_LOG_DEBUG);
 
     // Component setup
     led.init();

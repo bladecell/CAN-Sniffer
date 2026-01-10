@@ -4,6 +4,7 @@
 	import Telemetry from "./Telemetry.svelte";
 	import Settings from "./Settings.svelte";
 	import Diagnostics from "./Diagnostics.svelte";
+	import CanLogging from "./CanLogging.svelte";
 
 	let activeTab = $state("dashboard");
 	let count = $state(0);
@@ -20,6 +21,8 @@
 		<Settings />
 	{:else if activeTab === "diagnostics"}
 		<Diagnostics />
+	{:else if activeTab === "can-logging"}
+		<CanLogging />
 	{/if}
 </main>
 

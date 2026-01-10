@@ -7,8 +7,8 @@ def sanitize_name(name):
     return re.sub(r'[^a-zA-Z0-9]', '_', name).upper()
 
 def generate_assets():
-    dist_path = "can-sniffer/dist"
-    output_header = "../firmware/main/include/web_assets.h"
+    dist_path = os.path.join(os.getcwd(), "frontend", "dist")
+    output_header = os.path.join(os.getcwd(), "firmware", "main", "include", "web_assets.h")
     
     if not os.path.exists(dist_path):
         print(f"Dist folder not found at: {dist_path}")

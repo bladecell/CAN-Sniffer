@@ -172,8 +172,6 @@ twai_node_status_t CanDriver::getStatus()
 
 esp_err_t CanDriver::transmit(twai_frame_t *tx_msg, int timeout_ms)
 {
-    static uint32_t lastSendTime_ms = 0;
-
     if (!isInitialized() || !isBusConnected())
     {
         return ESP_ERR_INVALID_STATE;
@@ -185,21 +183,18 @@ esp_err_t CanDriver::transmit(twai_frame_t *tx_msg, int timeout_ms)
         return ESP_ERR_INVALID_ARG;
     }
 
-    uint32_t currentTime_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-    uint32_t timeSinceLastSend = currentTime_ms - lastSendTime_ms;
+    TickType_t now = xTaskGetTickCount();
+    TickType_t elapsed = now - last_tx_ticks;
+    const TickType_t min_period = pdMS_TO_TICKS(MIN_TRANSMIT_PERIOD_MS);
 
-    if (timeSinceLastSend < MIN_TRANSMIT_PERIOD_MS)
+    if (elapsed < min_period)
     {
-        uint32_t delay_ms = MIN_TRANSMIT_PERIOD_MS - timeSinceLastSend;
-
-        vTaskDelay(pdMS_TO_TICKS(delay_ms));
-
-        currentTime_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        TickType_t wait_time = min_period - elapsed;
+        vTaskDelay(wait_time);
     }
 
     esp_err_t ret = twai_node_transmit(nodeHdl, tx_msg, pdMS_TO_TICKS(timeout_ms));
-
-    lastSendTime_ms = currentTime_ms;
+    last_tx_ticks = xTaskGetTickCount();
 
     if (ret != ESP_OK)
     {
@@ -208,7 +203,6 @@ esp_err_t CanDriver::transmit(twai_frame_t *tx_msg, int timeout_ms)
     }
 
     LOG_CAN_FRAME(TAG, "TX -> ", tx_msg->header.id, tx_msg->buffer, tx_msg->header.dlc);
-
     return ESP_OK;
 }
 
@@ -223,7 +217,7 @@ esp_err_t CanDriver::receive(CanDriver::CanFrame &frame, int timeout_ms)
 
     if (xQueueReceive(rxQueue, &frame, ticks) == pdTRUE)
     {
-        LOG_CAN_FRAME(TAG, "RX <- ", &frame.id, frame.data, frame.length);
+        LOG_CAN_FRAME(TAG, "RX <- ", frame.id, frame.data, frame.length);
         return ESP_OK;
     }
 

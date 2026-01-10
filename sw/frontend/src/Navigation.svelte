@@ -7,6 +7,7 @@
         { id: "overview", icon: "home", label: "Overview" },
         { id: "telemetry", icon: "chart", label: "Telemetry" },
         { id: "diagnostics", icon: "engine", label: "Diagnostics" },
+        { id: "can-logging", icon: "timeline-arrow", label: "CAN Logging" },
         { id: "settings", icon: "gear", label: "Settings" },
     ];
 </script>
