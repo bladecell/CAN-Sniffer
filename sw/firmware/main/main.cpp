@@ -186,27 +186,6 @@ void t_request_sample(void *pvParameters)
     }
 }
 
-void send_can_message(uint16_t id, uint8_t *data, uint8_t len = 8)
-{
-
-    twai_frame_t tx = {};
-
-    tx.header.id = id; // OBD-II  request ID
-    tx.header.dlc = twaifd_len2dlc(len);
-    tx.header.ide = false;      // Standard Frame Format (11-bit ID)
-    tx.header.rtr = 0;          // Data frame (not remote frame)
-    tx.header.fdf = 0;          // Classic CAN format
-    tx.header.brs = 0;          // No bit rate switching
-    tx.header.esi = 0;          // No error state indicator
-    tx.header.timestamp = 0;    // Not used for TX
-    tx.header.trigger_time = 0; // Not used for immediate transmission
-
-    tx.buffer = data;
-    tx.buffer_len = len;
-
-    esp_err_t ret = CanDriver::getInstance().transmit(&tx, 100);
-}
-
 // ----- app_main --------------------------------------------------------------
 extern "C" void app_main(void)
 {
@@ -217,10 +196,10 @@ extern "C" void app_main(void)
     led.init();
 
     esp_err_t (*setup_functions[])() = {
-        // setup_wifi,
+        setup_wifi,
         setup_can,
-        // setup_obd,
-        // setup_web_server,
+        setup_obd,
+        setup_web_server,
     };
 
     for (size_t i = 0; i < sizeof(setup_functions) / sizeof(setup_functions[0]); i++)
@@ -231,53 +210,6 @@ extern "C" void app_main(void)
             return;
         }
     }
-
-    // UDS over TP2.0
-
-    // TP2.0 Handshake
-
-    uint16_t id_handshake = 0x200;
-    uint8_t d_handshake[] = {0x01, 0xC0, 0x00, 0x10, 0x00, 0x03, 0x01, 0x3F};
-
-    send_can_message(id_handshake, d_handshake);
-
-    // Wait for a response
-    vTaskDelay(pdMS_TO_TICKS(100));
-
-    // Wait for Negotiation Response (0xD0)
-    bool negotiated = false;
-    uint32_t start = esp_log_timestamp();
-    uint16_t tx_id = 0;
-    uint16_t rx_id = 0;
-
-    while (esp_log_timestamp() - start < 1000)
-    {
-        CanDriver::CanFrame f{};
-        if (CanDriver::getInstance().receive(f, pdMS_TO_TICKS(50)) == ESP_OK)
-        {
-            if ((f.id & 0xF00) == 0x200 && f.data[1] == 0xD0)
-            {
-                tx_id = 0x300 | f.data[4];
-                rx_id = 0x300 | f.data[5];
-                ESP_LOGI(TAG, "Negotiated! TX: 0x%X | RX: 0x%X", tx_id, rx_id);
-                negotiated = true;
-                break;
-            }
-        }
-    }
-
-    if (!negotiated)
-    {
-        ESP_LOGE(TAG, "Negotiation Failed");
-        while (1)
-            vTaskDelay(1000);
-    }
-
-    // Parameter request
-    uint16_t id_param_request = tx_id;
-    uint8_t d_param_request[] = {0xA0, 0x0F, 0x8A, 0xFF, 0x32, 0xFF, 0x00, 0x00};
-
-    send_can_message(id_param_request, d_param_request);
 
     // xTaskCreate(t_request_sample, "request_sample", 4096, NULL, 5, NULL);
 }

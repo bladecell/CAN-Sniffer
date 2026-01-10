@@ -185,8 +185,6 @@ esp_err_t CanDriver::transmit(twai_frame_t *tx_msg, int timeout_ms)
         return ESP_ERR_INVALID_ARG;
     }
 
-    LOG_CAN_FRAME(TAG, "TX -> ", tx_msg->header.id, tx_msg->buffer);
-
     uint32_t currentTime_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
     uint32_t timeSinceLastSend = currentTime_ms - lastSendTime_ms;
 
@@ -209,6 +207,8 @@ esp_err_t CanDriver::transmit(twai_frame_t *tx_msg, int timeout_ms)
         return ret;
     }
 
+    LOG_CAN_FRAME(TAG, "TX -> ", tx_msg->header.id, tx_msg->buffer, tx_msg->header.dlc);
+
     return ESP_OK;
 }
 
@@ -223,7 +223,7 @@ esp_err_t CanDriver::receive(CanDriver::CanFrame &frame, int timeout_ms)
 
     if (xQueueReceive(rxQueue, &frame, ticks) == pdTRUE)
     {
-        LOG_CAN_FRAME(TAG, "RX <- ", frame.id, frame.data);
+        LOG_CAN_FRAME(TAG, "RX <- ", &frame.id, frame.data, frame.length);
         return ESP_OK;
     }
 
