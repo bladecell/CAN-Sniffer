@@ -4,6 +4,7 @@
     import { onDestroy, onMount } from "svelte";
     import { scale } from "svelte/transition";
     import { flip } from "svelte/animate";
+    import MultiSelect from "svelte-multiselect";
 
     // let cards = $state([
     //     {
@@ -98,24 +99,51 @@
         cards[index].visible = !cards[index].visible;
         swapy.update();
     }
+
+    // Filter cards based on search term
+    let searchTerm = $state("");
+
+    // Filter cards based on search term
+    let filteredCards = $derived(
+        cards
+            .map((card, index) => ({
+                ...card,
+                index,
+                matches: card.label
+                    .toLowerCase()
+                    .includes(searchTerm.toLowerCase()),
+            }))
+            .filter((card) => card.matches),
+    );
 </script>
 
 <div class="controls-container">
     <details class="dropdown">
-        <summary> Data to show </summary>
+        <summary> Parameters to show </summary>
         <ul>
-            {#each cards as card, index}
+            <li class="search-container">
+                <input
+                    type="search"
+                    placeholder="Search..."
+                    bind:value={searchTerm}
+                    onclick={(e) => e.stopPropagation()}
+                />
+            </li>
+            {#each filteredCards as card}
                 <li>
                     <label>
                         <input
                             type="checkbox"
                             checked={card.visible}
-                            onchange={() => toggleCard(index)}
+                            onchange={() => toggleCard(card.index)}
                         />
                         {card.label}
                     </label>
                 </li>
             {/each}
+            {#if filteredCards.length === 0}
+                <li class="no-results">No matches found</li>
+            {/if}
         </ul>
     </details>
 </div>
@@ -144,10 +172,27 @@
     .dropdown {
         position: relative;
         display: inline-block;
+        width: 15vw;
     }
     .cards-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
         gap: 1rem;
+    }
+
+    .search-container {
+        position: sticky;
+        top: 0;
+        padding: 0.5rem;
+    }
+
+    .search-container input {
+        margin: 0;
+    }
+
+    .no-results {
+        text-align: center;
+        color: var(--pico-muted-color);
+        padding: 1rem;
     }
 </style>
