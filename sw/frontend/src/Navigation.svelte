@@ -1,5 +1,5 @@
 <script>
-    import Icon from "./Icon.svelte";
+    import Icon from "$lib/Icon.svelte";
 
     let { activeTab = $bindable() } = $props();
 

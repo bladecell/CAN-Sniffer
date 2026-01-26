@@ -59,7 +59,7 @@ esp_err_t OBD2::init()
     BaseType_t taskCreated = xTaskCreatePinnedToCore(
         receiveTaskWrapper,
         "OBD2_receive_task",
-        4096,
+        8192,
         this,
         tskIDLE_PRIORITY + 2,
         &ReceiveTaskHandle,
@@ -470,7 +470,12 @@ esp_err_t OBD2::parseCurrentData(const CanDriver::CanFrame &f)
     }
     setValid(pid, true);
 
-    return ESP_OK;
+    for (const auto &callback : subscribers_)
+    {
+        callback(pid);
+    }
+
+    return ret;
 }
 
 esp_err_t OBD2::parseDTCs(std::vector<CanDriver::CanFrame> &frames, uint8_t mode)

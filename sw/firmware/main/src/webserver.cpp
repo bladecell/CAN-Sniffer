@@ -25,6 +25,9 @@ esp_err_t setup_web_server()
     AsyncWebServer::getInstance().registerRoute("/api/v1/req/vin", HTTP_POST, p_vin_index_handler, NULL);
     AsyncWebServer::getInstance().registerRoute("/api/v1/req/dtc*", HTTP_POST, p_dtc_index_handler, NULL);
     AsyncWebServer::getInstance().registerRoute("/api/v1/req/clear_dtc", HTTP_POST, p_clear_dtc_index_handler, NULL);
+    AsyncWebServer::getInstance().registerSocketRoute("/ws", ws_socket_handler, NULL);
+
+    OBD2::getInstance().subscribe(pid_stream_callback);
 
     return ret;
 }
@@ -142,10 +145,9 @@ esp_err_t g_pid_data_index_handler(httpd_req_t *req, void *arg)
 
 esp_err_t p_pid_poll_data_index_handler(httpd_req_t *req, void *arg)
 {
-    bool *running = (bool *)malloc(sizeof(bool));
-    if (get_query_bool(req, "running", running) != ESP_OK)
+    bool running = false;
+    if (get_query_bool(req, "running", &running) != ESP_OK)
     {
-        free(running);
         esp_err_t ret = httpd_resp_send_404(req);
         return ret;
     }
@@ -154,7 +156,6 @@ esp_err_t p_pid_poll_data_index_handler(httpd_req_t *req, void *arg)
 
     httpd_resp_set_status(req, "201 Created");
     esp_err_t ret = httpd_resp_send(req, NULL, 0);
-    free(running);
 
     return ret;
 }
@@ -223,4 +224,95 @@ esp_err_t p_clear_dtc_index_handler(httpd_req_t *req, void *arg)
 
     httpd_resp_set_status(req, "200 OK");
     return send_json_response(req, root);
+}
+
+esp_err_t ws_socket_handler(httpd_req_t *req)
+{
+    int sockfd = httpd_req_to_sockfd(req);
+
+    if (req->method == HTTP_GET)
+    {
+        ESP_LOGI(TAG, "WS Connect: Client #%d", sockfd);
+        return ESP_OK;
+    }
+
+    httpd_ws_frame_t ws_pkt;
+    memset(&ws_pkt, 0, sizeof(httpd_ws_frame_t));
+    ws_pkt.type = HTTPD_WS_TYPE_BINARY;
+
+    esp_err_t ret = httpd_ws_recv_frame(req, &ws_pkt, 0);
+
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "WS Client #%d Read Error (Likely Disconnected)", sockfd);
+        return ret;
+    }
+
+    if (ws_pkt.type == HTTPD_WS_TYPE_CLOSE)
+    {
+        ESP_LOGI(TAG, "WS Client #%d Sent Close Frame", sockfd);
+
+        httpd_ws_send_frame(req, &ws_pkt);
+        return ESP_OK;
+    }
+
+    if (ws_pkt.len > 0)
+    {
+        uint8_t *buf = (uint8_t *)malloc(ws_pkt.len);
+        if (!buf)
+            return ESP_ERR_NO_MEM;
+
+        ws_pkt.payload = buf;
+        ret = httpd_ws_recv_frame(req, &ws_pkt, ws_pkt.len);
+
+        if (ret == ESP_OK)
+        {
+
+            uint8_t command = buf[0];
+
+            switch (command)
+            {
+            case WS_START_PID_STREAM:
+                enable_pid_stream(true);
+                ESP_LOGI(TAG, "Starting PID Stream");
+                break;
+
+            case WS_STOP_PID_STREAM:
+                enable_pid_stream(false);
+                ESP_LOGI(TAG, "Stopping PID Stream");
+                break;
+
+            default:
+                ESP_LOGW(TAG, "Unknown WS Command: 0x%02X", command);
+            }
+        }
+        free(buf);
+    }
+    return ret;
+}
+
+static bool b_pid_stream_enabled = false;
+
+inline void enable_pid_stream(bool enable)
+{
+    b_pid_stream_enabled = enable;
+}
+
+void pid_stream_callback(uint8_t pid)
+{
+    if (!b_pid_stream_enabled)
+        return;
+
+    PidWirePacket packet;
+
+    if (get_pid_stream_packet(pid, &packet) == ESP_OK)
+    {
+        httpd_ws_frame_t ws_frame;
+        memset(&ws_frame, 0, sizeof(httpd_ws_frame_t));
+        ws_frame.payload = (uint8_t *)&packet;
+        ws_frame.len = sizeof(PidWirePacket);
+        ws_frame.type = HTTPD_WS_TYPE_BINARY;
+
+        AsyncWebServer::getInstance().wsBroadcast(&ws_frame);
+    }
 }

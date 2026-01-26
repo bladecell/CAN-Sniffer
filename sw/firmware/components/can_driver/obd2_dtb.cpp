@@ -572,3 +572,8 @@ std::vector<std::string> OBD2DTB::getDTC(uint8_t mode)
     xSemaphoreGive(dtcData.mtx_);
     return result;
 }
+
+void OBD2DTB::subscribe(DataUpdateCallback cb)
+{
+    subscribers_.push_back(cb);
+}

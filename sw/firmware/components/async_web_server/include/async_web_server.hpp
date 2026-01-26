@@ -7,6 +7,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include <vector>
+#include <atomic>
+
+#define MAX_WS_CLIENTS CONFIG_LWIP_MAX_LISTENING_TCP
 
 class AsyncWebServer
 {
@@ -53,6 +56,10 @@ public:
     esp_err_t start(Config config);
     esp_err_t stop();
     void registerRoute(const char *uri, httpd_method_t method, AsyncHandler func, void *arg);
+
+    void registerSocketRoute(const char *uri, esp_err_t (*handler)(httpd_req_t *r), void *ctx = NULL);
+
+    void wsBroadcast(httpd_ws_frame_t *ws_pkt);
 
 private:
     AsyncWebServer(const AsyncWebServer &) = delete;

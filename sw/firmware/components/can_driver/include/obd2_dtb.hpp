@@ -45,6 +45,10 @@ public:
     esp_err_t clearDTC(uint8_t mode);
     std::string decodeDTC(uint16_t rawDTC);
 
+    using DataUpdateCallback = std::function<void(uint8_t pid)>;
+    void subscribe(DataUpdateCallback cb);
+    std::vector<DataUpdateCallback> subscribers_;
+
     // Readonly access to databases
     const std::map<uint8_t, PIDDef_t> &getPID_DEF() const
     {

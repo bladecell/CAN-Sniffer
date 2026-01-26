@@ -313,3 +313,23 @@ cJSON *m_clear_dtc_request()
     }
     return root;
 }
+
+esp_err_t get_pid_stream_packet(uint8_t pid, PidWirePacket *out_packet)
+{
+    const auto &pids = OBD2::getInstance().getPidData();
+    auto it = pids.find((uint8_t)pid);
+
+    if (it == pids.end())
+        return ESP_ERR_NOT_FOUND;
+
+    const PIDData_t &data = it->second;
+    out_packet->type = MSG_TYPE_PID;
+    out_packet->pid_id = pid;
+    out_packet->value = data.value;
+    out_packet->lastUpdated = data.lastUpdated;
+    out_packet->interval = (uint32_t)data.updateInterval_ms;
+    out_packet->isSupported = data.isSupported ? 1 : 0;
+    out_packet->isValid = data.isValid ? 1 : 0;
+
+    return ESP_OK;
+}

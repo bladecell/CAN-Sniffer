@@ -1,31 +1,42 @@
 <script>
-    import Icon from "./Icon.svelte";
+    import Icon from "$lib/Icon.svelte";
+    import { canStore } from "$lib/canStore.svelte.js";
 
     let {
+        pid,
         label = "Metric",
-        value = 0,
         unit = "%",
         icon = "gear",
         color = "#10b981",
         min = 0,
         max = 100,
-        supported = true,
-        valid = true,
     } = $props();
 
-    // Reactive status calculation
-    const status = $derived(
-        !supported
-            ? "#6b7280"
-            : !valid
-              ? "#ef4444"
-              : ((value - min) / (max - min)) * 100 >= 20 &&
-                  ((value - min) / (max - min)) * 100 <= 80
-                ? "#10b981"
-                : "#f59e0b",
-    );
+    // FIX 1: Use 'pids' (from store) and .get() (for Map)
+    // Svelte 5 reactivity handles Map.get() inside $derived automatically
+    const pidData = $derived(canStore.pids.get(pid));
 
-    const displayValue = $derived(supported ? value : "···");
+    // FIX 2: Handle data not arriving yet (undefined check)
+    const currentValue = $derived(pidData?.value ?? 0);
+
+    // FIX 3: Store property is named 'valid', not 'isValid'
+    const isValid = $derived(pidData?.valid ?? false);
+
+    // 'supported' isn't in the binary stream yet, default to true
+    const supported = $derived(pidData?.supported ?? false);
+
+    const status = $derived.by(() => {
+        if (!supported) return "#6b7280";
+        if (!isValid) return "#ef4444";
+
+        const pct = ((currentValue - min) / (max - min)) * 100;
+
+        if (pct >= 20 && pct <= 80) return "#10b981"; // Green (Normal)
+        return "#f59e0b"; // Orange (Warning)
+    });
+
+    // Handle initial state where currentValue might be 0/undefined
+    const displayValue = $derived(supported ? currentValue.toFixed(1) : "···");
 </script>
 
 <article
@@ -41,7 +52,7 @@
         >
             <Icon name={icon} size={32} />
         </div>
-        <div class="status" style="background: {status};"></div>
+        <div class="status" style:--status-color={status}></div>
     </div>
 
     <div class="card-body">
@@ -105,7 +116,9 @@
         width: 10px;
         height: 10px;
         border-radius: 50%;
-        animation: pulse 2s infinite;
+        background: var(--status-color);
+        box-shadow: 0 0 10px var(--status-color);
+        animation: pulse-glow 2s infinite alternate;
     }
 
     .disabled .status {
@@ -146,13 +159,18 @@
         font-family: var(--pico-font-family-monospace);
     }
 
-    @keyframes pulse {
-        0%,
-        100% {
+    @keyframes pulse-glow {
+        0% {
             opacity: 1;
+            box-shadow: 0 0 1px var(--status-color);
         }
         50% {
-            opacity: 0.5;
+            opacity: 0.85;
+            box-shadow: 0 0 6px var(--status-color);
+        }
+        100% {
+            opacity: 1;
+            box-shadow: 0 0 8px var(--status-color);
         }
     }
 </style>

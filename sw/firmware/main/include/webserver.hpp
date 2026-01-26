@@ -2,6 +2,10 @@
 #include "web_assets.h"
 #include "wifi.hpp"
 #include "middleware.hpp"
+#include "obd2.hpp"
+
+#define WS_START_PID_STREAM 0xA0
+#define WS_STOP_PID_STREAM 0xA1
 
 esp_err_t setup_web_server();
 
@@ -24,3 +28,7 @@ esp_err_t p_clear_dtc_data_index_handler(httpd_req_t *req, void *arg);
 esp_err_t p_dtc_index_handler(httpd_req_t *req, void *arg);
 esp_err_t p_vin_index_handler(httpd_req_t *req, void *arg);
 esp_err_t p_clear_dtc_index_handler(httpd_req_t *req, void *arg);
+esp_err_t ws_socket_handler(httpd_req_t *req);
+
+void pid_stream_callback(uint8_t pid);
+void enable_pid_stream(bool enable);

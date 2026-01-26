@@ -1,52 +1,12 @@
 <script>
-    import PIDCard from "./PIDCard.svelte";
+    import PIDCard from "$lib/components/PIDCard.svelte";
     import { createSwapy } from "swapy";
     import { onDestroy, onMount } from "svelte";
     import { scale } from "svelte/transition";
     import { flip } from "svelte/animate";
-    import MultiSelect from "svelte-multiselect";
-
-    // let cards = $state([
-    //     {
-    //         label: "Coolant Temp",
-    //         value: 50,
-    //         unit: "°C",
-    //         icon: "thermometer",
-    //         status: "warning",
-    //         color: "#ef4444",
-    //         min: 0,
-    //         max: 100,
-    //         supported: true,
-    //         valid: true,
-    //         visible: true,
-    //     },
-    //     {
-    //         label: "Engine RPM",
-    //         value: 2450,
-    //         unit: "rpm",
-    //         icon: "gauge",
-    //         status: "normal",
-    //         color: "#f59e0b",
-    //         min: 0,
-    //         max: 100,
-    //         supported: true,
-    //         valid: true,
-    //         visible: true,
-    //     },
-    //     {
-    //         label: "Fuel Level",
-    //         value: 67,
-    //         unit: "%",
-    //         icon: "droplet",
-    //         status: "normal",
-    //         color: "#3b82f6",
-    //         min: 0,
-    //         max: 100,
-    //         supported: false,
-    //         valid: true,
-    //         visible: true,
-    //     },
-    // ]);
+    import { canStore } from "$lib/canStore.svelte.js";
+    import CANConnectionCard from "$lib/components/CANConnectionCard.svelte";
+    import Switch from "$lib/components/Switch.svelte";
 
     function createCardFromPID(pidData) {
         return {
@@ -65,39 +25,32 @@
         };
     }
 
-    async function fetchCards() {
-        const response = await fetch("/api/v1/pid_def");
-        const result = await response.json();
-        cards = result.data.map((pidData) => createCardFromPID(pidData));
-    }
-
     let container;
     let swapy = null;
-    let cards = $state([]);
+    let cards = $derived(
+        canStore.pidDefinitions.map((pidData) => createCardFromPID(pidData)),
+    );
 
-    onMount(async () => {
-        try {
-            await fetchCards();
-        } catch (error) {
-            console.error("Error Fetching cards:", error);
-        }
-
+    onMount(() => {
         if (container) {
             swapy = createSwapy(container);
 
             swapy.onSwap((event) => {
                 console.log("swap", event);
             });
+
+            canStore.startLogging();
         }
     });
 
     onDestroy(() => {
         swapy?.destroy();
+        canStore.stopLogging();
     });
 
     function toggleCard(index) {
         cards[index].visible = !cards[index].visible;
-        swapy.update();
+        setTimeout(() => swapy.update(), 0);
     }
 
     // Filter cards based on search term
@@ -118,6 +71,18 @@
 </script>
 
 <div class="controls-container">
+    <div class="status-container">
+        <CANConnectionCard />
+        <Switch
+            label="Data Polling"
+            checked={canStore.obd2Status?.continuous_running}
+            statusText={canStore.obd2Status?.continuous_running
+                ? "Running"
+                : "Stopped"}
+            onchange={(val) => canStore.setContinuousPolling(val)}
+        />
+    </div>
+
     <details class="dropdown">
         <summary> Parameters to show </summary>
         <ul>
@@ -163,9 +128,16 @@
 </div>
 
 <style>
+    .status-container {
+        display: flex;
+        flex-direction: row;
+        align-items: stretch;
+        gap: 1rem;
+    }
+
     .controls-container {
         display: flex;
-        justify-content: flex-end;
+        justify-content: space-between;
         margin-bottom: 1rem;
     }
 

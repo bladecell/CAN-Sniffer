@@ -18,6 +18,7 @@ esp_err_t AsyncWebServer::start(Config config)
 
     config.httpd_config.max_open_sockets = config.async_worker_task_num + 1;
     config.httpd_config.lru_purge_enable = true;
+    config.httpd_config.stack_size = 8192;
 
     ESP_RETURN_ON_ERROR(
         httpd_start(&server_, &config.httpd_config),
@@ -76,12 +77,11 @@ void AsyncWebServer::registerRoute(const char *uri, httpd_method_t method, Async
     ctx->handler = func;
     ctx->arg = arg;
 
-    httpd_uri_t http_uri = {
-        .uri = uri,
-        .method = method,
-        .handler = async_handler, // Point to our static shim (see below)
-        .user_ctx = ctx           // Store our context here
-    };
+    httpd_uri_t http_uri = {};
+    http_uri.uri = uri;
+    http_uri.method = method;
+    http_uri.handler = async_handler; // Point to our static shim (see below)
+    http_uri.user_ctx = ctx;          // Store our context here
 
     route_contexts.push_back(ctx);
 
@@ -268,5 +268,57 @@ inline const char *AsyncWebServer::get_method_str(int method)
         return "PATCH";
     default:
         return "UNKNOWN";
+    }
+}
+
+void AsyncWebServer::registerSocketRoute(const char *uri, esp_err_t (*handler)(httpd_req_t *r), void *ctx)
+{
+    httpd_uri_t http_uri = {};
+
+    http_uri.uri = uri;
+    http_uri.method = HTTP_GET;
+    http_uri.handler = handler;
+    http_uri.user_ctx = ctx;
+    http_uri.is_websocket = true;
+    http_uri.handle_ws_control_frames = true;
+
+    esp_err_t err = httpd_register_uri_handler(server_, &http_uri);
+
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to register WS handler for %s", uri);
+    }
+}
+
+void AsyncWebServer::wsBroadcast(httpd_ws_frame_t *ws_pkt)
+{
+    // 1. Prepare a buffer for client FDs
+    // 20 is usually plenty for ESP32 (lwIP max is often ~16)
+    static const size_t MAX_CLIENTS = 20;
+    int client_fds[MAX_CLIENTS];
+    size_t fds = MAX_CLIENTS;
+
+    // 2. Ask ESP-IDF for the list of ALL connected clients
+    esp_err_t ret = httpd_get_client_list(server_, &fds, client_fds);
+
+    if (ret != ESP_OK)
+    {
+        return; // Server might be stopping or empty
+    }
+
+    // 3. Iterate and Send
+    for (int i = 0; i < fds; i++)
+    {
+        int fd = client_fds[i];
+
+        // 4. IMPORTANT: Check if this client is actually a WebSocket
+        // (The list includes normal HTTP clients too!)
+        httpd_ws_client_info_t info = httpd_ws_get_fd_info(server_, fd);
+
+        if (info == HTTPD_WS_CLIENT_WEBSOCKET)
+        {
+            // Send Async so we don't block the CAN task
+            httpd_ws_send_frame_async(server_, fd, ws_pkt);
+        }
     }
 }

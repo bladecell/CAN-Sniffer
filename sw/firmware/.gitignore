@@ -62,6 +62,4 @@ htmlcov/
 coverage.xml
 *.cover
 
-OBDII-PIDs.xlsx
-
 /main/include/secrets.h

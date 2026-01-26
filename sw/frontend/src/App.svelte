@@ -5,6 +5,26 @@
 	import Settings from "./Settings.svelte";
 	import Diagnostics from "./Diagnostics.svelte";
 	import CanLogging from "./CanLogging.svelte";
+	import { canStore } from "$lib/canStore.svelte";
+	import { onMount } from "svelte";
+
+	onMount(() => {
+		canStore.connect();
+		canStore.loadDefinitions();
+		canStore.getCanStatus();
+		canStore.getObd2Status();
+
+		const cleanup = () => {
+			canStore.disconnect();
+		};
+
+		window.addEventListener("beforeunload", cleanup);
+
+		return () => {
+			cleanup();
+			window.removeEventListener("beforeunload", cleanup);
+		};
+	});
 
 	let activeTab = $state("dashboard");
 	let count = $state(0);
