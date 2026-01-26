@@ -7,6 +7,7 @@
     import { canStore } from "$lib/canStore.svelte.js";
     import CANConnectionCard from "$lib/components/CANConnectionCard.svelte";
     import Switch from "$lib/components/Switch.svelte";
+    import { alertStore } from "./lib/alertStore.svelte";
 
     function createCardFromPID(pidData) {
         return {
@@ -27,8 +28,13 @@
 
     let container;
     let swapy = null;
+    let visibilityState = $state({});
     let cards = $derived(
-        canStore.pidDefinitions.map((pidData) => createCardFromPID(pidData)),
+        canStore.pidDefinitions.map((pidData) => {
+            const card = createCardFromPID(pidData);
+            card.visible = visibilityState[pidData.pid] ?? true;
+            return card;
+        }),
     );
 
     onMount(() => {
@@ -49,14 +55,14 @@
     });
 
     function toggleCard(index) {
-        cards[index].visible = !cards[index].visible;
-        setTimeout(() => swapy.update(), 0);
+        const card = cards[index];
+        visibilityState[card.pid] = !card.visible;
+
+        setTimeout(() => swapy?.update(), 0);
     }
 
-    // Filter cards based on search term
     let searchTerm = $state("");
 
-    // Filter cards based on search term
     let filteredCards = $derived(
         cards
             .map((card, index) => ({
@@ -131,7 +137,7 @@
     .status-container {
         display: flex;
         flex-direction: row;
-        align-items: stretch;
+        align-items: center;
         gap: 1rem;
     }
 

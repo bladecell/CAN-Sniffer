@@ -3,17 +3,15 @@
     import { onMount } from "svelte";
     import { on } from "svelte/events";
 
+    let { class: className = "", ...rest } = $props();
+
     onMount(() => {
-        const interval = setInterval(() => {
-            canStore.getCanStatus();
-        }, 1000);
+        canStore.startCanPolling(2000);
 
         return () => {
-            clearInterval(interval);
+            canStore.startCanPolling(5000);
         };
     });
-
-    let { class: className = "", ...rest } = $props();
 
     const isConnected = $derived(canStore.canStatus?.state === "connected");
     const statusText = $derived(canStore.canStatus?.state);
@@ -43,12 +41,18 @@
 
 <style>
     .can-connection-card {
-        height: 100%;
-        width: 100%;
-        padding: 0.5rem 1rem;
+        /* 1. Remove forced width/height (let flex stretch handle it) */
+        /* height: 100%; */
+        /* width: 100%; */
+
+        /* 2. Use Pico variables for padding so it matches the Switch exactly */
+        padding: var(--pico-block-spacing-vertical)
+            var(--pico-block-spacing-horizontal);
+
         border-left: 4px solid var(--status-color);
         margin-bottom: 0;
         background: var(--pico-card-background-color);
+
         display: flex;
         flex-direction: column;
         justify-content: center;
@@ -58,7 +62,7 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
-        gap: 1rem;
+        gap: 1.5rem; /* Increased to match Switch breathing room */
         width: 100%;
     }
 
@@ -74,15 +78,15 @@
         text-transform: capitalize;
         font-size: 1.1rem;
         line-height: 1.2;
+        white-space: nowrap; /* Prevent wrapping like in Switch */
     }
 
     .icon-wrapper {
         width: 40px;
         height: 40px;
-        border-radius: 50%;
         display: flex;
         align-items: center;
-        justify-content: center;
+        justify-content: flex-end; /* Align dot to the right */
     }
 
     .dot {

@@ -81,5 +81,8 @@
         text-transform: capitalize;
         font-size: 1.1rem;
         line-height: 1.2;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 </style>

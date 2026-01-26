@@ -303,13 +303,13 @@ void pid_stream_callback(uint8_t pid)
     if (!b_pid_stream_enabled)
         return;
 
-    PidWirePacket packet;
+    uint8_t packet[19];
 
-    if (get_pid_stream_packet(pid, &packet) == ESP_OK)
+    if (get_pid_stream_packet(pid, packet) == ESP_OK)
     {
         httpd_ws_frame_t ws_frame;
         memset(&ws_frame, 0, sizeof(httpd_ws_frame_t));
-        ws_frame.payload = (uint8_t *)&packet;
+        ws_frame.payload = packet;
         ws_frame.len = sizeof(PidWirePacket);
         ws_frame.type = HTTPD_WS_TYPE_BINARY;
 

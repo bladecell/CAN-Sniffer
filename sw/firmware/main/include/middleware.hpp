@@ -33,4 +33,4 @@ cJSON *m_clear_dtc_request();
 cJSON *get_single_pid_def_json(const PIDDef_t &pi);
 cJSON *get_single_pid_data_json(uint8_t pid, const PIDData_t &pd);
 
-esp_err_t get_pid_stream_packet(uint8_t pid, PidWirePacket *out_packet);
+esp_err_t get_pid_stream_packet(uint8_t pid, uint8_t *out_packet);

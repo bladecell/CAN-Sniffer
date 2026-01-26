@@ -314,7 +314,7 @@ cJSON *m_clear_dtc_request()
     return root;
 }
 
-esp_err_t get_pid_stream_packet(uint8_t pid, PidWirePacket *out_packet)
+esp_err_t get_pid_stream_packet(uint8_t pid, uint8_t *out_packet)
 {
     const auto &pids = OBD2::getInstance().getPidData();
     auto it = pids.find((uint8_t)pid);
@@ -323,13 +323,42 @@ esp_err_t get_pid_stream_packet(uint8_t pid, PidWirePacket *out_packet)
         return ESP_ERR_NOT_FOUND;
 
     const PIDData_t &data = it->second;
-    out_packet->type = MSG_TYPE_PID;
-    out_packet->pid_id = pid;
-    out_packet->value = data.value;
-    out_packet->lastUpdated = data.lastUpdated;
-    out_packet->interval = (uint32_t)data.updateInterval_ms;
-    out_packet->isSupported = data.isSupported ? 1 : 0;
-    out_packet->isValid = data.isValid ? 1 : 0;
+    size_t offset = 0;
+
+    // 8 bit message type
+    out_packet[offset++] = MSG_TYPE_PID;
+
+    // 32 bit pid
+    out_packet[offset++] = (pid >> 0) & 0xFF;
+    out_packet[offset++] = (pid >> 8) & 0xFF;
+    out_packet[offset++] = (pid >> 16) & 0xFF;
+    out_packet[offset++] = (pid >> 24) & 0xFF;
+
+    // float value
+    uint32_t float_bits;
+    memcpy(&float_bits, &data.value, sizeof(data.value));
+    out_packet[offset++] = (float_bits >> 0) & 0xFF;
+    out_packet[offset++] = (float_bits >> 8) & 0xFF;
+    out_packet[offset++] = (float_bits >> 16) & 0xFF;
+    out_packet[offset++] = (float_bits >> 24) & 0xFF;
+
+    // 32 bit lastUpdated
+    out_packet[offset++] = (data.lastUpdated >> 0) & 0xFF;
+    out_packet[offset++] = (data.lastUpdated >> 8) & 0xFF;
+    out_packet[offset++] = (data.lastUpdated >> 16) & 0xFF;
+    out_packet[offset++] = (data.lastUpdated >> 24) & 0xFF;
+
+    // 32 bit interval
+    out_packet[offset++] = (data.updateInterval_ms >> 0) & 0xFF;
+    out_packet[offset++] = (data.updateInterval_ms >> 8) & 0xFF;
+    out_packet[offset++] = (data.updateInterval_ms >> 16) & 0xFF;
+    out_packet[offset++] = (data.updateInterval_ms >> 24) & 0xFF;
+
+    // 8 bit isSupported
+    out_packet[offset++] = data.isSupported ? 1 : 0;
+
+    // 8 bit isValid
+    out_packet[offset++] = data.isValid ? 1 : 0;
 
     return ESP_OK;
 }

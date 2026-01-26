@@ -5,17 +5,19 @@
 	import Settings from "./Settings.svelte";
 	import Diagnostics from "./Diagnostics.svelte";
 	import CanLogging from "./CanLogging.svelte";
-	import { canStore } from "$lib/canStore.svelte";
+	import { canStore } from "$lib/canStore.svelte.js";
 	import { onMount } from "svelte";
+	import ToastContainer from "./lib/components/ToastContainer.svelte";
 
 	onMount(() => {
 		canStore.connect();
 		canStore.loadDefinitions();
-		canStore.getCanStatus();
+		canStore.startCanPolling();
 		canStore.getObd2Status();
 
 		const cleanup = () => {
 			canStore.disconnect();
+			canStore.stopCanPolling();
 		};
 
 		window.addEventListener("beforeunload", cleanup);
@@ -45,6 +47,8 @@
 		<CanLogging />
 	{/if}
 </main>
+
+<ToastContainer />
 
 <style>
 	.main-content {

@@ -1,5 +1,6 @@
 // src/lib/canStore.svelte.js
 import { SvelteMap } from 'svelte/reactivity';
+import { alertStore } from './alertStore.svelte';
 
 export const COMMANDS = {
     START_LOG: 0xA0,
@@ -27,11 +28,13 @@ export class CanStore {
 
         this.socket.onopen = () => {
             console.log("WebSocket Connected");
+            alertStore.add("WebSocket Connected", "success");
             this.connected = true;
         };
 
         this.socket.onclose = () => {
             console.log("WebSocket Disconnected");
+            alertStore.add("WebSocket Disconnected", "error");
             this.connected = false;
             this.isStreaming = false;
             this.socket = null;
@@ -131,17 +134,55 @@ export class CanStore {
     }
 
     canStatus = $state(null);
+    canPollInterval = null;
+    canCurrentRate = $state(5000);
 
     async getCanStatus() {
         try {
-            const response = await fetch("/api/v1/can_bus");
-            const result = await response.json();
+            const previousState = this.canStatus?.state;
 
+            const response = await fetch("/api/v1/can_bus");
+            if (!response.ok) throw new Error(response.statusText);
+
+            const result = await response.json();
             this.canStatus = result;
+
+            const currentState = this.canStatus?.state;
+
+            if (previousState === "connected" && currentState !== "connected") {
+                alertStore.add("CAN Bus Disconnected", "error");
+            }
+
+            if (previousState !== "connected" && currentState === "connected") {
+                if (previousState !== undefined) {
+                    alertStore.add("CAN Bus Connected", "success");
+                }
+            }
+
         } catch (e) {
             console.error("Failed to load CAN status", e);
         }
     }
+
+    startCanPolling(intervalMs = this.canCurrentRate) {
+        this.stopCanPolling();
+
+        this.canCurrentRate = intervalMs;
+
+        this.getCanStatus();
+
+        this.canPollInterval = setInterval(() => {
+            this.getCanStatus();
+        }, intervalMs);
+    }
+
+    stopCanPolling() {
+        if (this.canPollInterval) {
+            clearInterval(this.canPollInterval);
+            this.canPollInterval = null;
+        }
+    }
+
 
     obd2Status = $state(null);
 
@@ -149,7 +190,6 @@ export class CanStore {
         try {
             const response = await fetch("/api/v1/obd2");
             const result = await response.json();
-            console.log("OBD2 Status:", result);
 
             this.obd2Status = result;
         } catch (e) {
