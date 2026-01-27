@@ -49,10 +49,8 @@
 
 <style>
     .switch-card {
-        height: 100%;
-        width: 100%;
-        padding: 0.5rem 1rem;
-        /* Dynamic left border color */
+        padding: var(--pico-block-spacing-vertical)
+            var(--pico-block-spacing-horizontal);
         border-left: 4px solid var(--status-color);
         margin-bottom: 0;
         background: var(--pico-card-background-color);

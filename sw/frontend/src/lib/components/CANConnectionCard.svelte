@@ -41,11 +41,6 @@
 
 <style>
     .can-connection-card {
-        /* 1. Remove forced width/height (let flex stretch handle it) */
-        /* height: 100%; */
-        /* width: 100%; */
-
-        /* 2. Use Pico variables for padding so it matches the Switch exactly */
         padding: var(--pico-block-spacing-vertical)
             var(--pico-block-spacing-horizontal);
 

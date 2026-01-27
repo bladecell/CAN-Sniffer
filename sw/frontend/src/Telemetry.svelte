@@ -16,8 +16,8 @@
             unit: pidData.unit,
             icon: pidData.icon,
             color: `#${pidData.color.toString(16).padStart(6, "0")}`,
-            min: pidData.min || 0,
-            max: pidData.max || 100,
+            min: pidData.minValue || 0,
+            max: pidData.maxValue || 100,
             supported: pidData.supported ?? true,
             valid: true,
             visible: true,
@@ -44,7 +44,11 @@
             swapy.onSwap((event) => {
                 console.log("swap", event);
             });
+        }
+    });
 
+    $effect(() => {
+        if (canStore.connected) {
             canStore.startLogging();
         }
     });
@@ -77,7 +81,7 @@
 </script>
 
 <div class="controls-container">
-    <div class="status-container">
+    <div class="status-group">
         <CANConnectionCard />
         <Switch
             label="Data Polling"
@@ -134,27 +138,38 @@
 </div>
 
 <style>
-    .status-container {
+    .status-group {
         display: flex;
-        flex-direction: row;
-        align-items: center;
         gap: 1rem;
+        align-items: stretch;
     }
 
     .controls-container {
         display: flex;
         justify-content: space-between;
+        align-items: stretch;
+        gap: 1rem;
         margin-bottom: 1rem;
+        flex-wrap: wrap;
     }
 
     .dropdown {
-        position: relative;
-        display: inline-block;
-        width: 15vw;
+        margin-bottom: 0;
+        height: auto;
+        min-width: 250px;
     }
+
+    .dropdown summary {
+        height: 100%;
+        display: flex;
+        align-items: center;
+        margin-bottom: 0;
+        white-space: nowrap;
+    }
+
     .cards-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
         gap: 1rem;
     }
 
@@ -172,5 +187,24 @@
         text-align: center;
         color: var(--pico-muted-color);
         padding: 1rem;
+    }
+
+    @media (max-width: 768px) {
+        .controls-container {
+            flex-direction: column; /* Stack Group on top, Dropdown below */
+        }
+
+        .status-group {
+            width: 100%;
+        }
+
+        /* Make the two cards share width equally 50/50 */
+        .status-group > :global(*) {
+            flex: 1;
+        }
+
+        .dropdown {
+            width: 100%; /* Dropdown takes full width below */
+        }
     }
 </style>
