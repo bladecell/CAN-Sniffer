@@ -13,14 +13,30 @@
 
 static const char *TAG = "WIFI";
 
+ESP_EVENT_DEFINE_BASE(WIFI_INTERNAL_EVENT);
+
+enum
+{
+    WIFI_INT_EVENT_FALLBACK_AP,
+    WIFI_INT_EVENT_RETRY_CONNECTION
+};
+
 WIFI::WIFI()
     : m_state(State::UNINITIALIZED),
       m_netif_ap(nullptr),
       m_netif_sta(nullptr),
       m_wifi_event_handler(nullptr),
       m_ip_event_handler(nullptr),
-      m_mutex(xSemaphoreCreateMutex())
+      m_mutex(xSemaphoreCreateMutex()),
+      m_retry_count(0)
 {
+    if (m_mutex == nullptr)
+    {
+        ESP_LOGE(TAG, "Failed to create mutex!");
+        m_state.store(State::ERROR, std::memory_order_release);
+        return;
+    }
+
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
     {
@@ -41,7 +57,7 @@ WIFI::~WIFI()
 
 esp_err_t WIFI::init(const Config &config)
 {
-    if (m_state != State::UNINITIALIZED)
+    if (getState() != State::UNINITIALIZED)
     {
         ESP_LOGW(TAG, "Already initialized");
         return ESP_ERR_INVALID_STATE;
@@ -91,6 +107,14 @@ esp_err_t WIFI::init(const Config &config)
 
     ERROR_CHECK(ret, "Failed to register IP event handlers", goto err);
 
+    ret = esp_event_handler_instance_register(WIFI_INTERNAL_EVENT,
+                                              ESP_EVENT_ANY_ID,
+                                              &internal_event_handler,
+                                              this,
+                                              NULL);
+
+    ERROR_CHECK(ret, "Failed to register internal event handlers", goto err);
+
     setState(State::INITIALIZED);
     ESP_LOGI(TAG, "WiFi AP Manager initialized");
     return ESP_OK;
@@ -103,8 +127,8 @@ err:
 esp_err_t WIFI::setAPConfig()
 {
     wifi_config_t ap_config = {};
-    strncpy((char *)ap_config.ap.ssid, m_config.ssid.c_str(), sizeof(ap_config.ap.ssid));
-    strncpy((char *)ap_config.ap.password, m_config.password.c_str(), sizeof(ap_config.ap.password));
+    strlcpy((char *)ap_config.ap.ssid, m_config.ssid.c_str(), sizeof(ap_config.ap.ssid));
+    strlcpy((char *)ap_config.ap.password, m_config.password.c_str(), sizeof(ap_config.ap.password));
     ap_config.ap.ssid_len = m_config.ssid.length();
     ap_config.ap.channel = m_config.channel;
     ap_config.ap.authmode = m_config.auth_mode;
@@ -118,8 +142,8 @@ esp_err_t WIFI::setAPConfig()
 esp_err_t WIFI::setSTAConfig()
 {
     wifi_config_t sta_config = {};
-    strncpy((char *)sta_config.sta.ssid, m_config.sta_ssid.c_str(), sizeof(sta_config.sta.ssid));
-    strncpy((char *)sta_config.sta.password, m_config.sta_password.c_str(), sizeof(sta_config.sta.password));
+    strlcpy((char *)sta_config.sta.ssid, m_config.sta_ssid.c_str(), sizeof(sta_config.sta.ssid));
+    strlcpy((char *)sta_config.sta.password, m_config.sta_password.c_str(), sizeof(sta_config.sta.password));
     sta_config.sta.threshold.authmode = m_config.sta_auth_mode;
     sta_config.sta.pmf_cfg.capable = true;
     sta_config.sta.pmf_cfg.required = false;
@@ -128,9 +152,11 @@ esp_err_t WIFI::setSTAConfig()
 
 esp_err_t WIFI::start()
 {
-    if (m_state != State::INITIALIZED)
+    if (getState() != State::INITIALIZED &&
+        getState() != State::STA_DISCONNECTED &&
+        getState() != State::STARTING)
     {
-        ESP_LOGW(TAG, "Invalid state for start");
+        ESP_LOGE(TAG, "Invalid state for start: %d", (int)getState());
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -159,7 +185,7 @@ esp_err_t WIFI::start()
     if (m_config.mode == WIFI_MODE_STA || m_config.mode == WIFI_MODE_APSTA)
     {
         setState(State::STA_CONNECTING);
-        esp_wifi_connect();
+        ERROR_CHECK(esp_wifi_connect(), "Failed to connect to WiFi", goto err);
     }
 
     // Only AP mode sets running immediately, STA waits for IP event
@@ -181,17 +207,21 @@ err:
 esp_err_t WIFI::start_mdns_service()
 {
     esp_err_t err = mdns_init();
+    if (err == ESP_ERR_INVALID_STATE)
+    {
+        return ESP_OK;
+    }
     if (err != ESP_OK)
         return err;
 
     mdns_hostname_set(HOSTNAME);
     mdns_instance_name_set(MDNS_INSTANCE);
-    return err;
+    return ESP_OK;
 }
 
 esp_err_t WIFI::stop()
 {
-    if (m_state == State::UNINITIALIZED)
+    if (getState() == State::UNINITIALIZED)
         return ESP_ERR_INVALID_STATE;
 
     setState(State::STOPPING);
@@ -208,10 +238,10 @@ esp_err_t WIFI::stop()
 
 void WIFI::deinit()
 {
-    if (m_state == State::RUNNING)
+    if (getState() == State::RUNNING)
         stop();
 
-    if (m_state != State::UNINITIALIZED)
+    if (getState() != State::UNINITIALIZED)
     {
         if (m_wifi_event_handler)
         {
@@ -236,6 +266,13 @@ void WIFI::deinit()
 
         setState(State::UNINITIALIZED);
     }
+    xSemaphoreTake(m_mutex, portMAX_DELAY);
+    m_connect_callbacks.clear();
+    m_disconnect_callbacks.clear();
+    m_sta_connected_callbacks.clear();
+    m_sta_disconnected_callbacks.clear();
+    m_clients.clear();
+    xSemaphoreGive(m_mutex);
 }
 
 void WIFI::wifi_event_handler(void *arg, esp_event_base_t event_base,
@@ -287,23 +324,28 @@ void WIFI::handleClientConnected(wifi_event_ap_staconnected_t *event)
 {
     ESP_LOGI(TAG, "AP Client connected - MAC: " MACSTR ", AID: %d", MAC2STR(event->mac), event->aid);
     addClient(event->mac, event->aid);
-    for (auto &callback : m_connect_callbacks)
-        callback(event->mac, event->aid);
+
+    auto callbacks = m_connect_callbacks;
+    for (auto &cb : callbacks)
+        cb(event->mac, event->aid);
 }
 
 void WIFI::handleClientDisconnected(wifi_event_ap_stadisconnected_t *event)
 {
     ESP_LOGI(TAG, "AP Client disconnected - MAC: " MACSTR ", AID: %d", MAC2STR(event->mac), event->aid);
     removeClient(event->mac);
-    for (auto &callback : m_disconnect_callbacks)
-        callback(event->mac, event->aid);
+
+    auto callbacks = m_disconnect_callbacks;
+    for (auto &cb : callbacks)
+        cb(event->mac, event->aid);
 }
 
 void WIFI::handleAPStart()
 {
     ESP_LOGI(TAG, "AP Interface Started");
-    for (auto &callback : m_start_callbacks)
-        callback();
+    auto callbacks = m_start_callbacks;
+    for (auto &cb : callbacks)
+        cb();
 }
 
 void WIFI::handleAPStop()
@@ -314,56 +356,63 @@ void WIFI::handleAPStop()
 void WIFI::handleStaConnected()
 {
     ESP_LOGI(TAG, "STA Connected to AP (waiting for IP...)");
-    // We don't consider this "Running" yet, we wait for IP_EVENT
 }
 
 void WIFI::handleStaGotIP(ip_event_got_ip_t *event)
 {
-    m_retry_count = 0; // Reset retry count on success
+    m_retry_count = 0;
     setState(State::RUNNING);
 
     char ip_str[16];
     esp_ip4addr_ntoa(&event->ip_info.ip, ip_str, sizeof(ip_str));
     ESP_LOGI(TAG, "STA Got IP: %s", ip_str);
 
-    for (auto &cb : m_sta_connected_callbacks)
-    {
+    xSemaphoreTake(m_mutex, portMAX_DELAY);
+    auto callbacks = m_sta_connected_callbacks;
+    xSemaphoreGive(m_mutex);
+
+    for (auto &cb : callbacks)
         cb(std::string(ip_str));
-    }
 }
 
 void WIFI::handleStaDisconnected(wifi_event_sta_disconnected_t *event)
 {
-    ESP_LOGI(TAG, "STA Disconnected");
-    ESP_LOGI("WIFI", "Disconnected! Reason: %s (%d)",
+    ESP_LOGW("WIFI", "Disconnected! Reason: %s (%d)",
              get_wifi_reason_str(event->reason),
              event->reason);
     setState(State::STA_DISCONNECTED);
 
     for (auto &cb : m_sta_disconnected_callbacks)
-    {
         cb();
-    }
 
-    // Auto-retry logic
     if (m_retry_count < m_config.sta_max_retry)
     {
         m_retry_count++;
-        ESP_LOGI(TAG, "Retrying connection to AP (%d/%d)...", m_retry_count, m_config.sta_max_retry);
-        setState(State::STA_CONNECTING);
-        esp_wifi_connect();
+
+        esp_event_post(WIFI_INTERNAL_EVENT, WIFI_INT_EVENT_RETRY_CONNECTION, NULL, 0, portMAX_DELAY);
     }
     else
     {
-        ESP_LOGE(TAG, "Failed to connect to AP after max retries, falling back to AP mode");
-        if (m_config.mode == WIFI_MODE_APSTA)
-        {
-            setState(State::RUNNING);
-        }
-        else
-        {
-            switchToAP();
-        }
+        ESP_LOGE(TAG, "Max retries reached. Posting AP Fallback event...");
+
+        esp_event_post(WIFI_INTERNAL_EVENT, WIFI_INT_EVENT_FALLBACK_AP, NULL, 0, portMAX_DELAY);
+    }
+}
+
+void WIFI::internal_event_handler(void *arg, esp_event_base_t event_base,
+                                  int32_t event_id, void *event_data)
+{
+    WIFI *manager = static_cast<WIFI *>(arg);
+
+    if (event_id == WIFI_INT_EVENT_FALLBACK_AP)
+    {
+        ESP_LOGI(TAG, "Internal Event: Executing AP Fallback");
+        manager->switchToAP();
+    }
+    else if (event_id == WIFI_INT_EVENT_RETRY_CONNECTION)
+    {
+        ESP_LOGI(TAG, "Internal Event: Retrying STA Connection");
+        esp_wifi_connect();
     }
 }
 
@@ -371,10 +420,7 @@ esp_err_t WIFI::switchToAP()
 {
     ESP_LOGI(TAG, "Switching to AP Mode...");
 
-    if (m_state == State::RUNNING || m_state == State::STA_CONNECTING)
-    {
-        esp_wifi_stop();
-    }
+    esp_wifi_stop();
 
     if (m_netif_ap == NULL)
     {
@@ -382,17 +428,13 @@ esp_err_t WIFI::switchToAP()
     }
 
     m_config.mode = WIFI_MODE_AP;
-    if (esp_err_t ret = esp_wifi_set_mode(WIFI_MODE_AP) != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Failed to set WiFi mode: %s", esp_err_to_name(ret));
-        return ret;
-    }
+
+    ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP), "Failed to set WiFi mode", goto err);
 
     ERROR_CHECK(setAPConfig(), "Failed to set AP config", goto err);
 
+    setState(State::INITIALIZED);
     ERROR_CHECK(start(), "Failed to start AP", goto err);
-
-    setState(State::RUNNING);
 
     return ESP_OK;
 err:
@@ -408,7 +450,11 @@ void WIFI::onStaDisconnected(StaDisconnectedCallback callback) { m_sta_disconnec
 
 uint8_t WIFI::getConnectedClientCount() const
 {
-    xSemaphoreTake(m_mutex, portMAX_DELAY);
+    if (xSemaphoreTake(m_mutex, pdMS_TO_TICKS(1000)) != pdTRUE)
+    {
+        ESP_LOGW(TAG, "Mutex timeout");
+        return 0;
+    }
     uint8_t count = m_clients.size();
     xSemaphoreGive(m_mutex);
     return count;
@@ -416,7 +462,11 @@ uint8_t WIFI::getConnectedClientCount() const
 
 std::vector<WIFI::ClientInfo> WIFI::getConnectedClients() const
 {
-    xSemaphoreTake(m_mutex, portMAX_DELAY);
+    if (xSemaphoreTake(m_mutex, pdMS_TO_TICKS(1000)) != pdTRUE)
+    {
+        ESP_LOGW(TAG, "Mutex timeout");
+        return {};
+    }
     std::vector<ClientInfo> clients = m_clients;
     xSemaphoreGive(m_mutex);
     return clients;
@@ -424,7 +474,11 @@ std::vector<WIFI::ClientInfo> WIFI::getConnectedClients() const
 
 void WIFI::addClient(const uint8_t *mac, uint8_t aid)
 {
-    xSemaphoreTake(m_mutex, portMAX_DELAY);
+    if (xSemaphoreTake(m_mutex, pdMS_TO_TICKS(1000)) != pdTRUE)
+    {
+        ESP_LOGW(TAG, "Mutex timeout");
+        return;
+    }
     ClientInfo info;
     memcpy(info.mac, mac, 6);
     info.aid = aid;
@@ -435,7 +489,11 @@ void WIFI::addClient(const uint8_t *mac, uint8_t aid)
 
 void WIFI::removeClient(const uint8_t *mac)
 {
-    xSemaphoreTake(m_mutex, portMAX_DELAY);
+    if (xSemaphoreTake(m_mutex, pdMS_TO_TICKS(1000)) != pdTRUE)
+    {
+        ESP_LOGW(TAG, "Mutex timeout");
+        return;
+    }
     m_clients.erase(
         std::remove_if(m_clients.begin(), m_clients.end(),
                        [mac](const ClientInfo &info)
@@ -474,7 +532,7 @@ std::string WIFI::getStaIP() const
 
 void WIFI::setState(State state)
 {
-    m_state = state;
+    m_state.store(state);
 }
 
 const char *WIFI::get_wifi_reason_str(uint8_t reason)

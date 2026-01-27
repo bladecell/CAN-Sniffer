@@ -288,6 +288,11 @@ void OBD2::pollTask()
     groupMedium_size = vGroupMedium.size();
     groupFast_size = vGroupFast.size();
 
+    const uint32_t intervalFast = UPDATE_FAST / POLL_TASK_PERIOD_MS;
+    const uint32_t intervalMedium = UPDATE_MEDIUM / POLL_TASK_PERIOD_MS;
+    const uint32_t intervalSlow = UPDATE_SLOW / POLL_TASK_PERIOD_MS;
+    const uint32_t intervalStatic = UPDATE_STATIC / POLL_TASK_PERIOD_MS;
+
     while (1)
     {
         vTaskDelayUntil(&xLastWakeTime, POLL_PERIOD_TICKS);
@@ -295,6 +300,7 @@ void OBD2::pollTask()
         {
             ESP_LOGW(TAG, "Bus disconnected. Waiting for connection...");
             xSemaphoreTake(xBusConnectionSemaphore, portMAX_DELAY);
+            xLastWakeTime = xTaskGetTickCount();
             continue;
         }
 
@@ -309,33 +315,33 @@ void OBD2::pollTask()
             groupFast_size = vGroupFast.size();
             groupStatic_idx = groupSlow_idx = groupMedium_idx = groupFast_idx = 0;
             // taskCnt = 0;
-
+            xLastWakeTime = xTaskGetTickCount();
             continue;
         }
 
         // Poll Slow group
-        if (groupSlow_size > 0 && taskCnt % (UPDATE_SLOW / POLL_TASK_PERIOD_MS) == 0)
+        if (groupSlow_size > 0 && ((taskCnt + 2) % intervalSlow == 0))
         {
             req(vGroupSlow[groupSlow_idx]);
             groupSlow_idx = (groupSlow_idx + 1) % groupSlow_size;
         }
 
         // Poll Medium group
-        if (groupMedium_size > 0 && taskCnt % (UPDATE_MEDIUM / POLL_TASK_PERIOD_MS) == 0)
+        if (groupMedium_size > 0 && ((taskCnt + 1) % intervalMedium == 0))
         {
             req(vGroupMedium[groupMedium_idx]);
             groupMedium_idx = (groupMedium_idx + 1) % groupMedium_size;
         }
 
         // Poll Fast group
-        if (groupFast_size > 0 && taskCnt % (UPDATE_FAST / POLL_TASK_PERIOD_MS) == 0)
+        if (groupFast_size > 0 && (taskCnt % intervalFast == 0))
         {
             req(vGroupFast[groupFast_idx]);
             groupFast_idx = (groupFast_idx + 1) % groupFast_size;
         }
 
         // Poll Static group
-        if (pollStaticGroup.load() && groupStatic_size > 0 && taskCnt % (UPDATE_STATIC / POLL_TASK_PERIOD_MS) == 0)
+        if (pollStaticGroup.load() && groupStatic_size > 0 && ((taskCnt + 3) % intervalStatic == 0))
         {
             req(vGroupStatic[groupStatic_idx]);
             groupStatic_idx = (groupStatic_idx + 1);

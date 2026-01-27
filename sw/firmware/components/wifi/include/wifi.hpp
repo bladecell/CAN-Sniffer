@@ -16,6 +16,7 @@
 #include <functional>
 #include <cstring>
 #include <string>
+#include <atomic>
 
 #include "esp_mac.h"
 #include "esp_wifi.h"
@@ -113,7 +114,7 @@ public:
     void deinit();
 
     // Status
-    State getState() const { return m_state; }
+    WIFI::State getState() const { return m_state.load(); }
     bool isRunning() const { return m_state == State::RUNNING; }
 
     std::string getApIP() const;
@@ -150,6 +151,8 @@ private:
     void handleStaConnected();
     void handleStaDisconnected(wifi_event_sta_disconnected_t *event);
     void handleStaGotIP(ip_event_got_ip_t *event);
+    static void internal_event_handler(void *arg, esp_event_base_t event_base,
+                                       int32_t event_id, void *event_data);
 
     esp_err_t start_mdns_service();
 
@@ -163,7 +166,7 @@ private:
     esp_err_t setSTAConfig();
 
     // State
-    State m_state;
+    std::atomic<State> m_state;
 
     // Network interface
     esp_netif_t *m_netif_ap;
