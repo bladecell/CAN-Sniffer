@@ -5,12 +5,15 @@
 #include <vector>
 #include <algorithm>
 #include <functional>
+#include <map>
+#include <memory>
 
 #include "esp_err.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 
 #include "obd2_utils.hpp"
+#include "pid_def.hpp"
 
 class OBD2DTB
 {
@@ -18,7 +21,7 @@ public:
     void initDef();
     bool isSup(uint8_t pid) const;
     bool pidExists(uint8_t pid) const;
-
+    // PID_DEF Getters
     uint8_t getmode(uint8_t pid) const;
     const char *getName(uint8_t pid) const;
     const char *getUnit(uint8_t pid) const;
@@ -26,16 +29,26 @@ public:
     float getMinValue(uint8_t pid) const;
     float getMaxValue(uint8_t pid) const;
     uint8_t getPriority(uint8_t pid) const;
+    uint16_t getUpdateInterval(uint8_t pid) const;
+    uint32_t getColor(uint8_t pid) const;
+    const char *getIcon(uint8_t pid) const;
+    const char *getFormula(uint8_t pid) const;
+    PIDDefinition *getDef(uint8_t pid) const;
+    esp_err_t getDef(uint8_t pid, const PIDDefinition *&outDef) const;
+
+    // Special Getters
     std::string getVIN() const;
     std::vector<std::string> getDTC(uint8_t mode);
 
+    // PID Data Getters
     float getValue(uint8_t pid, uint32_t timeout_ms = 500) const;
     uint32_t getLastUpdated(uint8_t pid) const;
     uint32_t getId(uint8_t pid) const;
     esp_err_t getRawData(uint8_t pid, uint8_t *outData) const;
-    uint16_t getUpdateInterval(uint8_t pid) const;
     bool isValid(uint8_t pid) const;
+    esp_err_t getData(uint8_t pid, PIDData_t &pd) const;
 
+    // PID Data Setters
     esp_err_t setUpdateInterval(uint8_t pid, UpdateRate interval_ms);
     esp_err_t setValid(uint8_t pid, bool valid);
     esp_err_t setIsSupported(uint8_t pid, bool supported);
@@ -44,21 +57,12 @@ public:
     esp_err_t setDTC(uint16_t rawDTC, uint8_t mode);
     esp_err_t clearDTC(uint8_t mode);
     std::string decodeDTC(uint16_t rawDTC);
+    std::vector<uint8_t> getPIDs() const;
+    esp_err_t updateData(const CanDriver::CanFrame &frame);
 
     using DataUpdateCallback = std::function<void(uint8_t pid)>;
     void subscribe(DataUpdateCallback cb);
     std::vector<DataUpdateCallback> subscribers_;
-
-    // Readonly access to databases
-    const std::map<uint8_t, PIDDef_t> &getPID_DEF() const
-    {
-        return this->PID_DEF;
-    }
-
-    const std::map<uint8_t, PIDData_t> &getPidData() const
-    {
-        return pidData;
-    }
 
     const VINData_t &getVinData() const
     {
@@ -80,15 +84,15 @@ public:
         return PID_DEF.size();
     }
 
+    void addPID(uint8_t mode, uint8_t pid, std::string name, std::string unit,
+                std::string desc, std::string formula, float minV, float maxV,
+                uint8_t priority, UpdateRate interval, uint32_t color, std::string icon);
+
     // PID Definitions and Data Storage
-    static const std::map<uint8_t, PIDDef_t> PID_DEF;
+    std::map<uint8_t, std::unique_ptr<PIDDefinition>> PID_DEF;
     std::map<uint8_t, PIDData_t> pidData;
     VINData_t vinData;
     DTCData_t dtcData;
-
-    esp_err_t updateData(const CanDriver::CanFrame &frame);
-    esp_err_t getData(uint8_t pid, PIDData_t &pd) const;
-    esp_err_t getDef(uint8_t pid, PIDDef_t &pi) const;
 
     void generatePollingGroups();
     std::vector<uint8_t> vGroupFast;

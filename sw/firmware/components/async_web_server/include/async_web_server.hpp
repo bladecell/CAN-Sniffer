@@ -20,7 +20,8 @@ public:
     struct Config
     {
         httpd_config_t httpd_config = HTTPD_DEFAULT_CONFIG();
-        uint8_t async_worker_task_num = 2;
+        uint8_t async_worker_task_num = 5;
+        uint8_t max_open_sockets = 5;
         uint8_t async_worker_task_priority = 5;
         uint32_t async_worker_stack_size = 8192;
         int worker_core_id = tskNO_AFFINITY;

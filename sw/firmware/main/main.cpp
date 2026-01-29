@@ -79,7 +79,27 @@ esp_err_t setup_can()
 
 esp_err_t setup_obd()
 {
-    esp_err_t ret = OBD2::getInstance().init();
+    auto &obd = OBD2::getInstance();
+
+    // 1. Engine Load: A * 100 / 255
+    obd.addPID(
+        MODE_CURRENT_DATA, PID_ENGINE_LOAD, "Engine Load", PERCENTAGE,
+        "Calculated engine load", "A * 100 / 255", 0.0f, 100.0f,
+        2, UPDATE_FAST, 0xf59e0b, "gauge");
+
+    // 2. Coolant Temp: A - 40
+    obd.addPID(
+        MODE_CURRENT_DATA, PID_COOLANT_TEMP, "Coolant Temp", DEGREES_CELCIUS,
+        "Engine coolant temperature", "A - 40", -40.0f, 215.0f,
+        3, UPDATE_SLOW, 0xef4444, "thermometer");
+
+    // 3. Engine RPM: ((A * 256) + B) / 4
+    obd.addPID(
+        MODE_CURRENT_DATA, PID_ENGINE_RPM, "Engine RPM", RPM,
+        "Engine speed", "((A * 256) + B) / 4", 0.0f, 16383.75f,
+        1, UPDATE_FAST, 0x3b82f6, "droplet");
+
+    esp_err_t ret = obd.init();
 
     vTaskDelay(pdMS_TO_TICKS(1000));
 
@@ -190,8 +210,8 @@ void t_request_sample(void *pvParameters)
 extern "C" void app_main(void)
 {
 
-    esp_log_level_set("CAN_DRIVER", ESP_LOG_DEBUG);
-    esp_log_level_set("ASYNC_WEB_SERVER", ESP_LOG_DEBUG);
+    // esp_log_level_set("CAN_DRIVER", ESP_LOG_DEBUG);
+    // esp_log_level_set("ASYNC_WEB_SERVER", ESP_LOG_DEBUG);
 
     // Component setup
     led.init();

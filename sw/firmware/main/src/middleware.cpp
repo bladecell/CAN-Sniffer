@@ -1,21 +1,27 @@
 #include "middleware.hpp"
 #include "esp_check.h"
 
-cJSON *get_single_pid_def_json(const PIDDef_t &pi)
+cJSON *get_single_pid_def_json(const PIDDefinition *def)
 {
     cJSON *item = cJSON_CreateObject();
 
-    cJSON_AddNumberToObject(item, "pid", pi.pid);
-    cJSON_AddNumberToObject(item, "mode", pi.mode);
-    cJSON_AddStringToObject(item, "name", pi.name ? pi.name : "");
-    cJSON_AddStringToObject(item, "unit", pi.unit ? pi.unit : "");
-    cJSON_AddStringToObject(item, "description", pi.description ? pi.description : "");
-    cJSON_AddNumberToObject(item, "minValue", pi.minValue);
-    cJSON_AddNumberToObject(item, "maxValue", pi.maxValue);
-    cJSON_AddNumberToObject(item, "priority", pi.priority);
-    cJSON_AddNumberToObject(item, "update_interval_ms", pi.updateInterval_ms);
-    cJSON_AddNumberToObject(item, "color", pi.color);
-    cJSON_AddStringToObject(item, "icon", pi.icon ? pi.icon : "");
+    if (def == nullptr)
+    {
+        return item;
+    }
+
+    cJSON_AddNumberToObject(item, "pid", def->pid());
+    cJSON_AddNumberToObject(item, "mode", def->mode());
+    cJSON_AddStringToObject(item, "name", def->name().c_str());
+    cJSON_AddStringToObject(item, "unit", def->unit().c_str());
+    cJSON_AddStringToObject(item, "description", def->description().c_str());
+    cJSON_AddNumberToObject(item, "minValue", def->minValue());
+    cJSON_AddNumberToObject(item, "maxValue", def->maxValue());
+    cJSON_AddNumberToObject(item, "priority", def->priority());
+    cJSON_AddNumberToObject(item, "update_interval_ms", def->updateInterval());
+    cJSON_AddNumberToObject(item, "color", def->color());
+    cJSON_AddStringToObject(item, "icon", def->icon().c_str());
+    cJSON_AddStringToObject(item, "formula", def->formula().c_str());
 
     return item;
 }
@@ -61,12 +67,11 @@ cJSON *m_pid_def_json(int filter_id)
 
     if (filter_id >= 0)
     {
-        const auto &pids = OBD2::getInstance().getPID_DEF();
-        auto it = pids.find((uint8_t)filter_id);
+        const PIDDefinition *def = nullptr;
 
-        if (it != pids.end())
+        if (OBD2::getInstance().getDef((uint8_t)filter_id, def) == ESP_OK)
         {
-            cJSON *item = get_single_pid_def_json(it->second);
+            cJSON *item = get_single_pid_def_json(def);
             if (item)
             {
                 cJSON_AddItemToArray(data_array, item);
@@ -76,13 +81,18 @@ cJSON *m_pid_def_json(int filter_id)
     }
     else
     {
-        for (const auto &pair : OBD2::getInstance().getPID_DEF())
+        std::vector<uint8_t> pids = OBD2::getInstance().getPIDs();
+        for (const auto &pid : pids)
         {
-            cJSON *item = get_single_pid_def_json(pair.second);
-            if (item)
+            const PIDDefinition *def = nullptr;
+            if (OBD2::getInstance().getDef(pid, def) == ESP_OK)
             {
-                cJSON_AddItemToArray(data_array, item);
-                count++;
+                cJSON *item = get_single_pid_def_json(def);
+                if (item)
+                {
+                    cJSON_AddItemToArray(data_array, item);
+                    count++;
+                }
             }
         }
     }
@@ -101,12 +111,11 @@ cJSON *m_pid_data_json(int filter_id)
 
     if (filter_id >= 0)
     {
-        const auto &pids = OBD2::getInstance().getPidData();
-        auto it = pids.find((uint8_t)filter_id);
+        PIDData_t pd;
 
-        if (it != pids.end())
+        if (OBD2::getInstance().getData((uint8_t)filter_id, pd) == ESP_OK)
         {
-            cJSON *item = get_single_pid_data_json((uint8_t)it->first, it->second);
+            cJSON *item = get_single_pid_data_json((uint8_t)filter_id, pd);
             if (item)
             {
                 cJSON_AddItemToArray(data_array, item);
@@ -116,13 +125,18 @@ cJSON *m_pid_data_json(int filter_id)
     }
     else
     {
-        for (const auto &pair : OBD2::getInstance().getPidData())
+        std::vector<uint8_t> pids = OBD2::getInstance().getPIDs();
+        for (const auto &pid : pids)
         {
-            cJSON *item = get_single_pid_data_json((uint8_t)pair.first, pair.second);
-            if (item)
+            PIDData_t pd;
+            if (OBD2::getInstance().getData(pid, pd) == ESP_OK)
             {
-                cJSON_AddItemToArray(data_array, item);
-                count++;
+                cJSON *item = get_single_pid_data_json(pid, pd);
+                if (item)
+                {
+                    cJSON_AddItemToArray(data_array, item);
+                    count++;
+                }
             }
         }
     }
@@ -316,13 +330,14 @@ cJSON *m_clear_dtc_request()
 
 esp_err_t get_pid_stream_packet(uint8_t pid, uint8_t *out_packet)
 {
-    const auto &pids = OBD2::getInstance().getPidData();
-    auto it = pids.find((uint8_t)pid);
+    PIDData_t data;
 
-    if (it == pids.end())
-        return ESP_ERR_NOT_FOUND;
+    esp_err_t err = OBD2::getInstance().getData(pid, data);
+    if (err != ESP_OK)
+    {
+        return err;
+    }
 
-    const PIDData_t &data = it->second;
     size_t offset = 0;
 
     // 8 bit message type

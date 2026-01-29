@@ -116,7 +116,7 @@ esp_err_t OBD2::req(uint8_t pid)
         return ESP_ERR_NOT_SUPPORTED;
     }
 
-    esp_err_t ret = queryMsg(getId(pid), PID_DEF.at(pid).mode, pid);
+    esp_err_t ret = queryMsg(getId(pid), PID_DEF.at(pid)->mode(), pid);
 
     return ret;
 }
@@ -469,12 +469,7 @@ esp_err_t OBD2::parseCurrentData(const CanDriver::CanFrame &f)
         ret = updateData(f);
     }
 
-    if (ret != ESP_OK)
-    {
-        setValid(pid, false);
-        return ret;
-    }
-    setValid(pid, true);
+    setValid(pid, ret == ESP_OK);
 
     for (const auto &callback : subscribers_)
     {

@@ -6,20 +6,6 @@ static const char *TAG = "OBD2DTB";
 
 void OBD2DTB::initDef()
 {
-    for (const auto &[pid, info] : PID_DEF)
-    {
-        pidData[pid] = {
-            .id = 0,
-            .value = 0.0f,
-            .lastUpdated = 0,
-            .data = {0},
-            .isSupported = false,
-            .isValid = false,
-            .updateInterval_ms = info.updateInterval_ms,
-            .mtx_ = xSemaphoreCreateMutex(),
-        };
-    }
-
     vinData = {
         .vin = {0},
         .lastUpdated = 0,
@@ -39,82 +25,99 @@ void OBD2DTB::initDef()
     };
 };
 
-const std::map<uint8_t, PIDDef_t> OBD2DTB::PID_DEF = {
-    {PID_ENGINE_LOAD,
-     PIDDef_t{
-         .mode = MODE_CURRENT_DATA,
-         .pid = PID_ENGINE_LOAD,
-         .name = "Engine Load",
-         .unit = PERCENTAGE,
-         .description = "Calculated engine load",
-         .formula = OBDFormulas::engineLoad,
-         .minValue = 0.0f,
-         .maxValue = 100.0f,
-         .priority = 2,
-         .updateInterval_ms = UPDATE_FAST,
-         .color = 0xf59e0b,
-         .icon = "gauge"}},
-    {PID_COOLANT_TEMP,
-     PIDDef_t{
-         .mode = MODE_CURRENT_DATA,
-         .pid = PID_COOLANT_TEMP,
-         .name = "Coolant Temp",
-         .unit = DEGREES_CELCIUS,
-         .description = "Engine coolant temperature",
-         .formula = OBDFormulas::coolantTemp,
-         .minValue = -40.0f,
-         .maxValue = 215.0f,
-         .priority = 3,
-         .updateInterval_ms = UPDATE_SLOW,
-         .color = 0xef4444,
-         .icon = "thermometer"}},
-    {PID_ENGINE_RPM,
-     PIDDef_t{
-         .mode = MODE_CURRENT_DATA,
-         .pid = PID_ENGINE_RPM,
-         .name = "Engine RPM",
-         .unit = RPM,
-         .description = "Engine speed",
-         .formula = OBDFormulas::engineRPM,
-         .minValue = 0.0f,
-         .maxValue = 16383.75f,
-         .priority = 1,
-         .updateInterval_ms = UPDATE_FAST,
-         .color = 0x3b82f6,
-         .icon = "droplet"}},
-};
+// const std::map<uint8_t, PIDDef_t> OBD2DTB::PID_DEF = {
+//     {PID_ENGINE_LOAD,
+//      PIDDef_t{
+//          .mode = MODE_CURRENT_DATA,
+//          .pid = PID_ENGINE_LOAD,
+//          .name = "Engine Load",
+//          .unit = PERCENTAGE,
+//          .description = "Calculated engine load",
+//          .formula = OBDFormulas::engineLoad,
+//          .minValue = 0.0f,
+//          .maxValue = 100.0f,
+//          .priority = 2,
+//          .updateInterval_ms = UPDATE_FAST,
+//          .color = 0xf59e0b,
+//          .icon = "gauge"}},
+//     {PID_COOLANT_TEMP,
+//      PIDDef_t{
+//          .mode = MODE_CURRENT_DATA,
+//          .pid = PID_COOLANT_TEMP,
+//          .name = "Coolant Temp",
+//          .unit = DEGREES_CELCIUS,
+//          .description = "Engine coolant temperature",
+//          .formula = OBDFormulas::coolantTemp,
+//          .minValue = -40.0f,
+//          .maxValue = 215.0f,
+//          .priority = 3,
+//          .updateInterval_ms = UPDATE_SLOW,
+//          .color = 0xef4444,
+//          .icon = "thermometer"}},
+//     {PID_ENGINE_RPM,
+//      PIDDef_t{
+//          .mode = MODE_CURRENT_DATA,
+//          .pid = PID_ENGINE_RPM,
+//          .name = "Engine RPM",
+//          .unit = RPM,
+//          .description = "Engine speed",
+//          .formula = OBDFormulas::engineRPM,
+//          .minValue = 0.0f,
+//          .maxValue = 16383.75f,
+//          .priority = 1,
+//          .updateInterval_ms = UPDATE_FAST,
+//          .color = 0x3b82f6,
+//          .icon = "droplet"}},
+// };
+
+void OBD2DTB::addPID(uint8_t mode, uint8_t pid, std::string name, std::string unit,
+                     std::string desc, std::string formula, float minV, float maxV,
+                     uint8_t priority, UpdateRate interval, uint32_t color, std::string icon)
+{
+    PID_DEF[pid] = std::make_unique<PIDDefinition>(
+        mode, pid, name, unit, desc, formula, minV, maxV, priority, interval, color, icon);
+
+    pidData[pid] = {
+        .id = pid,
+        .value = 0.0f,
+        .lastUpdated = 0,
+        .data = {0},
+        .isSupported = true,
+        .isValid = false,
+        .updateInterval_ms = interval,
+        .mtx_ = xSemaphoreCreateMutex()};
+}
 
 esp_err_t OBD2DTB::getData(uint8_t pid, PIDData_t &pd) const
 {
-    if (!pidExists(pid))
+    auto it = pidData.find(pid);
+    if (it == pidData.end())
     {
         return ESP_ERR_NOT_FOUND;
     }
-    if (xSemaphoreTake(pidData.at(pid).mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
-    {
-        return ESP_ERR_TIMEOUT;
-    }
-    auto it = pidData.find(pid);
-    if (it != pidData.end())
+
+    if (xSemaphoreTake(it->second.mtx_, pdMS_TO_TICKS(10)) == pdTRUE)
     {
         pd = it->second;
+
+        xSemaphoreGive(it->second.mtx_);
+        return ESP_OK;
     }
-    xSemaphoreGive(pidData.at(pid).mtx_);
-    return it != pidData.end() ? ESP_OK : ESP_ERR_NOT_FOUND;
+
+    return ESP_ERR_TIMEOUT;
 }
 
-esp_err_t OBD2DTB::getDef(uint8_t pid, PIDDef_t &pi) const
+esp_err_t OBD2DTB::getDef(uint8_t pid, const PIDDefinition *&outDef) const
 {
-    if (!pidExists(pid))
+    auto it = PID_DEF.find(pid);
+    if (it == PID_DEF.end())
     {
+        outDef = nullptr;
         return ESP_ERR_NOT_FOUND;
     }
-    auto it = PID_DEF.find(pid);
-    if (it != PID_DEF.end())
-    {
-        pi = it->second;
-    }
-    return it != PID_DEF.end() ? ESP_OK : ESP_ERR_NOT_FOUND;
+
+    outDef = it->second.get();
+    return ESP_OK;
 }
 
 void OBD2DTB::generatePollingGroups()
@@ -131,7 +134,7 @@ void OBD2DTB::generatePollingGroups()
             continue;
         }
 
-        switch (info.updateInterval_ms)
+        switch (info->updateInterval())
         {
         case UPDATE_FAST:
             vGroupFast.push_back(pid);
@@ -163,7 +166,10 @@ esp_err_t OBD2DTB::updateData(const CanDriver::CanFrame &frame)
     if (xSemaphoreTake(pidData.at(pid).mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
         return ESP_ERR_TIMEOUT;
 
-    pidData.at(pid).value = PID_DEF.at(pid).formula(frame.data, frame.length);
+    float val = 0.f;
+    esp_err_t ret = PID_DEF.at(pid)->evaluate(&frame.data[3], frame.length - 3, val);
+    pidData.at(pid).value = val;
+
     pidData.at(pid).lastUpdated = xTaskGetTickCount();
     if (frame.length > PID_DATA_LENGTH)
     {
@@ -172,7 +178,7 @@ esp_err_t OBD2DTB::updateData(const CanDriver::CanFrame &frame)
     memcpy(pidData.at(pid).data, frame.data, PID_DATA_LENGTH < frame.length ? PID_DATA_LENGTH : frame.length);
 
     xSemaphoreGive(pidData.at(pid).mtx_);
-    return ESP_OK;
+    return ret;
 }
 
 bool OBD2DTB::isSup(uint8_t pid) const
@@ -193,6 +199,23 @@ bool OBD2DTB::isSup(uint8_t pid) const
     return supported;
 }
 
+// PID_DEF Getters
+
+std::vector<uint8_t> OBD2DTB::getPIDs() const
+{
+    std::vector<uint8_t> keys;
+
+    // Reserve memory upfront for performance (avoids multiple re-allocations)
+    keys.reserve(PID_DEF.size());
+
+    for (const auto &pair : PID_DEF)
+    {
+        keys.push_back(pair.first);
+    }
+
+    return keys;
+}
+
 bool OBD2DTB::pidExists(uint8_t pid) const
 {
     return PID_DEF.find(pid) != PID_DEF.end();
@@ -200,37 +223,68 @@ bool OBD2DTB::pidExists(uint8_t pid) const
 
 uint8_t OBD2DTB::getmode(uint8_t pid) const
 {
-    return !pidExists(pid) ? 0 : PID_DEF.at(pid).mode;
+    PIDDefinition *def = getDef(pid);
+    return def ? def->mode() : 0;
 }
 
 const char *OBD2DTB::getName(uint8_t pid) const
 {
-    return !pidExists(pid) ? "Unknown PID" : PID_DEF.at(pid).name;
+    const PIDDefinition *def = nullptr;
+    return (getDef(pid, def) == ESP_OK) ? def->name().c_str() : "Unknown PID";
 }
 
 const char *OBD2DTB::getUnit(uint8_t pid) const
 {
-    return !pidExists(pid) ? "Unknown PID" : PID_DEF.at(pid).unit;
+    const PIDDefinition *def = nullptr;
+    return (getDef(pid, def) == ESP_OK) ? def->unit().c_str() : "Unknown PID";
 }
 
 const char *OBD2DTB::getDescription(uint8_t pid) const
 {
-    return !pidExists(pid) ? "Unknown PID" : PID_DEF.at(pid).description;
+    const PIDDefinition *def = nullptr;
+    return (getDef(pid, def) == ESP_OK) ? def->description().c_str() : "Unknown PID";
 }
 
 float OBD2DTB::getMinValue(uint8_t pid) const
 {
-    return !pidExists(pid) ? NAN : PID_DEF.at(pid).minValue;
+    const PIDDefinition *def = nullptr;
+    return (getDef(pid, def) == ESP_OK) ? def->minValue() : NAN;
 }
 
 float OBD2DTB::getMaxValue(uint8_t pid) const
 {
-    return !pidExists(pid) ? NAN : PID_DEF.at(pid).maxValue;
+    const PIDDefinition *def = nullptr;
+    return (getDef(pid, def) == ESP_OK) ? def->maxValue() : NAN;
 }
 
 uint8_t OBD2DTB::getPriority(uint8_t pid) const
 {
-    return !pidExists(pid) ? 0 : PID_DEF.at(pid).priority;
+    const PIDDefinition *def = nullptr;
+    return (getDef(pid, def) == ESP_OK) ? def->priority() : 0;
+}
+
+uint16_t OBD2DTB::getUpdateInterval(uint8_t pid) const
+{
+    const PIDDefinition *def = nullptr;
+    return (getDef(pid, def) == ESP_OK) ? def->updateInterval() : 0;
+}
+
+uint32_t OBD2DTB::getColor(uint8_t pid) const
+{
+    const PIDDefinition *def = nullptr;
+    return (getDef(pid, def) == ESP_OK) ? def->color() : 0xFFFFFF;
+}
+
+const char *OBD2DTB::getIcon(uint8_t pid) const
+{
+    const PIDDefinition *def = nullptr;
+    return (getDef(pid, def) == ESP_OK) ? def->icon().c_str() : "Unknown PID";
+}
+
+const char *OBD2DTB::getFormula(uint8_t pid) const
+{
+    const PIDDefinition *def = nullptr;
+    return (getDef(pid, def) == ESP_OK) ? def->formula().c_str() : "Unknown PID";
 }
 
 float OBD2DTB::getValue(uint8_t pid, uint32_t timeout_ms) const
@@ -326,11 +380,6 @@ std::string OBD2DTB::getVIN() const
 
     xSemaphoreGive(vinData.mtx_);
     return result; // Return copy (thread-safe)
-}
-
-uint16_t OBD2DTB::getUpdateInterval(uint8_t pid) const
-{
-    return !pidExists(pid) ? 0 : pidData.at(pid).updateInterval_ms;
 }
 
 bool OBD2DTB::isValid(uint8_t pid) const

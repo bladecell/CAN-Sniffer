@@ -5,7 +5,8 @@ static const char *TAG = "WEB_SERVER";
 esp_err_t setup_web_server()
 {
     AsyncWebServer::Config server_config;
-    server_config.async_worker_task_num = 2;
+    server_config.async_worker_task_num = 5;
+    server_config.max_open_sockets = 5;
     server_config.async_worker_task_priority = 5;
     server_config.async_worker_stack_size = 8192;
     server_config.httpd_config.uri_match_fn = httpd_uri_match_wildcard;
@@ -305,7 +306,9 @@ void pid_stream_callback(uint8_t pid)
 
     uint8_t packet[19];
 
-    if (get_pid_stream_packet(pid, packet) == ESP_OK)
+    esp_err_t err = get_pid_stream_packet(pid, packet);
+
+    if (err == ESP_OK)
     {
         httpd_ws_frame_t ws_frame;
         memset(&ws_frame, 0, sizeof(httpd_ws_frame_t));
@@ -314,5 +317,9 @@ void pid_stream_callback(uint8_t pid)
         ws_frame.type = HTTPD_WS_TYPE_BINARY;
 
         AsyncWebServer::getInstance().wsBroadcast(&ws_frame);
+    }
+    else
+    {
+        ESP_LOGW(TAG, "Failed to get PID stream packet for PID 0x%02X - %s", pid, esp_err_to_name(err));
     }
 }

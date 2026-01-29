@@ -16,7 +16,7 @@ esp_err_t AsyncWebServer::start(Config config)
     worker_handles.reserve(config.async_worker_task_num);
     start_workers(config.async_worker_task_num, config.async_worker_stack_size, config.async_worker_task_priority, config.worker_core_id);
 
-    config.httpd_config.max_open_sockets = config.async_worker_task_num + 1;
+    config.httpd_config.max_open_sockets = config.max_open_sockets;
     config.httpd_config.lru_purge_enable = true;
     config.httpd_config.stack_size = 8192;
 
@@ -318,7 +318,11 @@ void AsyncWebServer::wsBroadcast(httpd_ws_frame_t *ws_pkt)
         if (info == HTTPD_WS_CLIENT_WEBSOCKET)
         {
             // Send Async so we don't block the CAN task
-            httpd_ws_send_frame_async(server_, fd, ws_pkt);
+            esp_err_t ret = httpd_ws_send_frame_async(server_, fd, ws_pkt);
+            if (ret != ESP_OK)
+            {
+                ESP_LOGW(TAG, "Dropped frame for FD %d: %s\n", fd, esp_err_to_name(ret));
+            }
         }
     }
 }
