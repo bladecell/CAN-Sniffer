@@ -285,8 +285,8 @@ void OBD2::pollTask()
 
     TickType_t xLastWakeTime = xTaskGetTickCount();
 
-    std::size_t groupStatic_size = 0, groupSlow_size = 0, groupMedium_size = 0, groupFast_size = 0;
-    uint32_t groupStatic_idx = 0, groupSlow_idx = 0, groupMedium_idx = 0, groupFast_idx = 0;
+    std::size_t groupStatic_size = 0, groupSlow_size = 0, groupMedium_size = 0, groupFast_size = 0, diagnosticSessionIds_size = 0;
+    uint32_t groupStatic_idx = 0, groupSlow_idx = 0, groupMedium_idx = 0, groupFast_idx = 0, diagnosticSessionIds_idx = 0;
 
     uint32_t taskCnt = 0;
 
@@ -297,15 +297,19 @@ void OBD2::pollTask()
         xSemaphoreTake(xPidConnectedSemaphore, portMAX_DELAY);
     }
 
+    std::vector<uint32_t> v_diagnosticSessionIds(diagnosticSessionIds.begin(), diagnosticSessionIds.end());
+
     groupStatic_size = vGroupStatic.size();
     groupSlow_size = vGroupSlow.size();
     groupMedium_size = vGroupMedium.size();
     groupFast_size = vGroupFast.size();
+    diagnosticSessionIds_size = diagnosticSessionIds.size();
 
     const uint32_t intervalFast = UPDATE_FAST / POLL_TASK_PERIOD_MS;
     const uint32_t intervalMedium = UPDATE_MEDIUM / POLL_TASK_PERIOD_MS;
     const uint32_t intervalSlow = UPDATE_SLOW / POLL_TASK_PERIOD_MS;
     const uint32_t intervalStatic = UPDATE_STATIC / POLL_TASK_PERIOD_MS;
+    const uint32_t intervalDiag = DAGNOSTIC_SESSION_TIMEOUT / POLL_TASK_PERIOD_MS;
 
     while (1)
     {
@@ -323,11 +327,13 @@ void OBD2::pollTask()
             ESP_LOGI(TAG, "PIDs not initialized.");
 
             xSemaphoreTake(xPidConnectedSemaphore, portMAX_DELAY);
+            v_diagnosticSessionIds.assign(diagnosticSessionIds.begin(), diagnosticSessionIds.end());
             groupStatic_size = vGroupStatic.size();
             groupSlow_size = vGroupSlow.size();
             groupMedium_size = vGroupMedium.size();
             groupFast_size = vGroupFast.size();
-            groupStatic_idx = groupSlow_idx = groupMedium_idx = groupFast_idx = 0;
+            diagnosticSessionIds_size = diagnosticSessionIds.size();
+            groupStatic_idx = groupSlow_idx = groupMedium_idx = groupFast_idx = 0, diagnosticSessionIds_idx = 0;
             // taskCnt = 0;
             xLastWakeTime = xTaskGetTickCount();
             continue;
@@ -364,6 +370,13 @@ void OBD2::pollTask()
                 pollStaticGroup.store(false);
                 groupStatic_idx = 0;
             }
+        }
+
+        // Request Diagnostics session
+        if (diagnosticSessionIds_size > 0 && ((taskCnt + 5) % intervalDiag == 0))
+        {
+            queryMsg(v_diagnosticSessionIds[diagnosticSessionIds_idx], 0x10, 0x01, 0x02);
+            diagnosticSessionIds_idx = (diagnosticSessionIds_idx + 1) % diagnosticSessionIds_size;
         }
 
         taskCnt++;
@@ -410,9 +423,6 @@ void OBD2::receiveTask()
 
 esp_err_t OBD2::parseRecFrame(const CanDriver::CanFrame &f)
 {
-    if (f.id < OBD2_RESPONSE_BASE_ID || f.id > (OBD2_RESPONSE_BASE_ID + 7))
-        return ESP_ERR_INVALID_RESPONSE;
-
     if (f.length < 3)
         return ESP_ERR_INVALID_SIZE;
 
@@ -498,8 +508,22 @@ esp_err_t OBD2::parseCurrentData(const CanDriver::CanFrame &f)
 
 esp_err_t OBD2::parseRDBI(const CanDriver::CanFrame &f)
 {
-    uint16_t pid = f.data[2];
-    esp_err_t ret = updateData(f);
+    uint16_t pid = (uint16_t)(f.data[2] << 8) | f.data[3];
+    esp_err_t ret;
+    if (f.data[1] == 0x7F)
+    {
+        uint8_t rejectedService = f.data[2];
+        uint8_t nrcCode = f.data[3];
+
+        ESP_LOGE(TAG, "NRC Received! Service: 0x%02X, Error: 0x%02X", rejectedService, nrcCode);
+
+        ret = ESP_FAIL;
+    }
+    else
+    {
+        ret = updateData(f);
+    }
+
     setValid(pid, ret == ESP_OK);
 
     for (const auto &callback : subscribers_)

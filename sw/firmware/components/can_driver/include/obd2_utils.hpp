@@ -14,6 +14,7 @@
 #define VIN_LENGTH 17
 #define PID_REQUEST_DELAY_MS MIN_TRANSMIT_PERIOD_MS
 #define RESPONSE_ID_OFFSET 8
+#define DAGNOSTIC_SESSION_TIMEOUT 2000
 
 #define OBD2_MODE_TO_STR(mode)                                                                                       \
     ((mode) == MODE_CURRENT_DATA ? "Current Data" : (mode) == MODE_FREEZE_FRAME          ? "Freeze Frame"            \
@@ -90,6 +91,7 @@ const char GPS[] = "g/s";
 const char DEGREES[] = "°";
 const char DEGREES_CELCIUS[] = "°C";
 const char LPH[] = "L/h";
+const char LITER[] = "L";
 
 typedef enum
 {

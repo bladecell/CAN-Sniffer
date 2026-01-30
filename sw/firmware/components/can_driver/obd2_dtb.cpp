@@ -25,15 +25,15 @@ void OBD2DTB::initDef()
     };
 };
 
-void OBD2DTB::addPID(uint8_t mode, uint16_t pid, uint8_t len, std::string name, std::string unit,
+void OBD2DTB::addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std::string name, std::string unit,
                      std::string desc, std::string formula, float minV, float maxV,
                      uint8_t priority, UpdateRate interval, uint32_t color, std::string icon)
 {
     PID_DEF[pid] = std::make_unique<PIDDefinition>(
-        mode, pid, len, name, unit, desc, formula, minV, maxV, priority, interval, color, icon);
+        id, mode, pid, len, name, unit, desc, formula, minV, maxV, priority, interval, color, icon);
 
     pidData[pid] = {
-        .id = pid,
+        .id = id,
         .value = 0.0f,
         .lastUpdated = 0,
         .data = {0},
@@ -81,6 +81,7 @@ void OBD2DTB::generatePollingGroups()
     vGroupMedium.clear();
     vGroupSlow.clear();
     vGroupStatic.clear();
+    diagnosticSessionIds.clear();
 
     for (const auto &[pid, info] : PID_DEF)
     {
@@ -106,51 +107,77 @@ void OBD2DTB::generatePollingGroups()
         default:
             break;
         }
+
+        if (info->mode() == MODE_READ_DATA_BY_IDENTIFIER)
+        {
+            diagnosticSessionIds.insert(info->id());
+        }
     }
 }
 
 esp_err_t OBD2DTB::updateData(const CanDriver::CanFrame &frame)
 {
-    uint16_t pid = frame.data[2];
+    uint16_t mode = frame.data[1];
+    uint16_t pid = mode == RESPONSE_READ_DATA_BY_IDENTIFIER ? (uint16_t)(frame.data[2] << 8) | frame.data[3] : frame.data[2];
+    uint32_t id = frame.id;
 
-    if (!pidExists(pid))
+    esp_err_t ret;
+    auto it = pidData.find(pid);
+    if (it != pidData.end())
     {
-        return ESP_ERR_NOT_FOUND;
+
+        if (xSemaphoreTake(it->second.mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
+            return ESP_ERR_TIMEOUT;
+
+        float val = 0.f;
+        if (mode == RESPONSE_READ_DATA_BY_IDENTIFIER)
+        {
+            ret = PID_DEF.at(pid)->evaluate(&frame.data[4], frame.length - 4, val);
+        }
+        else
+        {
+            ret = PID_DEF.at(pid)->evaluate(&frame.data[3], frame.length - 3, val);
+        }
+        it->second.value = val;
+
+        it->second.lastUpdated = xTaskGetTickCount();
+        if (mode == RESPONSE_CURRENT_DATA && it->second.id != OBD2_FUNCTIONAL_ID)
+        {
+            it->second.id = id - 8;
+        }
+        if (frame.length > PID_DATA_LENGTH)
+        {
+            ESP_LOGW(TAG, "Frame length %d exceeds PID data length %d, truncating", frame.length, PID_DATA_LENGTH);
+        }
+        memcpy(it->second.data, frame.data, PID_DATA_LENGTH < frame.length ? PID_DATA_LENGTH : frame.length);
+
+        xSemaphoreGive(it->second.mtx_);
+    }
+    else
+    {
+        ret = ESP_ERR_NOT_FOUND;
     }
 
-    if (xSemaphoreTake(pidData.at(pid).mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
-        return ESP_ERR_TIMEOUT;
-
-    float val = 0.f;
-    esp_err_t ret = PID_DEF.at(pid)->evaluate(&frame.data[3], frame.length - 3, val);
-    pidData.at(pid).value = val;
-
-    pidData.at(pid).lastUpdated = xTaskGetTickCount();
-    if (frame.length > PID_DATA_LENGTH)
-    {
-        ESP_LOGW(TAG, "Frame length %d exceeds PID data length %d, truncating", frame.length, PID_DATA_LENGTH);
-    }
-    memcpy(pidData.at(pid).data, frame.data, PID_DATA_LENGTH < frame.length ? PID_DATA_LENGTH : frame.length);
-
-    xSemaphoreGive(pidData.at(pid).mtx_);
     return ret;
 }
 
 bool OBD2DTB::isSup(uint16_t pid) const
 {
-    if (!pidExists(pid))
+    auto it = pidData.find(pid);
+    bool supported = false;
+    if (it != pidData.end())
     {
-        return false;
+
+        if (xSemaphoreTake(it->second.mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
+        {
+            return false;
+        }
+
+        supported = it->second.isSupported;
+
+        xSemaphoreGive(it->second.mtx_);
     }
 
-    if (xSemaphoreTake(pidData.at(pid).mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
-    {
-        return false;
-    }
-
-    bool supported = pidData.at(pid).isSupported;
-
-    xSemaphoreGive(pidData.at(pid).mtx_);
     return supported;
 }
 
@@ -174,6 +201,12 @@ std::vector<uint16_t> OBD2DTB::getPIDs() const
 bool OBD2DTB::pidExists(uint16_t pid) const
 {
     return PID_DEF.find(pid) != PID_DEF.end();
+}
+
+uint32_t OBD2DTB::getId_Def(uint16_t pid) const
+{
+    const PIDDefinition *def = nullptr;
+    return (getDef(pid, def) == ESP_OK) ? def->id() : 0;
 }
 
 uint8_t OBD2DTB::getMode(uint16_t pid) const

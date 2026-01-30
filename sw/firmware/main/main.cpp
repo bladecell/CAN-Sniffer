@@ -21,7 +21,7 @@
 #include "secrets.h"
 #include "webserver.hpp"
 
-#define DEBUG_MODE 1
+#define DEBUG_MODE 0
 
 static const char *TAG = "APP_MAIN";
 static LedError led(LED_GPIO);
@@ -81,21 +81,36 @@ esp_err_t setup_obd()
 
     // 1. Engine Load: A * 100 / 255
     obd.addPID(
-        MODE_CURRENT_DATA, PID_ENGINE_LOAD, 2, "Engine Load", PERCENTAGE,
+        OBD2_FUNCTIONAL_ID, MODE_CURRENT_DATA, PID_ENGINE_LOAD, 2, "Engine Load", PERCENTAGE,
         "Calculated engine load", "A * 100 / 255", 0.0f, 100.0f,
         2, UPDATE_FAST, 0xf59e0b, "gauge");
 
     // 2. Coolant Temp: A - 40
     obd.addPID(
-        MODE_CURRENT_DATA, PID_COOLANT_TEMP, 2, "Coolant Temp", DEGREES_CELCIUS,
+        OBD2_FUNCTIONAL_ID, MODE_CURRENT_DATA, PID_COOLANT_TEMP, 2, "Coolant Temp", DEGREES_CELCIUS,
         "Engine coolant temperature", "A - 40", -40.0f, 215.0f,
         3, UPDATE_SLOW, 0xef4444, "thermometer");
 
     // 3. Engine RPM: ((A * 256) + B) / 4
     obd.addPID(
-        MODE_CURRENT_DATA, PID_ENGINE_RPM, 2, "Engine RPM", RPM,
+        OBD2_FUNCTIONAL_ID, MODE_CURRENT_DATA, PID_ENGINE_RPM, 2, "Engine RPM", RPM,
         "Engine speed", "((A * 256) + B) / 4", 0.0f, 16383.75f,
         1, UPDATE_FAST, 0x3b82f6, "droplet");
+
+    // 4. Odometer: ((A * 256) + B) * 10
+    obd.addPID(0x714, MODE_READ_DATA_BY_IDENTIFIER, 0x2203, 3, "Odometer", KM,
+               "Total distance", "((A * 256) + B) * 10", 0.0f, 999999.0f,
+               1, UPDATE_SLOW, 0x3498db, "gauge");
+
+    // 5. Fuel Level: A
+    obd.addPID(0x714, MODE_READ_DATA_BY_IDENTIFIER, 0x2206, 3, "Fuel Amount", LITER,
+               "Fuel Tank Level (Liters)", "A", 0.0f, 50.0f,
+               2, UPDATE_SLOW, 0x2ecc71, "droplet");
+
+    // 6. Cabin Temperature: ((A * 256) + B) * 0.1
+    obd.addPID(0x746, 0x22, 0x2613, 3, "Interior Temp", DEGREES_CELCIUS,
+               "Cabin Temperature", "((A*256)+B)*0.1", -40.0f, 85.0f,
+               2, UPDATE_MEDIUM, 0x3498db, "thermometer");
 
     esp_err_t ret = obd.init();
 
@@ -208,7 +223,7 @@ void t_request_sample(void *pvParameters)
 extern "C" void app_main(void)
 {
 
-    // esp_log_level_set("CAN_DRIVER", ESP_LOG_DEBUG);
+    esp_log_level_set("CAN_DRIVER", ESP_LOG_DEBUG);
     // esp_log_level_set("ASYNC_WEB_SERVER", ESP_LOG_DEBUG);
 
     // Component setup

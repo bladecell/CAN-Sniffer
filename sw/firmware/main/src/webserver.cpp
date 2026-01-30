@@ -299,7 +299,7 @@ inline void enable_pid_stream(bool enable)
     b_pid_stream_enabled = enable;
 }
 
-void pid_stream_callback(uint8_t pid)
+void pid_stream_callback(uint16_t pid)
 {
     if (!b_pid_stream_enabled)
         return;

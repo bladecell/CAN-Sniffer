@@ -7,6 +7,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <set>
 
 #include "esp_err.h"
 #include "esp_log.h"
@@ -22,6 +23,7 @@ public:
     bool isSup(uint16_t pid) const;
     bool pidExists(uint16_t pid) const;
     // PID_DEF Getters
+    uint32_t getId_Def(uint16_t pid) const;
     uint8_t getMode(uint16_t pid) const;
     uint8_t getLen(uint16_t pid) const;
     const char *getName(uint16_t pid) const;
@@ -85,7 +87,7 @@ public:
         return PID_DEF.size();
     }
 
-    void addPID(uint8_t mode, uint16_t pid, uint8_t len, std::string name, std::string unit,
+    void addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std::string name, std::string unit,
                 std::string desc, std::string formula, float minV, float maxV,
                 uint8_t priority, UpdateRate interval, uint32_t color, std::string icon);
 
@@ -96,8 +98,9 @@ public:
     DTCData_t dtcData;
 
     void generatePollingGroups();
-    std::vector<uint8_t> vGroupFast;
-    std::vector<uint8_t> vGroupMedium;
-    std::vector<uint8_t> vGroupSlow;
-    std::vector<uint8_t> vGroupStatic;
+    std::vector<uint16_t> vGroupFast;
+    std::vector<uint16_t> vGroupMedium;
+    std::vector<uint16_t> vGroupSlow;
+    std::vector<uint16_t> vGroupStatic;
+    std::set<uint32_t> diagnosticSessionIds;
 };
