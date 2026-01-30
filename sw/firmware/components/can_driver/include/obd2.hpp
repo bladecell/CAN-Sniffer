@@ -42,7 +42,7 @@ public:
     esp_err_t init();
 
     bool isPidInit() const;
-    esp_err_t req(uint8_t pid);
+    esp_err_t req(uint16_t pid);
 
     void startContinuousMode();
     void stopContinuousMode();
@@ -55,7 +55,7 @@ public:
     esp_err_t requestPermanentDTCs();
     esp_err_t requestDTC(uint8_t mode);
     esp_err_t requestClearDTCs();
-    esp_err_t queryMsg(uint32_t id, uint8_t mode, uint8_t pid, uint8_t len = 0x02);
+    esp_err_t queryMsg(uint32_t id, uint8_t mode, uint16_t pid);
 
 private:
     OBD2(const OBD2 &) = delete;
@@ -66,7 +66,6 @@ private:
     // PID Definitions and Data Storage
 
     SemaphoreHandle_t xPidConnectedSemaphore = NULL;
-    esp_err_t setPidSuppStatus(uint8_t groupIndex, bool supported);
 
     // Polling Task
     void pollTask();
@@ -101,5 +100,6 @@ private:
     esp_err_t parseMultiFrame(std::vector<CanDriver::CanFrame> &frames);
     esp_err_t parseVehicleInfoMultiFrame(std::vector<CanDriver::CanFrame> &frames);
     esp_err_t parseVINMultiFrame(std::vector<CanDriver::CanFrame> &frames);
+    esp_err_t parseRDBI(const CanDriver::CanFrame &f);
     inline esp_err_t sendFlowControlFrame(uint32_t id);
 };

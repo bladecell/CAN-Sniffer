@@ -15,17 +15,18 @@
 #define PID_REQUEST_DELAY_MS MIN_TRANSMIT_PERIOD_MS
 #define RESPONSE_ID_OFFSET 8
 
-#define OBD2_MODE_TO_STR(mode)                                                                             \
-    ((mode) == MODE_CURRENT_DATA ? "Current Data" : (mode) == MODE_FREEZE_FRAME     ? "Freeze Frame"       \
-                                                : (mode) == MODE_DTCS               ? "DTCs"               \
-                                                : (mode) == MODE_CLEAR_DTCS         ? "Clear DTCs"         \
-                                                : (mode) == MODE_TEST_RESULTS_O2    ? "O2 Test Results"    \
-                                                : (mode) == MODE_TEST_RESULTS_OTHER ? "Other Test Results" \
-                                                : (mode) == MODE_PENDING_DTCS       ? "Pending DTCs"       \
-                                                : (mode) == MODE_CONTROL            ? "Control"            \
-                                                : (mode) == MODE_VEHICLE_INFO       ? "Vehicle Info"       \
-                                                : (mode) == MODE_PERMANENT_DTCS     ? "Permanent DTCs"     \
-                                                                                    : "Unknown")
+#define OBD2_MODE_TO_STR(mode)                                                                                       \
+    ((mode) == MODE_CURRENT_DATA ? "Current Data" : (mode) == MODE_FREEZE_FRAME          ? "Freeze Frame"            \
+                                                : (mode) == MODE_DTCS                    ? "DTCs"                    \
+                                                : (mode) == MODE_CLEAR_DTCS              ? "Clear DTCs"              \
+                                                : (mode) == MODE_TEST_RESULTS_O2         ? "O2 Test Results"         \
+                                                : (mode) == MODE_TEST_RESULTS_OTHER      ? "Other Test Results"      \
+                                                : (mode) == MODE_PENDING_DTCS            ? "Pending DTCs"            \
+                                                : (mode) == MODE_CONTROL                 ? "Control"                 \
+                                                : (mode) == MODE_VEHICLE_INFO            ? "Vehicle Info"            \
+                                                : (mode) == MODE_PERMANENT_DTCS          ? "Permanent DTCs"          \
+                                                : (mode) == MODE_READ_DATA_BY_IDENTIFIER ? "Read Data by Identifier" \
+                                                                                         : "Unknown")
 
 enum OBDMode
 {
@@ -53,7 +54,8 @@ enum OBDResponse
     RESPONSE_PENDING_DTCS = 0x47,
     RESPONSE_CONTROL = 0x48,
     RESPONSE_VEHICLE_INFO = 0x49,
-    RESPONSE_PERMANENT_DTCS = 0x4A
+    RESPONSE_PERMANENT_DTCS = 0x4A,
+    RESPONSE_READ_DATA_BY_IDENTIFIER = 0x62
 };
 
 typedef enum

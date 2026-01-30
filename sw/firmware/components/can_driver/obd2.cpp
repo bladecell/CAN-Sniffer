@@ -89,7 +89,7 @@ void OBD2::requestSuppPids()
 {
     esp_err_t ret;
     xSemaphoreTake(xRequestNextPIDSemaphore, 0);
-    for (uint8_t pid_marker = 0; pid_marker <= PID_PIDS_SUPPORTED_C1_E0; pid_marker += 0x20)
+    for (uint16_t pid_marker = 0; pid_marker <= PID_PIDS_SUPPORTED_C1_E0; pid_marker += 0x20)
     {
         ret = queryMsg(OBD2_FUNCTIONAL_ID, MODE_CURRENT_DATA, pid_marker);
 
@@ -108,7 +108,7 @@ void OBD2::requestSuppPids()
     xSemaphoreGive(xPidConnectedSemaphore);
 }
 
-esp_err_t OBD2::req(uint8_t pid)
+esp_err_t OBD2::req(uint16_t pid)
 {
     if (!isSup(pid))
     {
@@ -148,7 +148,7 @@ esp_err_t OBD2::req(uint8_t pid)
  * - **ESP_OK:** If the message was successfully queued for transmission.
  * - Other error codes from the underlying `canDriver.transmit` function.
  */
-esp_err_t OBD2::queryMsg(uint32_t id, uint8_t mode, uint8_t pid, uint8_t len)
+esp_err_t OBD2::queryMsg(uint32_t id, uint8_t mode, uint16_t pid)
 {
     if (!canDriver.isBusConnected())
     {
@@ -156,7 +156,21 @@ esp_err_t OBD2::queryMsg(uint32_t id, uint8_t mode, uint8_t pid, uint8_t len)
         return ESP_ERR_INVALID_STATE;
     }
 
-    uint8_t txData[8] = {len, mode, pid, 0x00, 0x00, 0x00, 0x00, 0x00};
+    uint8_t txData[8] = {0};
+
+    if (mode == MODE_READ_DATA_BY_IDENTIFIER)
+    {
+        txData[0] = 3;
+        txData[1] = mode;
+        txData[2] = (pid >> 8) & 0xFF;
+        txData[3] = pid & 0xFF;
+    }
+    else
+    {
+        txData[0] = 2;
+        txData[1] = mode;
+        txData[2] = (uint8_t)pid;
+    }
     twai_frame_t tx = {};
 
     tx.header.id = id; // OBD-II  request ID
@@ -442,6 +456,8 @@ esp_err_t OBD2::parseRecFrame(const CanDriver::CanFrame &f)
         ret = parseDTCs(frame, mode);
         break;
     }
+    case RESPONSE_READ_DATA_BY_IDENTIFIER:
+        parseRDBI(f);
     default:
         return ESP_ERR_NOT_SUPPORTED;
     }
@@ -451,7 +467,7 @@ esp_err_t OBD2::parseRecFrame(const CanDriver::CanFrame &f)
 
 esp_err_t OBD2::parseCurrentData(const CanDriver::CanFrame &f)
 {
-    uint8_t pid = f.data[2];
+    uint16_t pid = f.data[2];
     esp_err_t ret;
 
     switch (pid)
@@ -469,6 +485,20 @@ esp_err_t OBD2::parseCurrentData(const CanDriver::CanFrame &f)
         ret = updateData(f);
     }
 
+    setValid(pid, ret == ESP_OK);
+
+    for (const auto &callback : subscribers_)
+    {
+        callback(pid);
+    }
+
+    return ret;
+}
+
+esp_err_t OBD2::parseRDBI(const CanDriver::CanFrame &f)
+{
+    uint16_t pid = f.data[2];
+    esp_err_t ret = updateData(f);
     setValid(pid, ret == ESP_OK);
 
     for (const auto &callback : subscribers_)
@@ -562,7 +592,7 @@ esp_err_t OBD2::parseDTCs(std::vector<CanDriver::CanFrame> &frames, uint8_t mode
 
 esp_err_t OBD2::parseSupportedPIDs(const CanDriver::CanFrame &f)
 {
-    uint8_t pidGroup = f.data[2];
+    uint16_t pidGroup = f.data[2];
     esp_err_t ret = ESP_OK;
     if (pidGroup % 0x20 != 0)
     {
@@ -834,7 +864,7 @@ esp_err_t OBD2::parseVehicleInfoMultiFrame(std::vector<CanDriver::CanFrame> &fra
 
     esp_err_t ret = ESP_OK;
 
-    uint8_t pid = frames[0].data[3];
+    uint16_t pid = frames[0].data[3];
 
     switch (pid)
     {

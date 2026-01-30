@@ -70,7 +70,7 @@ void OBD2DTB::initDef()
 //          .icon = "droplet"}},
 // };
 
-void OBD2DTB::addPID(uint8_t mode, uint8_t pid, std::string name, std::string unit,
+void OBD2DTB::addPID(uint8_t mode, uint16_t pid, std::string name, std::string unit,
                      std::string desc, std::string formula, float minV, float maxV,
                      uint8_t priority, UpdateRate interval, uint32_t color, std::string icon)
 {
@@ -88,7 +88,7 @@ void OBD2DTB::addPID(uint8_t mode, uint8_t pid, std::string name, std::string un
         .mtx_ = xSemaphoreCreateMutex()};
 }
 
-esp_err_t OBD2DTB::getData(uint8_t pid, PIDData_t &pd) const
+esp_err_t OBD2DTB::getData(uint16_t pid, PIDData_t &pd) const
 {
     auto it = pidData.find(pid);
     if (it == pidData.end())
@@ -107,7 +107,7 @@ esp_err_t OBD2DTB::getData(uint8_t pid, PIDData_t &pd) const
     return ESP_ERR_TIMEOUT;
 }
 
-esp_err_t OBD2DTB::getDef(uint8_t pid, const PIDDefinition *&outDef) const
+esp_err_t OBD2DTB::getDef(uint16_t pid, const PIDDefinition *&outDef) const
 {
     auto it = PID_DEF.find(pid);
     if (it == PID_DEF.end())
@@ -156,7 +156,7 @@ void OBD2DTB::generatePollingGroups()
 
 esp_err_t OBD2DTB::updateData(const CanDriver::CanFrame &frame)
 {
-    uint8_t pid = frame.data[2];
+    uint16_t pid = frame.data[2];
 
     if (!pidExists(pid))
     {
@@ -181,7 +181,7 @@ esp_err_t OBD2DTB::updateData(const CanDriver::CanFrame &frame)
     return ret;
 }
 
-bool OBD2DTB::isSup(uint8_t pid) const
+bool OBD2DTB::isSup(uint16_t pid) const
 {
     if (!pidExists(pid))
     {
@@ -201,9 +201,9 @@ bool OBD2DTB::isSup(uint8_t pid) const
 
 // PID_DEF Getters
 
-std::vector<uint8_t> OBD2DTB::getPIDs() const
+std::vector<uint16_t> OBD2DTB::getPIDs() const
 {
-    std::vector<uint8_t> keys;
+    std::vector<uint16_t> keys;
 
     // Reserve memory upfront for performance (avoids multiple re-allocations)
     keys.reserve(PID_DEF.size());
@@ -216,78 +216,78 @@ std::vector<uint8_t> OBD2DTB::getPIDs() const
     return keys;
 }
 
-bool OBD2DTB::pidExists(uint8_t pid) const
+bool OBD2DTB::pidExists(uint16_t pid) const
 {
     return PID_DEF.find(pid) != PID_DEF.end();
 }
 
-uint8_t OBD2DTB::getmode(uint8_t pid) const
+uint8_t OBD2DTB::getmode(uint16_t pid) const
 {
     PIDDefinition *def = getDef(pid);
     return def ? def->mode() : 0;
 }
 
-const char *OBD2DTB::getName(uint8_t pid) const
+const char *OBD2DTB::getName(uint16_t pid) const
 {
     const PIDDefinition *def = nullptr;
     return (getDef(pid, def) == ESP_OK) ? def->name().c_str() : "Unknown PID";
 }
 
-const char *OBD2DTB::getUnit(uint8_t pid) const
+const char *OBD2DTB::getUnit(uint16_t pid) const
 {
     const PIDDefinition *def = nullptr;
     return (getDef(pid, def) == ESP_OK) ? def->unit().c_str() : "Unknown PID";
 }
 
-const char *OBD2DTB::getDescription(uint8_t pid) const
+const char *OBD2DTB::getDescription(uint16_t pid) const
 {
     const PIDDefinition *def = nullptr;
     return (getDef(pid, def) == ESP_OK) ? def->description().c_str() : "Unknown PID";
 }
 
-float OBD2DTB::getMinValue(uint8_t pid) const
+float OBD2DTB::getMinValue(uint16_t pid) const
 {
     const PIDDefinition *def = nullptr;
     return (getDef(pid, def) == ESP_OK) ? def->minValue() : NAN;
 }
 
-float OBD2DTB::getMaxValue(uint8_t pid) const
+float OBD2DTB::getMaxValue(uint16_t pid) const
 {
     const PIDDefinition *def = nullptr;
     return (getDef(pid, def) == ESP_OK) ? def->maxValue() : NAN;
 }
 
-uint8_t OBD2DTB::getPriority(uint8_t pid) const
+uint8_t OBD2DTB::getPriority(uint16_t pid) const
 {
     const PIDDefinition *def = nullptr;
     return (getDef(pid, def) == ESP_OK) ? def->priority() : 0;
 }
 
-uint16_t OBD2DTB::getUpdateInterval(uint8_t pid) const
+uint16_t OBD2DTB::getUpdateInterval(uint16_t pid) const
 {
     const PIDDefinition *def = nullptr;
     return (getDef(pid, def) == ESP_OK) ? def->updateInterval() : 0;
 }
 
-uint32_t OBD2DTB::getColor(uint8_t pid) const
+uint32_t OBD2DTB::getColor(uint16_t pid) const
 {
     const PIDDefinition *def = nullptr;
     return (getDef(pid, def) == ESP_OK) ? def->color() : 0xFFFFFF;
 }
 
-const char *OBD2DTB::getIcon(uint8_t pid) const
+const char *OBD2DTB::getIcon(uint16_t pid) const
 {
     const PIDDefinition *def = nullptr;
     return (getDef(pid, def) == ESP_OK) ? def->icon().c_str() : "Unknown PID";
 }
 
-const char *OBD2DTB::getFormula(uint8_t pid) const
+const char *OBD2DTB::getFormula(uint16_t pid) const
 {
     const PIDDefinition *def = nullptr;
     return (getDef(pid, def) == ESP_OK) ? def->formula().c_str() : "Unknown PID";
 }
 
-float OBD2DTB::getValue(uint8_t pid, uint32_t timeout_ms) const
+float OBD2DTB::getValue(uint16_t pid, uint32_t timeout_ms) const
 {
     if (!pidExists(pid))
     {
@@ -312,7 +312,7 @@ float OBD2DTB::getValue(uint8_t pid, uint32_t timeout_ms) const
     return value;
 }
 
-uint32_t OBD2DTB::getLastUpdated(uint8_t pid) const
+uint32_t OBD2DTB::getLastUpdated(uint16_t pid) const
 {
     if (!pidExists(pid))
     {
@@ -330,7 +330,7 @@ uint32_t OBD2DTB::getLastUpdated(uint8_t pid) const
     return lastUpdated;
 }
 
-uint32_t OBD2DTB::getId(uint8_t pid) const
+uint32_t OBD2DTB::getId(uint16_t pid) const
 {
     if (!pidExists(pid))
     {
@@ -348,7 +348,7 @@ uint32_t OBD2DTB::getId(uint8_t pid) const
     return id;
 }
 
-esp_err_t OBD2DTB::getRawData(uint8_t pid, uint8_t *outData) const
+esp_err_t OBD2DTB::getRawData(uint16_t pid, uint8_t *outData) const
 {
     if (!pidExists(pid))
         return ESP_ERR_NOT_FOUND;
@@ -382,7 +382,7 @@ std::string OBD2DTB::getVIN() const
     return result; // Return copy (thread-safe)
 }
 
-bool OBD2DTB::isValid(uint8_t pid) const
+bool OBD2DTB::isValid(uint16_t pid) const
 {
     if (!pidExists(pid))
     {
@@ -400,7 +400,7 @@ bool OBD2DTB::isValid(uint8_t pid) const
     return valid;
 }
 
-esp_err_t OBD2DTB::setValid(uint8_t pid, bool valid)
+esp_err_t OBD2DTB::setValid(uint16_t pid, bool valid)
 {
     if (!pidExists(pid))
     {
@@ -416,7 +416,7 @@ esp_err_t OBD2DTB::setValid(uint8_t pid, bool valid)
     return ESP_OK;
 }
 
-esp_err_t OBD2DTB::setUpdateInterval(uint8_t pid, UpdateRate interval_ms)
+esp_err_t OBD2DTB::setUpdateInterval(uint16_t pid, UpdateRate interval_ms)
 {
     if (!pidExists(pid))
     {
@@ -433,7 +433,7 @@ esp_err_t OBD2DTB::setUpdateInterval(uint8_t pid, UpdateRate interval_ms)
     xSemaphoreGive(pidData.at(pid).mtx_);
 }
 
-esp_err_t OBD2DTB::setIsSupported(uint8_t pid, bool supported)
+esp_err_t OBD2DTB::setIsSupported(uint16_t pid, bool supported)
 {
     if (!pidExists(pid))
     {
@@ -450,7 +450,7 @@ esp_err_t OBD2DTB::setIsSupported(uint8_t pid, bool supported)
     return ESP_OK;
 }
 
-esp_err_t OBD2DTB::setLastUpdated(uint8_t pid, uint32_t lastUpdated)
+esp_err_t OBD2DTB::setLastUpdated(uint16_t pid, uint32_t lastUpdated)
 {
     if (!pidExists(pid))
     {
@@ -466,7 +466,7 @@ esp_err_t OBD2DTB::setLastUpdated(uint8_t pid, uint32_t lastUpdated)
     return ESP_OK;
 }
 
-esp_err_t OBD2DTB::setId(uint8_t pid, uint32_t id)
+esp_err_t OBD2DTB::setId(uint16_t pid, uint32_t id)
 {
     if (!pidExists(pid))
     {
