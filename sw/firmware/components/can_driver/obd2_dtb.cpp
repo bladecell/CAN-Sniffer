@@ -25,51 +25,6 @@ void OBD2DTB::initDef()
     };
 };
 
-// const std::map<uint8_t, PIDDef_t> OBD2DTB::PID_DEF = {
-//     {PID_ENGINE_LOAD,
-//      PIDDef_t{
-//          .mode = MODE_CURRENT_DATA,
-//          .pid = PID_ENGINE_LOAD,
-//          .name = "Engine Load",
-//          .unit = PERCENTAGE,
-//          .description = "Calculated engine load",
-//          .formula = OBDFormulas::engineLoad,
-//          .minValue = 0.0f,
-//          .maxValue = 100.0f,
-//          .priority = 2,
-//          .updateInterval_ms = UPDATE_FAST,
-//          .color = 0xf59e0b,
-//          .icon = "gauge"}},
-//     {PID_COOLANT_TEMP,
-//      PIDDef_t{
-//          .mode = MODE_CURRENT_DATA,
-//          .pid = PID_COOLANT_TEMP,
-//          .name = "Coolant Temp",
-//          .unit = DEGREES_CELCIUS,
-//          .description = "Engine coolant temperature",
-//          .formula = OBDFormulas::coolantTemp,
-//          .minValue = -40.0f,
-//          .maxValue = 215.0f,
-//          .priority = 3,
-//          .updateInterval_ms = UPDATE_SLOW,
-//          .color = 0xef4444,
-//          .icon = "thermometer"}},
-//     {PID_ENGINE_RPM,
-//      PIDDef_t{
-//          .mode = MODE_CURRENT_DATA,
-//          .pid = PID_ENGINE_RPM,
-//          .name = "Engine RPM",
-//          .unit = RPM,
-//          .description = "Engine speed",
-//          .formula = OBDFormulas::engineRPM,
-//          .minValue = 0.0f,
-//          .maxValue = 16383.75f,
-//          .priority = 1,
-//          .updateInterval_ms = UPDATE_FAST,
-//          .color = 0x3b82f6,
-//          .icon = "droplet"}},
-// };
-
 void OBD2DTB::addPID(uint8_t mode, uint16_t pid, uint8_t len, std::string name, std::string unit,
                      std::string desc, std::string formula, float minV, float maxV,
                      uint8_t priority, UpdateRate interval, uint32_t color, std::string icon)
@@ -82,7 +37,7 @@ void OBD2DTB::addPID(uint8_t mode, uint16_t pid, uint8_t len, std::string name, 
         .value = 0.0f,
         .lastUpdated = 0,
         .data = {0},
-        .isSupported = true,
+        .isSupported = mode == MODE_READ_DATA_BY_IDENTIFIER ? true : false,
         .isValid = false,
         .updateInterval_ms = interval,
         .mtx_ = xSemaphoreCreateMutex()};
