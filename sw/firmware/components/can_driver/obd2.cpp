@@ -91,7 +91,7 @@ void OBD2::requestSuppPids()
     xSemaphoreTake(xRequestNextPIDSemaphore, 0);
     for (uint16_t pid_marker = 0; pid_marker <= PID_PIDS_SUPPORTED_C1_E0; pid_marker += 0x20)
     {
-        ret = queryMsg(OBD2_FUNCTIONAL_ID, MODE_CURRENT_DATA, pid_marker);
+        ret = queryMsg(OBD2_FUNCTIONAL_ID, MODE_CURRENT_DATA, pid_marker, 2);
 
         if (ret != ESP_OK)
         {
@@ -116,7 +116,7 @@ esp_err_t OBD2::req(uint16_t pid)
         return ESP_ERR_NOT_SUPPORTED;
     }
 
-    esp_err_t ret = queryMsg(getId(pid), PID_DEF.at(pid)->mode(), pid);
+    esp_err_t ret = queryMsg(getId(pid), getMode(pid), pid, getLen(pid));
 
     return ret;
 }
@@ -148,7 +148,7 @@ esp_err_t OBD2::req(uint16_t pid)
  * - **ESP_OK:** If the message was successfully queued for transmission.
  * - Other error codes from the underlying `canDriver.transmit` function.
  */
-esp_err_t OBD2::queryMsg(uint32_t id, uint8_t mode, uint16_t pid)
+esp_err_t OBD2::queryMsg(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len)
 {
     if (!canDriver.isBusConnected())
     {
@@ -160,14 +160,14 @@ esp_err_t OBD2::queryMsg(uint32_t id, uint8_t mode, uint16_t pid)
 
     if (mode == MODE_READ_DATA_BY_IDENTIFIER)
     {
-        txData[0] = 3;
+        txData[0] = len;
         txData[1] = mode;
         txData[2] = (pid >> 8) & 0xFF;
         txData[3] = pid & 0xFF;
     }
     else
     {
-        txData[0] = 2;
+        txData[0] = len;
         txData[1] = mode;
         txData[2] = (uint8_t)pid;
     }
@@ -458,6 +458,7 @@ esp_err_t OBD2::parseRecFrame(const CanDriver::CanFrame &f)
     }
     case RESPONSE_READ_DATA_BY_IDENTIFIER:
         parseRDBI(f);
+        break;
     default:
         return ESP_ERR_NOT_SUPPORTED;
     }
@@ -650,7 +651,7 @@ esp_err_t OBD2::requestVIN()
         return ESP_ERR_INVALID_STATE;
     }
 
-    ESP_RETURN_ON_ERROR(queryMsg(OBD2_FUNCTIONAL_ID, MODE_VEHICLE_INFO, PID_VIN), TAG, "Failed to query request VIN message");
+    ESP_RETURN_ON_ERROR(queryMsg(OBD2_FUNCTIONAL_ID, MODE_VEHICLE_INFO, PID_VIN, 2), TAG, "Failed to query request VIN message");
 
     xSemaphoreTake(vinData.vinReadySemaphore, 0);
 
@@ -690,7 +691,7 @@ esp_err_t OBD2::requestDTC(uint8_t mode)
 
     xSemaphoreTake(sem, 0);
 
-    ESP_RETURN_ON_ERROR(queryMsg(OBD2_FUNCTIONAL_ID, mode, 0x00), TAG, "Failed to query DTCs");
+    ESP_RETURN_ON_ERROR(queryMsg(OBD2_FUNCTIONAL_ID, mode, 0x00, 2), TAG, "Failed to query DTCs");
 
     if (xSemaphoreTake(sem, pdMS_TO_TICKS(2000)) != pdTRUE)
     {
@@ -703,7 +704,7 @@ esp_err_t OBD2::requestDTC(uint8_t mode)
 
 esp_err_t OBD2::requestConfirmedDTCs()
 {
-    esp_err_t ret = queryMsg(OBD2_FUNCTIONAL_ID, MODE_DTCS, 0x00);
+    esp_err_t ret = queryMsg(OBD2_FUNCTIONAL_ID, MODE_DTCS, 0x00, 2);
     if (ret == ESP_OK)
     {
         clearDTC(MODE_DTCS);
@@ -713,7 +714,7 @@ esp_err_t OBD2::requestConfirmedDTCs()
 
 esp_err_t OBD2::requestPendingDTCs()
 {
-    esp_err_t ret = queryMsg(OBD2_FUNCTIONAL_ID, MODE_PENDING_DTCS, 0x00);
+    esp_err_t ret = queryMsg(OBD2_FUNCTIONAL_ID, MODE_PENDING_DTCS, 0x00, 2);
     if (ret == ESP_OK)
     {
         clearDTC(MODE_PENDING_DTCS);
@@ -724,7 +725,7 @@ esp_err_t OBD2::requestPendingDTCs()
 //
 esp_err_t OBD2::requestPermanentDTCs()
 {
-    esp_err_t ret = queryMsg(OBD2_FUNCTIONAL_ID, MODE_PERMANENT_DTCS, 0x00);
+    esp_err_t ret = queryMsg(OBD2_FUNCTIONAL_ID, MODE_PERMANENT_DTCS, 0x00, 2);
     if (ret == ESP_OK)
     {
         clearDTC(MODE_PERMANENT_DTCS);
@@ -734,7 +735,7 @@ esp_err_t OBD2::requestPermanentDTCs()
 
 esp_err_t OBD2::requestClearDTCs()
 {
-    esp_err_t ret = queryMsg(OBD2_FUNCTIONAL_ID, MODE_CLEAR_DTCS, 0x00);
+    esp_err_t ret = queryMsg(OBD2_FUNCTIONAL_ID, MODE_CLEAR_DTCS, 0x00, 2);
     return ret;
 }
 

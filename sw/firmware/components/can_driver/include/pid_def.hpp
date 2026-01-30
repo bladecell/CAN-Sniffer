@@ -13,6 +13,7 @@ class PIDDefinition
 private:
     uint8_t mode_;
     uint16_t pid_;
+    uint8_t len_;
     std::string name_;
     std::string unit_;
     std::string description_;
@@ -29,10 +30,10 @@ private:
     static inline SemaphoreHandle_t eval_mutex = xSemaphoreCreateMutex();
 
 public:
-    PIDDefinition(uint8_t mode, uint16_t pid, std::string name, std::string unit,
+    PIDDefinition(uint8_t mode, uint16_t pid, uint8_t len, std::string name, std::string unit,
                   std::string desc, std::string formula, float minV, float maxV,
                   uint8_t priority, UpdateRate interval, uint32_t color, std::string icon)
-        : mode_(mode), pid_(pid), name_(std::move(name)), unit_(std::move(unit)),
+        : mode_(mode), pid_(pid), len_(len), name_(std::move(name)), unit_(std::move(unit)),
           description_(std::move(desc)), formula_(std::move(formula)),
           minValue_(minV), maxValue_(maxV), priority_(priority),
           updateInterval_ms_((uint16_t)interval), color_(color), icon_(std::move(icon))
@@ -50,6 +51,7 @@ public:
     // Getters
     uint8_t mode() const { return mode_; }
     uint16_t pid() const { return pid_; }
+    uint8_t len() const { return len_; }
     const std::string &name() const { return name_; }
     const std::string &unit() const { return unit_; }
     const std::string &description() const { return description_; }
@@ -92,7 +94,7 @@ public:
     PIDDefinition &operator=(const PIDDefinition &) = delete;
 
     PIDDefinition(PIDDefinition &&other) noexcept
-        : mode_(other.mode_), pid_(other.pid_), name_(std::move(other.name_)),
+        : mode_(other.mode_), pid_(other.pid_), len_(other.len_), name_(std::move(other.name_)),
           unit_(std::move(other.unit_)), description_(std::move(other.description_)),
           formula_(std::move(other.formula_)), minValue_(other.minValue_),
           maxValue_(other.maxValue_), priority_(other.priority_),

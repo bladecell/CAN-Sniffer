@@ -61,8 +61,6 @@ esp_err_t setup_can()
 
     // Settings::getInstance().getCanConfig(config);
 
-    // config.debug = DEBUG_MODE;
-
     esp_err_t ret = CanDriver::getInstance().init(config);
 
     vTaskDelay(pdMS_TO_TICKS(1000));
@@ -83,19 +81,19 @@ esp_err_t setup_obd()
 
     // 1. Engine Load: A * 100 / 255
     obd.addPID(
-        MODE_CURRENT_DATA, PID_ENGINE_LOAD, "Engine Load", PERCENTAGE,
+        MODE_CURRENT_DATA, PID_ENGINE_LOAD, 2, "Engine Load", PERCENTAGE,
         "Calculated engine load", "A * 100 / 255", 0.0f, 100.0f,
         2, UPDATE_FAST, 0xf59e0b, "gauge");
 
     // 2. Coolant Temp: A - 40
     obd.addPID(
-        MODE_CURRENT_DATA, PID_COOLANT_TEMP, "Coolant Temp", DEGREES_CELCIUS,
+        MODE_CURRENT_DATA, PID_COOLANT_TEMP, 2, "Coolant Temp", DEGREES_CELCIUS,
         "Engine coolant temperature", "A - 40", -40.0f, 215.0f,
         3, UPDATE_SLOW, 0xef4444, "thermometer");
 
     // 3. Engine RPM: ((A * 256) + B) / 4
     obd.addPID(
-        MODE_CURRENT_DATA, PID_ENGINE_RPM, "Engine RPM", RPM,
+        MODE_CURRENT_DATA, PID_ENGINE_RPM, 2, "Engine RPM", RPM,
         "Engine speed", "((A * 256) + B) / 4", 0.0f, 16383.75f,
         1, UPDATE_FAST, 0x3b82f6, "droplet");
 

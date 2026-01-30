@@ -55,7 +55,7 @@ public:
     esp_err_t requestPermanentDTCs();
     esp_err_t requestDTC(uint8_t mode);
     esp_err_t requestClearDTCs();
-    esp_err_t queryMsg(uint32_t id, uint8_t mode, uint16_t pid);
+    esp_err_t queryMsg(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len);
 
 private:
     OBD2(const OBD2 &) = delete;

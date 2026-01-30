@@ -22,7 +22,8 @@ public:
     bool isSup(uint16_t pid) const;
     bool pidExists(uint16_t pid) const;
     // PID_DEF Getters
-    uint8_t getmode(uint16_t pid) const;
+    uint8_t getMode(uint16_t pid) const;
+    uint8_t getLen(uint16_t pid) const;
     const char *getName(uint16_t pid) const;
     const char *getUnit(uint16_t pid) const;
     const char *getDescription(uint16_t pid) const;
@@ -33,7 +34,7 @@ public:
     uint32_t getColor(uint16_t pid) const;
     const char *getIcon(uint16_t pid) const;
     const char *getFormula(uint16_t pid) const;
-    PIDDefinition *getDef(uint16_t pid) const;
+    // PIDDefinition *getDef(uint16_t pid) const;
     esp_err_t getDef(uint16_t pid, const PIDDefinition *&outDef) const;
 
     // Special Getters
@@ -84,7 +85,7 @@ public:
         return PID_DEF.size();
     }
 
-    void addPID(uint8_t mode, uint16_t pid, std::string name, std::string unit,
+    void addPID(uint8_t mode, uint16_t pid, uint8_t len, std::string name, std::string unit,
                 std::string desc, std::string formula, float minV, float maxV,
                 uint8_t priority, UpdateRate interval, uint32_t color, std::string icon);
 

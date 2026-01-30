@@ -70,12 +70,12 @@ void OBD2DTB::initDef()
 //          .icon = "droplet"}},
 // };
 
-void OBD2DTB::addPID(uint8_t mode, uint16_t pid, std::string name, std::string unit,
+void OBD2DTB::addPID(uint8_t mode, uint16_t pid, uint8_t len, std::string name, std::string unit,
                      std::string desc, std::string formula, float minV, float maxV,
                      uint8_t priority, UpdateRate interval, uint32_t color, std::string icon)
 {
     PID_DEF[pid] = std::make_unique<PIDDefinition>(
-        mode, pid, name, unit, desc, formula, minV, maxV, priority, interval, color, icon);
+        mode, pid, len, name, unit, desc, formula, minV, maxV, priority, interval, color, icon);
 
     pidData[pid] = {
         .id = pid,
@@ -221,10 +221,16 @@ bool OBD2DTB::pidExists(uint16_t pid) const
     return PID_DEF.find(pid) != PID_DEF.end();
 }
 
-uint8_t OBD2DTB::getmode(uint16_t pid) const
+uint8_t OBD2DTB::getMode(uint16_t pid) const
 {
-    PIDDefinition *def = getDef(pid);
-    return def ? def->mode() : 0;
+    const PIDDefinition *def = nullptr;
+    return (getDef(pid, def) == ESP_OK) ? def->mode() : 0;
+}
+
+uint8_t OBD2DTB::getLen(uint16_t pid) const
+{
+    const PIDDefinition *def = nullptr;
+    return (getDef(pid, def) == ESP_OK) ? def->len() : 0;
 }
 
 const char *OBD2DTB::getName(uint16_t pid) const
