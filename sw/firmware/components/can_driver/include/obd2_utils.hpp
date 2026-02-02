@@ -148,21 +148,3 @@ typedef struct
     SemaphoreHandle_t permanentReadySemaphore;
     SemaphoreHandle_t mtx_;
 } DTCData_t;
-
-namespace OBDFormulas
-{
-    inline float engineLoad(const uint8_t *data, uint8_t len)
-    {
-        return len >= 4 ? (data[3] * 100.0f) / 255.0f : -1.0f;
-    }
-
-    inline float coolantTemp(const uint8_t *data, uint8_t len)
-    {
-        return len >= 4 ? data[3] - 40 : -1.0f;
-    }
-
-    inline float engineRPM(const uint8_t *data, uint8_t len)
-    {
-        return len >= 5 ? ((data[3] << 8) | data[4]) / 4.0f : -1.0f;
-    }
-}

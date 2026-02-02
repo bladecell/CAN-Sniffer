@@ -8,6 +8,28 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
+// tinyexpr custom functions
+inline double get_bit(double val, double bit_idx)
+{
+    uint32_t byte = (uint32_t)val;
+    uint32_t bit = (uint32_t)bit_idx;
+    if (bit > 31)
+        return 0.0;
+    return (byte & (1UL << bit)) ? 1.0 : 0.0;
+}
+
+inline double bit_mask(double val, double start, double len)
+{
+    uint32_t v = (uint32_t)val;
+    uint32_t s = (uint32_t)start;
+    uint32_t l = (uint32_t)len;
+    if (s > 31 || l == 0)
+        return 0.0;
+
+    uint32_t mask = (1UL << l) - 1;
+    return (double)((v >> s) & mask);
+}
+
 class PIDDefinition
 {
 private:
@@ -27,7 +49,7 @@ private:
     std::string icon_;
 
     te_expr *compiledFormula_ = nullptr;
-    static inline double raw_vars[4] = {0, 0, 0, 0};
+    static inline double vars_storage_[4] = {0, 0, 0, 0};
     static inline SemaphoreHandle_t eval_mutex = xSemaphoreCreateMutex();
 
 public:
@@ -40,13 +62,15 @@ public:
           updateInterval_ms_((uint16_t)interval), color_(color), icon_(std::move(icon))
     {
         te_variable te_vars[] = {
-            {"A", &PIDDefinition::raw_vars[0], 0, 0},
-            {"B", &PIDDefinition::raw_vars[1], 0, 0},
-            {"C", &PIDDefinition::raw_vars[2], 0, 0},
-            {"D", &PIDDefinition::raw_vars[3], 0, 0}};
+            {"A", &vars_storage_[0], TE_VARIABLE, 0},
+            {"B", &vars_storage_[1], TE_VARIABLE, 0},
+            {"C", &vars_storage_[2], TE_VARIABLE, 0},
+            {"D", &vars_storage_[3], TE_VARIABLE, 0},
+            {"getBit", (void *)get_bit, TE_FUNCTION2, 0},
+            {"bitMask", (void *)bit_mask, TE_FUNCTION3, 0}};
 
         int err;
-        compiledFormula_ = te_compile(formula_.c_str(), te_vars, 4, &err);
+        compiledFormula_ = te_compile(formula_.c_str(), te_vars, 6, &err);
     }
 
     // Getters
@@ -81,7 +105,7 @@ public:
 
             for (int i = 0; i < 4; i++)
             {
-                raw_vars[i] = (i < len) ? (double)frameData[i] : 0.0;
+                vars_storage_[i] = (i < len) ? (double)frameData[i] : 0.0;
             }
 
             result = (float)te_eval(compiledFormula_);

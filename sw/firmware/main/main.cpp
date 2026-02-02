@@ -21,7 +21,7 @@
 #include "secrets.h"
 #include "webserver.hpp"
 
-#define DEBUG_MODE 0
+#define DEBUG_MODE 1
 
 static const char *TAG = "APP_MAIN";
 static LedError led(LED_GPIO);
