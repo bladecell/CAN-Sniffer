@@ -11,7 +11,9 @@
 
 #include "obd2.hpp"
 
-static const char *TAG = "OBD2";
+#include "can_driver.hpp"
+
+static const char* TAG = "OBD2";
 
 /**
  * @brief Construct a new OBD2::OBD2 object
@@ -53,17 +55,13 @@ esp_err_t OBD2::init()
         return ESP_FAIL;
     }
 
+    derivedPidQueue_ = xQueueCreate(10, sizeof(uint16_t));
+
     initDef();
 
     canDriver.setConnectionCallback(onCanStateChange, this);
-    BaseType_t taskCreated = xTaskCreatePinnedToCore(
-        receiveTaskWrapper,
-        "OBD2_receive_task",
-        8192,
-        this,
-        tskIDLE_PRIORITY + 2,
-        &ReceiveTaskHandle,
-        CORE_ID_CAN_TASKS);
+    BaseType_t taskCreated = xTaskCreatePinnedToCore(receiveTaskWrapper, "OBD2_receive_task", 8192, this,
+                                                     tskIDLE_PRIORITY + 2, &ReceiveTaskHandle, CORE_ID_CAN_TASKS);
 
     if (taskCreated != pdPASS)
     {
@@ -114,6 +112,14 @@ esp_err_t OBD2::req(uint16_t pid)
     {
         ESP_LOGW(TAG, "PID 0x%02X is not supported or not recognized", pid);
         return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    uint16_t mode = getMode(pid);
+
+    if (mode == MODE_DERIVED_DATA)
+    {
+        xQueueSend(derivedPidQueue_, &pid, pdMS_TO_TICKS(10));
+        return ESP_OK;
     }
 
     esp_err_t ret = queryMsg(getId(pid), getMode(pid), pid, getLen(pid));
@@ -173,17 +179,17 @@ esp_err_t OBD2::queryMsg(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len)
     }
     twai_frame_t tx = {};
 
-    tx.header.id = id; // OBD-II  request ID
-    tx.header.dlc = twaifd_len2dlc(sizeof(txData));
-    tx.header.ide = false;      // Standard Frame Format (11-bit ID)
-    tx.header.rtr = 0;          // Data frame (not remote frame)
-    tx.header.fdf = 0;          // Classic CAN format
-    tx.header.brs = 0;          // No bit rate switching
-    tx.header.esi = 0;          // No error state indicator
-    tx.header.timestamp = 0;    // Not used for TX
-    tx.header.trigger_time = 0; // Not used for immediate transmission
+    tx.header.id           = id;  // OBD-II  request ID
+    tx.header.dlc          = twaifd_len2dlc(sizeof(txData));
+    tx.header.ide          = false;  // Standard Frame Format (11-bit ID)
+    tx.header.rtr          = 0;      // Data frame (not remote frame)
+    tx.header.fdf          = 0;      // Classic CAN format
+    tx.header.brs          = 0;      // No bit rate switching
+    tx.header.esi          = 0;      // No error state indicator
+    tx.header.timestamp    = 0;      // Not used for TX
+    tx.header.trigger_time = 0;      // Not used for immediate transmission
 
-    tx.buffer = txData;
+    tx.buffer     = txData;
     tx.buffer_len = sizeof(txData);
 
     esp_err_t ret = canDriver.transmit(&tx, 100);
@@ -196,9 +202,9 @@ bool OBD2::isPidInit() const
     return pidsInitialized;
 }
 
-void OBD2::onCanStateChange(void *arg, bool connected)
+void OBD2::onCanStateChange(void* arg, bool connected)
 {
-    OBD2 *instance = static_cast<OBD2 *>(arg);
+    OBD2* instance = static_cast<OBD2*>(arg);
 
     if (connected)
     {
@@ -227,9 +233,9 @@ void OBD2::handleCanDisconnected()
     pidsInitialized = false;
 }
 
-void OBD2::pollTaskWrapper(void *param)
+void OBD2::pollTaskWrapper(void* param)
 {
-    OBD2 *obd2 = static_cast<OBD2 *>(param);
+    OBD2* obd2 = static_cast<OBD2*>(param);
     obd2->pollTask();
 }
 
@@ -243,15 +249,9 @@ void OBD2::startContinuousMode()
     if (continuousRunning)
         return;
 
-    continuousRunning = true;
-    BaseType_t taskCreated = xTaskCreatePinnedToCore(
-        pollTaskWrapper,
-        "OBD2_PollTask",
-        8192,
-        this,
-        tskIDLE_PRIORITY + 1,
-        &PollTaskHandle,
-        CORE_ID_CAN_TASKS);
+    continuousRunning      = true;
+    BaseType_t taskCreated = xTaskCreatePinnedToCore(pollTaskWrapper, "OBD2_PollTask", 8192, this, tskIDLE_PRIORITY + 1,
+                                                     &PollTaskHandle, CORE_ID_CAN_TASKS);
 
     if (taskCreated != pdPASS)
     {
@@ -285,8 +285,10 @@ void OBD2::pollTask()
 
     TickType_t xLastWakeTime = xTaskGetTickCount();
 
-    std::size_t groupStatic_size = 0, groupSlow_size = 0, groupMedium_size = 0, groupFast_size = 0, diagnosticSessionIds_size = 0;
-    uint32_t groupStatic_idx = 0, groupSlow_idx = 0, groupMedium_idx = 0, groupFast_idx = 0, diagnosticSessionIds_idx = 0;
+    std::size_t groupStatic_size = 0, groupSlow_size = 0, groupMedium_size = 0, groupFast_size = 0,
+                diagnosticSessionIds_size = 0;
+    uint32_t groupStatic_idx = 0, groupSlow_idx = 0, groupMedium_idx = 0, groupFast_idx = 0,
+             diagnosticSessionIds_idx = 0;
 
     uint32_t taskCnt = 0;
 
@@ -299,17 +301,17 @@ void OBD2::pollTask()
 
     std::vector<uint32_t> v_diagnosticSessionIds(diagnosticSessionIds.begin(), diagnosticSessionIds.end());
 
-    groupStatic_size = vGroupStatic.size();
-    groupSlow_size = vGroupSlow.size();
-    groupMedium_size = vGroupMedium.size();
-    groupFast_size = vGroupFast.size();
+    groupStatic_size          = vGroupStatic.size();
+    groupSlow_size            = vGroupSlow.size();
+    groupMedium_size          = vGroupMedium.size();
+    groupFast_size            = vGroupFast.size();
     diagnosticSessionIds_size = diagnosticSessionIds.size();
 
-    const uint32_t intervalFast = UPDATE_FAST / POLL_TASK_PERIOD_MS;
+    const uint32_t intervalFast   = UPDATE_FAST / POLL_TASK_PERIOD_MS;
     const uint32_t intervalMedium = UPDATE_MEDIUM / POLL_TASK_PERIOD_MS;
-    const uint32_t intervalSlow = UPDATE_SLOW / POLL_TASK_PERIOD_MS;
+    const uint32_t intervalSlow   = UPDATE_SLOW / POLL_TASK_PERIOD_MS;
     const uint32_t intervalStatic = UPDATE_STATIC / POLL_TASK_PERIOD_MS;
-    const uint32_t intervalDiag = DAGNOSTIC_SESSION_TIMEOUT / POLL_TASK_PERIOD_MS;
+    const uint32_t intervalDiag   = DAGNOSTIC_SESSION_TIMEOUT / POLL_TASK_PERIOD_MS;
 
     while (1)
     {
@@ -328,10 +330,10 @@ void OBD2::pollTask()
 
             xSemaphoreTake(xPidConnectedSemaphore, portMAX_DELAY);
             v_diagnosticSessionIds.assign(diagnosticSessionIds.begin(), diagnosticSessionIds.end());
-            groupStatic_size = vGroupStatic.size();
-            groupSlow_size = vGroupSlow.size();
-            groupMedium_size = vGroupMedium.size();
-            groupFast_size = vGroupFast.size();
+            groupStatic_size          = vGroupStatic.size();
+            groupSlow_size            = vGroupSlow.size();
+            groupMedium_size          = vGroupMedium.size();
+            groupFast_size            = vGroupFast.size();
             diagnosticSessionIds_size = diagnosticSessionIds.size();
             groupStatic_idx = groupSlow_idx = groupMedium_idx = groupFast_idx = 0, diagnosticSessionIds_idx = 0;
             // taskCnt = 0;
@@ -383,9 +385,9 @@ void OBD2::pollTask()
     }
 }
 
-void OBD2::receiveTaskWrapper(void *param)
+void OBD2::receiveTaskWrapper(void* param)
 {
-    OBD2 *obd2 = static_cast<OBD2 *>(param);
+    OBD2* obd2 = static_cast<OBD2*>(param);
     obd2->receiveTask();
 }
 
@@ -399,10 +401,21 @@ void OBD2::receiveTask()
             continue;
         }
 
+        uint16_t derivedPid;
+        while (xQueueReceive(derivedPidQueue_, &derivedPid, 0) == pdTRUE)
+        {
+            CanDriver::CanFrame f{};
+            f.id      = OBD2_FUNCTIONAL_ID;
+            f.length  = 3;
+            f.data[0] = 0x03;  // DLC
+            f.data[1] = RESPONSE_MODE_DERIVED_DATA;
+            f.data[2] = (derivedPid >> 8) & 0xFF;
+            f.data[3] = derivedPid & 0xFF;
+            parseRecFrame(f);
+        }
+
         CanDriver::CanFrame f{};
-        esp_err_t ret = canDriver.receive(
-            f,
-            portMAX_DELAY);
+        esp_err_t           ret = canDriver.receive(f, pdMS_TO_TICKS(10));
 
         if (ret == ESP_OK)
         {
@@ -413,7 +426,7 @@ void OBD2::receiveTask()
                 ESP_LOGE(TAG, "Failed to parse received frame: %s", esp_err_to_name(ret));
             }
         }
-        else
+        else if (ret != ESP_ERR_TIMEOUT)
         {
             ESP_LOGE(TAG, "CAN receive driver error: %s", esp_err_to_name(ret));
             vTaskDelay(pdMS_TO_TICKS(10));
@@ -421,13 +434,15 @@ void OBD2::receiveTask()
     }
 }
 
-esp_err_t OBD2::parseRecFrame(const CanDriver::CanFrame &f)
+esp_err_t OBD2::parseRecFrame(const CanDriver::CanFrame& f)
 {
     if (f.length < 3)
         return ESP_ERR_INVALID_SIZE;
 
     esp_err_t ret = ESP_OK;
-    uint8_t frame_type = (f.data[0] >> 4) & 0x0F; // High Nibble - 0 - Sigle Frame, 1 - First Frame, 2 - Consecutive Frame (3 - Flow Control)
+    uint8_t   frame_type =
+        (f.data[0] >> 4) &
+        0x0F;  // High Nibble - 0 - Sigle Frame, 1 - First Frame, 2 - Consecutive Frame (3 - Flow Control)
 
     if (frame_type > 0)
     {
@@ -439,81 +454,81 @@ esp_err_t OBD2::parseRecFrame(const CanDriver::CanFrame &f)
 
     switch (mode)
     {
-    case RESPONSE_CURRENT_DATA:
-        ret = parseCurrentData(f);
-        break;
-    case RESPONSE_DTCS:
-    {
-        std::vector<CanDriver::CanFrame> frame = {f};
-        ret = parseDTCs(frame, mode);
-        break;
-    }
-    case RESPONSE_CLEAR_DTCS:
-        // TODO parseClearDTCsAck(f);
-        break;
-    case RESPONSE_PENDING_DTCS:
-    {
-        std::vector<CanDriver::CanFrame> frame = {f};
-        ret = parseDTCs(frame, mode);
-        break;
-    }
-    case RESPONSE_VEHICLE_INFO:
-        // TODO parseVehicleInfo(f);
-        break;
-    case RESPONSE_PERMANENT_DTCS:
-    {
-        std::vector<CanDriver::CanFrame> frame = {f};
-        ret = parseDTCs(frame, mode);
-        break;
-    }
-    case RESPONSE_READ_DATA_BY_IDENTIFIER:
-        parseRDBI(f);
-        break;
-    default:
-        return ESP_ERR_NOT_SUPPORTED;
+        case RESPONSE_CURRENT_DATA:
+            ret = parseCurrentData(f);
+            break;
+        case RESPONSE_DTCS:
+        {
+            std::vector<CanDriver::CanFrame> frame = {f};
+            ret                                    = parseDTCs(frame, mode);
+            break;
+        }
+        case RESPONSE_CLEAR_DTCS:
+            // TODO parseClearDTCsAck(f);
+            break;
+        case RESPONSE_PENDING_DTCS:
+        {
+            std::vector<CanDriver::CanFrame> frame = {f};
+            ret                                    = parseDTCs(frame, mode);
+            break;
+        }
+        case RESPONSE_VEHICLE_INFO:
+            // TODO parseVehicleInfo(f);
+            break;
+        case RESPONSE_PERMANENT_DTCS:
+        {
+            std::vector<CanDriver::CanFrame> frame = {f};
+            ret                                    = parseDTCs(frame, mode);
+            break;
+        }
+        case RESPONSE_READ_DATA_BY_IDENTIFIER:
+            ret = parseRDBI(f);
+            break;
+        case RESPONSE_MODE_DERIVED_DATA:
+            ret = parseDerivedData(f);
+            break;
+        default:
+            return ESP_ERR_NOT_SUPPORTED;
     }
 
     return ret;
 }
 
-esp_err_t OBD2::parseCurrentData(const CanDriver::CanFrame &f)
+esp_err_t OBD2::parseCurrentData(const CanDriver::CanFrame& f)
 {
-    uint16_t pid = f.data[2];
+    uint16_t  pid = f.data[2];
     esp_err_t ret;
 
     switch (pid)
     {
-    case PID_PIDS_SUPPORTED_1_20:
-    case PID_PIDS_SUPPORTED_21_40:
-    case PID_PIDS_SUPPORTED_41_60:
-    case PID_PIDS_SUPPORTED_61_80:
-    case PID_PIDS_SUPPORTED_81_A0:
-    case PID_PIDS_SUPPORTED_A1_C0:
-    case PID_PIDS_SUPPORTED_C1_E0:
-        ret = parseSupportedPIDs(f);
-        break;
-    default:
-        ret = updateData(f);
+        case PID_PIDS_SUPPORTED_1_20:
+        case PID_PIDS_SUPPORTED_21_40:
+        case PID_PIDS_SUPPORTED_41_60:
+        case PID_PIDS_SUPPORTED_61_80:
+        case PID_PIDS_SUPPORTED_81_A0:
+        case PID_PIDS_SUPPORTED_A1_C0:
+        case PID_PIDS_SUPPORTED_C1_E0:
+            ret = parseSupportedPIDs(f);
+            break;
+        default:
+            ret = updateData(f);
     }
 
     setValid(pid, ret == ESP_OK);
 
-    for (const auto &callback : subscribers_)
-    {
-        callback(pid);
-    }
+    runPidUpdateCallbacks(pid);
 
     return ret;
 }
 
-esp_err_t OBD2::parseRDBI(const CanDriver::CanFrame &f)
+esp_err_t OBD2::parseRDBI(const CanDriver::CanFrame& f)
 {
-    uint16_t pid = (uint16_t)(f.data[2] << 8) | f.data[3];
+    uint16_t  pid = (uint16_t)(f.data[2] << 8) | f.data[3];
     esp_err_t ret;
     if (f.data[1] == 0x7F)
     {
         uint8_t rejectedService = f.data[2];
-        uint8_t nrcCode = f.data[3];
+        uint8_t nrcCode         = f.data[3];
 
         ESP_LOGE(TAG, "NRC Received! Service: 0x%02X, Error: 0x%02X", rejectedService, nrcCode);
 
@@ -526,44 +541,73 @@ esp_err_t OBD2::parseRDBI(const CanDriver::CanFrame &f)
 
     setValid(pid, ret == ESP_OK);
 
-    for (const auto &callback : subscribers_)
-    {
-        callback(pid);
-    }
+    runPidUpdateCallbacks(pid);
 
     return ret;
 }
 
-esp_err_t OBD2::parseDTCs(std::vector<CanDriver::CanFrame> &frames, uint8_t mode)
+esp_err_t OBD2::parseDerivedData(const CanDriver::CanFrame& f)
+{
+    uint16_t  pid = (uint16_t)(f.data[2] << 8) | f.data[3];
+    esp_err_t ret;
+    auto      it = pidData.find(pid);
+    if (it != pidData.end())
+    {
+        float result = 0.0f;
+        ret          = PID_DEF.at(pid)->evaluate(nullptr, 0, result);
+        if (xSemaphoreTake(it->second.mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
+        {
+            setValid(pid, false);
+            return ESP_ERR_TIMEOUT;
+        }
+
+        it->second.value       = result;
+        it->second.id          = OBD2_FUNCTIONAL_ID;
+        it->second.lastUpdated = xTaskGetTickCount();
+        it->second.isValid     = true;
+        xSemaphoreGive(it->second.mtx_);
+    }
+    else
+    {
+        ret = ESP_ERR_NOT_FOUND;
+        setValid(pid, false);
+    }
+
+    runPidUpdateCallbacks(pid);
+
+    return ret;
+}
+
+esp_err_t OBD2::parseDTCs(std::vector<CanDriver::CanFrame>& frames, uint8_t mode)
 {
     if (frames.empty())
     {
         return ESP_ERR_INVALID_ARG;
     }
 
-    uint8_t dtc_rem = 0, hi_half = 0, idx = 0;
-    bool halved = false;
-    esp_err_t ret = ESP_OK;
-    uint16_t rawDTC;
+    uint8_t   dtc_rem = 0, hi_half = 0, idx = 0;
+    bool      halved = false;
+    esp_err_t ret    = ESP_OK;
+    uint16_t  rawDTC;
 
-    for (const auto &frame : frames)
+    for (const auto& frame : frames)
     {
         uint8_t frame_type = (frame.data[0] >> 4) & 0x0F;
         switch (frame_type)
         {
-        case 0:
-            dtc_rem = frame.data[2];
-            idx = 3;
-            break;
-        case 1:
-            dtc_rem = frame.data[3];
-            idx = 4;
-            break;
-        case 2:
-            idx = 1;
-            break;
-        default:
-            return ESP_ERR_INVALID_RESPONSE;
+            case 0:
+                dtc_rem = frame.data[2];
+                idx     = 3;
+                break;
+            case 1:
+                dtc_rem = frame.data[3];
+                idx     = 4;
+                break;
+            case 2:
+                idx = 1;
+                break;
+            default:
+                return ESP_ERR_INVALID_RESPONSE;
         }
 
         while (dtc_rem > 0 && idx < frame.length)
@@ -578,14 +622,14 @@ esp_err_t OBD2::parseDTCs(std::vector<CanDriver::CanFrame> &frames, uint8_t mode
             if (frame.length - idx == 1)
             {
                 hi_half = frame.data[idx++];
-                halved = true;
+                halved  = true;
                 break;
             }
 
             if (frame.length - idx >= 2)
             {
-                uint8_t dtc_high = frame.data[idx++];
-                uint16_t rawDTC = (dtc_high << 8) | frame.data[idx++];
+                uint8_t  dtc_high = frame.data[idx++];
+                uint16_t rawDTC   = (dtc_high << 8) | frame.data[idx++];
                 ERR_ACCUMULATE(ret, setDTC(rawDTC, mode));
                 dtc_rem--;
             }
@@ -599,26 +643,26 @@ esp_err_t OBD2::parseDTCs(std::vector<CanDriver::CanFrame> &frames, uint8_t mode
 
     switch (mode)
     {
-    case MODE_DTCS:
-        xSemaphoreGive(dtcData.confirmedReadySemaphore);
-        break;
-    case MODE_PENDING_DTCS:
-        xSemaphoreGive(dtcData.pendingReadySemaphore);
-        break;
-    case MODE_PERMANENT_DTCS:
-        xSemaphoreGive(dtcData.permanentReadySemaphore);
-        break;
-    default:
-        break;
+        case MODE_DTCS:
+            xSemaphoreGive(dtcData.confirmedReadySemaphore);
+            break;
+        case MODE_PENDING_DTCS:
+            xSemaphoreGive(dtcData.pendingReadySemaphore);
+            break;
+        case MODE_PERMANENT_DTCS:
+            xSemaphoreGive(dtcData.permanentReadySemaphore);
+            break;
+        default:
+            break;
     }
 
     return ret;
 }
 
-esp_err_t OBD2::parseSupportedPIDs(const CanDriver::CanFrame &f)
+esp_err_t OBD2::parseSupportedPIDs(const CanDriver::CanFrame& f)
 {
-    uint16_t pidGroup = f.data[2];
-    esp_err_t ret = ESP_OK;
+    uint16_t  pidGroup = f.data[2];
+    esp_err_t ret      = ESP_OK;
     if (pidGroup % 0x20 != 0)
     {
         ESP_LOGE(TAG, "Invalid PID group in supported PIDs response: 0x%02X", pidGroup);
@@ -627,10 +671,7 @@ esp_err_t OBD2::parseSupportedPIDs(const CanDriver::CanFrame &f)
 
     if (f.length >= 4)
     {
-        uint32_t supportedPIDs = (f.data[3] << 24) |
-                                 (f.data[4] << 16) |
-                                 (f.data[5] << 8) |
-                                 (f.data[6]);
+        uint32_t supportedPIDs = (f.data[3] << 24) | (f.data[4] << 16) | (f.data[5] << 8) | (f.data[6]);
 
         for (uint8_t i = 0; i < 32; ++i)
         {
@@ -647,14 +688,12 @@ esp_err_t OBD2::parseSupportedPIDs(const CanDriver::CanFrame &f)
                 ret = setIsSupported(supportedPID, true);
                 if (ret != ESP_OK)
                 {
-                    ESP_LOGD(TAG, "Failed to set PID 0x%02X as supported: %s",
-                             supportedPID, esp_err_to_name(ret));
+                    ESP_LOGD(TAG, "Failed to set PID 0x%02X as supported: %s", supportedPID, esp_err_to_name(ret));
                 }
                 esp_err_t ret2 = setId(supportedPID, f.id - RESPONSE_ID_OFFSET);
                 if (ret2 != ESP_OK)
                 {
-                    ESP_LOGD(TAG, "Failed to set PID 0x%02X request ID: %s",
-                             supportedPID, esp_err_to_name(ret));
+                    ESP_LOGD(TAG, "Failed to set PID 0x%02X request ID: %s", supportedPID, esp_err_to_name(ret));
                     ret = ret2;
                 }
             }
@@ -675,7 +714,8 @@ esp_err_t OBD2::requestVIN()
         return ESP_ERR_INVALID_STATE;
     }
 
-    ESP_RETURN_ON_ERROR(queryMsg(OBD2_FUNCTIONAL_ID, MODE_VEHICLE_INFO, PID_VIN, 2), TAG, "Failed to query request VIN message");
+    ESP_RETURN_ON_ERROR(queryMsg(OBD2_FUNCTIONAL_ID, MODE_VEHICLE_INFO, PID_VIN, 2), TAG,
+                        "Failed to query request VIN message");
 
     xSemaphoreTake(vinData.vinReadySemaphore, 0);
 
@@ -689,22 +729,22 @@ esp_err_t OBD2::requestVIN()
 
 esp_err_t OBD2::requestDTC(uint8_t mode)
 {
-    SemaphoreHandle_t sem = NULL; // Local handle to work with
+    SemaphoreHandle_t sem = NULL;  // Local handle to work with
 
     // 1. Assign the handle based on mode
     switch (mode)
     {
-    case MODE_DTCS:
-        sem = dtcData.confirmedReadySemaphore;
-        break;
-    case MODE_PENDING_DTCS:
-        sem = dtcData.pendingReadySemaphore;
-        break;
-    case MODE_PERMANENT_DTCS:
-        sem = dtcData.permanentReadySemaphore;
-        break;
-    default:
-        return ESP_ERR_INVALID_ARG;
+        case MODE_DTCS:
+            sem = dtcData.confirmedReadySemaphore;
+            break;
+        case MODE_PENDING_DTCS:
+            sem = dtcData.pendingReadySemaphore;
+            break;
+        case MODE_PERMANENT_DTCS:
+            sem = dtcData.permanentReadySemaphore;
+            break;
+        default:
+            return ESP_ERR_INVALID_ARG;
     }
 
     if (sem == NULL)
@@ -763,70 +803,72 @@ esp_err_t OBD2::requestClearDTCs()
     return ret;
 }
 
-esp_err_t OBD2::captureMultiFrame(const CanDriver::CanFrame &f)
+esp_err_t OBD2::captureMultiFrame(const CanDriver::CanFrame& f)
 {
-    static uint8_t MULTIDRAME_STATE = 99;
-    uint8_t frameType;
-    static uint16_t totalLength = 0, consecutiveFrameIndex = 0, consecutiveFramesNeeded = 0;
-    constexpr uint8_t CONSECUTIVE_FRAME_DATA_BYTES = 7, FIRST_FRAME_DATA_BYTES = 6;
+    static uint8_t                          MULTIDRAME_STATE = 99;
+    uint8_t                                 frameType;
+    static uint16_t                         totalLength = 0, consecutiveFrameIndex = 0, consecutiveFramesNeeded = 0;
+    constexpr uint8_t                       CONSECUTIVE_FRAME_DATA_BYTES = 7, FIRST_FRAME_DATA_BYTES = 6;
     static std::vector<CanDriver::CanFrame> multiFrameBuffer;
-    esp_err_t ret = ESP_OK;
+    esp_err_t                               ret = ESP_OK;
 
     switch (MULTIDRAME_STATE)
     {
-    case 99: // Idle State
-    {
-        frameType = (f.data[0] >> 4) & 0x0F;
-        if (frameType == 1)
+        case 99:  // Idle State
         {
-            MULTIDRAME_STATE = 0; // Go to First Frame state
+            frameType = (f.data[0] >> 4) & 0x0F;
+            if (frameType == 1)
+            {
+                MULTIDRAME_STATE = 0;  // Go to First Frame state
+            }
+            else
+            {
+                ESP_LOGE(TAG, "Unexpected multi-frame type: %d", frameType);
+                return ESP_ERR_INVALID_RESPONSE;
+            }
+            captureMultiFrame(f);
+            break;
         }
-        else
+        case 0:  // First Frame
         {
-            ESP_LOGE(TAG, "Unexpected multi-frame type: %d", frameType);
-            return ESP_ERR_INVALID_RESPONSE;
+            frameType               = (f.data[0] >> 4) & 0x0F;  // High nibble = 1
+            uint8_t lengthHigh      = f.data[0] & 0x0F;         // Low nibble = 0
+            uint8_t lengthLow       = f.data[1];
+            totalLength             = (lengthHigh << 8) | lengthLow;
+            consecutiveFramesNeeded = (totalLength - FIRST_FRAME_DATA_BYTES + CONSECUTIVE_FRAME_DATA_BYTES - 1) /
+                                      CONSECUTIVE_FRAME_DATA_BYTES;
+            consecutiveFrameIndex = 0;
+            multiFrameBuffer.clear();
+            multiFrameBuffer.push_back(f);
+            vTaskDelay(pdMS_TO_TICKS(10));  // Wait before sending Flow Control
+            ret              = sendFlowControlFrame(f.id - 8);
+            MULTIDRAME_STATE = 1;  // Go to Consecutive Frame state
+            break;
         }
-        captureMultiFrame(f);
-        break;
-    }
-    case 0: // First Frame
-    {
-        frameType = (f.data[0] >> 4) & 0x0F;   // High nibble = 1
-        uint8_t lengthHigh = f.data[0] & 0x0F; // Low nibble = 0
-        uint8_t lengthLow = f.data[1];
-        totalLength = (lengthHigh << 8) | lengthLow;
-        consecutiveFramesNeeded = (totalLength - FIRST_FRAME_DATA_BYTES + CONSECUTIVE_FRAME_DATA_BYTES - 1) / CONSECUTIVE_FRAME_DATA_BYTES;
-        consecutiveFrameIndex = 0;
-        multiFrameBuffer.clear();
-        multiFrameBuffer.push_back(f);
-        vTaskDelay(pdMS_TO_TICKS(10)); // Wait before sending Flow Control
-        ret = sendFlowControlFrame(f.id - 8);
-        MULTIDRAME_STATE = 1; // Go to Consecutive Frame state
-        break;
-    }
-    case 1: // Consecutive Frames
-    {
-        consecutiveFrameIndex++;
-        frameType = (f.data[0] >> 4) & 0x0F;
-        uint8_t sequence = f.data[0] & 0x0F;
-        if (frameType != 2 || sequence != consecutiveFrameIndex)
+        case 1:  // Consecutive Frames
         {
-            ESP_LOGE(TAG, "Unexpected consecutive frame. Expected seq: %d, got: %d", consecutiveFrameIndex & 0x0F, sequence);
+            consecutiveFrameIndex++;
+            frameType        = (f.data[0] >> 4) & 0x0F;
+            uint8_t sequence = f.data[0] & 0x0F;
+            if (frameType != 2 || sequence != consecutiveFrameIndex)
+            {
+                ESP_LOGE(TAG, "Unexpected consecutive frame. Expected seq: %d, got: %d", consecutiveFrameIndex & 0x0F,
+                         sequence);
+                MULTIDRAME_STATE = 99;
+                return ESP_ERR_INVALID_RESPONSE;
+            }
+            multiFrameBuffer.push_back(f);
+            if (consecutiveFrameIndex >= consecutiveFramesNeeded)
+            {
+                MULTIDRAME_STATE = 99;
+                ret              = parseMultiFrame(multiFrameBuffer);
+            }
+            break;
+        }
+        default:
             MULTIDRAME_STATE = 99;
-            return ESP_ERR_INVALID_RESPONSE;
-        }
-        multiFrameBuffer.push_back(f);
-        if (consecutiveFrameIndex >= consecutiveFramesNeeded)
-        {
-            MULTIDRAME_STATE = 99;
-            ret = parseMultiFrame(multiFrameBuffer);
-        }
-        break;
-    }
-    default:
-        MULTIDRAME_STATE = 99;
-        ret = ESP_ERR_INVALID_STATE;
-        break;
+            ret              = ESP_ERR_INVALID_STATE;
+            break;
     }
 
     if (ret != ESP_OK)
@@ -842,7 +884,7 @@ inline esp_err_t OBD2::sendFlowControlFrame(uint32_t id)
     return queryMsg(id, 0x00, 0x00, 0x30);
 }
 
-esp_err_t OBD2::parseMultiFrame(std::vector<CanDriver::CanFrame> &frames)
+esp_err_t OBD2::parseMultiFrame(std::vector<CanDriver::CanFrame>& frames)
 {
     if (frames.empty())
     {
@@ -855,32 +897,32 @@ esp_err_t OBD2::parseMultiFrame(std::vector<CanDriver::CanFrame> &frames)
 
     switch (mode)
     {
-    case RESPONSE_CURRENT_DATA:
-        // NOT IMPLEMENTED
-        break;
-    case RESPONSE_DTCS:
-        ret = parseDTCs(frames, mode);
-        break;
-    case RESPONSE_CLEAR_DTCS:
-        // NOT IMPLEMENTED
-        break;
-    case RESPONSE_PENDING_DTCS:
-        ret = parseDTCs(frames, mode);
-        break;
-    case RESPONSE_VEHICLE_INFO:
-        ret = parseVehicleInfoMultiFrame(frames);
-        break;
-    case RESPONSE_PERMANENT_DTCS:
-        ret = parseDTCs(frames, mode);
-        break;
-    default:
-        return ESP_ERR_NOT_SUPPORTED;
+        case RESPONSE_CURRENT_DATA:
+            // NOT IMPLEMENTED
+            break;
+        case RESPONSE_DTCS:
+            ret = parseDTCs(frames, mode);
+            break;
+        case RESPONSE_CLEAR_DTCS:
+            // NOT IMPLEMENTED
+            break;
+        case RESPONSE_PENDING_DTCS:
+            ret = parseDTCs(frames, mode);
+            break;
+        case RESPONSE_VEHICLE_INFO:
+            ret = parseVehicleInfoMultiFrame(frames);
+            break;
+        case RESPONSE_PERMANENT_DTCS:
+            ret = parseDTCs(frames, mode);
+            break;
+        default:
+            return ESP_ERR_NOT_SUPPORTED;
     }
 
     return ret;
 }
 
-esp_err_t OBD2::parseVehicleInfoMultiFrame(std::vector<CanDriver::CanFrame> &frames)
+esp_err_t OBD2::parseVehicleInfoMultiFrame(std::vector<CanDriver::CanFrame>& frames)
 {
     if (frames.empty())
     {
@@ -893,17 +935,17 @@ esp_err_t OBD2::parseVehicleInfoMultiFrame(std::vector<CanDriver::CanFrame> &fra
 
     switch (pid)
     {
-    case PID_VIN:
-        ret = parseVINMultiFrame(frames);
-        break;
-    default:
-        ret = ESP_ERR_NOT_SUPPORTED;
-        break;
+        case PID_VIN:
+            ret = parseVINMultiFrame(frames);
+            break;
+        default:
+            ret = ESP_ERR_NOT_SUPPORTED;
+            break;
     }
     return ret;
 }
 
-esp_err_t OBD2::parseVINMultiFrame(std::vector<CanDriver::CanFrame> &frames)
+esp_err_t OBD2::parseVINMultiFrame(std::vector<CanDriver::CanFrame>& frames)
 {
     if (frames.empty())
     {
@@ -913,11 +955,11 @@ esp_err_t OBD2::parseVINMultiFrame(std::vector<CanDriver::CanFrame> &frames)
     esp_err_t ret = ESP_OK;
 
     uint8_t vinBuffer[VIN_LENGTH] = {0};
-    size_t vinIndex = 0;
+    size_t  vinIndex              = 0;
 
-    for (const auto &frame : frames)
+    for (const auto& frame : frames)
     {
-        uint8_t startIdx = (frame.data[0] >> 4) == 1 ? 5 : 1; // First frame starts data at index 5
+        uint8_t startIdx = (frame.data[0] >> 4) == 1 ? 5 : 1;  // First frame starts data at index 5
         for (uint8_t i = startIdx; i < frame.length && vinIndex < VIN_LENGTH; i++)
         {
             vinBuffer[vinIndex++] = frame.data[i];
@@ -932,14 +974,13 @@ esp_err_t OBD2::parseVINMultiFrame(std::vector<CanDriver::CanFrame> &frames)
 
     if (vinIndex == VIN_LENGTH)
     {
-
         memcpy(vinData.vin, vinBuffer, VIN_LENGTH);
         vinData.isValid = true;
     }
     else
     {
         vinData.isValid = false;
-        ret = ESP_ERR_INVALID_SIZE;
+        ret             = ESP_ERR_INVALID_SIZE;
     }
 
     vinData.lastUpdated = xTaskGetTickCount() * portTICK_PERIOD_MS;

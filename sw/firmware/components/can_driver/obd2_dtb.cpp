@@ -2,48 +2,49 @@
 
 #include "obd2_dtb.hpp"
 
-static const char *TAG = "OBD2DTB";
+#include "obd2_utils.hpp"
+
+static const char* TAG = "OBD2DTB";
 
 void OBD2DTB::initDef()
 {
     vinData = {
-        .vin = {0},
-        .lastUpdated = 0,
-        .isValid = false,
+        .vin               = {0},
+        .lastUpdated       = 0,
+        .isValid           = false,
         .vinReadySemaphore = xSemaphoreCreateBinary(),
-        .mtx_ = xSemaphoreCreateMutex(),
+        .mtx_              = xSemaphoreCreateMutex(),
     };
 
     dtcData = {
-        .confirmed = {},
-        .pending = {},
-        .permanent = {},
+        .confirmed               = {},
+        .pending                 = {},
+        .permanent               = {},
         .confirmedReadySemaphore = xSemaphoreCreateBinary(),
-        .pendingReadySemaphore = xSemaphoreCreateBinary(),
+        .pendingReadySemaphore   = xSemaphoreCreateBinary(),
         .permanentReadySemaphore = xSemaphoreCreateBinary(),
-        .mtx_ = xSemaphoreCreateMutex(),
+        .mtx_                    = xSemaphoreCreateMutex(),
     };
 };
 
 void OBD2DTB::addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std::string name, std::string unit,
-                     std::string desc, std::string formula, float minV, float maxV,
-                     uint8_t priority, UpdateRate interval, uint32_t color, std::string icon)
+                     std::string desc, std::string formula, float minV, float maxV, uint8_t priority,
+                     UpdateRate interval, uint32_t color, std::string icon)
 {
-    PID_DEF[pid] = std::make_unique<PIDDefinition>(
-        id, mode, pid, len, name, unit, desc, formula, minV, maxV, priority, interval, color, icon);
+    PID_DEF[pid] = std::make_unique<PIDDefinition>(id, mode, pid, len, name, unit, desc, formula, minV, maxV, priority,
+                                                   interval, color, icon);
 
-    pidData[pid] = {
-        .id = id,
-        .value = 0.0f,
-        .lastUpdated = 0,
-        .data = {0},
-        .isSupported = mode == MODE_READ_DATA_BY_IDENTIFIER ? true : false,
-        .isValid = false,
-        .updateInterval_ms = interval,
-        .mtx_ = xSemaphoreCreateMutex()};
+    pidData[pid] = {.id          = id,
+                    .value       = 0.0f,
+                    .lastUpdated = 0,
+                    .data        = {0},
+                    .isSupported = mode == MODE_READ_DATA_BY_IDENTIFIER || mode == MODE_DERIVED_DATA ? true : false,
+                    .isValid     = false,
+                    .updateInterval_ms = interval,
+                    .mtx_              = xSemaphoreCreateMutex()};
 }
 
-esp_err_t OBD2DTB::getData(uint16_t pid, PIDData_t &pd) const
+esp_err_t OBD2DTB::getData(uint16_t pid, PIDData_t& pd) const
 {
     auto it = pidData.find(pid);
     if (it == pidData.end())
@@ -62,7 +63,7 @@ esp_err_t OBD2DTB::getData(uint16_t pid, PIDData_t &pd) const
     return ESP_ERR_TIMEOUT;
 }
 
-esp_err_t OBD2DTB::getDef(uint16_t pid, const PIDDefinition *&outDef) const
+esp_err_t OBD2DTB::getDef(uint16_t pid, const PIDDefinition*& outDef) const
 {
     auto it = PID_DEF.find(pid);
     if (it == PID_DEF.end())
@@ -83,7 +84,7 @@ void OBD2DTB::generatePollingGroups()
     vGroupStatic.clear();
     diagnosticSessionIds.clear();
 
-    for (const auto &[pid, info] : PID_DEF)
+    for (const auto& [pid, info] : PID_DEF)
     {
         if (!isSup(pid))
         {
@@ -92,20 +93,20 @@ void OBD2DTB::generatePollingGroups()
 
         switch (info->updateInterval())
         {
-        case UPDATE_FAST:
-            vGroupFast.push_back(pid);
-            break;
-        case UPDATE_MEDIUM:
-            vGroupMedium.push_back(pid);
-            break;
-        case UPDATE_SLOW:
-            vGroupSlow.push_back(pid);
-            break;
-        case UPDATE_STATIC:
-            vGroupStatic.push_back(pid);
-            break;
-        default:
-            break;
+            case UPDATE_FAST:
+                vGroupFast.push_back(pid);
+                break;
+            case UPDATE_MEDIUM:
+                vGroupMedium.push_back(pid);
+                break;
+            case UPDATE_SLOW:
+                vGroupSlow.push_back(pid);
+                break;
+            case UPDATE_STATIC:
+                vGroupStatic.push_back(pid);
+                break;
+            default:
+                break;
         }
 
         if (info->mode() == MODE_READ_DATA_BY_IDENTIFIER)
@@ -115,17 +116,17 @@ void OBD2DTB::generatePollingGroups()
     }
 }
 
-esp_err_t OBD2DTB::updateData(const CanDriver::CanFrame &frame)
+esp_err_t OBD2DTB::updateData(const CanDriver::CanFrame& frame)
 {
     uint16_t mode = frame.data[1];
-    uint16_t pid = mode == RESPONSE_READ_DATA_BY_IDENTIFIER ? (uint16_t)(frame.data[2] << 8) | frame.data[3] : frame.data[2];
+    uint16_t pid =
+        mode == RESPONSE_READ_DATA_BY_IDENTIFIER ? (uint16_t)(frame.data[2] << 8) | frame.data[3] : frame.data[2];
     uint32_t id = frame.id;
 
     esp_err_t ret;
-    auto it = pidData.find(pid);
+    auto      it = pidData.find(pid);
     if (it != pidData.end())
     {
-
         if (xSemaphoreTake(it->second.mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
             return ESP_ERR_TIMEOUT;
 
@@ -163,11 +164,10 @@ esp_err_t OBD2DTB::updateData(const CanDriver::CanFrame &frame)
 
 bool OBD2DTB::isSup(uint16_t pid) const
 {
-    auto it = pidData.find(pid);
+    auto it        = pidData.find(pid);
     bool supported = false;
     if (it != pidData.end())
     {
-
         if (xSemaphoreTake(it->second.mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
         {
             return false;
@@ -190,7 +190,7 @@ std::vector<uint16_t> OBD2DTB::getPIDs() const
     // Reserve memory upfront for performance (avoids multiple re-allocations)
     keys.reserve(PID_DEF.size());
 
-    for (const auto &pair : PID_DEF)
+    for (const auto& pair : PID_DEF)
     {
         keys.push_back(pair.first);
     }
@@ -205,83 +205,83 @@ bool OBD2DTB::pidExists(uint16_t pid) const
 
 uint32_t OBD2DTB::getId_Def(uint16_t pid) const
 {
-    const PIDDefinition *def = nullptr;
+    const PIDDefinition* def = nullptr;
     return (getDef(pid, def) == ESP_OK) ? def->id() : 0;
 }
 
 uint8_t OBD2DTB::getMode(uint16_t pid) const
 {
-    const PIDDefinition *def = nullptr;
+    const PIDDefinition* def = nullptr;
     return (getDef(pid, def) == ESP_OK) ? def->mode() : 0;
 }
 
 uint8_t OBD2DTB::getLen(uint16_t pid) const
 {
-    const PIDDefinition *def = nullptr;
+    const PIDDefinition* def = nullptr;
     return (getDef(pid, def) == ESP_OK) ? def->len() : 0;
 }
 
-const char *OBD2DTB::getName(uint16_t pid) const
+const char* OBD2DTB::getName(uint16_t pid) const
 {
-    const PIDDefinition *def = nullptr;
+    const PIDDefinition* def = nullptr;
     return (getDef(pid, def) == ESP_OK) ? def->name().c_str() : "Unknown PID";
 }
 
-const char *OBD2DTB::getUnit(uint16_t pid) const
+const char* OBD2DTB::getUnit(uint16_t pid) const
 {
-    const PIDDefinition *def = nullptr;
+    const PIDDefinition* def = nullptr;
     return (getDef(pid, def) == ESP_OK) ? def->unit().c_str() : "Unknown PID";
 }
 
-const char *OBD2DTB::getDescription(uint16_t pid) const
+const char* OBD2DTB::getDescription(uint16_t pid) const
 {
-    const PIDDefinition *def = nullptr;
+    const PIDDefinition* def = nullptr;
     return (getDef(pid, def) == ESP_OK) ? def->description().c_str() : "Unknown PID";
 }
 
 float OBD2DTB::getMinValue(uint16_t pid) const
 {
-    const PIDDefinition *def = nullptr;
+    const PIDDefinition* def = nullptr;
     return (getDef(pid, def) == ESP_OK) ? def->minValue() : NAN;
 }
 
 float OBD2DTB::getMaxValue(uint16_t pid) const
 {
-    const PIDDefinition *def = nullptr;
+    const PIDDefinition* def = nullptr;
     return (getDef(pid, def) == ESP_OK) ? def->maxValue() : NAN;
 }
 
 uint8_t OBD2DTB::getPriority(uint16_t pid) const
 {
-    const PIDDefinition *def = nullptr;
+    const PIDDefinition* def = nullptr;
     return (getDef(pid, def) == ESP_OK) ? def->priority() : 0;
 }
 
 uint16_t OBD2DTB::getUpdateInterval(uint16_t pid) const
 {
-    const PIDDefinition *def = nullptr;
+    const PIDDefinition* def = nullptr;
     return (getDef(pid, def) == ESP_OK) ? def->updateInterval() : 0;
 }
 
 uint32_t OBD2DTB::getColor(uint16_t pid) const
 {
-    const PIDDefinition *def = nullptr;
+    const PIDDefinition* def = nullptr;
     return (getDef(pid, def) == ESP_OK) ? def->color() : 0xFFFFFF;
 }
 
-const char *OBD2DTB::getIcon(uint16_t pid) const
+const char* OBD2DTB::getIcon(uint16_t pid) const
 {
-    const PIDDefinition *def = nullptr;
+    const PIDDefinition* def = nullptr;
     return (getDef(pid, def) == ESP_OK) ? def->icon().c_str() : "Unknown PID";
 }
 
-const char *OBD2DTB::getFormula(uint16_t pid) const
+const char* OBD2DTB::getFormula(uint16_t pid) const
 {
-    const PIDDefinition *def = nullptr;
+    const PIDDefinition* def = nullptr;
     return (getDef(pid, def) == ESP_OK) ? def->formula().c_str() : "Unknown PID";
 }
 
-float OBD2DTB::getValue(uint16_t pid, uint32_t timeout_ms) const
+float OBD2DTB::getValue(uint16_t pid, uint32_t timeout_ms)
 {
     if (!pidExists(pid))
     {
@@ -342,7 +342,7 @@ uint32_t OBD2DTB::getId(uint16_t pid) const
     return id;
 }
 
-esp_err_t OBD2DTB::getRawData(uint16_t pid, uint8_t *outData) const
+esp_err_t OBD2DTB::getRawData(uint16_t pid, uint8_t* outData) const
 {
     if (!pidExists(pid))
         return ESP_ERR_NOT_FOUND;
@@ -358,22 +358,43 @@ esp_err_t OBD2DTB::getRawData(uint16_t pid, uint8_t *outData) const
     return ESP_OK;
 }
 
+uint8_t OBD2DTB::getRawDataByte(uint16_t pid, uint8_t idx) const
+{
+    if (!pidExists(pid))
+        return 0;
+
+    if (idx >= PID_DATA_LENGTH)
+    {
+        return 0;
+    }
+
+    if (xSemaphoreTake(pidData.at(pid).mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
+    {
+        return 0;
+    }
+
+    uint8_t value = pidData.at(pid).data[idx];
+
+    xSemaphoreGive(pidData.at(pid).mtx_);
+    return value;
+}
+
 std::string OBD2DTB::getVIN() const
 {
     if (xSemaphoreTake(vinData.mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
     {
-        return ""; // Return empty string on timeout
+        return "";  // Return empty string on timeout
     }
 
     std::string result;
 
     if (vinData.isValid)
     {
-        result = std::string(vinData.vin); // Copy while protected
+        result = std::string(vinData.vin);  // Copy while protected
     }
 
     xSemaphoreGive(vinData.mtx_);
-    return result; // Return copy (thread-safe)
+    return result;  // Return copy (thread-safe)
 }
 
 bool OBD2DTB::isValid(uint16_t pid) const
@@ -488,26 +509,26 @@ esp_err_t OBD2DTB::setDTC(uint16_t rawDTC, uint8_t mode)
         return ESP_ERR_TIMEOUT;
     }
 
-    std::string dtcCode = decodeDTC(rawDTC);
-    std::vector<std::string> *target = nullptr;
+    std::string               dtcCode = decodeDTC(rawDTC);
+    std::vector<std::string>* target  = nullptr;
 
     switch (mode)
     {
-    case MODE_DTCS:
-    case RESPONSE_DTCS:
-        target = &dtcData.confirmed;
-        break;
-    case MODE_PENDING_DTCS:
-    case RESPONSE_PENDING_DTCS:
-        target = &dtcData.pending;
-        break;
-    case MODE_PERMANENT_DTCS:
-    case RESPONSE_PERMANENT_DTCS:
-        target = &dtcData.permanent;
-        break;
-    default:
-        xSemaphoreGive(dtcData.mtx_);
-        return ESP_ERR_INVALID_ARG;
+        case MODE_DTCS:
+        case RESPONSE_DTCS:
+            target = &dtcData.confirmed;
+            break;
+        case MODE_PENDING_DTCS:
+        case RESPONSE_PENDING_DTCS:
+            target = &dtcData.pending;
+            break;
+        case MODE_PERMANENT_DTCS:
+        case RESPONSE_PERMANENT_DTCS:
+            target = &dtcData.permanent;
+            break;
+        default:
+            xSemaphoreGive(dtcData.mtx_);
+            return ESP_ERR_INVALID_ARG;
     }
 
     if (std::find(target->begin(), target->end(), dtcCode) == target->end())
@@ -528,21 +549,21 @@ esp_err_t OBD2DTB::clearDTC(uint8_t mode)
 
     switch (mode)
     {
-    case MODE_DTCS:
-    case RESPONSE_DTCS:
-        dtcData.confirmed.clear();
-        dtcData.confirmed.clear();
-        break;
-    case MODE_PENDING_DTCS:
-    case RESPONSE_PENDING_DTCS:
-        dtcData.pending.clear();
-        dtcData.pending.clear();
-        break;
-    case MODE_PERMANENT_DTCS:
-    case RESPONSE_PERMANENT_DTCS:
-        dtcData.permanent.clear();
-        dtcData.permanent.clear();
-        break;
+        case MODE_DTCS:
+        case RESPONSE_DTCS:
+            dtcData.confirmed.clear();
+            dtcData.confirmed.clear();
+            break;
+        case MODE_PENDING_DTCS:
+        case RESPONSE_PENDING_DTCS:
+            dtcData.pending.clear();
+            dtcData.pending.clear();
+            break;
+        case MODE_PERMANENT_DTCS:
+        case RESPONSE_PERMANENT_DTCS:
+            dtcData.permanent.clear();
+            dtcData.permanent.clear();
+            break;
     }
     xSemaphoreGive(dtcData.mtx_);
     return ESP_OK;
@@ -554,7 +575,7 @@ std::string OBD2DTB::decodeDTC(uint16_t rawDTC)
     {
         return "No DTC";
     }
-    char dtc[6];
+    char    dtc[6];
     uint8_t type_bits = (rawDTC >> 14) & 0x03;
 
     uint8_t first_digit = (rawDTC >> 12) & 0x03;
@@ -564,20 +585,20 @@ std::string OBD2DTB::decodeDTC(uint16_t rawDTC)
     char prefix;
     switch (type_bits)
     {
-    case 0:
-        prefix = 'P';
-        break; // Powertrain
-    case 1:
-        prefix = 'C';
-        break; // Chassis
-    case 2:
-        prefix = 'B';
-        break; // Body
-    case 3:
-        prefix = 'U';
-        break; // Network
-    default:
-        return "No DTC";
+        case 0:
+            prefix = 'P';
+            break;  // Powertrain
+        case 1:
+            prefix = 'C';
+            break;  // Chassis
+        case 2:
+            prefix = 'B';
+            break;  // Body
+        case 3:
+            prefix = 'U';
+            break;  // Network
+        default:
+            return "No DTC";
     }
 
     // Format the DTC string: Letter + 4 digits
@@ -598,25 +619,33 @@ std::vector<std::string> OBD2DTB::getDTC(uint8_t mode)
 
     switch (mode)
     {
-    case MODE_DTCS:
-    case RESPONSE_DTCS:
-        result = dtcData.confirmed;
-        break;
-    case MODE_PENDING_DTCS:
-    case RESPONSE_PENDING_DTCS:
-        result = dtcData.pending;
-        break;
-    case MODE_PERMANENT_DTCS:
-    case RESPONSE_PERMANENT_DTCS:
-        result = dtcData.permanent;
-        break;
+        case MODE_DTCS:
+        case RESPONSE_DTCS:
+            result = dtcData.confirmed;
+            break;
+        case MODE_PENDING_DTCS:
+        case RESPONSE_PENDING_DTCS:
+            result = dtcData.pending;
+            break;
+        case MODE_PERMANENT_DTCS:
+        case RESPONSE_PERMANENT_DTCS:
+            result = dtcData.permanent;
+            break;
     }
 
     xSemaphoreGive(dtcData.mtx_);
     return result;
 }
 
-void OBD2DTB::subscribe(DataUpdateCallback cb)
+void OBD2DTB::subscribe(PidUpdateCallback cb)
 {
     subscribers_.push_back(cb);
+}
+
+void OBD2DTB::runPidUpdateCallbacks(uint16_t pid)
+{
+    for (const auto& cb : subscribers_)
+    {
+        cb(pid);
+    }
 }

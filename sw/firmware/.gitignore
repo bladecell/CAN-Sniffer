@@ -22,6 +22,8 @@ __pycache__/
 
 # IDE and editor files
 .vscode/
+.cache/
+.devcontainer/
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json

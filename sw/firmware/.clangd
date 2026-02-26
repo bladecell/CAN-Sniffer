@@ -1,2 +1,11 @@
 CompileFlags:
-    Remove: [-f*, -m*]
+  CompilationDatabase: build
+  # Don't remove --sysroot! Clangd needs it to find the ESP-IDF toolchain headers.
+  Remove: [-f*, -m*, -W*] 
+  Add: [
+    "-ferror-limit=0",
+    "-D__GLIBC_USE(x)=0" # Fallback for the specific macro error
+  ]
+
+Diagnostics:
+  UnusedIncludes: Strict
