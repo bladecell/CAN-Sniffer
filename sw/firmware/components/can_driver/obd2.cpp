@@ -554,7 +554,7 @@ esp_err_t OBD2::parseDerivedData(const CanDriver::CanFrame& f)
     if (it != pidData.end())
     {
         float result = 0.0f;
-        ret          = PID_DEF.at(pid)->evaluate(nullptr, 0, result);
+        ret          = PID_DEF.at(pid).evaluate(nullptr, 0, result);
         if (xSemaphoreTake(it->second.mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
         {
             setValid(pid, false);

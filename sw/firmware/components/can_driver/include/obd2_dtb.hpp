@@ -87,15 +87,15 @@ public:
         return PID_DEF.size();
     }
 
-    void addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std::string name, std::string unit,
-                std::string desc, std::string formula, float minV, float maxV, uint8_t priority, UpdateRate interval,
-                uint32_t color, std::string icon);
+    esp_err_t addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std::string name, std::string unit,
+                     std::string desc, std::string formula, float minV, float maxV, uint8_t priority,
+                     UpdateRate interval, uint32_t color, std::string icon);
 
     // PID Definitions and Data Storage
-    std::map<uint16_t, std::unique_ptr<PIDDefinition>> PID_DEF;
-    std::map<uint16_t, PIDData_t>                      pidData;
-    VINData_t                                          vinData;
-    DTCData_t                                          dtcData;
+    std::map<uint16_t, PIDDefinition> PID_DEF;
+    std::map<uint16_t, PIDData_t>     pidData;
+    VINData_t                         vinData;
+    DTCData_t                         dtcData;
 
     void                  generatePollingGroups();
     std::vector<uint16_t> vGroupFast;

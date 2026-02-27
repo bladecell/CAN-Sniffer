@@ -27,12 +27,17 @@ void OBD2DTB::initDef()
     };
 };
 
-void OBD2DTB::addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std::string name, std::string unit,
-                     std::string desc, std::string formula, float minV, float maxV, uint8_t priority,
-                     UpdateRate interval, uint32_t color, std::string icon)
+esp_err_t OBD2DTB::addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std::string name, std::string unit,
+                          std::string desc, std::string formula, float minV, float maxV, uint8_t priority,
+                          UpdateRate interval, uint32_t color, std::string icon)
 {
-    PID_DEF[pid] = std::make_unique<PIDDefinition>(id, mode, pid, len, name, unit, desc, formula, minV, maxV, priority,
-                                                   interval, color, icon);
+    if (pidExists(pid))
+    {
+        return ESP_ERR_INVALID_ARG;  // PID already exists
+    }
+
+    PID_DEF.try_emplace(pid, id, mode, pid, len, name, unit, desc, formula, minV, maxV, priority, interval, color,
+                        icon);
 
     pidData[pid] = {.id          = id,
                     .value       = 0.0f,
@@ -42,6 +47,8 @@ void OBD2DTB::addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std::
                     .isValid     = false,
                     .updateInterval_ms = interval,
                     .mtx_              = xSemaphoreCreateMutex()};
+
+    return ESP_OK;
 }
 
 esp_err_t OBD2DTB::getData(uint16_t pid, PIDData_t& pd) const
@@ -65,15 +72,16 @@ esp_err_t OBD2DTB::getData(uint16_t pid, PIDData_t& pd) const
 
 esp_err_t OBD2DTB::getDef(uint16_t pid, const PIDDefinition*& outDef) const
 {
-    auto it = PID_DEF.find(pid);
-    if (it == PID_DEF.end())
+    if (!pidExists(pid))
     {
-        outDef = nullptr;
         return ESP_ERR_NOT_FOUND;
     }
-
-    outDef = it->second.get();
-    return ESP_OK;
+    auto it = PID_DEF.find(pid);
+    if (it != PID_DEF.end())
+    {
+        outDef = &it->second;
+    }
+    return it != PID_DEF.end() ? ESP_OK : ESP_ERR_NOT_FOUND;
 }
 
 void OBD2DTB::generatePollingGroups()
@@ -91,7 +99,7 @@ void OBD2DTB::generatePollingGroups()
             continue;
         }
 
-        switch (info->updateInterval())
+        switch (info.updateInterval())
         {
             case UPDATE_FAST:
                 vGroupFast.push_back(pid);
@@ -109,9 +117,9 @@ void OBD2DTB::generatePollingGroups()
                 break;
         }
 
-        if (info->mode() == MODE_READ_DATA_BY_IDENTIFIER)
+        if (info.mode() == MODE_READ_DATA_BY_IDENTIFIER)
         {
-            diagnosticSessionIds.insert(info->id());
+            diagnosticSessionIds.insert(info.id());
         }
     }
 }
@@ -133,11 +141,11 @@ esp_err_t OBD2DTB::updateData(const CanDriver::CanFrame& frame)
         float val = 0.f;
         if (mode == RESPONSE_READ_DATA_BY_IDENTIFIER)
         {
-            ret = PID_DEF.at(pid)->evaluate(&frame.data[4], frame.length - 4, val);
+            ret = PID_DEF.at(pid).evaluate(&frame.data[4], frame.length - 4, val);
         }
         else
         {
-            ret = PID_DEF.at(pid)->evaluate(&frame.data[3], frame.length - 3, val);
+            ret = PID_DEF.at(pid).evaluate(&frame.data[3], frame.length - 3, val);
         }
         it->second.value = val;
 
