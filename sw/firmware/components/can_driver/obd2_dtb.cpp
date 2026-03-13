@@ -129,7 +129,7 @@ esp_err_t OBD2DTB::updateData(const CanDriver::CanFrame& frame)
     uint16_t mode = frame.data[1];
     uint16_t pid =
         mode == RESPONSE_READ_DATA_BY_IDENTIFIER ? (uint16_t)(frame.data[2] << 8) | frame.data[3] : frame.data[2];
-    uint32_t id = frame.id;
+    uint32_t id = frame.header.id;
 
     esp_err_t ret;
     auto      it = pidData.find(pid);

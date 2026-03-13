@@ -63,10 +63,10 @@ void dataSimTask(CanDriver& canDriver)
                 CanDriver::CanFrame response_frame = {};
 
                 // Response ID for ECU 0 (0x7E8)
-                response_frame.id      = 0x7E8;
-                response_frame.data[1] = RESPONSE_CURRENT_DATA;  // Response Mode (0x01 + 0x40)
-                response_frame.data[2] = requested_pid;
-                response_frame.length  = PID_DATA_LENGTH;  // Max length for CAN 2.0A
+                response_frame.header.id = 0x7E8;
+                response_frame.data[1]   = RESPONSE_CURRENT_DATA;  // Response Mode (0x01 + 0x40)
+                response_frame.data[2]   = requested_pid;
+                response_frame.length    = PID_DATA_LENGTH;  // Max length for CAN 2.0A
 
                 uint32_t t_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
                 uint32_t val;
@@ -126,7 +126,7 @@ void dataSimTask(CanDriver& canDriver)
                 if (DTCs_to_send < 3)
                 {
                     CanDriver::CanFrame response_frame = {};
-                    response_frame.id                  = 0x7E8;
+                    response_frame.header.id           = 0x7E8;
                     response_frame.data[0]             = DTCs_to_send > 1 ? 0x07 : 0x05;
                     response_frame.data[1]             = mode | 0x40;
                     response_frame.data[2]             = (uint8_t)DTCs_to_send;
@@ -153,7 +153,7 @@ void dataSimTask(CanDriver& canDriver)
                     }
                     uint16_t            total_length   = bytes_to_send.size() + 2;
                     CanDriver::CanFrame response_frame = {};
-                    response_frame.id                  = 0x7E8;
+                    response_frame.header.id           = 0x7E8;
                     response_frame.data[0]             = 0x10 | ((uint8_t)((total_length >> 8) & 0x0F));
                     response_frame.data[1]             = (uint8_t)(total_length & 0xFF);
                     response_frame.data[2]             = mode | 0x40;
@@ -193,7 +193,7 @@ void dataSimTask(CanDriver& canDriver)
                     while (bts_idx < bytes_to_send.size())
                     {
                         CanDriver::CanFrame response_frame = {};
-                        response_frame.id                  = 0x7E8;
+                        response_frame.header.id           = 0x7E8;
                         response_frame.data[0]             = 0x20 + cf_idx++;
                         for (int j = 1; (bts_idx < bytes_to_send.size()) && (j <= 7); j++)
                         {
@@ -216,7 +216,7 @@ void dataSimTask(CanDriver& canDriver)
                 if (requested_pid == PID_VIN)  // VIN with multiframe
                 {
                     CanDriver::CanFrame response_frame = {};
-                    response_frame.id                  = 0x7E8;
+                    response_frame.header.id           = 0x7E8;
                     response_frame.data[0]             = 0x10;
                     response_frame.data[1]             = 0x14;
                     response_frame.data[2]             = 0x49;
@@ -251,7 +251,7 @@ void dataSimTask(CanDriver& canDriver)
                         continue;
 
                     CanDriver::CanFrame consecutiveFrame1 = {};
-                    consecutiveFrame1.id                  = 0x7E8;
+                    consecutiveFrame1.header.id           = 0x7E8;
                     consecutiveFrame1.data[0]             = 0x21;  // Consecutive Frame
                     consecutiveFrame1.data[1]             = vin[3];
                     consecutiveFrame1.data[2]             = vin[4];
@@ -268,7 +268,7 @@ void dataSimTask(CanDriver& canDriver)
                     }
 
                     CanDriver::CanFrame consecutiveFrame2 = {};
-                    consecutiveFrame2.id                  = 0x7E8;
+                    consecutiveFrame2.header.id           = 0x7E8;
                     consecutiveFrame2.data[0]             = 0x22;  // Consecutive Frame
                     consecutiveFrame2.data[1]             = vin[10];
                     consecutiveFrame2.data[2]             = vin[11];

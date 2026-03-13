@@ -127,33 +127,6 @@ esp_err_t OBD2::req(uint16_t pid)
     return ret;
 }
 
-/**
- * @brief Sends an OBD-II query message over the CAN bus.
- *
- * This function constructs and transmits a standard OBD-II diagnostic request
- * frame with an 11-bit identifier (Standard Frame Format). It is typically used
- * to request data identified by a specific Mode and PID from a vehicle's ECU.
- *
- * The OBD-II request message data format is structured as:
- * - **Byte 0:** Data Length Code (DLC), indicating the number of subsequent data bytes.
- * - **Byte 1:** Diagnostic Test Mode (Service ID).
- * - **Byte 2:** Parameter Identifier (PID).
- * - **Bytes 3-7:** Reserved/Zero-padded.
- *
- *
- *
- * @param id The 11-bit CAN ID for the request. For OBD-II PIDs, this is usually 0x7DF
- * for a functional broadcast request, or a specific physical request ID
- * (e.g., 0x7E0, 0x7E1, etc.).
- * @param mode The OBD-II Diagnostic Test Mode (Service ID) being requested (e.g., 0x01 for Show Current Data).
- * @param pid The Parameter Identifier (PID) within the specified mode (e.g., 0x0C for Engine RPM).
- * @param len The actual number of data bytes to be transmitted (Byte 0 of the payload). For standard PID requests,
- * this is typically 0x02 (Mode + PID).
- * @return esp_err_t
- * - **ESP_ERR_INVALID_STATE:** If the CAN bus driver is not connected.
- * - **ESP_OK:** If the message was successfully queued for transmission.
- * - Other error codes from the underlying `canDriver.transmit` function.
- */
 esp_err_t OBD2::queryMsg(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len)
 {
     if (!canDriver.isBusConnected())
@@ -161,26 +134,24 @@ esp_err_t OBD2::queryMsg(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len)
         ESP_LOGE(TAG, "OBD-II interface not connected");
         return ESP_ERR_INVALID_STATE;
     }
-
-    uint8_t txData[8] = {0};
+    CanDriver::CanFrame tx = {};
 
     if (mode == MODE_READ_DATA_BY_IDENTIFIER)
     {
-        txData[0] = len;
-        txData[1] = mode;
-        txData[2] = (pid >> 8) & 0xFF;
-        txData[3] = pid & 0xFF;
+        tx.data[0] = len;
+        tx.data[1] = mode;
+        tx.data[2] = (pid >> 8) & 0xFF;
+        tx.data[3] = pid & 0xFF;
     }
     else
     {
-        txData[0] = len;
-        txData[1] = mode;
-        txData[2] = (uint8_t)pid;
+        tx.data[0] = len;
+        tx.data[1] = mode;
+        tx.data[2] = (uint8_t)pid;
     }
-    twai_frame_t tx = {};
 
     tx.header.id           = id;  // OBD-II  request ID
-    tx.header.dlc          = twaifd_len2dlc(sizeof(txData));
+    tx.header.dlc          = twaifd_len2dlc(sizeof(tx.data) / sizeof(uint8_t));
     tx.header.ide          = false;  // Standard Frame Format (11-bit ID)
     tx.header.rtr          = 0;      // Data frame (not remote frame)
     tx.header.fdf          = 0;      // Classic CAN format
@@ -189,10 +160,9 @@ esp_err_t OBD2::queryMsg(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len)
     tx.header.timestamp    = 0;      // Not used for TX
     tx.header.trigger_time = 0;      // Not used for immediate transmission
 
-    tx.buffer     = txData;
-    tx.buffer_len = sizeof(txData);
+    tx.length = sizeof(tx.data) / sizeof(uint8_t);
 
-    esp_err_t ret = canDriver.transmit(&tx, 100);
+    esp_err_t ret = canDriver.transmit(tx, 100);
 
     return ret;
 }
@@ -405,12 +375,12 @@ void OBD2::receiveTask()
         while (xQueueReceive(derivedPidQueue_, &derivedPid, 0) == pdTRUE)
         {
             CanDriver::CanFrame f{};
-            f.id      = OBD2_FUNCTIONAL_ID;
-            f.length  = 3;
-            f.data[0] = 0x03;  // DLC
-            f.data[1] = RESPONSE_MODE_DERIVED_DATA;
-            f.data[2] = (derivedPid >> 8) & 0xFF;
-            f.data[3] = derivedPid & 0xFF;
+            f.header.id = OBD2_FUNCTIONAL_ID;
+            f.length    = 3;
+            f.data[0]   = 0x03;  // DLC
+            f.data[1]   = RESPONSE_MODE_DERIVED_DATA;
+            f.data[2]   = (derivedPid >> 8) & 0xFF;
+            f.data[3]   = derivedPid & 0xFF;
             parseRecFrame(f);
         }
 
@@ -690,7 +660,7 @@ esp_err_t OBD2::parseSupportedPIDs(const CanDriver::CanFrame& f)
                 {
                     ESP_LOGD(TAG, "Failed to set PID 0x%02X as supported: %s", supportedPID, esp_err_to_name(ret));
                 }
-                esp_err_t ret2 = setId(supportedPID, f.id - RESPONSE_ID_OFFSET);
+                esp_err_t ret2 = setId(supportedPID, f.header.id - RESPONSE_ID_OFFSET);
                 if (ret2 != ESP_OK)
                 {
                     ESP_LOGD(TAG, "Failed to set PID 0x%02X request ID: %s", supportedPID, esp_err_to_name(ret));
@@ -841,7 +811,7 @@ esp_err_t OBD2::captureMultiFrame(const CanDriver::CanFrame& f)
             multiFrameBuffer.clear();
             multiFrameBuffer.push_back(f);
             vTaskDelay(pdMS_TO_TICKS(10));  // Wait before sending Flow Control
-            ret              = sendFlowControlFrame(f.id - 8);
+            ret              = sendFlowControlFrame(f.header.id - 8);
             MULTIDRAME_STATE = 1;  // Go to Consecutive Frame state
             break;
         }

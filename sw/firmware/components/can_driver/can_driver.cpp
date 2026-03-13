@@ -1,7 +1,9 @@
 #include "can_driver.hpp"
 
 #include "esp_log.h"
+#include "freertos/projdefs.h"
 #include "freertos/queue.h"
+#include "hal/twai_types.h"
 
 static const char* TAG = "CAN_DRIVER";
 
@@ -11,6 +13,8 @@ CanDriver::CanDriver()
     healthCheckTaskHandle = nullptr;
     rxQueue               = nullptr;
     nodeHdl               = NULL;
+    txTaskHandle          = nullptr;
+    txQueue               = nullptr;
 }
 
 CanDriver::~CanDriver()
@@ -71,6 +75,14 @@ esp_err_t CanDriver::init(const Config& config)
         return ESP_FAIL;
     }
 
+    // Create TX Queue
+    txQueue = xQueueCreate(TX_QUEUE_SIZE, sizeof(CanDriver::CanFrame));
+    if (txQueue == nullptr)
+    {
+        ESP_LOGE(TAG, "Failed to create TX queue");
+        return ESP_FAIL;
+    }
+
     // Create TWAI Instance
     ret = twai_new_node_onchip(&nodeConfig, &nodeHdl);
 
@@ -109,9 +121,19 @@ esp_err_t CanDriver::init(const Config& config)
         return ret;
     }
 
+    // Start tx task
+    BaseType_t taskCreated =
+        xTaskCreatePinnedToCore(txTaskWrapper, "can_tx", 4096, this, TX_TASK_PRIO, &txTaskHandle, CORE_ID_CAN_TASKS);
+
+    if (taskCreated != pdPASS)
+    {
+        ESP_LOGE(TAG, "Failed to create tx task");
+        return ESP_FAIL;
+    }
+
     // Start health check monitoring task
-    BaseType_t taskCreated = xTaskCreatePinnedToCore(healthCheckTaskWrapper, "can_health_check", 4096, this,
-                                                     HEALTH_CHECK_TASK_PRIO, &healthCheckTaskHandle, CORE_ID_CAN_TASKS);
+    taskCreated = xTaskCreatePinnedToCore(healthCheckTaskWrapper, "can_health_check", 4096, this,
+                                          HEALTH_CHECK_TASK_PRIO, &healthCheckTaskHandle, CORE_ID_CAN_TASKS);
 
     if (taskCreated != pdPASS)
     {
@@ -164,39 +186,19 @@ twai_node_status_t CanDriver::getStatus()
     return status;
 }
 
-esp_err_t CanDriver::transmit(twai_frame_t* tx_msg, int timeout_ms)
+esp_err_t CanDriver::transmit(CanDriver::CanFrame& tx_frame, int timeout_ms)
 {
     if (!isInitialized() || !isBusConnected())
     {
         return ESP_ERR_INVALID_STATE;
     }
 
-    if (tx_msg == nullptr)
+    if (xQueueSend(txQueue, &tx_frame, pdMS_TO_TICKS(timeout_ms)) != pdTRUE)
     {
-        ESP_LOGE(TAG, "tx_msg is NULL!");
-        return ESP_ERR_INVALID_ARG;
+        ESP_LOGE(TAG, "Failed to send message to tx queue");
+        return ESP_FAIL;
     }
 
-    TickType_t       now        = xTaskGetTickCount();
-    TickType_t       elapsed    = now - last_tx_ticks;
-    const TickType_t min_period = pdMS_TO_TICKS(MIN_TRANSMIT_PERIOD_MS);
-
-    if (elapsed < min_period)
-    {
-        TickType_t wait_time = min_period - elapsed;
-        vTaskDelay(wait_time);
-    }
-
-    esp_err_t ret = twai_node_transmit(nodeHdl, tx_msg, pdMS_TO_TICKS(timeout_ms));
-    last_tx_ticks = xTaskGetTickCount();
-
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Transmitting message failed: %s", esp_err_to_name(ret));
-        return ret;
-    }
-
-    LOG_CAN_FRAME(TAG, "TX -> ", tx_msg->header.id, tx_msg->buffer, tx_msg->header.dlc);
     return ESP_OK;
 }
 
@@ -211,7 +213,7 @@ esp_err_t CanDriver::receive(CanDriver::CanFrame& frame, int timeout_ms)
 
     if (xQueueReceive(rxQueue, &frame, ticks) == pdTRUE)
     {
-        LOG_CAN_FRAME(TAG, "RX <- ", frame.id, frame.data, frame.length);
+        LOG_CAN_FRAME(TAG, "RX <- ", frame.header.id, frame.data, frame.length);
         return ESP_OK;
     }
 
@@ -237,8 +239,8 @@ bool IRAM_ATTR CanDriver::twai_rx_cb(twai_node_handle_t handle, const twai_rx_do
 
     if (ESP_OK == twai_node_receive_from_isr(handle, &rx_frame))
     {
-        frame.id     = rx_frame.header.id;
-        frame.length = rx_frame.header.dlc;
+        frame.header = rx_frame.header;
+        frame.length = twaifd_dlc2len(rx_frame.header.dlc);
         if (driver->debug_mode)
         {
             if (frame.length < 2)
@@ -526,5 +528,35 @@ void CanDriver::notifyConnectionChange(bool connected)
     if (connectionCallback != nullptr)
     {
         connectionCallback(callbackArg, connected);
+    }
+}
+
+void CanDriver::txTaskWrapper(void* param)
+{
+    CanDriver* driver = static_cast<CanDriver*>(param);
+    driver->txTask();
+}
+
+void CanDriver::txTask()
+{
+    TickType_t          xLastWakeTime = xTaskGetTickCount();
+    CanDriver::CanFrame f;
+    while (1)
+    {
+        if (xQueueReceive(txQueue, &f, portMAX_DELAY) == pdTRUE)
+        {
+            twai_frame_t tx_msg = {
+                .header     = f.header,
+                .buffer     = f.data,
+                .buffer_len = f.length,
+            };
+            esp_err_t ret = twai_node_transmit(nodeHdl, &tx_msg, pdMS_TO_TICKS(200));
+            if (ret != ESP_OK)
+            {
+                ESP_LOGE(TAG, "Failed to transmit message from tx task: %s", esp_err_to_name(ret));
+            }
+        }
+        LOG_CAN_FRAME(TAG, "TX -> ", f.header.id, f.data, twaifd_dlc2len(f.header.dlc));
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(MIN_TRANSMIT_PERIOD_MS));
     }
 }
