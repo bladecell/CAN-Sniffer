@@ -1,18 +1,17 @@
 <script>
   import PIDCard from "$lib/components/PIDCard.svelte";
-  import { createSwapy } from "swapy";
-  import { onDestroy, onMount } from "svelte";
-  import { scale } from "svelte/transition";
-  import { flip } from "svelte/animate";
-  import { canStore } from "$lib/canStore.svelte.js";
   import CANConnectionCard from "$lib/components/CANConnectionCard.svelte";
   import Switch from "$lib/components/Switch.svelte";
+  import { canStore } from "$lib/canStore.svelte.js";
   import { alertStore } from "./lib/alertStore.svelte";
+
+  import { createSwapy } from "swapy";
+  import { onDestroy, untrack } from "svelte";
 
   function createCardFromPID(pidData) {
     return {
       label: pidData.name,
-      value: 0, // Initial value, will be updated by API
+      value: 0,
       unit: pidData.unit,
       icon: pidData.icon,
       color: `#${pidData.color.toString(16).padStart(6, "0")}`,
@@ -26,26 +25,128 @@
     };
   }
 
-  let container;
-  let swapy = null;
-  let visibilityState = $state({});
-  let cards = $derived(
-    canStore.pidDefinitions.map((pidData) => {
-      const card = createCardFromPID(pidData);
-      card.visible = visibilityState[pidData.pid] ?? true;
-      return card;
-    }),
+  // Persistence Keys
+  const ORDER_KEY = "can-sniffer-telemetry-order";
+  const VISIBILITY_KEY = "can-sniffer-telemetry-visibility";
+
+  let searchTerm = $state("");
+
+  // 1. Core State
+  let visibilityState = $state(
+    JSON.parse(localStorage.getItem(VISIBILITY_KEY) || "{}"),
   );
 
-  onMount(() => {
-    if (container) {
-      swapy = createSwapy(container);
+  // CRITICAL: savedOrder is NO LONGER a $state. Svelte won't react to it mid-drag.
+  let savedOrder = JSON.parse(localStorage.getItem(ORDER_KEY) || "[]");
 
-      swapy.onSwap((event) => {
-        console.log("swap", event);
-      });
+  let renderCards = $state([]);
+  let renderKey = $state(0); // Used to nuke and rebuild the grid cleanly
+
+  // 2. Sync Function: Builds the view array, bumps renderKey only if layout changed
+  function syncRenderCards() {
+    const cardMap = new Map(
+      canStore.pidDefinitions.map((c) => [
+        c.pid.toString(),
+        createCardFromPID(c),
+      ]),
+    );
+    const result = [];
+
+    for (const pid of savedOrder) {
+      if (visibilityState[pid] ?? true) {
+        const card = cardMap.get(pid);
+        if (card) result.push({ ...card, visible: true });
+      }
     }
+
+    // Check if the physical lineup of cards changed
+    const oldPids = renderCards.map((c) => c.pid.toString()).join(",");
+    const newPids = result.map((c) => c.pid.toString()).join(",");
+
+    renderCards = result;
+
+    if (oldPids !== newPids) {
+      // The cards shown changed (added/removed). Nuke the DOM for Swapy.
+      renderKey++;
+    }
+  }
+
+  // 3. Effect: Watch for data updates & new PIDs safely
+  $effect(() => {
+    // Read definitions so Svelte tracks it for live telemetry updates
+    const defs = canStore.pidDefinitions;
+
+    untrack(() => {
+      let changed = false;
+      for (const p of defs) {
+        const pidStr = p.pid.toString();
+        if (!savedOrder.includes(pidStr)) {
+          savedOrder.push(pidStr);
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        localStorage.setItem(ORDER_KEY, JSON.stringify(savedOrder));
+      }
+      syncRenderCards();
+    });
   });
+
+  // 4. Svelte Action to manage Swapy lifecycle perfectly
+  function swapyAction(node) {
+    const swapy = createSwapy(node, { animation: "dynamic" });
+
+    swapy.onSwap((event) => {
+      if (event?.newSlotItemMap?.asArray) {
+        const newVisibleItems = [...event.newSlotItemMap.asArray]
+          .sort((a, b) => parseInt(a.slot) - parseInt(b.slot))
+          .map((entry) => entry.item);
+
+        // Update our background array and local storage quietly
+        const newOrder = [...savedOrder];
+        let visibleCounter = 0;
+
+        for (let i = 0; i < newOrder.length; i++) {
+          const pid = newOrder[i];
+          if (visibilityState[pid] ?? true) {
+            if (newVisibleItems[visibleCounter]) {
+              newOrder[i] = newVisibleItems[visibleCounter];
+            }
+            visibleCounter++;
+          }
+        }
+
+        savedOrder = newOrder;
+        localStorage.setItem(ORDER_KEY, JSON.stringify(savedOrder));
+        // Notice we DO NOT call syncRenderCards() here. Svelte sleeps while you drag.
+      }
+    });
+
+    return {
+      destroy() {
+        swapy.destroy();
+      },
+    };
+  }
+
+  // 5. Derived state for the search dropdown
+  let searchResults = $derived(
+    canStore.pidDefinitions
+      .map((p) => {
+        const card = createCardFromPID(p);
+        card.visible = visibilityState[p.pid.toString()] ?? true;
+        return card;
+      })
+      .filter((c) => c.label.toLowerCase().includes(searchTerm.toLowerCase())),
+  );
+
+  function toggleCard(pid) {
+    const pidStr = pid.toString();
+    visibilityState[pidStr] = !(visibilityState[pidStr] ?? true);
+    localStorage.setItem(VISIBILITY_KEY, JSON.stringify(visibilityState));
+    syncRenderCards(); // This triggers the #key block to rebuild
+  }
 
   $effect(() => {
     if (canStore.connected) {
@@ -54,28 +155,8 @@
   });
 
   onDestroy(() => {
-    swapy?.destroy();
     canStore.stopLogging();
   });
-
-  function toggleCard(index) {
-    const card = cards[index];
-    visibilityState[card.pid] = !card.visible;
-
-    setTimeout(() => swapy?.update(), 0);
-  }
-
-  let searchTerm = $state("");
-
-  let filteredCards = $derived(
-    cards
-      .map((card, index) => ({
-        ...card,
-        index,
-        matches: card.label.toLowerCase().includes(searchTerm.toLowerCase()),
-      }))
-      .filter((card) => card.matches),
-  );
 </script>
 
 <div class="controls-container">
@@ -102,44 +183,48 @@
           onclick={(e) => e.stopPropagation()}
         />
       </li>
-      {#each filteredCards as card}
+      {#each searchResults as card (card.pid)}
         <li>
           <label>
             <input
               type="checkbox"
               checked={card.visible}
-              onchange={() => toggleCard(card.index)}
+              onchange={() => toggleCard(card.pid)}
             />
             {card.label}
           </label>
         </li>
       {/each}
-      {#if filteredCards.length === 0}
+      {#if searchResults.length === 0}
         <li class="no-results">No matches found</li>
       {/if}
     </ul>
   </details>
 </div>
 
-<div bind:this={container} class="cards-grid">
-  {#each cards.filter((c) => c.visible) as card, index (card.label)}
-    <div
-      data-swapy-slot={index.toString()}
-      transition:scale={{ duration: 300 }}
-      animate:flip={{ duration: 300 }}
-    >
-      <div data-swapy-item={index.toString()}>
-        <PIDCard {...card} />
-      </div>
+{#key renderKey}
+  {#if renderCards.length > 0}
+    <div use:swapyAction class="cards-grid">
+      {#each renderCards as card, index (card.pid)}
+        <div data-swapy-slot={index.toString()}>
+          <div data-swapy-item={card.pid.toString()}>
+            <PIDCard {...card} />
+          </div>
+        </div>
+      {/each}
     </div>
-  {/each}
-</div>
+  {/if}
+{/key}
 
 <style>
   .status-group {
     display: flex;
     gap: 1rem;
     align-items: stretch;
+  }
+
+  details.dropdown > summary + ul li:first-of-type {
+    margin-top: 0;
   }
 
   .controls-container {
@@ -155,6 +240,7 @@
     margin-bottom: 0;
     height: auto;
     min-width: 250px;
+    position: relative;
   }
 
   .dropdown summary {
@@ -163,6 +249,16 @@
     align-items: center;
     margin-bottom: 0;
     white-space: nowrap;
+  }
+
+  .dropdown ul {
+    max-height: 500px;
+    overflow-y: auto;
+    scroll-behavior: smooth;
+    backdrop-filter: var(--backdrop-filter);
+    -webkit-backdrop-filter: var(--backdrop-filter);
+    background-color: var(--backdrop-filter-background) !important;
+    position: absolute;
   }
 
   .cards-grid {
@@ -178,6 +274,9 @@
     position: sticky;
     top: 0;
     padding: 0.5rem;
+    z-index: 10;
+    box-shadow: 0 4px 6px -6px rgba(0, 0, 0, 0.2);
+    background-color: var(--pico-dropdown-background-color) !important;
   }
 
   .search-container input {
@@ -192,20 +291,19 @@
 
   @media (max-width: 768px) {
     .controls-container {
-      flex-direction: column; /* Stack Group on top, Dropdown below */
+      flex-direction: column;
     }
 
     .status-group {
       width: 100%;
     }
 
-    /* Make the two cards share width equally 50/50 */
     .status-group > :global(*) {
       flex: 1;
     }
 
     .dropdown {
-      width: 100%; /* Dropdown takes full width below */
+      width: 100%;
     }
   }
 </style>

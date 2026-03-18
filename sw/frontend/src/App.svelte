@@ -70,7 +70,7 @@
     max-width: 100vw;
     margin-left: 0;
     margin-right: 0;
-    overflow-x: hidden;
+    overflow-x: clip;
   }
 
   :global(:root) {
@@ -83,6 +83,9 @@
     --card-gap: 1.25rem;
     --card-height: 160px;
     --card-max-width: calc((2 * var(--card-min-width)) + var(--card-gap));
+
+    --backdrop-filter: blur(10px) saturate(1.2);
+    --backdrop-filter-background: oklch(1 0 0 / 0.01);
   }
 
   :global(html) {

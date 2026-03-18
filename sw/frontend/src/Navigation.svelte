@@ -54,12 +54,13 @@
 
   .pill-nav {
     pointer-events: auto;
-    /* background: var(--pico-card-background-color); */
+    background: var(--backdrop-filter-background) !important;
     border: 1px solid var(--pico-muted-border-color);
     border-radius: 26px;
     padding: 0px 20px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-    backdrop-filter: blur(10px);
+    backdrop-filter: var(--backdrop-filter);
+    -webkit-backdrop-filter: var(--backdrop-filter);
   }
 
   ul {
