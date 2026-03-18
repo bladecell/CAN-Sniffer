@@ -15,6 +15,13 @@
     canStore.startCanPolling();
     canStore.getObd2Status();
 
+    // 3. Listen for manual URL changes (Back/Forward button)
+    const handleHashChange = () => {
+      const hash = window.location.hash.slice(1);
+      if (hash) activeTab = hash;
+    };
+    window.addEventListener("hashchange", handleHashChange);
+
     const cleanup = () => {
       canStore.disconnect();
       canStore.stopCanPolling();
@@ -25,11 +32,16 @@
     return () => {
       cleanup();
       window.removeEventListener("beforeunload", cleanup);
+      // Clean up the hash listener too
+      window.removeEventListener("hashchange", handleHashChange);
     };
   });
 
-  let activeTab = $state("dashboard");
-  let count = $state(0);
+  $effect(() => {
+    window.location.hash = activeTab;
+  });
+
+  let activeTab = $state(window.location.hash.slice(1) || "overview");
 </script>
 
 <Navigation bind:activeTab />
@@ -76,5 +88,11 @@
   :global(html) {
     /* Reserve scrollbar space always to prevent shift */
     scrollbar-gutter: stable;
+  }
+
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 0.2s;
+    animation-timing-function: ease-in-out;
   }
 </style>
