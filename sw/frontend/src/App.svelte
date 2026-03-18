@@ -1,6 +1,6 @@
 <script>
   import Navigation from "./Navigation.svelte";
-  import Overview from "./Overview.svelte";
+  import Dashboard from "./Dashboard.svelte";
   import Telemetry from "./Telemetry.svelte";
   import Settings from "./Settings.svelte";
   import Diagnostics from "./Diagnostics.svelte";
@@ -41,14 +41,14 @@
     window.location.hash = activeTab;
   });
 
-  let activeTab = $state(window.location.hash.slice(1) || "overview");
+  let activeTab = $state(window.location.hash.slice(1) || "dashboard");
 </script>
 
 <Navigation bind:activeTab />
 
 <main class="main-content">
-  {#if activeTab === "overview"}
-    <Overview />
+  {#if activeTab === "dashboard"}
+    <Dashboard />
   {:else if activeTab === "telemetry"}
     <Telemetry />
   {:else if activeTab === "settings"}
@@ -86,6 +86,10 @@
 
     --backdrop-filter: blur(10px) saturate(1.2);
     --backdrop-filter-background: oklch(1 0 0 / 0.01);
+
+    --normal-color: #10b981;
+    --warning-color: #f59e0b;
+    --error-color: #ef4444;
   }
 
   :global(html) {

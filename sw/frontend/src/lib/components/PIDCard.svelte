@@ -31,8 +31,8 @@
 
     const pct = ((currentValue - min) / (max - min)) * 100;
 
-    if (pct >= 20 && pct <= 80) return "#10b981"; // Green (Normal)
-    return "#f59e0b"; // Orange (Warning)
+    if (pct >= 20 && pct <= 80) return "var(--normal-color)"; // Green (Normal)
+    return "var(--warning-color)"; // Orange (Warning)
   });
 
   // Handle initial state where currentValue might be 0/undefined

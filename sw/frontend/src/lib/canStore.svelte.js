@@ -209,6 +209,35 @@ export class CanStore {
         }
     }
 
+    vin = $state("");
+
+    async getVin() {
+        try {
+            const response = await fetch("/api/v1/vin");
+            const result = await response.json();
+
+            this.vin = result.vin;
+        } catch (e) {
+            console.error("Failed to load VIN", e);
+        }
+    }
+
+    async requestVin() {
+        try {
+            const response = await fetch("/api/v1/req/vin", {
+                method: "POST"
+            });
+
+            const result = await response.json();
+
+            if (result.status === "success") {
+                this.getVin();
+            }
+        } catch (e) {
+            console.error("Failed to request VIN", e);
+        }
+    }
+
 }
 
 export const canStore = new CanStore();

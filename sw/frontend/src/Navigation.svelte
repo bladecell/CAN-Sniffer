@@ -4,7 +4,7 @@
   let { activeTab = $bindable() } = $props();
 
   const tabs = [
-    { id: "overview", icon: "home", label: "Overview" },
+    { id: "dashboard", icon: "gauge", label: "Dashboard" },
     { id: "telemetry", icon: "chart", label: "Telemetry" },
     { id: "diagnostics", icon: "engine", label: "Diagnostics" },
     { id: "can-logging", icon: "timeline-arrow", label: "CAN Logging" },
