@@ -99,7 +99,7 @@
 
   ::view-transition-old(root),
   ::view-transition-new(root) {
-    animation-duration: 0.2s;
+    animation-duration: 0.25s;
     animation-timing-function: ease-in-out;
   }
 </style>

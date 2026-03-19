@@ -11,7 +11,7 @@
       batteryVoltage = 10 + Math.random() * 4; // Random voltage between 10 and 14
     }, 2000);
 
-    canStore.getVin(); // Fetch VIN on mount
+    canStore.requestVin(); // Fetch VIN on mount
 
     return () => clearInterval(interval);
   });
