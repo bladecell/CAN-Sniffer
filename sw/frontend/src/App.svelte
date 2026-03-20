@@ -90,6 +90,8 @@
     --normal-color: #10b981;
     --warning-color: #f59e0b;
     --error-color: #ef4444;
+
+    --grid-border-radius: 12px;
   }
 
   :global(html) {

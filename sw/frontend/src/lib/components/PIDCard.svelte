@@ -12,17 +12,12 @@
     max = 100,
   } = $props();
 
-  // FIX 1: Use 'pids' (from store) and .get() (for Map)
-  // Svelte 5 reactivity handles Map.get() inside $derived automatically
   const pidData = $derived(canStore.pids.get(pid));
 
-  // FIX 2: Handle data not arriving yet (undefined check)
   const currentValue = $derived(pidData?.value ?? 0);
 
-  // FIX 3: Store property is named 'valid', not 'isValid'
   const isValid = $derived(pidData?.valid ?? false);
 
-  // 'supported' isn't in the binary stream yet, default to true
   const supported = $derived(pidData?.supported ?? false);
 
   const status = $derived.by(() => {
@@ -35,7 +30,6 @@
     return "var(--warning-color)"; // Orange (Warning)
   });
 
-  // Handle initial state where currentValue might be 0/undefined
   const displayValue = $derived(supported ? currentValue.toFixed(1) : "···");
 </script>
 
@@ -65,17 +59,16 @@
 </article>
 
 <style>
-  :global(:root) {
-    --card-pref-width: 280px; /* Your "Preferred" Size */
-    --card-gap: 1rem;
-  }
   .pid-card {
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    margin: 0;
+
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    height: var(--card-height);
-    width: 100%;
-    justify-self: start;
+
     padding: 16px;
     border: 1px solid var(--pico-muted-border-color);
     border-radius: 12px;

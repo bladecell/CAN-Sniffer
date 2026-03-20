@@ -15,6 +15,7 @@
 	},
 	"dependencies": {
 		"22": "^0.0.0",
+		"@appulsauce/svelte-grid": "^2.0.2",
 		"@fontsource/atkinson-hyperlegible": "^5.2.6",
 		"@picocss/pico": "^2.1.1",
 		"gsap": "^3.13.0",

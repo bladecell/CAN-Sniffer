@@ -307,3 +307,48 @@ body:has(.scroll) {
 	font-size: 8vw;
 	font-weight: 700;
 }
+
+.grid-item-resizer {
+	-webkit-user-select: none;
+	-moz-user-select: none;
+	user-select: none;
+	touch-action: none;
+	position: absolute;
+	width: 20px !important;
+	height: 20px !important;
+	right: 0;
+	bottom: 0;
+	cursor: se-resize;
+	background: none;
+	outline: none;
+	border: none;
+}
+
+
+.grid-item-resizer::after {
+	content: "";
+	position: absolute;
+	right: 3px;
+	bottom: 3px;
+	width: 5px;
+	height: 5px;
+	border-right: 2px solid oklch(1 0 0 / 0.3);
+	border-bottom: 2px solid oklch(1 0 0 / 0.3);
+}
+
+.grid-item-preview {
+	background-color: color-mix(in srgb, var(--pico-primary) 20%, transparent);
+	border: 2px dashed var(--pico-primary);
+	border-radius: 8px;
+}
+
+.item-default {
+  border-radius: 12px !important;
+  
+  /* This forces the sharp corners to act as a clipping mask for the article */
+  overflow: hidden !important; 
+  
+  /* Because overflow:hidden will hide the article's drop shadow, 
+     we apply the Pico shadow directly to the wrapper instead */
+  box-shadow: var(--pico-card-box-shadow) !important;
+}

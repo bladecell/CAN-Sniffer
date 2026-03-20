@@ -34,6 +34,9 @@
 
 <style>
   .data-card {
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
     padding: var(--pico-block-spacing-vertical)
       var(--pico-block-spacing-horizontal);
 
@@ -44,6 +47,7 @@
     display: flex;
     flex-direction: column;
     justify-content: center;
+    overflow: hidden;
     /* max-width: var(--card-max-width); */
   }
 
@@ -53,6 +57,10 @@
     align-items: center;
     gap: 1.5rem; /* Increased to match Switch breathing room */
     width: 100%;
+  }
+
+  .info {
+    min-width: 0;
   }
 
   .info small {
@@ -67,7 +75,9 @@
     text-transform: capitalize;
     font-size: 1.1rem;
     line-height: 1.2;
-    white-space: nowrap; /* Prevent wrapping like in Switch */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .icon-wrapper {
