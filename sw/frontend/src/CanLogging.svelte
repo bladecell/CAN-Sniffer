@@ -26,7 +26,7 @@
     const pids = canStore.pidDefinitions;
     if (pids?.length > 0) {
       untrack(() => {
-        item = createCardFromPID(pids[2]);
+        item = createCardFromPID(pids[0]);
       });
     }
   });
@@ -42,6 +42,29 @@
 
   onDestroy(() => {
     canStore.stopLogging();
+  });
+
+  const pidData1 = $derived(canStore.pids.get(4));
+  const currentValue1 = $derived(pidData1?.value ?? 0);
+  const timestamp1 = $derived(pidData1?.timestamp ?? 0);
+
+  let previousTimestamp1 = $state(0);
+
+  $effect(() => {
+    const t = timestamp1;
+    const v = currentValue1;
+
+    untrack(() => {
+      if (t > 0 && previousTimestamp1 > 0) {
+        const delta = t - previousTimestamp1;
+
+        if (delta > 0) {
+          console.log(`Update for PID 4: ${delta}ms, value: ${v}`);
+        }
+      }
+
+      previousTimestamp1 = t;
+    });
   });
 </script>
 

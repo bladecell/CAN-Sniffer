@@ -10,7 +10,7 @@ export const COMMANDS = {
 export class CanStore {
     connected = $state(false);
     pids = new SvelteMap();
-
+    listeners = new Set();
     isStreaming = $state(false);
     socket = null;
 
@@ -103,6 +103,12 @@ export class CanStore {
         }
     }
 
+    subscribe(callback) {
+        this.listeners.add(callback);
+        // Return an unsubscribe function to prevent memory leaks
+        return () => this.listeners.delete(callback);
+    }
+
     parsePidPacket(view) {
         const fullPid = view.getUint32(1, true);
         const value = view.getFloat32(5, true);
@@ -111,13 +117,51 @@ export class CanStore {
         const isValid = view.getUint8(17) !== 0;
         const isSupported = view.getUint8(18) !== 0;
 
+        let existing = this.pids.get(fullPid);
+
+        if (!existing) {
+            existing = {
+                value: value,
+                timestamp: time,
+                rate: rate,
+                valid: isValid,
+                supported: isSupported,
+                history: []
+            };
+        } else {
+            existing.history.push({
+                value: value,
+                timestamp: time,
+            });
+
+            if (existing.history.length > 1000) {
+                existing.history.shift();
+            }
+            existing.value = Number(value.toFixed(2));
+            existing.timestamp = time;
+            existing.rate = rate;
+            existing.valid = isValid;
+            existing.supported = isSupported;
+        }
+
         this.pids.set(fullPid, {
+            ...existing,
             value: Number(value.toFixed(2)),
             timestamp: time,
             rate: rate,
             valid: isValid,
             supported: isSupported
         });
+
+        const update = {
+            pid: fullPid,
+            value: Number(value.toFixed(2)),
+            timestamp: time
+        };
+
+        for (const listener of this.listeners) {
+            listener(update);
+        }
     }
 
     pidDefinitions = $state([]);

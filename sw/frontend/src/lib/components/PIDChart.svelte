@@ -1,6 +1,6 @@
 <script>
   import { canStore } from "$lib/canStore.svelte.js";
-  import { onMount, untrack } from "svelte";
+  import { onMount, untrack, tick } from "svelte";
   import uPlot from "uplot";
   import "uplot/dist/uPlot.min.css";
 
@@ -58,90 +58,93 @@
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   }
 
-  // --- THE EVENT-DRIVEN UPDATE ---
-  $effect(() => {
-    // 1. Dependency: This effect re-runs ONLY when currentValue changes
-    const val = currentValue;
+  onMount(() => {
+    let unsubscribe = () => {};
 
-    // 2. Wrap the logic in untrack to prevent infinite loops
-    untrack(() => {
-      if (!chartInstance || !supported) return;
-
-      const now = Date.now() / 1000;
-      timeData.push(now);
-      valueData.push(val);
-
-      // Maintain the 60-second window
-      const cutoff = now - MAX_HISTORY_SEC;
-      while (timeData.length > 0 && timeData[0] < cutoff) {
-        timeData.shift();
-        valueData.shift();
+    const setup = async () => {
+      // 1. HYDRATE (Load the background history)
+      const data = canStore.pids.get(pid);
+      if (data && data.history.length > 0) {
+        // Map history to uPlot arrays
+        timeData = data.history.map((h) => h.timestamp);
+        valueData = data.history.map((h) => h.value);
       }
 
-      // Update the chart visual
-      chartInstance.setData([timeData, valueData]);
-    });
-  });
+      await tick();
 
-  onMount(() => {
-    // Pre-fill with empty data to start from the right (Sliding Window)
-    const now = Date.now() / 1000;
-    const pollRateSec = Math.max(update_interval_ms, 100) / 1000;
-    const maxPoints = Math.floor(MAX_HISTORY_SEC / pollRateSec);
-
-    timeData = Array.from(
-      { length: maxPoints },
-      (_, i) => now - (maxPoints - i) * pollRateSec,
-    );
-    valueData = Array.from({ length: maxPoints }, () => null);
-
-    const opts = {
-      width: wrapperWidth,
-      height: wrapperHeight,
-      cursor: { show: false },
-      legend: { show: false },
-      padding: [10, 0, 10, 0],
-      scales: {
-        x: { time: true },
-        y: { range: () => [Number(min), Number(max)], clean: true },
-      },
-      axes: [{ show: false }, { show: false }],
-      series: [
-        {},
-        {
-          stroke: color,
-          width: 3,
-          paths: uPlot.paths.spline(),
-          points: { show: false },
-          spanGaps: true,
-          fill: (u) => {
-            const ctx = u.ctx;
-            const gradient = ctx.createLinearGradient(0, 0, 0, u.bbox.height);
-            gradient.addColorStop(0, hexToRgba(color, 0.4));
-            gradient.addColorStop(1, hexToRgba(color, 0.0));
-            return gradient;
-          },
+      const opts = {
+        width: wrapperWidth,
+        height: wrapperHeight,
+        cursor: { show: false },
+        legend: { show: false },
+        padding: [10, 0, 10, 0],
+        scales: {
+          x: { time: true },
+          y: { range: () => [Number(min), Number(max)], clean: true },
         },
-      ],
-      hooks: {
-        drawSeries: [
-          (u) => {
-            if (!supported || u.data[1].length === 0) return;
-            const ctx = u.ctx;
-            const lastIdx = u.data[0].length - 1;
-            const cx = u.valToPos(u.data[0][lastIdx], "x", true);
-            const cy = u.valToPos(u.data[1][lastIdx], "y", true);
-            ctx.beginPath();
-            ctx.arc(cx, cy, 5, 0, 2 * Math.PI);
-            ctx.fillStyle = color;
-            ctx.fill();
+        axes: [{ show: false }, { show: false }],
+        series: [
+          {},
+          {
+            stroke: color,
+            width: 3,
+            paths: uPlot.paths.spline(),
+            points: { show: false },
+            spanGaps: true,
+            fill: (u) => {
+              const ctx = u.ctx;
+              const gradient = ctx.createLinearGradient(0, 0, 0, u.bbox.height);
+              gradient.addColorStop(0, hexToRgba(color, 0.4));
+              gradient.addColorStop(1, hexToRgba(color, 0.0));
+              return gradient;
+            },
           },
         ],
-      },
+        hooks: {
+          drawSeries: [
+            (u) => {
+              if (!supported || u.data[1].length === 0) return;
+              const ctx = u.ctx;
+              const lastIdx = u.data[0].length - 1;
+              const cx = u.valToPos(u.data[0][lastIdx], "x", true);
+              const cy = u.valToPos(u.data[1][lastIdx], "y", true);
+              ctx.beginPath();
+              ctx.arc(cx, cy, 5, 0, 2 * Math.PI);
+              ctx.fillStyle = color;
+              ctx.fill();
+            },
+          ],
+        },
+      };
+
+      chartInstance = new uPlot(opts, [timeData, valueData], chartRef);
+
+      unsubscribe = canStore.subscribe((update) => {
+        // Only care about updates for THIS specific chart's PID
+        if (update.pid !== pid) return;
+
+        // Push new data to the local arrays
+        timeData.push(update.timestamp);
+        valueData.push(update.value);
+
+        // Slide the 60s window
+        const cutoff = update.timestamp - 60000; // if timestamp is ms
+        while (timeData.length > 0 && timeData[0] < cutoff) {
+          timeData.shift();
+          valueData.shift();
+        }
+
+        // Tell uPlot to redraw with the new points
+        chartInstance.setData([timeData, valueData]);
+      });
     };
 
-    chartInstance = new uPlot(opts, [timeData, valueData], chartRef);
-    return () => chartInstance.destroy();
+    setup();
+
+    return () => {
+      unsubscribe(); // Stop listening when chart is destroyed
+      if (chartInstance) chartInstance.destroy();
+    };
   });
 </script>
 
