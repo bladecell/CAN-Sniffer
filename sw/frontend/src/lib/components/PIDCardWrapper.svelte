@@ -1,0 +1,22 @@
+<script>
+  import PIDCard from "$lib/components/PIDCard.svelte";
+  import PIDChartCard from "$lib/components/PIDChart.svelte";
+
+  // Destructure displayMode, collect everything else into 'rest'
+  let { displayMode = "card", ...rest } = $props();
+</script>
+
+<div class="pid-card-wrapper">
+  {#if displayMode === "chart"}
+    <PIDChartCard {...rest} />
+  {:else}
+    <PIDCard {...rest} />
+  {/if}
+</div>
+
+<style>
+  .pid-card-wrapper {
+    width: 100%;
+    height: 100%;
+  }
+</style>

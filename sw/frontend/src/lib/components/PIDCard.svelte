@@ -10,6 +10,7 @@
     color = "#10b981",
     min = 0,
     max = 100,
+    ...rest
   } = $props();
 
   const pidData = $derived(canStore.pids.get(pid));
@@ -107,7 +108,6 @@
     width: 48px;
     border-radius: 10px;
     transition: transform 0.2s ease;
-    cursor: grab;
   }
 
   .pid-card:hover .icon {
