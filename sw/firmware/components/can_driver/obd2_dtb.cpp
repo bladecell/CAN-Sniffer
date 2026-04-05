@@ -149,7 +149,7 @@ esp_err_t OBD2DTB::updateData(const CanDriver::CanFrame& frame)
         }
         it->second.value = val;
 
-        it->second.lastUpdated = xTaskGetTickCount();
+        it->second.lastUpdated = pdTICKS_TO_MS(xTaskGetTickCount());
         if (mode == RESPONSE_CURRENT_DATA && it->second.id != OBD2_FUNCTIONAL_ID)
         {
             it->second.id = id - 8;

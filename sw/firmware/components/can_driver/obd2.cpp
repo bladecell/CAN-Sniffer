@@ -251,17 +251,6 @@ void OBD2::pollStatic()
 
 void OBD2::pollTask()
 {
-    const TickType_t POLL_PERIOD_TICKS = pdMS_TO_TICKS(POLL_TASK_PERIOD_MS);
-
-    TickType_t xLastWakeTime = xTaskGetTickCount();
-
-    std::size_t groupStatic_size = 0, groupSlow_size = 0, groupMedium_size = 0, groupFast_size = 0,
-                diagnosticSessionIds_size = 0;
-    uint32_t groupStatic_idx = 0, groupSlow_idx = 0, groupMedium_idx = 0, groupFast_idx = 0,
-             diagnosticSessionIds_idx = 0;
-
-    uint32_t taskCnt = 0;
-
     if (!pidsInitialized)
     {
         ESP_LOGI(TAG, "PIDs not initialized.");
@@ -269,23 +258,28 @@ void OBD2::pollTask()
         xSemaphoreTake(xPidConnectedSemaphore, portMAX_DELAY);
     }
 
+    // Fixed-Priority Token Bucket Scheduler
+
+    const float TICK          = (float)POLL_TASK_PERIOD_MS;
+    TickType_t  xLastWakeTime = xTaskGetTickCount();
+
+    // Accumulators for the timed groups
+    float accF = 0, accM = 0, accS = 0;
+
+    // Diagnostic Burst Control
+    uint32_t              diagTicksCounter  = 0;
+    const uint32_t        diagTicksInterval = DAGNOSTIC_SESSION_TIMEOUT / POLL_TASK_PERIOD_MS;  // 250 ticks
+    bool                  diagBurstActive   = false;
     std::vector<uint32_t> v_diagnosticSessionIds(diagnosticSessionIds.begin(), diagnosticSessionIds.end());
 
-    groupStatic_size          = vGroupStatic.size();
-    groupSlow_size            = vGroupSlow.size();
-    groupMedium_size          = vGroupMedium.size();
-    groupFast_size            = vGroupFast.size();
-    diagnosticSessionIds_size = diagnosticSessionIds.size();
-
-    const uint32_t intervalFast   = UPDATE_FAST / POLL_TASK_PERIOD_MS;
-    const uint32_t intervalMedium = UPDATE_MEDIUM / POLL_TASK_PERIOD_MS;
-    const uint32_t intervalSlow   = UPDATE_SLOW / POLL_TASK_PERIOD_MS;
-    const uint32_t intervalStatic = UPDATE_STATIC / POLL_TASK_PERIOD_MS;
-    const uint32_t intervalDiag   = DAGNOSTIC_SESSION_TIMEOUT / POLL_TASK_PERIOD_MS;
+    // Round-robin indices for each group
+    uint32_t groupStatic_idx = 0, groupSlow_idx = 0, groupMedium_idx = 0, groupFast_idx = 0,
+             diagnosticSessionIds_idx = 0;
 
     while (1)
     {
-        vTaskDelayUntil(&xLastWakeTime, POLL_PERIOD_TICKS);
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(POLL_TASK_PERIOD_MS));
+
         if (!canDriver.isBusConnected())
         {
             ESP_LOGW(TAG, "Bus disconnected. Waiting for connection...");
@@ -294,64 +288,101 @@ void OBD2::pollTask()
             continue;
         }
 
+        // Reset accumulators if PIDs are not initialized
         if (!pidsInitialized)
         {
             ESP_LOGI(TAG, "PIDs not initialized.");
 
             xSemaphoreTake(xPidConnectedSemaphore, portMAX_DELAY);
+            accF = accM = accS = 0;
+            diagTicksCounter   = 0;
+            diagBurstActive    = false;
+            xLastWakeTime      = xTaskGetTickCount();
+            groupStatic_idx = groupSlow_idx = groupMedium_idx = groupFast_idx = diagnosticSessionIds_idx = 0;
             v_diagnosticSessionIds.assign(diagnosticSessionIds.begin(), diagnosticSessionIds.end());
-            groupStatic_size          = vGroupStatic.size();
-            groupSlow_size            = vGroupSlow.size();
-            groupMedium_size          = vGroupMedium.size();
-            groupFast_size            = vGroupFast.size();
-            diagnosticSessionIds_size = diagnosticSessionIds.size();
-            groupStatic_idx = groupSlow_idx = groupMedium_idx = groupFast_idx = 0, diagnosticSessionIds_idx = 0;
-            // taskCnt = 0;
-            xLastWakeTime = xTaskGetTickCount();
+            pollStaticGroup.store(false);
             continue;
         }
 
-        // Poll Slow group
-        if (groupSlow_size > 0 && ((taskCnt + 2) % intervalSlow == 0))
+        // 1. Update Credits and Timers
+        accF += TICK;
+        accM += TICK;
+        accS += TICK;
+
+        if (!diagBurstActive)
         {
-            req(vGroupSlow[groupSlow_idx]);
-            groupSlow_idx = (groupSlow_idx + 1) % groupSlow_size;
+            diagTicksCounter++;
+            if (diagTicksCounter >= diagTicksInterval)
+            {
+                diagBurstActive          = true;
+                diagnosticSessionIds_idx = 0;
+                diagTicksCounter         = 0;
+            }
         }
 
-        // Poll Medium group
-        if (groupMedium_size > 0 && ((taskCnt + 1) % intervalMedium == 0))
+        // 2. Caps to prevent "Infinite Bursts" after long disconnections
+        accF = std::min(accF, 256.0f);
+        accM = std::min(accM, 1024.0f);
+        accS = std::min(accS, 4096.0f);
+
+        // 3. Dynamic Costs
+        float costF = (vGroupFast.size() > 0) ? (256.0f / vGroupFast.size()) : 1e6f;
+        float costM = (vGroupMedium.size() > 0) ? (1024.0f / vGroupMedium.size()) : 1e6f;
+        float costS = (vGroupSlow.size() > 0) ? (4096.0f / vGroupSlow.size()) : 1e6f;
+
+        bool sent = false;
+
+        // --- PRIORITY 1: DIAGNOSTIC BURST (Every 2000ms) ---
+        if (diagBurstActive && v_diagnosticSessionIds.size() > 0)
         {
-            req(vGroupMedium[groupMedium_idx]);
-            groupMedium_idx = (groupMedium_idx + 1) % groupMedium_size;
+            queryMsg(v_diagnosticSessionIds[diagnosticSessionIds_idx], 0x10, 0x01, 0x02);
+            diagnosticSessionIds_idx++;
+            if (diagnosticSessionIds_idx >= v_diagnosticSessionIds.size())
+            {
+                diagBurstActive = false;  // Burst complete
+            }
+            sent = true;
         }
 
-        // Poll Fast group
-        if (groupFast_size > 0 && (taskCnt % intervalFast == 0))
-        {
-            req(vGroupFast[groupFast_idx]);
-            groupFast_idx = (groupFast_idx + 1) % groupFast_size;
-        }
-
-        // Poll Static group
-        if (pollStaticGroup.load() && groupStatic_size > 0 && ((taskCnt + 3) % intervalStatic == 0))
+        // --- PRIORITY 2: STATIC BURST (On Demand) ---
+        if (!sent && pollStaticGroup.load() && vGroupStatic.size() > 0)
         {
             req(vGroupStatic[groupStatic_idx]);
-            groupStatic_idx = (groupStatic_idx + 1);
-            if (groupStatic_idx >= groupStatic_size)
+            groupStatic_idx++;
+            if (groupStatic_idx >= vGroupStatic.size())
             {
                 pollStaticGroup.store(false);
                 groupStatic_idx = 0;
             }
+            sent = true;
         }
 
-        // Request Diagnostics session
-        if (diagnosticSessionIds_size > 0 && ((taskCnt + 5) % intervalDiag == 0))
+        // --- PRIORITY 3: FAST GROUP ---
+        if (!sent && accF >= costF)
         {
-            queryMsg(v_diagnosticSessionIds[diagnosticSessionIds_idx], 0x10, 0x01, 0x02);
-            diagnosticSessionIds_idx = (diagnosticSessionIds_idx + 1) % diagnosticSessionIds_size;
+            req(vGroupFast[groupFast_idx]);
+            groupFast_idx = (groupFast_idx + 1) % vGroupFast.size();
+            accF -= costF;
+            sent = true;
         }
 
-        taskCnt++;
+        // --- PRIORITY 4: MEDIUM GROUP ---
+        else if (!sent && accM >= costM)
+        {
+            req(vGroupMedium[groupMedium_idx]);
+            groupMedium_idx = (groupMedium_idx + 1) % vGroupMedium.size();
+            accM -= costM;
+            sent = true;
+        }
+
+        // --- PRIORITY 5: SLOW GROUP ---
+        else if (!sent && accS >= costS)
+        {
+            req(vGroupSlow[groupSlow_idx]);
+            groupSlow_idx = (groupSlow_idx + 1) % vGroupSlow.size();
+            accS -= costS;
+            sent = true;
+        }
     }
 }
 
@@ -807,7 +838,7 @@ esp_err_t OBD2::captureMultiFrame(const CanDriver::CanFrame& f)
             totalLength             = (lengthHigh << 8) | lengthLow;
             consecutiveFramesNeeded = (totalLength - FIRST_FRAME_DATA_BYTES + CONSECUTIVE_FRAME_DATA_BYTES - 1) /
                                       CONSECUTIVE_FRAME_DATA_BYTES;
-            consecutiveFrameIndex = 0;
+            consecutiveFrameIndex   = 0;
             multiFrameBuffer.clear();
             multiFrameBuffer.push_back(f);
             vTaskDelay(pdMS_TO_TICKS(10));  // Wait before sending Flow Control

@@ -97,8 +97,8 @@ esp_err_t setup_obd()
                "((A * 256) + B) / 4", 0.0f, 16383.75f, 1, UPDATE_FAST, 0x3b82f6, "droplet");
 
     // 4. Odometer: ((A * 256) + B) * 10
-    obd.addPID(0x714, MODE_READ_DATA_BY_IDENTIFIER, 0x2203, 3, "Odometer", KM, "Total distance", "((A * 256) + B) * 10",
-               0.0f, 999999.0f, 1, UPDATE_SLOW, 0x3498db, "gauge");
+    obd.addPID(0x714, MODE_READ_DATA_BY_IDENTIFIER, 0x2203, 3, "Odometer", KM, "Total distance",
+               "((A * 256) + B) * 10 ", 0.0f, 999999.0f, 1, UPDATE_SLOW, 0x3498db, "gauge");
 
     // 5. Fuel Level: A
     obd.addPID(0x714, MODE_READ_DATA_BY_IDENTIFIER, 0x2206, 3, "Fuel Amount", LITER, "Fuel Tank Level (Liters)", "A",
