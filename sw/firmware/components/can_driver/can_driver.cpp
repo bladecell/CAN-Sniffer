@@ -539,24 +539,28 @@ void CanDriver::txTaskWrapper(void* param)
 
 void CanDriver::txTask()
 {
-    TickType_t          xLastWakeTime = xTaskGetTickCount();
     CanDriver::CanFrame f;
     while (1)
     {
         if (xQueueReceive(txQueue, &f, portMAX_DELAY) == pdTRUE)
         {
+            TickType_t startTime = xTaskGetTickCount();
+
             twai_frame_t tx_msg = {
                 .header     = f.header,
                 .buffer     = f.data,
                 .buffer_len = f.length,
             };
+
             esp_err_t ret = twai_node_transmit(nodeHdl, &tx_msg, pdMS_TO_TICKS(200));
             if (ret != ESP_OK)
             {
-                ESP_LOGE(TAG, "Failed to transmit message from tx task: %s", esp_err_to_name(ret));
+                ESP_LOGE(TAG, "Failed to transmit message: %s", esp_err_to_name(ret));
             }
+
+            LOG_CAN_FRAME(TAG, "TX -> ", f.header.id, f.data, twaifd_dlc2len(f.header.dlc));
+
+            vTaskDelayUntil(&startTime, pdMS_TO_TICKS(MIN_TRANSMIT_PERIOD_MS));
         }
-        LOG_CAN_FRAME(TAG, "TX -> ", f.header.id, f.data, twaifd_dlc2len(f.header.dlc));
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(MIN_TRANSMIT_PERIOD_MS));
     }
 }

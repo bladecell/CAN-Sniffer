@@ -33,18 +33,19 @@
 
 enum OBDMode
 {
-    MODE_CURRENT_DATA            = 0x01,
-    MODE_FREEZE_FRAME            = 0x02,
-    MODE_DTCS                    = 0x03,
-    MODE_CLEAR_DTCS              = 0x04,
-    MODE_TEST_RESULTS_O2         = 0x05,
-    MODE_TEST_RESULTS_OTHER      = 0x06,
-    MODE_PENDING_DTCS            = 0x07,
-    MODE_CONTROL                 = 0x08,
-    MODE_VEHICLE_INFO            = 0x09,
-    MODE_PERMANENT_DTCS          = 0x0A,
-    MODE_READ_DATA_BY_IDENTIFIER = 0x22,
-    MODE_DERIVED_DATA            = 0x45,
+    MODE_CURRENT_DATA               = 0x01,
+    MODE_FREEZE_FRAME               = 0x02,
+    MODE_DTCS                       = 0x03,
+    MODE_CLEAR_DTCS                 = 0x04,
+    MODE_TEST_RESULTS_O2            = 0x05,
+    MODE_TEST_RESULTS_OTHER         = 0x06,
+    MODE_PENDING_DTCS               = 0x07,
+    MODE_CONTROL                    = 0x08,
+    MODE_VEHICLE_INFO               = 0x09,
+    MODE_PERMANENT_DTCS             = 0x0A,
+    MODE_DIAGNOSTIC_SESSION_CONTROL = 0x10,
+    MODE_READ_DATA_BY_IDENTIFIER    = 0x22,
+    MODE_DERIVED_DATA               = 0x45,
 };
 
 enum OBDResponse
@@ -61,6 +62,7 @@ enum OBDResponse
     RESPONSE_PERMANENT_DTCS          = 0x4A,
     RESPONSE_READ_DATA_BY_IDENTIFIER = 0x62,
     RESPONSE_MODE_DERIVED_DATA       = 0x85,
+    RESPONSE_NEGATIVE_RESPONSE_CODE  = 0x7F,
 };
 
 typedef enum
@@ -131,6 +133,29 @@ struct PIDData_t
     bool              isValid;
     UpdateRate        updateInterval_ms;
     SemaphoreHandle_t mtx_;
+};
+
+struct PollRequest
+{
+    uint32_t   pid;
+    TickType_t nextWake;
+    uint32_t   interval;
+    uint8_t    priority;
+    bool       isRecurring;
+    uint32_t   id;
+    uint8_t    mode;
+    uint8_t    len;
+
+    // Min-Heap logic: Sooner wake time = higher priority.
+    // If times are equal, lower priority value (0 is highest) wins.
+    bool operator<(const PollRequest& other) const
+    {
+        if (nextWake == other.nextWake)
+        {
+            return priority < other.priority;
+        }
+        return nextWake < other.nextWake;
+    }
 };
 
 typedef struct

@@ -124,6 +124,54 @@ void OBD2DTB::generatePollingGroups()
     }
 }
 
+void OBD2DTB::startPolling()
+{
+    pollQueue.clear();
+    TickType_t         now = xTaskGetTickCount();
+    std::set<uint32_t> RequestByDataIdentifierIds;
+
+    for (const auto& [pid, info] : PID_DEF)
+    {
+        if (!isSup(pid))
+            continue;
+
+        uint32_t interval = info.updateInterval();
+        if (interval == 0)
+            continue;
+
+        PollRequest req;
+        req.pid         = pid;
+        req.interval    = interval;
+        req.nextWake    = now;
+        req.priority    = info.priority();
+        req.isRecurring = true;
+        req.id          = info.id();
+        req.mode        = info.mode();
+        req.len         = info.len();
+
+        pollQueue.push(req);
+
+        if (info.mode() == MODE_READ_DATA_BY_IDENTIFIER)
+        {
+            RequestByDataIdentifierIds.insert(info.id());
+        }
+    }
+
+    for (const auto& id : RequestByDataIdentifierIds)
+    {
+        PollRequest req;
+        req.pid         = 1;
+        req.interval    = 2000;  // Arbitrary interval for session maintenance
+        req.nextWake    = now;
+        req.priority    = 1;
+        req.isRecurring = true;
+        req.id          = id;
+        req.mode        = MODE_DIAGNOSTIC_SESSION_CONTROL;
+        req.len         = 2;
+        pollQueue.push(req);
+    }
+}
+
 esp_err_t OBD2DTB::updateData(const CanDriver::CanFrame& frame)
 {
     uint16_t mode = frame.data[1];

@@ -12,6 +12,7 @@
 #include "obd2.hpp"
 
 #include "can_driver.hpp"
+#include "obd2_utils.hpp"
 
 static const char* TAG = "OBD2";
 
@@ -69,6 +70,14 @@ esp_err_t OBD2::init()
         return ESP_FAIL;
     }
 
+    taskCreated = xTaskCreatePinnedToCore(pollTaskWrapper, "OBD2_PollTask", 8192, this, tskIDLE_PRIORITY + 1,
+                                          &PollTaskHandle, CORE_ID_CAN_TASKS);
+
+    if (taskCreated != pdPASS)
+    {
+        ESP_LOGE(TAG, "Failed to create polling task");
+    }
+
     if (canDriver.isBusConnected())
     {
         ESP_LOGI(TAG, "CAN bus already connected, getting supported PIDs");
@@ -85,16 +94,11 @@ esp_err_t OBD2::init()
 
 void OBD2::requestSuppPids()
 {
-    esp_err_t ret;
     xSemaphoreTake(xRequestNextPIDSemaphore, 0);
     for (uint16_t pid_marker = 0; pid_marker <= PID_PIDS_SUPPORTED_C1_E0; pid_marker += 0x20)
     {
-        ret = queryMsg(OBD2_FUNCTIONAL_ID, MODE_CURRENT_DATA, pid_marker, 2);
+        req(OBD2_FUNCTIONAL_ID, MODE_CURRENT_DATA, pid_marker, 2, 0);
 
-        if (ret != ESP_OK)
-        {
-            ESP_LOGW(TAG, "Failed to queue PID support query 0x%02X. Error: %d", pid_marker, ret);
-        }
         if (xSemaphoreTake(xRequestNextPIDSemaphore, pdMS_TO_TICKS(500)) != pdTRUE)
         {
             break;
@@ -102,11 +106,10 @@ void OBD2::requestSuppPids()
     }
 
     pidsInitialized = true;
-    generatePollingGroups();
     xSemaphoreGive(xPidConnectedSemaphore);
 }
 
-esp_err_t OBD2::req(uint16_t pid)
+esp_err_t OBD2::requestPID(uint16_t pid)
 {
     if (!isSup(pid))
     {
@@ -114,17 +117,24 @@ esp_err_t OBD2::req(uint16_t pid)
         return ESP_ERR_NOT_SUPPORTED;
     }
 
-    uint16_t mode = getMode(pid);
+    req(getId(pid), getMode(pid), pid, getLen(pid), getPriority(pid));
 
-    if (mode == MODE_DERIVED_DATA)
-    {
-        xQueueSend(derivedPidQueue_, &pid, pdMS_TO_TICKS(10));
-        return ESP_OK;
-    }
+    return ESP_OK;
+}
 
-    esp_err_t ret = queryMsg(getId(pid), getMode(pid), pid, getLen(pid));
+void OBD2::req(uint32_t id, uint8_t mode, uint32_t pid, uint8_t len, uint8_t priority)
+{
+    PollRequest req;
+    req.pid         = pid;
+    req.interval    = 0;
+    req.nextWake    = xTaskGetTickCount();
+    req.priority    = priority;
+    req.isRecurring = false;
+    req.id          = id;
+    req.mode        = mode;
+    req.len         = len;
 
-    return ret;
+    pollQueue.push(req);
 }
 
 esp_err_t OBD2::queryMsg(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len)
@@ -219,15 +229,8 @@ void OBD2::startContinuousMode()
     if (continuousRunning)
         return;
 
-    continuousRunning      = true;
-    BaseType_t taskCreated = xTaskCreatePinnedToCore(pollTaskWrapper, "OBD2_PollTask", 8192, this, tskIDLE_PRIORITY + 1,
-                                                     &PollTaskHandle, CORE_ID_CAN_TASKS);
-
-    if (taskCreated != pdPASS)
-    {
-        ESP_LOGE(TAG, "Failed to create polling task");
-        continuousRunning = false;
-    }
+    continuousRunning = true;
+    startPolling();
 }
 
 void OBD2::stopContinuousMode()
@@ -236,12 +239,7 @@ void OBD2::stopContinuousMode()
         return;
 
     continuousRunning = false;
-
-    if (PollTaskHandle != nullptr)
-    {
-        vTaskDelete(PollTaskHandle);
-        PollTaskHandle = nullptr;
-    }
+    pollQueue.clearRecurring();
 }
 
 void OBD2::pollStatic()
@@ -251,138 +249,47 @@ void OBD2::pollStatic()
 
 void OBD2::pollTask()
 {
-    if (!pidsInitialized)
-    {
-        ESP_LOGI(TAG, "PIDs not initialized.");
-
-        xSemaphoreTake(xPidConnectedSemaphore, portMAX_DELAY);
-    }
-
-    // Fixed-Priority Token Bucket Scheduler
-
-    const float TICK          = (float)POLL_TASK_PERIOD_MS;
-    TickType_t  xLastWakeTime = xTaskGetTickCount();
-
-    // Accumulators for the timed groups
-    float accF = 0, accM = 0, accS = 0;
-
-    // Diagnostic Burst Control
-    uint32_t              diagTicksCounter  = 0;
-    const uint32_t        diagTicksInterval = DAGNOSTIC_SESSION_TIMEOUT / POLL_TASK_PERIOD_MS;  // 250 ticks
-    bool                  diagBurstActive   = false;
-    std::vector<uint32_t> v_diagnosticSessionIds(diagnosticSessionIds.begin(), diagnosticSessionIds.end());
-
-    // Round-robin indices for each group
-    uint32_t groupStatic_idx = 0, groupSlow_idx = 0, groupMedium_idx = 0, groupFast_idx = 0,
-             diagnosticSessionIds_idx = 0;
-
     while (1)
     {
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(POLL_TASK_PERIOD_MS));
+        // 1. Calculate how long to sleep
+        TickType_t delay = pollQueue.getWait();
+        vTaskDelay(delay);
 
-        if (!canDriver.isBusConnected())
+        if (pollQueue.isEmpty() || !canDriver.isBusConnected())
         {
-            ESP_LOGW(TAG, "Bus disconnected. Waiting for connection...");
-            xSemaphoreTake(xBusConnectionSemaphore, portMAX_DELAY);
-            xLastWakeTime = xTaskGetTickCount();
+            vTaskDelay(pdMS_TO_TICKS(50));
             continue;
         }
 
-        // Reset accumulators if PIDs are not initialized
-        if (!pidsInitialized)
-        {
-            ESP_LOGI(TAG, "PIDs not initialized.");
+        // 2. Take the most urgent appointment
+        PollRequest current = pollQueue.pop();
 
-            xSemaphoreTake(xPidConnectedSemaphore, portMAX_DELAY);
-            accF = accM = accS = 0;
-            diagTicksCounter   = 0;
-            diagBurstActive    = false;
-            xLastWakeTime      = xTaskGetTickCount();
-            groupStatic_idx = groupSlow_idx = groupMedium_idx = groupFast_idx = diagnosticSessionIds_idx = 0;
-            v_diagnosticSessionIds.assign(diagnosticSessionIds.begin(), diagnosticSessionIds.end());
-            pollStaticGroup.store(false);
-            continue;
+        // 3. Process based on the Mode stored in the request
+        if (current.mode == MODE_DERIVED_DATA)
+        {
+            xQueueSend(derivedPidQueue_, &current.pid, pdMS_TO_TICKS(10));
         }
-
-        // 1. Update Credits and Timers
-        accF += TICK;
-        accM += TICK;
-        accS += TICK;
-
-        if (!diagBurstActive)
+        else
         {
-            diagTicksCounter++;
-            if (diagTicksCounter >= diagTicksInterval)
+            esp_err_t err = queryMsg(current.id, current.mode, current.pid, current.len);
+
+            if (err != ESP_OK && (err == ESP_ERR_TIMEOUT || err == ESP_FAIL))
             {
-                diagBurstActive          = true;
-                diagnosticSessionIds_idx = 0;
-                diagTicksCounter         = 0;
+                current.nextWake = xTaskGetTickCount() + pdMS_TO_TICKS(5);
+                pollQueue.push(current);
+                vTaskDelay(1);  // Small yield before retry
+                continue;
             }
         }
 
-        // 2. Caps to prevent "Infinite Bursts" after long disconnections
-        accF = std::min(accF, 256.0f);
-        accM = std::min(accM, 1024.0f);
-        accS = std::min(accS, 4096.0f);
-
-        // 3. Dynamic Costs
-        float costF = (vGroupFast.size() > 0) ? (256.0f / vGroupFast.size()) : 1e6f;
-        float costM = (vGroupMedium.size() > 0) ? (1024.0f / vGroupMedium.size()) : 1e6f;
-        float costS = (vGroupSlow.size() > 0) ? (4096.0f / vGroupSlow.size()) : 1e6f;
-
-        bool sent = false;
-
-        // --- PRIORITY 1: DIAGNOSTIC BURST (Every 2000ms) ---
-        if (diagBurstActive && v_diagnosticSessionIds.size() > 0)
+        // 4. Reschedule recurring tasks
+        if (current.isRecurring)
         {
-            queryMsg(v_diagnosticSessionIds[diagnosticSessionIds_idx], 0x10, 0x01, 0x02);
-            diagnosticSessionIds_idx++;
-            if (diagnosticSessionIds_idx >= v_diagnosticSessionIds.size())
-            {
-                diagBurstActive = false;  // Burst complete
-            }
-            sent = true;
+            current.nextWake = xTaskGetTickCount() + pdMS_TO_TICKS(current.interval);
+            pollQueue.push(current);
         }
 
-        // --- PRIORITY 2: STATIC BURST (On Demand) ---
-        if (!sent && pollStaticGroup.load() && vGroupStatic.size() > 0)
-        {
-            req(vGroupStatic[groupStatic_idx]);
-            groupStatic_idx++;
-            if (groupStatic_idx >= vGroupStatic.size())
-            {
-                pollStaticGroup.store(false);
-                groupStatic_idx = 0;
-            }
-            sent = true;
-        }
-
-        // --- PRIORITY 3: FAST GROUP ---
-        if (!sent && accF >= costF)
-        {
-            req(vGroupFast[groupFast_idx]);
-            groupFast_idx = (groupFast_idx + 1) % vGroupFast.size();
-            accF -= costF;
-            sent = true;
-        }
-
-        // --- PRIORITY 4: MEDIUM GROUP ---
-        else if (!sent && accM >= costM)
-        {
-            req(vGroupMedium[groupMedium_idx]);
-            groupMedium_idx = (groupMedium_idx + 1) % vGroupMedium.size();
-            accM -= costM;
-            sent = true;
-        }
-
-        // --- PRIORITY 5: SLOW GROUP ---
-        else if (!sent && accS >= costS)
-        {
-            req(vGroupSlow[groupSlow_idx]);
-            groupSlow_idx = (groupSlow_idx + 1) % vGroupSlow.size();
-            accS -= costS;
-            sent = true;
-        }
+        vTaskDelay(1);
     }
 }
 
@@ -465,7 +372,7 @@ esp_err_t OBD2::parseRecFrame(const CanDriver::CanFrame& f)
             break;
         }
         case RESPONSE_CLEAR_DTCS:
-            // TODO parseClearDTCsAck(f);
+            parseClearDTCsAck(f);
             break;
         case RESPONSE_PENDING_DTCS:
         {
@@ -487,6 +394,9 @@ esp_err_t OBD2::parseRecFrame(const CanDriver::CanFrame& f)
             break;
         case RESPONSE_MODE_DERIVED_DATA:
             ret = parseDerivedData(f);
+            break;
+        case RESPONSE_NEGATIVE_RESPONSE_CODE:
+            // TODO
             break;
         default:
             return ESP_ERR_NOT_SUPPORTED;
@@ -707,6 +617,17 @@ esp_err_t OBD2::parseSupportedPIDs(const CanDriver::CanFrame& f)
     return ret;
 }
 
+esp_err_t OBD2::parseClearDTCsAck(const CanDriver::CanFrame& f)
+{
+    if (f.length < 3 || f.data[1] != RESPONSE_CLEAR_DTCS)
+    {
+        ESP_LOGE(TAG, "Invalid frame for Clear DTCs ACK: length=%d, mode=0x%02X", f.length, f.data[1]);
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+    clearDTC(MODE_DTCS);
+    return ESP_OK;
+}
+
 esp_err_t OBD2::requestVIN()
 {
     if (vinData.vinReadySemaphore == NULL)
@@ -715,8 +636,7 @@ esp_err_t OBD2::requestVIN()
         return ESP_ERR_INVALID_STATE;
     }
 
-    ESP_RETURN_ON_ERROR(queryMsg(OBD2_FUNCTIONAL_ID, MODE_VEHICLE_INFO, PID_VIN, 2), TAG,
-                        "Failed to query request VIN message");
+    req(OBD2_FUNCTIONAL_ID, MODE_VEHICLE_INFO, PID_VIN, 2, 0);
 
     xSemaphoreTake(vinData.vinReadySemaphore, 0);
 
@@ -756,7 +676,7 @@ esp_err_t OBD2::requestDTC(uint8_t mode)
 
     xSemaphoreTake(sem, 0);
 
-    ESP_RETURN_ON_ERROR(queryMsg(OBD2_FUNCTIONAL_ID, mode, 0x00, 2), TAG, "Failed to query DTCs");
+    req(OBD2_FUNCTIONAL_ID, mode, 0x00, 2, 0);
 
     if (xSemaphoreTake(sem, pdMS_TO_TICKS(2000)) != pdTRUE)
     {
@@ -767,41 +687,28 @@ esp_err_t OBD2::requestDTC(uint8_t mode)
     return ESP_OK;
 }
 
-esp_err_t OBD2::requestConfirmedDTCs()
+void OBD2::requestConfirmedDTCs()
 {
-    esp_err_t ret = queryMsg(OBD2_FUNCTIONAL_ID, MODE_DTCS, 0x00, 2);
-    if (ret == ESP_OK)
-    {
-        clearDTC(MODE_DTCS);
-    }
-    return ret;
+    req(OBD2_FUNCTIONAL_ID, MODE_DTCS, 0x00, 2, 0);
+    clearDTC(MODE_DTCS);
 }
 
-esp_err_t OBD2::requestPendingDTCs()
+void OBD2::requestPendingDTCs()
 {
-    esp_err_t ret = queryMsg(OBD2_FUNCTIONAL_ID, MODE_PENDING_DTCS, 0x00, 2);
-    if (ret == ESP_OK)
-    {
-        clearDTC(MODE_PENDING_DTCS);
-    }
-    return ret;
+    req(OBD2_FUNCTIONAL_ID, MODE_PENDING_DTCS, 0x00, 2, 0);
+    clearDTC(MODE_PENDING_DTCS);
 }
 
 //
-esp_err_t OBD2::requestPermanentDTCs()
+void OBD2::requestPermanentDTCs()
 {
-    esp_err_t ret = queryMsg(OBD2_FUNCTIONAL_ID, MODE_PERMANENT_DTCS, 0x00, 2);
-    if (ret == ESP_OK)
-    {
-        clearDTC(MODE_PERMANENT_DTCS);
-    }
-    return ret;
+    req(OBD2_FUNCTIONAL_ID, MODE_PERMANENT_DTCS, 0x00, 2, 0);
+    clearDTC(MODE_PERMANENT_DTCS);
 }
 
-esp_err_t OBD2::requestClearDTCs()
+void OBD2::requestClearDTCs()
 {
-    esp_err_t ret = queryMsg(OBD2_FUNCTIONAL_ID, MODE_CLEAR_DTCS, 0x00, 2);
-    return ret;
+    req(OBD2_FUNCTIONAL_ID, MODE_CLEAR_DTCS, 0x00, 2, 0);
 }
 
 esp_err_t OBD2::captureMultiFrame(const CanDriver::CanFrame& f)
@@ -842,7 +749,7 @@ esp_err_t OBD2::captureMultiFrame(const CanDriver::CanFrame& f)
             multiFrameBuffer.clear();
             multiFrameBuffer.push_back(f);
             vTaskDelay(pdMS_TO_TICKS(10));  // Wait before sending Flow Control
-            ret              = sendFlowControlFrame(f.header.id - 8);
+            sendFlowControlFrame(f.header.id - 8);
             MULTIDRAME_STATE = 1;  // Go to Consecutive Frame state
             break;
         }
@@ -880,9 +787,9 @@ esp_err_t OBD2::captureMultiFrame(const CanDriver::CanFrame& f)
     return ret;
 }
 
-inline esp_err_t OBD2::sendFlowControlFrame(uint32_t id)
+inline void OBD2::sendFlowControlFrame(uint32_t id)
 {
-    return queryMsg(id, 0x00, 0x00, 0x30);
+    req(id, 0x00, 0x00, 0x30, 0);
 }
 
 esp_err_t OBD2::parseMultiFrame(std::vector<CanDriver::CanFrame>& frames)
@@ -990,8 +897,3 @@ esp_err_t OBD2::parseVINMultiFrame(std::vector<CanDriver::CanFrame>& frames)
 
     return ret;
 }
-
-// TODO: PID support responds with multiple IDS - different ECUs - add to PIDdata ECU which supports it
-//      then add querying specific ECU for specific PIDs
-//      VIN request should be sent to specific ECU as well - the flow control
-//      The rate for sendingmessages should me lower - 100ms per message works now

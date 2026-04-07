@@ -12,6 +12,7 @@
 #include "esp_err.h"
 #include "obd2_utils.hpp"
 #include "pid_def.hpp"
+#include "pid_priority_queue.hpp"
 
 class OBD2DTB
 {
@@ -98,9 +99,12 @@ public:
     DTCData_t                         dtcData;
 
     void                  generatePollingGroups();
+    void                  startPolling();
     std::vector<uint16_t> vGroupFast;
     std::vector<uint16_t> vGroupMedium;
     std::vector<uint16_t> vGroupSlow;
     std::vector<uint16_t> vGroupStatic;
     std::set<uint32_t>    diagnosticSessionIds;
+
+    PIDPriorityQueue pollQueue;
 };

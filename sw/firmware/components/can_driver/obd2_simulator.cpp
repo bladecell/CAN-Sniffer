@@ -118,6 +118,20 @@ void dataSimTask(CanDriver& canDriver)
                 }
                 break;
             }
+            case MODE_CLEAR_DTCS:
+            {
+                CanDriver::CanFrame response_frame = {};
+                response_frame.header.id           = 0x7E8;
+                response_frame.data[0]             = 0x01;
+                response_frame.data[1]             = RESPONSE_CLEAR_DTCS;  // Response Mode (0x04 + 0x40)
+                response_frame.length              = PID_DATA_LENGTH;      // Max length for CAN 2.0A
+
+                if (xQueueSend(canDriver.getRxQueueHandle(), &response_frame, 0) != pdTRUE)
+                {
+                    ESP_LOGW(TAG, "Failed to inject simulated frame.");
+                }
+                break;
+            }
             case MODE_DTCS:
             case MODE_PENDING_DTCS:
             case MODE_PERMANENT_DTCS:

@@ -11,7 +11,7 @@
 
 #include "wifi.hpp"
 
-static const char *TAG = "WIFI";
+static const char* TAG = "WIFI";
 
 ESP_EVENT_DEFINE_BASE(WIFI_INTERNAL_EVENT);
 
@@ -55,7 +55,7 @@ WIFI::~WIFI()
     }
 }
 
-esp_err_t WIFI::init(const Config &config)
+esp_err_t WIFI::init(const Config& config)
 {
     if (getState() != State::UNINITIALIZED)
     {
@@ -87,36 +87,28 @@ esp_err_t WIFI::init(const Config &config)
     }
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ret = esp_wifi_init(&cfg);
+    ret                    = esp_wifi_init(&cfg);
 
     ERROR_CHECK(ret, "WiFi init failed", goto err);
 
-    ret = esp_event_handler_instance_register(WIFI_EVENT,
-                                              ESP_EVENT_ANY_ID,
-                                              &wifi_event_handler,
-                                              this,
+    ret = esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, this,
                                               &m_wifi_event_handler);
 
     ERROR_CHECK(ret, "Failed to register WIFI event handlers", goto err);
 
-    ret = esp_event_handler_instance_register(IP_EVENT,
-                                              IP_EVENT_STA_GOT_IP,
-                                              &ip_event_handler,
-                                              this,
+    ret = esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &ip_event_handler, this,
                                               &m_ip_event_handler);
 
     ERROR_CHECK(ret, "Failed to register IP event handlers", goto err);
 
-    ret = esp_event_handler_instance_register(WIFI_INTERNAL_EVENT,
-                                              ESP_EVENT_ANY_ID,
-                                              &internal_event_handler,
-                                              this,
-                                              NULL);
+    ret =
+        esp_event_handler_instance_register(WIFI_INTERNAL_EVENT, ESP_EVENT_ANY_ID, &internal_event_handler, this, NULL);
 
     ERROR_CHECK(ret, "Failed to register internal event handlers", goto err);
 
     setState(State::INITIALIZED);
     ESP_LOGI(TAG, "WiFi AP Manager initialized");
+    esp_wifi_set_ps(WIFI_PS_NONE);
     return ESP_OK;
 
 err:
@@ -127,14 +119,14 @@ err:
 esp_err_t WIFI::setAPConfig()
 {
     wifi_config_t ap_config = {};
-    strlcpy((char *)ap_config.ap.ssid, m_config.ssid.c_str(), sizeof(ap_config.ap.ssid));
-    strlcpy((char *)ap_config.ap.password, m_config.password.c_str(), sizeof(ap_config.ap.password));
-    ap_config.ap.ssid_len = m_config.ssid.length();
-    ap_config.ap.channel = m_config.channel;
-    ap_config.ap.authmode = m_config.auth_mode;
-    ap_config.ap.ssid_hidden = m_config.ssid_hidden ? 1 : 0;
-    ap_config.ap.max_connection = m_config.max_connections;
-    ap_config.ap.pmf_cfg.required = m_config.pmf_required;
+    strlcpy((char*)ap_config.ap.ssid, m_config.ssid.c_str(), sizeof(ap_config.ap.ssid));
+    strlcpy((char*)ap_config.ap.password, m_config.password.c_str(), sizeof(ap_config.ap.password));
+    ap_config.ap.ssid_len           = m_config.ssid.length();
+    ap_config.ap.channel            = m_config.channel;
+    ap_config.ap.authmode           = m_config.auth_mode;
+    ap_config.ap.ssid_hidden        = m_config.ssid_hidden ? 1 : 0;
+    ap_config.ap.max_connection     = m_config.max_connections;
+    ap_config.ap.pmf_cfg.required   = m_config.pmf_required;
     ap_config.ap.gtk_rekey_interval = m_config.gtk_rekey_interval;
     return esp_wifi_set_config(WIFI_IF_AP, &ap_config);
 }
@@ -142,19 +134,17 @@ esp_err_t WIFI::setAPConfig()
 esp_err_t WIFI::setSTAConfig()
 {
     wifi_config_t sta_config = {};
-    strlcpy((char *)sta_config.sta.ssid, m_config.sta_ssid.c_str(), sizeof(sta_config.sta.ssid));
-    strlcpy((char *)sta_config.sta.password, m_config.sta_password.c_str(), sizeof(sta_config.sta.password));
+    strlcpy((char*)sta_config.sta.ssid, m_config.sta_ssid.c_str(), sizeof(sta_config.sta.ssid));
+    strlcpy((char*)sta_config.sta.password, m_config.sta_password.c_str(), sizeof(sta_config.sta.password));
     sta_config.sta.threshold.authmode = m_config.sta_auth_mode;
-    sta_config.sta.pmf_cfg.capable = true;
-    sta_config.sta.pmf_cfg.required = false;
+    sta_config.sta.pmf_cfg.capable    = true;
+    sta_config.sta.pmf_cfg.required   = false;
     return esp_wifi_set_config(WIFI_IF_STA, &sta_config);
 }
 
 esp_err_t WIFI::start()
 {
-    if (getState() != State::INITIALIZED &&
-        getState() != State::STA_DISCONNECTED &&
-        getState() != State::STARTING)
+    if (getState() != State::INITIALIZED && getState() != State::STA_DISCONNECTED && getState() != State::STARTING)
     {
         ESP_LOGE(TAG, "Invalid state for start: %d", (int)getState());
         return ESP_ERR_INVALID_STATE;
@@ -174,7 +164,6 @@ esp_err_t WIFI::start()
     // Configure STA
     if (m_config.mode == WIFI_MODE_STA || m_config.mode == WIFI_MODE_APSTA)
     {
-
         ERROR_CHECK(setSTAConfig(), "Failed to set STA config", goto err);
         ESP_LOGI(TAG, "Configured STA Mode: %s", m_config.sta_ssid.c_str());
     }
@@ -192,8 +181,7 @@ esp_err_t WIFI::start()
     if (m_config.mode == WIFI_MODE_AP)
     {
         setState(State::RUNNING);
-        ESP_LOGI(TAG, "WiFi AP starting - SSID: %s, Channel: %d",
-                 m_config.ssid.c_str(), m_config.channel);
+        ESP_LOGI(TAG, "WiFi AP starting - SSID: %s, Channel: %d", m_config.ssid.c_str(), m_config.channel);
     }
 
     ERROR_CHECK(start_mdns_service(), "mDNS failed", goto err);
@@ -216,6 +204,7 @@ esp_err_t WIFI::start_mdns_service()
 
     mdns_hostname_set(HOSTNAME);
     mdns_instance_name_set(MDNS_INSTANCE);
+    mdns_service_add(NULL, "_http", "_tcp", 80, NULL, 0);
     return ESP_OK;
 }
 
@@ -275,68 +264,66 @@ void WIFI::deinit()
     xSemaphoreGive(m_mutex);
 }
 
-void WIFI::wifi_event_handler(void *arg, esp_event_base_t event_base,
-                              int32_t event_id, void *event_data)
+void WIFI::wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
 {
-    WIFI *manager = static_cast<WIFI *>(arg);
+    WIFI* manager = static_cast<WIFI*>(arg);
 
     switch (event_id)
     {
-    case WIFI_EVENT_AP_STACONNECTED:
-        manager->handleClientConnected((wifi_event_ap_staconnected_t *)event_data);
-        break;
-    case WIFI_EVENT_AP_STADISCONNECTED:
-        manager->handleClientDisconnected((wifi_event_ap_stadisconnected_t *)event_data);
-        break;
-    case WIFI_EVENT_AP_START:
-        manager->handleAPStart();
-        break;
-    case WIFI_EVENT_AP_STOP:
-        manager->handleAPStop();
-        break;
+        case WIFI_EVENT_AP_STACONNECTED:
+            manager->handleClientConnected((wifi_event_ap_staconnected_t*)event_data);
+            break;
+        case WIFI_EVENT_AP_STADISCONNECTED:
+            manager->handleClientDisconnected((wifi_event_ap_stadisconnected_t*)event_data);
+            break;
+        case WIFI_EVENT_AP_START:
+            manager->handleAPStart();
+            break;
+        case WIFI_EVENT_AP_STOP:
+            manager->handleAPStop();
+            break;
 
-    // --- STA Events ---
-    case WIFI_EVENT_STA_START:
-        ESP_LOGI(TAG, "STA Started");
-        break;
-    case WIFI_EVENT_STA_CONNECTED:
-        manager->handleStaConnected();
-        break;
-    case WIFI_EVENT_STA_DISCONNECTED:
-        manager->handleStaDisconnected((wifi_event_sta_disconnected_t *)event_data);
-        break;
-    default:
-        break;
+        // --- STA Events ---
+        case WIFI_EVENT_STA_START:
+            ESP_LOGI(TAG, "STA Started");
+            break;
+        case WIFI_EVENT_STA_CONNECTED:
+            manager->handleStaConnected();
+            break;
+        case WIFI_EVENT_STA_DISCONNECTED:
+            manager->handleStaDisconnected((wifi_event_sta_disconnected_t*)event_data);
+            break;
+        default:
+            break;
     }
 }
 
-void WIFI::ip_event_handler(void *arg, esp_event_base_t event_base,
-                            int32_t event_id, void *event_data)
+void WIFI::ip_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
 {
-    WIFI *manager = static_cast<WIFI *>(arg);
+    WIFI* manager = static_cast<WIFI*>(arg);
     if (event_id == IP_EVENT_STA_GOT_IP)
     {
-        manager->handleStaGotIP((ip_event_got_ip_t *)event_data);
+        manager->handleStaGotIP((ip_event_got_ip_t*)event_data);
     }
 }
 
-void WIFI::handleClientConnected(wifi_event_ap_staconnected_t *event)
+void WIFI::handleClientConnected(wifi_event_ap_staconnected_t* event)
 {
     ESP_LOGI(TAG, "AP Client connected - MAC: " MACSTR ", AID: %d", MAC2STR(event->mac), event->aid);
     addClient(event->mac, event->aid);
 
     auto callbacks = m_connect_callbacks;
-    for (auto &cb : callbacks)
+    for (auto& cb : callbacks)
         cb(event->mac, event->aid);
 }
 
-void WIFI::handleClientDisconnected(wifi_event_ap_stadisconnected_t *event)
+void WIFI::handleClientDisconnected(wifi_event_ap_stadisconnected_t* event)
 {
     ESP_LOGI(TAG, "AP Client disconnected - MAC: " MACSTR ", AID: %d", MAC2STR(event->mac), event->aid);
     removeClient(event->mac);
 
     auto callbacks = m_disconnect_callbacks;
-    for (auto &cb : callbacks)
+    for (auto& cb : callbacks)
         cb(event->mac, event->aid);
 }
 
@@ -344,7 +331,7 @@ void WIFI::handleAPStart()
 {
     ESP_LOGI(TAG, "AP Interface Started");
     auto callbacks = m_start_callbacks;
-    for (auto &cb : callbacks)
+    for (auto& cb : callbacks)
         cb();
 }
 
@@ -358,7 +345,7 @@ void WIFI::handleStaConnected()
     ESP_LOGI(TAG, "STA Connected to AP (waiting for IP...)");
 }
 
-void WIFI::handleStaGotIP(ip_event_got_ip_t *event)
+void WIFI::handleStaGotIP(ip_event_got_ip_t* event)
 {
     m_retry_count = 0;
     setState(State::RUNNING);
@@ -371,18 +358,16 @@ void WIFI::handleStaGotIP(ip_event_got_ip_t *event)
     auto callbacks = m_sta_connected_callbacks;
     xSemaphoreGive(m_mutex);
 
-    for (auto &cb : callbacks)
+    for (auto& cb : callbacks)
         cb(std::string(ip_str));
 }
 
-void WIFI::handleStaDisconnected(wifi_event_sta_disconnected_t *event)
+void WIFI::handleStaDisconnected(wifi_event_sta_disconnected_t* event)
 {
-    ESP_LOGW("WIFI", "Disconnected! Reason: %s (%d)",
-             get_wifi_reason_str(event->reason),
-             event->reason);
+    ESP_LOGW("WIFI", "Disconnected! Reason: %s (%d)", get_wifi_reason_str(event->reason), event->reason);
     setState(State::STA_DISCONNECTED);
 
-    for (auto &cb : m_sta_disconnected_callbacks)
+    for (auto& cb : m_sta_disconnected_callbacks)
         cb();
 
     if (m_retry_count < m_config.sta_max_retry)
@@ -399,10 +384,9 @@ void WIFI::handleStaDisconnected(wifi_event_sta_disconnected_t *event)
     }
 }
 
-void WIFI::internal_event_handler(void *arg, esp_event_base_t event_base,
-                                  int32_t event_id, void *event_data)
+void WIFI::internal_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
 {
-    WIFI *manager = static_cast<WIFI *>(arg);
+    WIFI* manager = static_cast<WIFI*>(arg);
 
     if (event_id == WIFI_INT_EVENT_FALLBACK_AP)
     {
@@ -442,11 +426,26 @@ err:
     return ESP_FAIL;
 }
 
-void WIFI::onClientConnected(ClientConnectCallback callback) { m_connect_callbacks.push_back(callback); }
-void WIFI::onClientDisconnected(ClientDisconnectCallback callback) { m_disconnect_callbacks.push_back(callback); }
-void WIFI::onAPStarted(APStartCallback callback) { m_start_callbacks.push_back(callback); }
-void WIFI::onStaConnected(StaConnectedCallback callback) { m_sta_connected_callbacks.push_back(callback); }
-void WIFI::onStaDisconnected(StaDisconnectedCallback callback) { m_sta_disconnected_callbacks.push_back(callback); }
+void WIFI::onClientConnected(ClientConnectCallback callback)
+{
+    m_connect_callbacks.push_back(callback);
+}
+void WIFI::onClientDisconnected(ClientDisconnectCallback callback)
+{
+    m_disconnect_callbacks.push_back(callback);
+}
+void WIFI::onAPStarted(APStartCallback callback)
+{
+    m_start_callbacks.push_back(callback);
+}
+void WIFI::onStaConnected(StaConnectedCallback callback)
+{
+    m_sta_connected_callbacks.push_back(callback);
+}
+void WIFI::onStaDisconnected(StaDisconnectedCallback callback)
+{
+    m_sta_disconnected_callbacks.push_back(callback);
+}
 
 uint8_t WIFI::getConnectedClientCount() const
 {
@@ -472,7 +471,7 @@ std::vector<WIFI::ClientInfo> WIFI::getConnectedClients() const
     return clients;
 }
 
-void WIFI::addClient(const uint8_t *mac, uint8_t aid)
+void WIFI::addClient(const uint8_t* mac, uint8_t aid)
 {
     if (xSemaphoreTake(m_mutex, pdMS_TO_TICKS(1000)) != pdTRUE)
     {
@@ -481,26 +480,22 @@ void WIFI::addClient(const uint8_t *mac, uint8_t aid)
     }
     ClientInfo info;
     memcpy(info.mac, mac, 6);
-    info.aid = aid;
+    info.aid          = aid;
     info.connect_time = esp_log_timestamp();
     m_clients.push_back(info);
     xSemaphoreGive(m_mutex);
 }
 
-void WIFI::removeClient(const uint8_t *mac)
+void WIFI::removeClient(const uint8_t* mac)
 {
     if (xSemaphoreTake(m_mutex, pdMS_TO_TICKS(1000)) != pdTRUE)
     {
         ESP_LOGW(TAG, "Mutex timeout");
         return;
     }
-    m_clients.erase(
-        std::remove_if(m_clients.begin(), m_clients.end(),
-                       [mac](const ClientInfo &info)
-                       {
-                           return memcmp(info.mac, mac, 6) == 0;
-                       }),
-        m_clients.end());
+    m_clients.erase(std::remove_if(m_clients.begin(), m_clients.end(),
+                                   [mac](const ClientInfo& info) { return memcmp(info.mac, mac, 6) == 0; }),
+                    m_clients.end());
     xSemaphoreGive(m_mutex);
 }
 
@@ -535,43 +530,43 @@ void WIFI::setState(State state)
     m_state.store(state);
 }
 
-const char *WIFI::get_wifi_reason_str(uint8_t reason)
+const char* WIFI::get_wifi_reason_str(uint8_t reason)
 {
     switch (reason)
     {
-    case WIFI_REASON_UNSPECIFIED:
-        return "UNSPECIFIED";
-    case WIFI_REASON_AUTH_EXPIRE:
-        return "AUTH_EXPIRE";
-    case WIFI_REASON_AUTH_LEAVE:
-        return "AUTH_LEAVE";
-    case WIFI_REASON_ASSOC_EXPIRE:
-        return "ASSOC_EXPIRE";
-    case WIFI_REASON_ASSOC_TOOMANY:
-        return "ASSOC_TOOMANY";
-    case WIFI_REASON_NOT_AUTHED:
-        return "NOT_AUTHED";
-    case WIFI_REASON_NOT_ASSOCED:
-        return "NOT_ASSOCED";
-    case WIFI_REASON_ASSOC_LEAVE:
-        return "ASSOC_LEAVE";
-    case WIFI_REASON_ASSOC_NOT_AUTHED:
-        return "ASSOC_NOT_AUTHED";
-    case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
-        return "4WAY_HANDSHAKE_TIMEOUT";
-    case WIFI_REASON_BEACON_TIMEOUT:
-        return "BEACON_TIMEOUT";
-    case WIFI_REASON_NO_AP_FOUND:
-        return "NO_AP_FOUND";
-    case WIFI_REASON_AUTH_FAIL:
-        return "AUTH_FAIL";
-    case WIFI_REASON_ASSOC_FAIL:
-        return "ASSOC_FAIL";
-    case WIFI_REASON_HANDSHAKE_TIMEOUT:
-        return "HANDSHAKE_TIMEOUT";
-    case WIFI_REASON_CONNECTION_FAIL:
-        return "CONNECTION_FAIL";
-    default:
-        return "UNKNOWN_REASON";
+        case WIFI_REASON_UNSPECIFIED:
+            return "UNSPECIFIED";
+        case WIFI_REASON_AUTH_EXPIRE:
+            return "AUTH_EXPIRE";
+        case WIFI_REASON_AUTH_LEAVE:
+            return "AUTH_LEAVE";
+        case WIFI_REASON_ASSOC_EXPIRE:
+            return "ASSOC_EXPIRE";
+        case WIFI_REASON_ASSOC_TOOMANY:
+            return "ASSOC_TOOMANY";
+        case WIFI_REASON_NOT_AUTHED:
+            return "NOT_AUTHED";
+        case WIFI_REASON_NOT_ASSOCED:
+            return "NOT_ASSOCED";
+        case WIFI_REASON_ASSOC_LEAVE:
+            return "ASSOC_LEAVE";
+        case WIFI_REASON_ASSOC_NOT_AUTHED:
+            return "ASSOC_NOT_AUTHED";
+        case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
+            return "4WAY_HANDSHAKE_TIMEOUT";
+        case WIFI_REASON_BEACON_TIMEOUT:
+            return "BEACON_TIMEOUT";
+        case WIFI_REASON_NO_AP_FOUND:
+            return "NO_AP_FOUND";
+        case WIFI_REASON_AUTH_FAIL:
+            return "AUTH_FAIL";
+        case WIFI_REASON_ASSOC_FAIL:
+            return "ASSOC_FAIL";
+        case WIFI_REASON_HANDSHAKE_TIMEOUT:
+            return "HANDSHAKE_TIMEOUT";
+        case WIFI_REASON_CONNECTION_FAIL:
+            return "CONNECTION_FAIL";
+        default:
+            return "UNKNOWN_REASON";
     }
 }

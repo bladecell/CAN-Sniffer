@@ -41,20 +41,20 @@ public:
 
     esp_err_t init();
 
-    bool      isPidInit() const;
-    esp_err_t req(uint16_t pid);
+    bool isPidInit() const;
 
-    void startContinuousMode();
-    void stopContinuousMode();
-    bool isContinuousRunning() const;
+    void      startContinuousMode();
+    void      stopContinuousMode();
+    bool      isContinuousRunning() const;
+    esp_err_t requestPID(uint16_t pid);
 
     void      requestSuppPids();
     esp_err_t requestVIN();
-    esp_err_t requestConfirmedDTCs();
-    esp_err_t requestPendingDTCs();
-    esp_err_t requestPermanentDTCs();
+    void      requestConfirmedDTCs();
+    void      requestPendingDTCs();
+    void      requestPermanentDTCs();
     esp_err_t requestDTC(uint8_t mode);
-    esp_err_t requestClearDTCs();
+    void      requestClearDTCs();
     esp_err_t queryMsg(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len);
 
 private:
@@ -73,6 +73,7 @@ private:
     static void       pollTaskWrapper(void* param);
     TaskHandle_t      PollTaskHandle{nullptr};
     std::atomic<bool> pollStaticGroup = false;
+    void              req(uint32_t id, uint8_t mode, uint32_t pid, uint8_t len, uint8_t priority);
 
     // Receiving Task
     void         receiveTask();
@@ -94,15 +95,16 @@ private:
     esp_err_t parseCurrentData(const CanDriver::CanFrame& f);
     esp_err_t parseDTCs(std::vector<CanDriver::CanFrame>& frames, uint8_t mode);
 
-    esp_err_t        parseRecFrame(const CanDriver::CanFrame& f);
-    esp_err_t        parseSupportedPIDs(const CanDriver::CanFrame& f);
-    esp_err_t        captureMultiFrame(const CanDriver::CanFrame& f);
-    esp_err_t        parseMultiFrame(std::vector<CanDriver::CanFrame>& frames);
-    esp_err_t        parseVehicleInfoMultiFrame(std::vector<CanDriver::CanFrame>& frames);
-    esp_err_t        parseVINMultiFrame(std::vector<CanDriver::CanFrame>& frames);
-    esp_err_t        parseRDBI(const CanDriver::CanFrame& f);
-    esp_err_t        parseDerivedData(const CanDriver::CanFrame& f);
-    inline esp_err_t sendFlowControlFrame(uint32_t id);
+    esp_err_t   parseRecFrame(const CanDriver::CanFrame& f);
+    esp_err_t   parseSupportedPIDs(const CanDriver::CanFrame& f);
+    esp_err_t   parseClearDTCsAck(const CanDriver::CanFrame& f);
+    esp_err_t   captureMultiFrame(const CanDriver::CanFrame& f);
+    esp_err_t   parseMultiFrame(std::vector<CanDriver::CanFrame>& frames);
+    esp_err_t   parseVehicleInfoMultiFrame(std::vector<CanDriver::CanFrame>& frames);
+    esp_err_t   parseVINMultiFrame(std::vector<CanDriver::CanFrame>& frames);
+    esp_err_t   parseRDBI(const CanDriver::CanFrame& f);
+    esp_err_t   parseDerivedData(const CanDriver::CanFrame& f);
+    inline void sendFlowControlFrame(uint32_t id);
 
     // Derived PIDs queue
     QueueHandle_t derivedPidQueue_ = nullptr;
