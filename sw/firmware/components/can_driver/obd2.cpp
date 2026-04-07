@@ -258,8 +258,21 @@ void OBD2::pollTask()
         if (pollQueue.isEmpty() || !canDriver.isBusConnected())
         {
             vTaskDelay(pdMS_TO_TICKS(50));
+            pollTaskUtilization = 0.0f;
             continue;
         }
+
+        float fill = pollQueue.getFillFactor();
+
+        int32_t latencyMs = pdTICKS_TO_MS(pollQueue.getTopLatency());
+
+        float latencyFactor = (float)latencyMs / 100.0f;
+        if (latencyFactor > 1.0f)
+            latencyFactor = 1.0f;
+
+        // Combined Utilization (Weighted average)
+        // 70% based on schedule health, 30% on queue space
+        pollTaskUtilization = (latencyFactor * 0.7f) + (fill * 0.3f);
 
         // 2. Take the most urgent appointment
         PollRequest current = pollQueue.pop();

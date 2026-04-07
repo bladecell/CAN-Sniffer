@@ -4,10 +4,12 @@
 #include "freertos/semphr.h"
 #include "obd2_utils.hpp"
 
+#define NUMBER_OF_ITEMS 256
+
 class PIDPriorityQueue
 {
 private:
-    PollRequest       heap[128];  // Adjust size as needed
+    PollRequest       heap[NUMBER_OF_ITEMS];  // Adjust size as needed
     int               size = 0;
     SemaphoreHandle_t lock;
 
@@ -24,6 +26,19 @@ public:
         lock = xSemaphoreCreateMutex();
     }
 
+    float getFillFactor()
+    {
+        return (float)size / (float)NUMBER_OF_ITEMS;
+    }
+
+    int32_t getTopLatency()
+    {
+        if (size == 0)
+            return 0;
+        int32_t diff = (int32_t)xTaskGetTickCount() - (int32_t)heap[0].nextWake;
+        return (diff > 0) ? diff : 0;
+    }
+
     void clear()
     {
         if (xSemaphoreTake(lock, portMAX_DELAY))
@@ -38,7 +53,7 @@ public:
         if (xSemaphoreTake(lock, portMAX_DELAY))
         {
             int         newSize = 0;
-            PollRequest tempHeap[128];
+            PollRequest tempHeap[NUMBER_OF_ITEMS];
 
             // Keep only the non-recurring (Static/One-Shot) items
             for (int i = 0; i < size; i++)
@@ -62,7 +77,7 @@ public:
 
     void push(PollRequest req)
     {
-        if (size >= 128)
+        if (size >= NUMBER_OF_ITEMS)
             return;
         xSemaphoreTake(lock, portMAX_DELAY);
         int i   = size++;

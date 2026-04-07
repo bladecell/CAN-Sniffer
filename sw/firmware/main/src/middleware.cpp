@@ -203,6 +203,7 @@ cJSON* m_obdii_json()
     cJSON_AddBoolToObject(root, "pid_initialized", OBD2::getInstance().isPidInit());
     cJSON_AddNumberToObject(root, "pid_def_count", OBD2::getInstance().getPIDDEFSize());
     cJSON_AddNumberToObject(root, "pid_data_count", OBD2::getInstance().getPIDDataSize());
+    cJSON_AddNumberToObject(root, "poll_task_utilization", OBD2::getInstance().getPollTaskUtilization());
 
     return root;
 }

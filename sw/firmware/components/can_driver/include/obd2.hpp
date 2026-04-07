@@ -57,6 +57,11 @@ public:
     void      requestClearDTCs();
     esp_err_t queryMsg(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len);
 
+    float getPollTaskUtilization() const
+    {
+        return pollTaskUtilization;
+    }
+
 private:
     OBD2(const OBD2&)                 = delete;
     OBD2&      operator=(const OBD2&) = delete;
@@ -74,6 +79,7 @@ private:
     TaskHandle_t      PollTaskHandle{nullptr};
     std::atomic<bool> pollStaticGroup = false;
     void              req(uint32_t id, uint8_t mode, uint32_t pid, uint8_t len, uint8_t priority);
+    float             pollTaskUtilization = 0.0f;
 
     // Receiving Task
     void         receiveTask();
