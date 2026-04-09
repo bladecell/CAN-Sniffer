@@ -1,5 +1,6 @@
 #include "middleware.hpp"
 
+#include "cJSON.h"
 #include "esp_check.h"
 #include "freertos/idf_additions.h"
 #include "freertos/projdefs.h"
@@ -204,6 +205,18 @@ cJSON* m_obdii_json()
     cJSON_AddNumberToObject(root, "pid_def_count", OBD2::getInstance().getPIDDEFSize());
     cJSON_AddNumberToObject(root, "pid_data_count", OBD2::getInstance().getPIDDataSize());
     cJSON_AddNumberToObject(root, "poll_task_utilization", OBD2::getInstance().getPollTaskUtilization());
+    cJSON*               supported_pids = cJSON_CreateObject();
+    supportedPIDsGroup_t supportedPIDsGroup;
+    OBD2::getInstance().getSupportedPids(supportedPIDsGroup);
+    cJSON_AddNumberToObject(supported_pids, "count", supportedPIDsGroup.numberOfSupportedPIDs);
+    cJSON* groups = cJSON_CreateArray();
+    for (int i = 0; i < SUPPORTED_PIDS_GROUP_COUNT; ++i)
+    {
+        cJSON_AddItemToArray(groups, cJSON_CreateNumber(supportedPIDsGroup.pidGroup[i]));
+    }
+    cJSON_AddItemToObject(supported_pids, "groups", groups);
+
+    cJSON_AddItemToObject(root, "supported_pids", supported_pids);
 
     return root;
 }

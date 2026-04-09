@@ -84,46 +84,6 @@ esp_err_t OBD2DTB::getDef(uint16_t pid, const PIDDefinition*& outDef) const
     return it != PID_DEF.end() ? ESP_OK : ESP_ERR_NOT_FOUND;
 }
 
-void OBD2DTB::generatePollingGroups()
-{
-    vGroupFast.clear();
-    vGroupMedium.clear();
-    vGroupSlow.clear();
-    vGroupStatic.clear();
-    diagnosticSessionIds.clear();
-
-    for (const auto& [pid, info] : PID_DEF)
-    {
-        if (!isSup(pid))
-        {
-            continue;
-        }
-
-        switch (info.updateInterval())
-        {
-            case UPDATE_FAST:
-                vGroupFast.push_back(pid);
-                break;
-            case UPDATE_MEDIUM:
-                vGroupMedium.push_back(pid);
-                break;
-            case UPDATE_SLOW:
-                vGroupSlow.push_back(pid);
-                break;
-            case UPDATE_STATIC:
-                vGroupStatic.push_back(pid);
-                break;
-            default:
-                break;
-        }
-
-        if (info.mode() == MODE_READ_DATA_BY_IDENTIFIER)
-        {
-            diagnosticSessionIds.insert(info.id());
-        }
-    }
-}
-
 void OBD2DTB::startPolling()
 {
     pollQueue.clear();
@@ -705,3 +665,5 @@ void OBD2DTB::runPidUpdateCallbacks(uint16_t pid)
         cb(pid);
     }
 }
+
+// TODO Rename to OBD2DATAMODEL

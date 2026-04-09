@@ -88,9 +88,9 @@ public:
         return PID_DEF.size();
     }
 
-    esp_err_t addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std::string name, std::string unit,
-                     std::string desc, std::string formula, float minV, float maxV, uint8_t priority,
-                     UpdateRate interval, uint32_t color, std::string icon);
+    virtual esp_err_t addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std::string name, std::string unit,
+                             std::string desc, std::string formula, float minV, float maxV, uint8_t priority,
+                             UpdateRate interval, uint32_t color, std::string icon);
 
     // PID Definitions and Data Storage
     std::map<uint16_t, PIDDefinition> PID_DEF;
@@ -98,13 +98,7 @@ public:
     VINData_t                         vinData;
     DTCData_t                         dtcData;
 
-    void                  generatePollingGroups();
-    void                  startPolling();
-    std::vector<uint16_t> vGroupFast;
-    std::vector<uint16_t> vGroupMedium;
-    std::vector<uint16_t> vGroupSlow;
-    std::vector<uint16_t> vGroupStatic;
-    std::set<uint32_t>    diagnosticSessionIds;
+    void startPolling();
 
     PIDPriorityQueue pollQueue;
 };

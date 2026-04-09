@@ -12,6 +12,7 @@
 #pragma once
 
 #include <math.h>
+#include <sys/types.h>
 
 #include <algorithm>
 #include <vector>
@@ -43,12 +44,17 @@ public:
 
     bool isPidInit() const;
 
+    esp_err_t addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std::string name, std::string unit,
+                     std::string desc, std::string formula, float minV, float maxV, uint8_t priority,
+                     UpdateRate interval, uint32_t color, std::string icon) override;
+
     void      startContinuousMode();
     void      stopContinuousMode();
     bool      isContinuousRunning() const;
     esp_err_t requestPID(uint16_t pid);
 
     void      requestSuppPids();
+    void      getSupportedPids(supportedPIDsGroup_t& supportedPIDsGroup);
     esp_err_t requestVIN();
     void      requestConfirmedDTCs();
     void      requestPendingDTCs();
@@ -78,8 +84,8 @@ private:
     static void       pollTaskWrapper(void* param);
     TaskHandle_t      PollTaskHandle{nullptr};
     std::atomic<bool> pollStaticGroup = false;
-    void              req(uint32_t id, uint8_t mode, uint32_t pid, uint8_t len, uint8_t priority);
-    float             pollTaskUtilization = 0.0f;
+    void  req(uint32_t id, uint8_t mode, uint32_t pid, uint8_t len, uint8_t priority, bool isRecurring = false);
+    float pollTaskUtilization = 0.0f;
 
     // Receiving Task
     void         receiveTask();
@@ -112,6 +118,10 @@ private:
     esp_err_t   parseDerivedData(const CanDriver::CanFrame& f);
     inline void sendFlowControlFrame(uint32_t id);
 
+    supportedPIDsGroup_t supportedPIDsGroup = {};
+
     // Derived PIDs queue
     QueueHandle_t derivedPidQueue_ = nullptr;
 };
+
+// Get rid of OBD UTILS type definitions and include them in obd2 or obd2datamodel

@@ -11,7 +11,10 @@
 
 #include "obd2.hpp"
 
+#include <cstdint>
+
 #include "can_driver.hpp"
+#include "esp_err.h"
 #include "obd2_utils.hpp"
 
 static const char* TAG = "OBD2";
@@ -19,7 +22,6 @@ static const char* TAG = "OBD2";
 /**
  * @brief Construct a new OBD2::OBD2 object
  *
- * @param canDriver
  */
 OBD2::OBD2()
     : continuousRunning(false),
@@ -29,6 +31,10 @@ OBD2::OBD2()
 {
 }
 
+/**
+ * @brief Destroy the OBD2::OBD2 object
+ *
+ */
 OBD2::~OBD2()
 {
     if (xPidConnectedSemaphore)
@@ -48,6 +54,11 @@ OBD2::~OBD2()
     }
 }
 
+/**
+ * @brief Initialize the OBD2 interface
+ *
+ * @return esp_err_t ESP_OK if initialization was successful, otherwise an error code
+ */
 esp_err_t OBD2::init()
 {
     if (!canDriver.isInitialized())
@@ -95,7 +106,8 @@ esp_err_t OBD2::init()
 void OBD2::requestSuppPids()
 {
     xSemaphoreTake(xRequestNextPIDSemaphore, 0);
-    for (uint16_t pid_marker = 0; pid_marker <= PID_PIDS_SUPPORTED_C1_E0; pid_marker += 0x20)
+    supportedPIDsGroup = {};
+    for (uint16_t pid_marker = 0; pid_marker <= PID_PIDS_SUPPORTED_C0_DF; pid_marker += 0x20)
     {
         req(OBD2_FUNCTIONAL_ID, MODE_CURRENT_DATA, pid_marker, 2, 0);
 
@@ -107,6 +119,70 @@ void OBD2::requestSuppPids()
 
     pidsInitialized = true;
     xSemaphoreGive(xPidConnectedSemaphore);
+}
+
+void OBD2::getSupportedPids(supportedPIDsGroup_t& supportedPIDsGroup)
+{
+    supportedPIDsGroup = this->supportedPIDsGroup;
+};
+
+/**
+ * @brief Adds PID to the OBD2 Data Model
+ * Function that adds a PID to the OBD2 data model at runtime.
+ * This allows dynamic configuration of which PIDs to monitor without needing to hardcode them at compile time.
+ * The function checks if the PID is supported based on previously retrieved supported PID bitmaps and then adds it to
+ * the polling queue if valid. Calls the addPID function of the OBD2DTB class to maintain the data model and ensure
+ * thread safety when accessing PID data.
+ *
+ * @param id The CAN ID to use for requests related to this PID (e.g., functional or physical ID)
+ * @param mode The OBD-II mode (e.g., current data, data by identifier)
+ * @param pid The PID number to add (e.g., 0x0C for engine RPM)
+ * @param len The expected length of the PID data in bytes
+ * @param name A human-readable name for the PID (e.g., "Engine RPM")
+ * @param unit The unit of measurement for the PID value (e.g., "RPM", "°C")
+ * @param desc The description of the PID, explaining what it represents and how it can be used (e.g., "Current engine
+ * revolutions per minute")
+ * @param formula A string representing the formula to calculate the actual value from the raw data bytes (e.g.,
+ * "((A*256)+B)/4" for engine RPM)
+ * @param minV The minimum valid value for the PID
+ * @param maxV The maximum valid value for the PID
+ * @param priority The priority level for polling this PID (lower number means higher priority)
+ * @param interval The desired update interval for this PID in milliseconds
+ * @param color A hexadecimal color code for UI representation of this PID (e.g., 0xFF0000 for red)
+ * @param icon A string representing the icon name to use for this PID in the UI (e.g., "tachometer" for engine RPM)
+ * @return esp_err_t ESP_OK if the PID was successfully added, or an appropriate error code if it failed (e.g.,
+ * ESP_ERR_INVALID_ARG if the PID is not supported or already exists)
+ */
+esp_err_t OBD2::addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std::string name, std::string unit,
+                       std::string desc, std::string formula, float minV, float maxV, uint8_t priority,
+                       UpdateRate interval, uint32_t color, std::string icon)
+{
+    return OBD2DTB::addPID(id, mode, pid, len, name, unit, desc, formula, minV, maxV, priority, interval, color, icon);
+
+    if (mode == MODE_CURRENT_DATA)
+    {
+        uint8_t groupIdx = ((pid - 1) & 0xE0) >> 5;
+
+        if (groupIdx < SUPPORTED_PIDS_GROUP_COUNT)
+        {
+            uint32_t& group = supportedPIDsGroup.pidGroup[groupIdx];
+            group |= (1UL << ((pid - 1) % 32));
+            if (group & (1UL << ((pid - 1) % 32)))
+            {
+                req(id, mode, pid, len, priority, true);  // Directly add to polling queue for supported PIDs
+            }
+        }
+    }
+    else if (mode == MODE_READ_DATA_BY_IDENTIFIER)
+    {
+        req(id, mode, pid, len, priority, true);  // Directly add to polling queue
+    }
+    else
+    {
+        return ESP_ERR_INVALID_ARG;  // Unsupported mode for addPID
+    }
+
+    return ESP_OK;
 }
 
 esp_err_t OBD2::requestPID(uint16_t pid)
@@ -122,14 +198,14 @@ esp_err_t OBD2::requestPID(uint16_t pid)
     return ESP_OK;
 }
 
-void OBD2::req(uint32_t id, uint8_t mode, uint32_t pid, uint8_t len, uint8_t priority)
+void OBD2::req(uint32_t id, uint8_t mode, uint32_t pid, uint8_t len, uint8_t priority, bool isRecurring)
 {
     PollRequest req;
     req.pid         = pid;
     req.interval    = 0;
     req.nextWake    = xTaskGetTickCount();
     req.priority    = priority;
-    req.isRecurring = false;
+    req.isRecurring = isRecurring;
     req.id          = id;
     req.mode        = mode;
     req.len         = len;
@@ -425,13 +501,13 @@ esp_err_t OBD2::parseCurrentData(const CanDriver::CanFrame& f)
 
     switch (pid)
     {
-        case PID_PIDS_SUPPORTED_1_20:
-        case PID_PIDS_SUPPORTED_21_40:
-        case PID_PIDS_SUPPORTED_41_60:
-        case PID_PIDS_SUPPORTED_61_80:
-        case PID_PIDS_SUPPORTED_81_A0:
-        case PID_PIDS_SUPPORTED_A1_C0:
-        case PID_PIDS_SUPPORTED_C1_E0:
+        case PID_PIDS_SUPPORTED_0_19:
+        case PID_PIDS_SUPPORTED_20_39:
+        case PID_PIDS_SUPPORTED_40_59:
+        case PID_PIDS_SUPPORTED_60_79:
+        case PID_PIDS_SUPPORTED_80_99:
+        case PID_PIDS_SUPPORTED_A0_BF:
+        case PID_PIDS_SUPPORTED_C0_DF:
             ret = parseSupportedPIDs(f);
             break;
         default:
@@ -597,11 +673,15 @@ esp_err_t OBD2::parseSupportedPIDs(const CanDriver::CanFrame& f)
     {
         uint32_t supportedPIDs = (f.data[3] << 24) | (f.data[4] << 16) | (f.data[5] << 8) | (f.data[6]);
 
+        uint8_t groupIdx                      = (pidGroup >> 5);
+        supportedPIDsGroup.pidGroup[groupIdx] = supportedPIDs;
+
         for (uint8_t i = 0; i < 32; ++i)
         {
             if (supportedPIDs & (1UL << (31 - i)))
             {
                 uint8_t supportedPID = pidGroup + 1 + i;
+                supportedPIDsGroup.numberOfSupportedPIDs++;
 
                 if (!pidExists(supportedPID))
                 {
