@@ -18,6 +18,8 @@
   }
 
   let item = $state();
+  let cards = ["card", "chart", "gauge"];
+  let cardIndex = $state(0);
 
   // 2. Add a simple state to track which mode we are in
   let displayMode = $state("card");
@@ -33,7 +35,12 @@
 
   // 3. A quick helper function to toggle the view
   function toggleMode() {
-    displayMode = displayMode === "card" ? "chart" : "card";
+    if (cardIndex >= cards.length - 1) {
+      cardIndex = 0;
+    } else {
+      cardIndex += 1;
+    }
+    displayMode = cards[cardIndex];
   }
 
   $effect(() => {
@@ -69,7 +76,7 @@
 </script>
 
 <button class="outline" onclick={toggleMode} style="margin-bottom: 1rem;">
-  Switch to {displayMode === "card" ? "Chart" : "Normal Card"}
+  Switch card
 </button>
 
 <div class="pid-container">

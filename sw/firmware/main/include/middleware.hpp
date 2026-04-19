@@ -1,3 +1,5 @@
+#include <cstdint>
+
 #include "cJSON.h"
 #include "esp_http_server.h"
 #include "obd2.hpp"
@@ -9,6 +11,7 @@
 struct PidWirePacket
 {
     uint8_t  type;
+    uint8_t  length;
     uint32_t pid_id;
     float    value;
     uint32_t lastUpdated;

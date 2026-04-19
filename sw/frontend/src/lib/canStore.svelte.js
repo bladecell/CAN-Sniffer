@@ -94,8 +94,6 @@ export class CanStore {
     handleMessage(data) {
         if (!(data instanceof ArrayBuffer)) return;
         const view = new DataView(data);
-        if (view.byteLength < 19) return;
-
         const type = view.getUint8(0);
 
         if (type === 0x02) {
@@ -110,12 +108,17 @@ export class CanStore {
     }
 
     parsePidPacket(view) {
-        const fullPid = view.getUint32(1, true);
-        const value = view.getFloat32(5, true);
-        const time = view.getUint32(9, true);
-        const rate = view.getUint32(13, true);
-        const isValid = view.getUint8(17) !== 0;
-        const isSupported = view.getUint8(18) !== 0;
+        const length = view.getUint8(1);
+        if (length !== view.byteLength - 2) {
+            console.warn("Invalid PID %d packet length", view.getUint32(2, true));
+            return;
+        }
+        const fullPid = view.getUint32(2, true);
+        const value = view.getFloat32(6, true);
+        const time = view.getUint32(10, true);
+        const rate = view.getUint32(14, true);
+        const isValid = view.getUint8(18) !== 0;
+        const isSupported = view.getUint8(19) !== 0;
 
         let existing = this.pids.get(fullPid);
 

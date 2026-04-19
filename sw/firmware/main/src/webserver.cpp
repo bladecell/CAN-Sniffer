@@ -1,15 +1,15 @@
 #include "webserver.hpp"
 
-static const char *TAG = "WEB_SERVER";
+static const char* TAG = "WEB_SERVER";
 
 esp_err_t setup_web_server()
 {
     AsyncWebServer::Config server_config;
-    server_config.async_worker_task_num = 5;
-    server_config.max_open_sockets = 5;
-    server_config.async_worker_task_priority = 5;
-    server_config.async_worker_stack_size = 8192;
-    server_config.httpd_config.uri_match_fn = httpd_uri_match_wildcard;
+    server_config.async_worker_task_num         = 5;
+    server_config.max_open_sockets              = 5;
+    server_config.async_worker_task_priority    = 5;
+    server_config.async_worker_stack_size       = 8192;
+    server_config.httpd_config.uri_match_fn     = httpd_uri_match_wildcard;
     server_config.httpd_config.max_uri_handlers = 20;
 
     esp_err_t ret = AsyncWebServer::getInstance().start(server_config);
@@ -20,7 +20,8 @@ esp_err_t setup_web_server()
     AsyncWebServer::getInstance().registerRoute("/api/v1/obd2", HTTP_GET, g_obdii_index_handler, NULL);
     AsyncWebServer::getInstance().registerRoute("/api/v1/pid_data/*", HTTP_GET, g_pid_data_index_handler, NULL);
     AsyncWebServer::getInstance().registerRoute("/api/v1/pid_data", HTTP_GET, g_pid_data_index_handler, NULL);
-    AsyncWebServer::getInstance().registerRoute("/api/v1/req/pid_poll*", HTTP_POST, p_pid_poll_data_index_handler, NULL);
+    AsyncWebServer::getInstance().registerRoute("/api/v1/req/pid_poll*", HTTP_POST, p_pid_poll_data_index_handler,
+                                                NULL);
     AsyncWebServer::getInstance().registerRoute("/api/v1/vin", HTTP_GET, g_vin_index_handler, NULL);
     AsyncWebServer::getInstance().registerRoute("/api/v1/dtc*", HTTP_GET, g_dtc_index_handler, NULL);
     AsyncWebServer::getInstance().registerRoute("/api/v1/req/vin", HTTP_POST, p_vin_index_handler, NULL);
@@ -33,9 +34,9 @@ esp_err_t setup_web_server()
     return ret;
 }
 
-esp_err_t send_json_response(httpd_req_t *req, cJSON *root)
+esp_err_t send_json_response(httpd_req_t* req, cJSON* root)
 {
-    const char *json_str = NULL;
+    const char* json_str = NULL;
 
     json_str = cJSON_PrintUnformatted(root);
     if (json_str == NULL)
@@ -49,19 +50,19 @@ esp_err_t send_json_response(httpd_req_t *req, cJSON *root)
 
     esp_err_t ret = httpd_resp_send(req, json_str, HTTPD_RESP_USE_STRLEN);
 
-    free((void *)json_str);
+    free((void*)json_str);
     cJSON_Delete(root);
 
     return ret;
 }
 
-bool get_query_str(httpd_req_t *req, const char *key, char *out_val, size_t val_len)
+bool get_query_str(httpd_req_t* req, const char* key, char* out_val, size_t val_len)
 {
     size_t len = httpd_req_get_url_query_len(req) + 1;
     if (len <= 1)
         return false;
 
-    char *buf = (char *)malloc(len);
+    char* buf = (char*)malloc(len);
     if (!buf)
         return false;
 
@@ -72,7 +73,7 @@ bool get_query_str(httpd_req_t *req, const char *key, char *out_val, size_t val_
     return (err == ESP_OK);
 }
 
-esp_err_t get_query_int(httpd_req_t *req, const char *key, int *value)
+esp_err_t get_query_int(httpd_req_t* req, const char* key, int* value)
 {
     char val[32];
     if (get_query_str(req, key, val, sizeof(val)))
@@ -83,7 +84,7 @@ esp_err_t get_query_int(httpd_req_t *req, const char *key, int *value)
     return ESP_ERR_NOT_FOUND;
 }
 
-esp_err_t get_query_bool(httpd_req_t *req, const char *key, bool *value)
+esp_err_t get_query_bool(httpd_req_t* req, const char* key, bool* value)
 {
     char val[16];
     if (get_query_str(req, key, val, sizeof(val)))
@@ -94,7 +95,7 @@ esp_err_t get_query_bool(httpd_req_t *req, const char *key, bool *value)
     return ESP_ERR_NOT_FOUND;
 }
 
-esp_err_t index_handler(httpd_req_t *req, void *arg)
+esp_err_t index_handler(httpd_req_t* req, void* arg)
 {
     httpd_resp_set_type(req, "text/html");
 
@@ -105,10 +106,10 @@ esp_err_t index_handler(httpd_req_t *req, void *arg)
     }
 
     // Use the names that exist in your web_assets.h
-    return httpd_resp_send(req, (const char *)INDEX_HTML, INDEX_HTML_LEN);
+    return httpd_resp_send(req, (const char*)INDEX_HTML, INDEX_HTML_LEN);
 }
 
-esp_err_t g_pid_def_index_handler(httpd_req_t *req, void *arg)
+esp_err_t g_pid_def_index_handler(httpd_req_t* req, void* arg)
 {
     int target_pid = -1;
 
@@ -121,12 +122,12 @@ esp_err_t g_pid_def_index_handler(httpd_req_t *req, void *arg)
         }
     }
 
-    cJSON *root = m_pid_def_json(target_pid);
+    cJSON* root = m_pid_def_json(target_pid);
 
     return send_json_response(req, root);
 }
 
-esp_err_t g_pid_data_index_handler(httpd_req_t *req, void *arg)
+esp_err_t g_pid_data_index_handler(httpd_req_t* req, void* arg)
 {
     int target_pid = -1;
 
@@ -139,12 +140,12 @@ esp_err_t g_pid_data_index_handler(httpd_req_t *req, void *arg)
         }
     }
 
-    cJSON *root = m_pid_data_json(target_pid);
+    cJSON* root = m_pid_data_json(target_pid);
 
     return send_json_response(req, root);
 }
 
-esp_err_t p_pid_poll_data_index_handler(httpd_req_t *req, void *arg)
+esp_err_t p_pid_poll_data_index_handler(httpd_req_t* req, void* arg)
 {
     bool running = false;
     if (get_query_bool(req, "running", &running) != ESP_OK)
@@ -161,50 +162,28 @@ esp_err_t p_pid_poll_data_index_handler(httpd_req_t *req, void *arg)
     return ret;
 }
 
-esp_err_t g_can_bus_index_handler(httpd_req_t *req, void *arg)
+esp_err_t g_can_bus_index_handler(httpd_req_t* req, void* arg)
 {
-    cJSON *root = m_can_bus_json();
+    cJSON* root = m_can_bus_json();
 
     return send_json_response(req, root);
 }
 
-esp_err_t g_obdii_index_handler(httpd_req_t *req, void *arg)
+esp_err_t g_obdii_index_handler(httpd_req_t* req, void* arg)
 {
-    cJSON *root = m_obdii_json();
+    cJSON* root = m_obdii_json();
 
     return send_json_response(req, root);
 }
 
-esp_err_t g_vin_index_handler(httpd_req_t *req, void *arg)
+esp_err_t g_vin_index_handler(httpd_req_t* req, void* arg)
 {
-    cJSON *root = m_vin_json();
+    cJSON* root = m_vin_json();
 
     return send_json_response(req, root);
 }
 
-esp_err_t g_dtc_index_handler(httpd_req_t *req, void *arg)
-{
-    int mode = -1;
-    if (get_query_int(req, "mode", &mode) != ESP_OK && (httpd_req_get_url_query_len(req) > 0))
-    {
-        esp_err_t ret = httpd_resp_send_404(req);
-        return ret;
-    }
-
-    cJSON *root = m_dtc_json(mode);
-
-    return send_json_response(req, root);
-}
-
-esp_err_t p_vin_index_handler(httpd_req_t *req, void *arg)
-{
-    cJSON *root = m_vin_request();
-
-    httpd_resp_set_status(req, "200 OK");
-    return send_json_response(req, root);
-}
-
-esp_err_t p_dtc_index_handler(httpd_req_t *req, void *arg)
+esp_err_t g_dtc_index_handler(httpd_req_t* req, void* arg)
 {
     int mode = -1;
     if (get_query_int(req, "mode", &mode) != ESP_OK && (httpd_req_get_url_query_len(req) > 0))
@@ -213,21 +192,43 @@ esp_err_t p_dtc_index_handler(httpd_req_t *req, void *arg)
         return ret;
     }
 
-    cJSON *root = m_dtc_request(mode);
+    cJSON* root = m_dtc_json(mode);
 
-    httpd_resp_set_status(req, "200 OK");
     return send_json_response(req, root);
 }
 
-esp_err_t p_clear_dtc_index_handler(httpd_req_t *req, void *arg)
+esp_err_t p_vin_index_handler(httpd_req_t* req, void* arg)
 {
-    cJSON *root = m_clear_dtc_request();
+    cJSON* root = m_vin_request();
 
     httpd_resp_set_status(req, "200 OK");
     return send_json_response(req, root);
 }
 
-esp_err_t ws_socket_handler(httpd_req_t *req)
+esp_err_t p_dtc_index_handler(httpd_req_t* req, void* arg)
+{
+    int mode = -1;
+    if (get_query_int(req, "mode", &mode) != ESP_OK && (httpd_req_get_url_query_len(req) > 0))
+    {
+        esp_err_t ret = httpd_resp_send_404(req);
+        return ret;
+    }
+
+    cJSON* root = m_dtc_request(mode);
+
+    httpd_resp_set_status(req, "200 OK");
+    return send_json_response(req, root);
+}
+
+esp_err_t p_clear_dtc_index_handler(httpd_req_t* req, void* arg)
+{
+    cJSON* root = m_clear_dtc_request();
+
+    httpd_resp_set_status(req, "200 OK");
+    return send_json_response(req, root);
+}
+
+esp_err_t ws_socket_handler(httpd_req_t* req)
 {
     int sockfd = httpd_req_to_sockfd(req);
 
@@ -259,32 +260,31 @@ esp_err_t ws_socket_handler(httpd_req_t *req)
 
     if (ws_pkt.len > 0)
     {
-        uint8_t *buf = (uint8_t *)malloc(ws_pkt.len);
+        uint8_t* buf = (uint8_t*)malloc(ws_pkt.len);
         if (!buf)
             return ESP_ERR_NO_MEM;
 
         ws_pkt.payload = buf;
-        ret = httpd_ws_recv_frame(req, &ws_pkt, ws_pkt.len);
+        ret            = httpd_ws_recv_frame(req, &ws_pkt, ws_pkt.len);
 
         if (ret == ESP_OK)
         {
-
             uint8_t command = buf[0];
 
             switch (command)
             {
-            case WS_START_PID_STREAM:
-                enable_pid_stream(true);
-                ESP_LOGI(TAG, "Starting PID Stream");
-                break;
+                case WS_START_PID_STREAM:
+                    enable_pid_stream(true);
+                    ESP_LOGI(TAG, "Starting PID Stream");
+                    break;
 
-            case WS_STOP_PID_STREAM:
-                enable_pid_stream(false);
-                ESP_LOGI(TAG, "Stopping PID Stream");
-                break;
+                case WS_STOP_PID_STREAM:
+                    enable_pid_stream(false);
+                    ESP_LOGI(TAG, "Stopping PID Stream");
+                    break;
 
-            default:
-                ESP_LOGW(TAG, "Unknown WS Command: 0x%02X", command);
+                default:
+                    ESP_LOGW(TAG, "Unknown WS Command: 0x%02X", command);
             }
         }
         free(buf);
@@ -304,7 +304,7 @@ void pid_stream_callback(uint16_t pid)
     if (!b_pid_stream_enabled)
         return;
 
-    uint8_t packet[19];
+    uint8_t packet[20];
 
     esp_err_t err = get_pid_stream_packet(pid, packet);
 
@@ -313,8 +313,8 @@ void pid_stream_callback(uint16_t pid)
         httpd_ws_frame_t ws_frame;
         memset(&ws_frame, 0, sizeof(httpd_ws_frame_t));
         ws_frame.payload = packet;
-        ws_frame.len = sizeof(PidWirePacket);
-        ws_frame.type = HTTPD_WS_TYPE_BINARY;
+        ws_frame.len     = sizeof(PidWirePacket);
+        ws_frame.type    = HTTPD_WS_TYPE_BINARY;
 
         AsyncWebServer::getInstance().wsBroadcast(&ws_frame);
     }

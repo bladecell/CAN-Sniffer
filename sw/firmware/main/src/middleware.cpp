@@ -357,6 +357,9 @@ esp_err_t get_pid_stream_packet(uint16_t pid, uint8_t* out_packet)
     // 8 bit message type
     out_packet[offset++] = MSG_TYPE_PID;
 
+    // Length
+    out_packet[offset++] = sizeof(PidWirePacket) - 2;
+
     // 32 bit pid
     out_packet[offset++] = (pid >> 0) & 0xFF;
     out_packet[offset++] = (pid >> 8) & 0xFF;
