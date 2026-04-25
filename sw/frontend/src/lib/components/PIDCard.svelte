@@ -41,7 +41,6 @@
 >
   <div class="card-header">
     <div
-      data-swapy-handle
       class="icon"
       style="background: color-mix(in srgb, {color} 20%, transparent);"
     >

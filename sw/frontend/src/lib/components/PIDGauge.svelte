@@ -1,11 +1,13 @@
 <script>
   import { canStore } from "$lib/canStore.svelte.js";
+  import Icon from "../Icon.svelte";
 
   let {
     pid,
     label = "Metric",
     description = "",
     unit = "%",
+    icon = "gear",
     color = "#10b981",
     min = 0,
     max = 100,
@@ -61,6 +63,12 @@
   {...rest}
 >
   <header class="card-header" data-swapy-handle>
+    <div
+      class="icon"
+      style="background: color-mix(in srgb, {color} 20%, transparent);"
+    >
+      <Icon name={icon} size={32} />
+    </div>
     <div class="titles">
       <div class="label">{label}</div>
       <div
@@ -131,6 +139,11 @@
     overflow: hidden;
   }
 
+  .pid-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+
   .card-header {
     display: flex;
     justify-content: space-between;
@@ -149,10 +162,27 @@
     font-weight: 500;
   }
 
+  .icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 48px;
+    width: 48px;
+    border-radius: 10px;
+    transition: transform 0.2s ease;
+  }
+
+  .pid-card:hover .icon {
+    transform: scale(1.05);
+  }
+
   .titles {
     display: flex;
     flex-direction: column;
     gap: 4px;
+    align-items: flex-start;
+    flex: 1;
+    padding: 0 12px;
   }
 
   .subtitle {

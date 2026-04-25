@@ -3,12 +3,14 @@
   import { onMount, untrack, tick } from "svelte";
   import uPlot from "uplot";
   import "uplot/dist/uPlot.min.css";
+  import Icon from "$lib/Icon.svelte";
 
   let {
     pid,
     label = "Metric",
     description = "",
     unit = "%",
+    icon = "gear",
     color = "#ff6b6b",
     update_interval_ms = 500,
     min = 0,
@@ -153,7 +155,13 @@
   class:disabled={!supported}
   style="background: color-mix(in srgb, {color} 5%, transparent);"
 >
-  <header class="card-header" data-swapy-handle>
+  <header class="card-header">
+    <div
+      class="icon"
+      style="background: color-mix(in srgb, {color} 20%, transparent);"
+    >
+      <Icon name={icon} size={32} />
+    </div>
     <div class="titles">
       <div class="label">{label}</div>
       <div
@@ -226,10 +234,27 @@
     border: none;
   }
 
+  .icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 48px;
+    width: 48px;
+    border-radius: 10px;
+    transition: transform 0.2s ease;
+  }
+
+  .pid-card:hover .icon {
+    transform: scale(1.05);
+  }
+
   .titles {
     display: flex;
     flex-direction: column;
     gap: 4px;
+    align-items: flex-start;
+    flex: 1;
+    padding: 0 12px;
   }
 
   .label {
