@@ -1,124 +1,139 @@
-// led_status.hpp
 #pragma once
+#include "driver/gpio.h"
+#include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "driver/gpio.h"
 
 class LedError
 {
 public:
-    explicit LedError(gpio_num_t pin, TickType_t on_ms = 100, TickType_t off_ms = 100, uint32_t cnt = 0)
-        : pin(pin),
-          onticks(pdMS_TO_TICKS(on_ms)),
-          offticks(pdMS_TO_TICKS(off_ms)),
-          count(cnt) {}
-
-    void init()
+    // Meyers Singleton
+    static LedError& getInstance()
     {
-        gpio_reset_pin(pin);
-        gpio_set_direction(pin, GPIO_MODE_INPUT_OUTPUT);
-        gpio_set_level(pin, 0);
-        state_ = false;
+        static LedError instance;
+        return instance;
     }
 
-    // --- LED Control ---
+    // Constructor/Destructor
+    LedError() : pin_(GPIO_NUM_NC), on_ticks_(0), off_ticks_(0), count_(0), task_handle_(nullptr), state_(false)
+    {
+    }
+    ~LedError()
+    {
+        stop();
+    }
+
+    void init(gpio_num_t pin, uint32_t on_ms = 100, uint32_t off_ms = 100)
+    {
+        stop();
+        pin_       = pin;
+        on_ticks_  = pdMS_TO_TICKS(on_ms);
+        off_ticks_ = pdMS_TO_TICKS(off_ms);
+
+        gpio_reset_pin(pin_);
+        gpio_set_direction(pin_, GPIO_MODE_OUTPUT);
+        gpio_set_level(pin_, 0);
+    }
+
+    // Simple Controls
     void on()
     {
-        stop(); // stop task if running
-        gpio_set_level(pin, 1);
-        state_ = true;
+        stop();
+        setLevel(true);
     }
-
     void off()
     {
-        stop(); // stop task if running
-        gpio_set_level(pin, 0);
-        state_ = false;
+        stop();
+        setLevel(false);
     }
-
     void toggle()
     {
-        stop(); // stop task if running
-        state_ = !state_;
-        gpio_set_level(pin, state_ ? 1 : 0);
+        stop();
+        setLevel(!state_);
     }
 
-    bool isOn() const { return state_; }
-
-    // --- Error Blink Task ---
+    // Async Patterns
     void error()
     {
-        stop();
-        if (task != nullptr)
-            return;
-        setCount(0);
-        xTaskCreate(&LedError::taskTrampoline, "lederror", 1024, this, 5, &task);
-    }
-
+        startBlinkTask(0);
+    }  // Infinite
     void blink(uint32_t cnt = 1)
     {
-        stop();
-        if (task != nullptr)
-            return;
-        setCount(cnt);
-        xTaskCreate(&LedError::taskTrampoline, "ledblink", 1024, this, 5, &task);
+        startBlinkTask(cnt);
     }
 
     void stop()
     {
-        if (task)
+        if (task_handle_ != nullptr)
         {
-            TaskHandle_t t = task;
-            task = nullptr;     // signal exit
-            xTaskNotifyGive(t); // wake it if blocked
-            vTaskDelay(pdMS_TO_TICKS(1));
-            if (eTaskGetState(t) != eDeleted)
-            {
-                vTaskDelete(t);
-            }
+            TaskHandle_t to_notify = task_handle_;
+            // Signal the task loop to exit
+            task_handle_ = nullptr;
+            xTaskNotifyGive(to_notify);
+
+            // Give it a moment to self-delete
+            vTaskDelay(pdMS_TO_TICKS(10));
         }
     }
 
-    bool isRunning() const { return task != nullptr; }
-
-    void setPeriodMs(uint32_t on_ms, uint32_t off_ms)
-    {
-        onticks = pdMS_TO_TICKS(on_ms);
-        offticks = pdMS_TO_TICKS(off_ms);
-    }
-
-    void setCount(uint32_t cnt)
-    {
-        count = cnt;
-    }
-
 private:
-    static void taskTrampoline(void *arg)
+    // Delete copy/assignment
+    LedError(const LedError&)            = delete;
+    LedError& operator=(const LedError&) = delete;
+
+    void setLevel(bool level)
     {
-        static_cast<LedError *>(arg)->run();
+        state_ = level;
+        gpio_set_level(pin_, state_ ? 1 : 0);
+    }
+
+    void startBlinkTask(uint32_t cnt)
+    {
+        stop();
+        count_ = cnt;
+        // High priority (5) to ensure timing accuracy
+        xTaskCreate(taskTrampoline, "led_tsk", 2048, this, 5, &task_handle_);
+    }
+
+    static void taskTrampoline(void* arg)
+    {
+        static_cast<LedError*>(arg)->run();
     }
 
     void run()
     {
+        uint32_t iterations = 0;
 
-        for (uint32_t i = 0; (count == 0) || (i < count); i++)
+        while (true)
         {
-            if (ulTaskNotifyTake(pdTRUE, 0) > 0 || task == nullptr)
+            // 1. Check if we should exit (stop() called or count reached)
+            if (task_handle_ == nullptr)
+                break;
+            if (count_ > 0 && iterations >= count_)
                 break;
 
-            gpio_set_level(pin, 1);
-            vTaskDelay(onticks);
-            gpio_set_level(pin, 0);
-            vTaskDelay(offticks);
+            // 2. LED ON
+            setLevel(true);
+            if (ulTaskNotifyTake(pdTRUE, on_ticks_) != 0)
+                break;  // Interrupted by stop()
+
+            // 3. LED OFF
+            setLevel(false);
+            if (ulTaskNotifyTake(pdTRUE, off_ticks_) != 0)
+                break;  // Interrupted by stop()
+
+            iterations++;
         }
-        task = nullptr;
+
+        setLevel(false);
+        task_handle_ = nullptr;
         vTaskDelete(nullptr);
     }
 
-    gpio_num_t pin;
-    TickType_t onticks;
-    TickType_t offticks;
-    uint32_t count;
-    TaskHandle_t task = nullptr;
-    bool state_ = false;
+    gpio_num_t   pin_;
+    TickType_t   on_ticks_;
+    TickType_t   off_ticks_;
+    uint32_t     count_;
+    TaskHandle_t task_handle_;
+    bool         state_;
 };

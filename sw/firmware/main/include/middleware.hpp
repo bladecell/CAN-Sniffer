@@ -1,3 +1,5 @@
+// middleware.hpp
+#pragma once
 #include <cstdint>
 
 #include "cJSON.h"

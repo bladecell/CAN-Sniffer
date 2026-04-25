@@ -3,7 +3,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "async_web_server.hpp"
 #include "can_driver.hpp"
 #include "driver/gpio.h"
 #include "driver/twai.h"
@@ -15,13 +14,7 @@
 #include "led_status.hpp"
 #include "obd2.hpp"
 #include "obd2_utils.hpp"
-#include "secrets.h"
-#include "settings.hpp"
-#include "utilities.h"
-#include "webserver.hpp"
-#include "wifi.hpp"
-
-#define DEBUG_MODE 1
+#include "supervisor.hpp"
 
 #define PID_DERIVED_TEST_1 0xD001
 #define PID_DERIVED_TEST_2 0xD002
@@ -29,119 +22,6 @@
 #define PID_DERIVED_TEST_4 0xD004
 
 static const char* TAG = "APP_MAIN";
-static LedError    led(LED_GPIO);
-
-esp_err_t setup_wifi()
-{
-    // Configure
-    WIFI::Config config;
-    config.ssid            = "CAN-SNIFFER-AP";
-    config.password        = "";
-    config.channel         = 6;
-    config.max_connections = 4;
-    config.auth_mode       = WIFI_AUTH_OPEN;
-    config.mode            = WIFI_MODE_STA;
-    config.sta_ssid        = WIFI_SSID;
-    config.sta_password    = WIFI_PASSWORD;
-    config.sta_auth_mode   = WIFI_AUTH_WPA2_PSK;
-
-    esp_err_t ret = WIFI::getInstance().init(config);
-    ret |= WIFI::getInstance().start();
-    return ret;
-}
-
-esp_err_t setup_can()
-{
-    CanDriver::Config config;
-    config.bitrate            = CanDriver::Bitrate::BITRATE_500K;
-    config.rx_pin             = CAN_RX_GPIO;
-    config.tx_pin             = CAN_TX_GPIO;
-    config.lbk_pin            = CAN_LBK_GPIO;
-    config.rs_pin             = CAN_RS_GPIO;
-    config.debug              = DEBUG_MODE;
-    config.filter             = false;
-    config.mfilter_cfg.id     = 0b011100000000;  // 0b111 11100000
-    config.mfilter_cfg.mask   = 0b011100000000;  // 0b111 11100000
-    config.mfilter_cfg.is_ext = false;           // Standard 11-bit IDs
-
-    // Settings::getInstance().getCanConfig(config);
-
-    esp_err_t ret = CanDriver::getInstance().init(config);
-
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    if (ret != ESP_OK || !CanDriver::getInstance().isInitialized())
-    {
-        ESP_LOGE(TAG, "Failed to initialize CAN driver");
-        return ret;
-    }
-
-    ESP_LOGI(TAG, "CAN driver initialized");
-
-    return ESP_OK;
-}
-
-esp_err_t setup_obd()
-{
-    auto& obd = OBD2::getInstance();
-
-    // 1. Engine Load: A * 100 / 255
-    obd.addPID(OBD2_FUNCTIONAL_ID, MODE_CURRENT_DATA, PID_ENGINE_LOAD, 2, "Engine Load", PERCENTAGE,
-               "Calculated engine load", "A * 100 / 255", 0.0f, 100.0f, 2, UPDATE_FAST, 0xf59e0b, "gauge");
-
-    // 2. Coolant Temp: A - 40
-    obd.addPID(OBD2_FUNCTIONAL_ID, MODE_CURRENT_DATA, PID_COOLANT_TEMP, 2, "Coolant Temp", DEGREES_CELCIUS,
-               "Engine coolant temperature", "A - 40", -40.0f, 215.0f, 3, UPDATE_SLOW, 0xef4444, "thermometer");
-
-    // 3. Engine RPM: ((A * 256) + B) / 4
-    obd.addPID(OBD2_FUNCTIONAL_ID, MODE_CURRENT_DATA, PID_ENGINE_RPM, 2, "Engine RPM", RPM, "Engine speed",
-               "((A * 256) + B) / 4", 0.0f, 16383.75f, 1, UPDATE_FAST, 0x3b82f6, "droplet");
-
-    // 4. Odometer: ((A * 256) + B) * 10
-    obd.addPID(0x714, MODE_READ_DATA_BY_IDENTIFIER, 0x2203, 3, "Odometer", KM, "Total distance",
-               "((A * 256) + B) * 10 ", 0.0f, 999999.0f, 1, UPDATE_SLOW, 0x3498db, "gauge");
-
-    // 5. Fuel Level: A
-    obd.addPID(0x714, MODE_READ_DATA_BY_IDENTIFIER, 0x2206, 3, "Fuel Amount", LITER, "Fuel Tank Level (Liters)", "A",
-               0.0f, 50.0f, 2, UPDATE_SLOW, 0x2ecc71, "droplet");
-
-    // 6. Cabin Temperature: ((A * 256) + B) * 0.1
-    obd.addPID(0x746, 0x22, 0x2613, 3, "Interior Temp", DEGREES_CELCIUS, "Cabin Temperature", "((A*256)+B)*0.1", -40.0f,
-               85.0f, 2, UPDATE_MEDIUM, 0x3498db, "thermometer");
-
-    // Derived: Engine Load * RPM proxy (arbitrary test formula)
-    obd.addPID(OBD2_FUNCTIONAL_ID, MODE_DERIVED_DATA, PID_DERIVED_TEST_1, 0, "Load x RPM", RPM,
-               "Engine load scaled by RPM", "getPID(0x04) * getPID(0x0C) / 100", 0.0f, 16383.75f, 2, UPDATE_FAST,
-               0xa855f7, "droplet");
-
-    // Derived: RPM to approximate speed (test only, not real)
-    obd.addPID(OBD2_FUNCTIONAL_ID, MODE_DERIVED_DATA, PID_DERIVED_TEST_2, 0, "RPM / Temp", PERCENTAGE,
-               "RPM divided by coolant temp sanity check", "getPID(0x0C) / getPID(0x05)", 0.0f, 1000.0f, 2, UPDATE_FAST,
-               0x22d3ee, "gauge");
-
-    // Derived: 3rd bit of 2nd byte of engine load raw data
-    obd.addPID(OBD2_FUNCTIONAL_ID, MODE_DERIVED_DATA, PID_DERIVED_TEST_3, 0, "Load Bit Test", PERCENTAGE,
-               "3rd bit of 4th byte of engine load", "getBit(getPIDRaw(0x04, 3), 2)", 0.0f, 1.0f, 2, UPDATE_SLOW,
-               0xec4899, "droplet");
-
-    // Derived: bits 2-5 of 1st byte of RPM raw data
-    obd.addPID(OBD2_FUNCTIONAL_ID, MODE_DERIVED_DATA, PID_DERIVED_TEST_4, 0, "RPM BitMask Test", RPM,
-               "bits 2 to 5 of 4th byte of RPM", "bitMask(getPIDRaw(0x0C, 3), 2, 4)", 0.0f, 15.0f, 2, UPDATE_MEDIUM,
-               0xf97316, "gauge");
-
-    esp_err_t ret = obd.init();
-
-    vTaskDelay(pdMS_TO_TICKS(1000));
-
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Failed to initialize OBD2 interface");
-        return ret;
-    }
-
-    ESP_LOGI(TAG, "OBD2 interface initialized");
-
-    return ESP_OK;
-}
 
 void t_request_sample(void* pvParameters)
 {
@@ -153,7 +33,7 @@ void t_request_sample(void* pvParameters)
         if (!CanDriver::getInstance().isBusConnected() || !obd2.isPidInit())
         {
             ESP_LOGW(TAG, "CAN bus is not connected or PID not initialized");
-            led.blink(1);
+            LedError::getInstance().blink(1);
             vTaskDelay(pdMS_TO_TICKS(5000));
             continue;
         }
@@ -192,13 +72,13 @@ void t_request_sample(void* pvParameters)
         if (!CanDriver::getInstance().isBusConnected() || !obd2.isPidInit())
         {
             ESP_LOGW(TAG, "CAN bus is not connected or PID not initialized");
-            led.blink(1);
+            LedError::getInstance().blink(1);
             vTaskDelay(pdMS_TO_TICKS(5000));
             continue;
         }
         else
         {
-            led.off();
+            LedError::getInstance().off();
         }
 
         if (!vinflag)
@@ -237,26 +117,58 @@ void t_request_sample(void* pvParameters)
 extern "C" void app_main(void)
 {
     esp_log_level_set("CAN_DRIVER", ESP_LOG_DEBUG);
+    LedError& led = LedError::getInstance();
+    led.init(LED_GPIO);
     // esp_log_level_set("ASYNC_WEB_SERVER", ESP_LOG_DEBUG);
 
-    // Component setup
-    led.init();
+    SUPERVISOR::getInstance().start();
 
-    esp_err_t (*setup_functions[])() = {
-        setup_wifi,
-        setup_can,
-        setup_obd,
-        setup_web_server,
-    };
+    // 1. Engine Load: A * 100 / 255
+    OBD2::getInstance().addPID(OBD2_FUNCTIONAL_ID, MODE_CURRENT_DATA, PID_ENGINE_LOAD, 2, "Engine Load", PERCENTAGE,
+                               "Calculated engine load", "A * 100 / 255", 0.0f, 100.0f, 2, UPDATE_FAST, 0xf59e0b,
+                               "gauge");
 
-    for (size_t i = 0; i < sizeof(setup_functions) / sizeof(setup_functions[0]); i++)
-    {
-        if (setup_functions[i]() != ESP_OK)
-        {
-            led.error();
-            return;
-        }
-    }
+    // 2. Coolant Temp: A - 40
+    OBD2::getInstance().addPID(OBD2_FUNCTIONAL_ID, MODE_CURRENT_DATA, PID_COOLANT_TEMP, 2, "Coolant Temp",
+                               DEGREES_CELCIUS, "Engine coolant temperature", "A - 40", -40.0f, 215.0f, 3, UPDATE_SLOW,
+                               0xef4444, "thermometer");
+
+    // 3. Engine RPM: ((A * 256) + B) / 4
+    OBD2::getInstance().addPID(OBD2_FUNCTIONAL_ID, MODE_CURRENT_DATA, PID_ENGINE_RPM, 2, "Engine RPM", RPM,
+                               "Engine speed", "((A * 256) + B) / 4", 0.0f, 16383.75f, 1, UPDATE_FAST, 0x3b82f6,
+                               "droplet");
+
+    // 4. Odometer: ((A * 256) + B) * 10
+    OBD2::getInstance().addPID(0x714, MODE_READ_DATA_BY_IDENTIFIER, 0x2203, 3, "Odometer", KM, "Total distance",
+                               "((A * 256) + B) * 10 ", 0.0f, 999999.0f, 1, UPDATE_SLOW, 0x3498db, "gauge");
+
+    // 5. Fuel Level: A
+    OBD2::getInstance().addPID(0x714, MODE_READ_DATA_BY_IDENTIFIER, 0x2206, 3, "Fuel Amount", LITER,
+                               "Fuel Tank Level (Liters)", "A", 0.0f, 50.0f, 2, UPDATE_SLOW, 0x2ecc71, "droplet");
+
+    // 6. Cabin Temperature: ((A * 256) + B) * 0.1
+    OBD2::getInstance().addPID(0x746, 0x22, 0x2613, 3, "Interior Temp", DEGREES_CELCIUS, "Cabin Temperature",
+                               "((A*256)+B)*0.1", -40.0f, 85.0f, 2, UPDATE_MEDIUM, 0x3498db, "thermometer");
+
+    // Derived: Engine Load * RPM proxy (arbitrary test formula)
+    OBD2::getInstance().addPID(OBD2_FUNCTIONAL_ID, MODE_DERIVED_DATA, PID_DERIVED_TEST_1, 0, "Load x RPM", RPM,
+                               "Engine load scaled by RPM", "getPID(0x04) * getPID(0x0C) / 100", 0.0f, 16383.75f, 2,
+                               UPDATE_FAST, 0xa855f7, "droplet");
+
+    // Derived: RPM to approximate speed (test only, not real)
+    OBD2::getInstance().addPID(OBD2_FUNCTIONAL_ID, MODE_DERIVED_DATA, PID_DERIVED_TEST_2, 0, "RPM / Temp", PERCENTAGE,
+                               "RPM divided by coolant temp sanity check", "getPID(0x0C) / getPID(0x05)", 0.0f, 1000.0f,
+                               2, UPDATE_FAST, 0x22d3ee, "gauge");
+
+    // Derived: 3rd bit of 2nd byte of engine load raw data
+    OBD2::getInstance().addPID(OBD2_FUNCTIONAL_ID, MODE_DERIVED_DATA, PID_DERIVED_TEST_3, 0, "Load Bit Test",
+                               PERCENTAGE, "3rd bit of 4th byte of engine load", "getBit(getPIDRaw(0x04, 3), 2)", 0.0f,
+                               1.0f, 2, UPDATE_SLOW, 0xec4899, "droplet");
+
+    // Derived: bits 2-5 of 1st byte of RPM raw data
+    OBD2::getInstance().addPID(OBD2_FUNCTIONAL_ID, MODE_DERIVED_DATA, PID_DERIVED_TEST_4, 0, "RPM BitMask Test", RPM,
+                               "bits 2 to 5 of 4th byte of RPM", "bitMask(getPIDRaw(0x0C, 3), 2, 4)", 0.0f, 15.0f, 2,
+                               UPDATE_MEDIUM, 0xf97316, "gauge");
 
     // xTaskCreate(t_request_sample, "request_sample", 4096, NULL, 5, NULL);
 }

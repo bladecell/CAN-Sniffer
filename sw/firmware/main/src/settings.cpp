@@ -1,9 +1,11 @@
 #include "settings.hpp"
-#include "esp_log.h"
+
 #include <cstring>
 
-static const char *TAG = "SETTINGS";
-static const char *NVS_NAMESPACE = "storage";
+#include "esp_log.h"
+
+static const char* TAG           = "SETTINGS";
+static const char* NVS_NAMESPACE = "storage";
 
 esp_err_t Settings::init()
 {
@@ -18,15 +20,15 @@ esp_err_t Settings::init()
     return err;
 }
 
-esp_err_t Settings::openHandle(nvs_handle_t *handle, nvs_open_mode_t mode)
+esp_err_t Settings::openHandle(nvs_handle_t* handle, nvs_open_mode_t mode)
 {
     return nvs_open(NVS_NAMESPACE, mode, handle);
 }
 
-esp_err_t Settings::setWifiConfig(const WIFI::Config &config)
+esp_err_t Settings::setWifiConfig(const WIFI::Config& config)
 {
     nvs_handle_t handle;
-    esp_err_t err = openHandle(&handle, NVS_READWRITE);
+    esp_err_t    err = openHandle(&handle, NVS_READWRITE);
     if (err != ESP_OK)
         return err;
 
@@ -53,15 +55,15 @@ esp_err_t Settings::setWifiConfig(const WIFI::Config &config)
     return err;
 }
 
-esp_err_t Settings::getWifiConfig(WIFI::Config &config)
+esp_err_t Settings::getWifiConfig(WIFI::Config& config)
 {
     nvs_handle_t handle;
-    esp_err_t err = openHandle(&handle, NVS_READONLY);
+    esp_err_t    err = openHandle(&handle, NVS_READONLY);
     if (err != ESP_OK)
-        return err; // Likely first boot, return error so defaults are used
+        return err;  // Likely first boot, return error so defaults are used
 
     size_t len;
-    char buf[64]; // Max SSID/Pass length
+    char   buf[64];  // Max SSID/Pass length
 
     // Load SSID
     len = sizeof(buf);
@@ -97,10 +99,10 @@ esp_err_t Settings::getWifiConfig(WIFI::Config &config)
 
 // --- CAN CONFIG (Mostly numbers, use Blob for speed) ---
 
-esp_err_t Settings::setCanConfig(const CanDriver::Config &config)
+esp_err_t Settings::setCanConfig(const CanDriver::Config& config)
 {
     nvs_handle_t handle;
-    esp_err_t err = openHandle(&handle, NVS_READWRITE);
+    esp_err_t    err = openHandle(&handle, NVS_READWRITE);
     if (err != ESP_OK)
         return err;
 
@@ -116,10 +118,10 @@ esp_err_t Settings::setCanConfig(const CanDriver::Config &config)
     return err;
 }
 
-esp_err_t Settings::getCanConfig(CanDriver::Config &config)
+esp_err_t Settings::getCanConfig(CanDriver::Config& config)
 {
     nvs_handle_t handle;
-    esp_err_t err = openHandle(&handle, NVS_READONLY);
+    esp_err_t    err = openHandle(&handle, NVS_READONLY);
     if (err != ESP_OK)
         return err;
 

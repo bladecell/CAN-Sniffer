@@ -1,6 +1,8 @@
 // utilities.h
 #pragma once
 
+#define DEBUG_MODE 1
+
 #define VERSION_1_1
 // #define VERSION_1_2
 
