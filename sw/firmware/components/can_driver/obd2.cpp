@@ -71,7 +71,7 @@ esp_err_t OBD2::init()
 
     initDef();
 
-    canDriver.setConnectionCallback(onCanStateChange, this);
+    canDriver.setConnectionChangeCallback(onCanStateChange, this);
     BaseType_t taskCreated = xTaskCreatePinnedToCore(receiveTaskWrapper, "OBD2_receive_task", 8192, this,
                                                      tskIDLE_PRIORITY + 2, &ReceiveTaskHandle, CORE_ID_CAN_TASKS);
 

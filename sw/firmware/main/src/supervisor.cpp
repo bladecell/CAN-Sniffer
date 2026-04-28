@@ -2,6 +2,7 @@
 
 #include "supervisor.hpp"
 
+#include "can_driver.hpp"
 #include "esp_log_level.h"
 #include "led_status.hpp"
 
@@ -75,7 +76,7 @@ void SUPERVISOR::task()
                 {
                     if (setup_functions[i]() != ESP_OK)
                     {
-                        LedError::getInstance().error();
+                        LedStatus::getInstance().blink(0xFFFFFFFF, 100, 100);
                         success = false;
                     }
                 }
@@ -145,6 +146,7 @@ esp_err_t SUPERVISOR::setup_can()
     // Settings::getInstance().getCanConfig(config);
 
     esp_err_t ret = CanDriver::getInstance().init(config);
+    CanDriver::getInstance().setRxCallback(LedStatus::staticBlink, nullptr);
 
     vTaskDelay(pdMS_TO_TICKS(1000));
     if (ret != ESP_OK || !CanDriver::getInstance().isInitialized())

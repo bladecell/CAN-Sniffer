@@ -214,6 +214,7 @@ esp_err_t CanDriver::receive(CanDriver::CanFrame& frame, int timeout_ms)
     if (xQueueReceive(rxQueue, &frame, ticks) == pdTRUE)
     {
         LOG_CAN_FRAME(TAG, "RX <- ", frame.header.id, frame.data, frame.length);
+        rxCb();
         return ESP_OK;
     }
 
@@ -461,7 +462,7 @@ void CanDriver::healthCheckTask()
                     {
                         ESP_LOGI(TAG, "CAN bus connected");
                         canState.store(STATE::CONNECTED);
-                        notifyConnectionChange(true);
+                        connectionChangeCb(true);
                         successfulPingsCount = 0;
                     }
                 }
@@ -479,13 +480,13 @@ void CanDriver::healthCheckTask()
                 {
                     ESP_LOGW(TAG, "CAN bus disconnected due to ACK errors");
                     canState.store(STATE::NOT_CONNECTED);
-                    notifyConnectionChange(false);
+                    connectionChangeCb(false);
                 }
                 else if (consecutiveStuffErrors.load() > 3)
                 {
                     ESP_LOGW(TAG, "CAN bus disconnected due to stuffing errors");
                     canState.store(STATE::NOT_CONNECTED);
-                    notifyConnectionChange(false);
+                    connectionChangeCb(false);
                 }
                 break;
             }
@@ -493,7 +494,7 @@ void CanDriver::healthCheckTask()
             {
                 if (prevState == STATE::CONNECTED)
                 {
-                    notifyConnectionChange(false);
+                    connectionChangeCb(false);
                 }
 
                 // Attempt recovery
@@ -517,17 +518,31 @@ void CanDriver::healthCheckTask()
     vTaskDelete(NULL);
 }
 
-void CanDriver::setConnectionCallback(ConnectionCallback callback, void* arg)
+void CanDriver::setConnectionChangeCallback(ConnectionChangeCallback_t callback, void* arg)
 {
-    connectionCallback = callback;
-    callbackArg        = arg;
+    connectionChangeCallback    = callback;
+    connectionChangeCallbackArg = arg;
 }
 
-void CanDriver::notifyConnectionChange(bool connected)
+void CanDriver::connectionChangeCb(bool connected)
 {
-    if (connectionCallback != nullptr)
+    if (connectionChangeCallback != nullptr)
     {
-        connectionCallback(callbackArg, connected);
+        connectionChangeCallback(connectionChangeCallbackArg, connected);
+    }
+}
+
+void CanDriver::setRxCallback(RxCallback_t callback, void* arg)
+{
+    rxCallback    = callback;
+    rxCallbackArg = arg;
+}
+
+void CanDriver::rxCb()
+{
+    if (rxCallback != nullptr)
+    {
+        rxCallback(rxCallbackArg);
     }
 }
 

@@ -33,7 +33,7 @@ void t_request_sample(void* pvParameters)
         if (!CanDriver::getInstance().isBusConnected() || !obd2.isPidInit())
         {
             ESP_LOGW(TAG, "CAN bus is not connected or PID not initialized");
-            LedError::getInstance().blink(1);
+            LedStatus::getInstance().blink(1, 10, 100);
             vTaskDelay(pdMS_TO_TICKS(5000));
             continue;
         }
@@ -72,13 +72,13 @@ void t_request_sample(void* pvParameters)
         if (!CanDriver::getInstance().isBusConnected() || !obd2.isPidInit())
         {
             ESP_LOGW(TAG, "CAN bus is not connected or PID not initialized");
-            LedError::getInstance().blink(1);
+            LedStatus::getInstance().blink(1, 10, 100);
             vTaskDelay(pdMS_TO_TICKS(5000));
             continue;
         }
         else
         {
-            LedError::getInstance().off();
+            LedStatus::getInstance().turn_off();
         }
 
         if (!vinflag)
@@ -117,7 +117,7 @@ void t_request_sample(void* pvParameters)
 extern "C" void app_main(void)
 {
     esp_log_level_set("CAN_DRIVER", ESP_LOG_DEBUG);
-    LedError& led = LedError::getInstance();
+    LedStatus& led = LedStatus::getInstance();
     led.init(LED_GPIO);
     // esp_log_level_set("ASYNC_WEB_SERVER", ESP_LOG_DEBUG);
 

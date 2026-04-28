@@ -24,7 +24,7 @@
 #define DEBUG_MODE 0
 
 static const char *TAG = "APP_MAIN";
-static LedError led(LED_GPIO);
+static LedStatus led(LED_GPIO);
 
 esp_err_t setup_wifi()
 {

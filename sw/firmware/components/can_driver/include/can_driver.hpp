@@ -124,16 +124,18 @@ public:
         return m_config;
     }
 
-    typedef void (*ConnectionCallback)(void* arg, bool connected);
-    void setConnectionCallback(ConnectionCallback callback, void* arg);
+    // Connection Change Callback
+    typedef void (*ConnectionChangeCallback_t)(void* arg, bool connected);
+    void setConnectionChangeCallback(ConnectionChangeCallback_t callback, void* arg);
+
+    // RX Callback
+    typedef void (*RxCallback_t)(void* arg);
+    void setRxCallback(RxCallback_t callback, void* arg);
 
     QueueHandle_t getRxQueueHandle()
     {
         return rxQueue;
     }
-
-protected:
-    void notifyConnectionChange(bool connected);
 
 private:
     CanDriver(const CanDriver&)            = delete;
@@ -150,8 +152,14 @@ private:
                                           void* user_ctx);
 
     // Connection Callback
-    ConnectionCallback connectionCallback = nullptr;
-    void*              callbackArg;
+    void                       connectionChangeCb(bool connected);
+    ConnectionChangeCallback_t connectionChangeCallback    = nullptr;
+    void*                      connectionChangeCallbackArg = nullptr;
+
+    // RX Callback
+    void         rxCb();
+    RxCallback_t rxCallback    = nullptr;
+    void*        rxCallbackArg = nullptr;
 
     // Twai Configuration
     twai_onchip_node_config_t nodeConfig{};

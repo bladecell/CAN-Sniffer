@@ -1,139 +1,205 @@
 #pragma once
+#include <atomic>
+#include <cstdint>
+#include <cstdio>
+
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 
-class LedError
+class LedStatus
 {
 public:
-    // Meyers Singleton
-    static LedError& getInstance()
+    static LedStatus& getInstance()
     {
-        static LedError instance;
+        static LedStatus instance;
         return instance;
     }
 
-    // Constructor/Destructor
-    LedError() : pin_(GPIO_NUM_NC), on_ticks_(0), off_ticks_(0), count_(0), task_handle_(nullptr), state_(false)
+    static void staticBlink(void* arg)
     {
-    }
-    ~LedError()
-    {
-        stop();
+        getInstance().blink(1, 4, 4);
     }
 
-    void init(gpio_num_t pin, uint32_t on_ms = 100, uint32_t off_ms = 100)
+    enum class State
     {
-        stop();
-        pin_       = pin;
-        on_ticks_  = pdMS_TO_TICKS(on_ms);
-        off_ticks_ = pdMS_TO_TICKS(off_ms);
+        NOT_INITIALIZED,
+        ON,
+        OFF,
+        BLINK,
+        ERROR,
+    };
 
+    void init(gpio_num_t pin, uint32_t active_low = 0)
+    {
+        if (state_.load() != State::NOT_INITIALIZED)
+        {
+            ESP_LOGW("LED_STATUS", "LED already initialized");
+            return;
+        }
+        pin_ = pin;
         gpio_reset_pin(pin_);
         gpio_set_direction(pin_, GPIO_MODE_OUTPUT);
-        gpio_set_level(pin_, 0);
+        sem_ = xSemaphoreCreateBinary();
+        if (task_handle_ == nullptr)
+        {
+            xTaskCreate(runWrapper, "led_worker", 1536, this, 2, &task_handle_);
+        }
+        active_low_ = active_low;
+        turn_off();
     }
 
-    // Simple Controls
-    void on()
-    {
-        stop();
-        setLevel(true);
-    }
-    void off()
-    {
-        stop();
-        setLevel(false);
-    }
-    void toggle()
-    {
-        stop();
-        setLevel(!state_);
-    }
-
-    // Async Patterns
-    void error()
-    {
-        startBlinkTask(0);
-    }  // Infinite
-    void blink(uint32_t cnt = 1)
-    {
-        startBlinkTask(cnt);
-    }
-
-    void stop()
+    ~LedStatus()
     {
         if (task_handle_ != nullptr)
         {
-            TaskHandle_t to_notify = task_handle_;
-            // Signal the task loop to exit
-            task_handle_ = nullptr;
-            xTaskNotifyGive(to_notify);
-
-            // Give it a moment to self-delete
-            vTaskDelay(pdMS_TO_TICKS(10));
+            vTaskDelete(task_handle_);
         }
+        if (sem_ != nullptr)
+        {
+            vSemaphoreDelete(sem_);
+        }
+    }
+
+    void turn_on()
+    {
+        state_.store(State::ON);
+        wait_time_.store(portMAX_DELAY);
+        xSemaphoreGive(sem_);
+    }
+
+    void turn_off()
+    {
+        state_.store(State::OFF);
+        wait_time_.store(portMAX_DELAY);
+        xSemaphoreGive(sem_);
+    }
+
+    void toggle()
+    {
+        int current = ledState_.load();
+        if (current == 0)
+        {
+            state_.store(State::ON);
+        }
+        else
+        {
+            state_.store(State::OFF);
+        }
+        xSemaphoreGive(sem_);
+    }
+
+    void blink(uint32_t count, uint32_t on_time_ms, uint32_t off_time_ms)
+    {
+        if (state_.load() == State::BLINK)
+            return;
+        state_.store(State::BLINK);
+        on_time_.store(pdMS_TO_TICKS(on_time_ms));
+        off_time_.store(pdMS_TO_TICKS(off_time_ms));
+        count_.store(count * 2);
+        xSemaphoreGive(sem_);
     }
 
 private:
-    // Delete copy/assignment
-    LedError(const LedError&)            = delete;
-    LedError& operator=(const LedError&) = delete;
-
-    void setLevel(bool level)
+    LedStatus()
     {
-        state_ = level;
-        gpio_set_level(pin_, state_ ? 1 : 0);
     }
+    LedStatus(const LedStatus&)            = delete;
+    LedStatus& operator=(const LedStatus&) = delete;
 
-    void startBlinkTask(uint32_t cnt)
+    static void runWrapper(void* arg)
     {
-        stop();
-        count_ = cnt;
-        // High priority (5) to ensure timing accuracy
-        xTaskCreate(taskTrampoline, "led_tsk", 2048, this, 5, &task_handle_);
+        static_cast<LedStatus*>(arg)->run();
     }
-
-    static void taskTrampoline(void* arg)
-    {
-        static_cast<LedError*>(arg)->run();
-    }
-
     void run()
     {
-        uint32_t iterations = 0;
-
         while (true)
         {
-            // 1. Check if we should exit (stop() called or count reached)
-            if (task_handle_ == nullptr)
-                break;
-            if (count_ > 0 && iterations >= count_)
-                break;
+            TickType_t delay = wait_time_.load();
+            xSemaphoreTake(sem_, delay > 0 ? delay : 1);
 
-            // 2. LED ON
-            setLevel(true);
-            if (ulTaskNotifyTake(pdTRUE, on_ticks_) != 0)
-                break;  // Interrupted by stop()
-
-            // 3. LED OFF
-            setLevel(false);
-            if (ulTaskNotifyTake(pdTRUE, off_ticks_) != 0)
-                break;  // Interrupted by stop()
-
-            iterations++;
+            State state = static_cast<State>(state_.load());
+            switch (state)
+            {
+                case State::ON:
+                    on();
+                    wait_time_.store(portMAX_DELAY);
+                    break;
+                case State::OFF:
+                    off();
+                    wait_time_.store(portMAX_DELAY);
+                    break;
+                case State::BLINK:
+                    blink_runner();
+                    break;
+                case State::ERROR:
+                    // error();
+                    break;
+                default:
+                    wait_time_.store(portMAX_DELAY);
+                    break;
+            }
         }
+    };
 
-        setLevel(false);
-        task_handle_ = nullptr;
-        vTaskDelete(nullptr);
+    void on()
+    {
+        gpio_set_level(pin_, active_low_ ? 0 : 1);
+        ledState_.store(1);
     }
 
-    gpio_num_t   pin_;
-    TickType_t   on_ticks_;
-    TickType_t   off_ticks_;
-    uint32_t     count_;
-    TaskHandle_t task_handle_;
-    bool         state_;
+    void off()
+    {
+        gpio_set_level(pin_, active_low_ ? 1 : 0);
+        ledState_.store(0);
+    }
+
+    void blink_runner()
+    {
+        uint32_t count = count_.load();
+
+        // Stop condition
+        if (count == 0)
+        {
+            wait_time_.store(portMAX_DELAY);
+            if (ledState_.load() == 0)
+            {
+                state_.store(State::OFF);
+            }
+            else
+            {
+                state_.store(State::ON);
+            }
+            return;
+        }
+
+        uint32_t led_state = ledState_.load();
+        if (led_state == 0)
+        {
+            on();
+            wait_time_.store(on_time_.load());
+        }
+        else
+        {
+            off();
+            wait_time_.store(off_time_.load());
+        }
+        if (count != 0xFFFFFFFF)
+        {
+            count_.store(count - 1);
+        }
+    }
+
+    gpio_num_t              pin_;
+    uint32_t                active_low_  = 0;
+    std::atomic<uint32_t>   ledState_    = 0;
+    std::atomic<State>      state_       = State::NOT_INITIALIZED;
+    std::atomic<TickType_t> wait_time_   = portMAX_DELAY;
+    std::atomic<TickType_t> on_time_     = 0;
+    std::atomic<TickType_t> off_time_    = 0;
+    std::atomic<TickType_t> count_       = 0;
+    TaskHandle_t            task_handle_ = nullptr;
+    SemaphoreHandle_t       sem_         = nullptr;
 };
