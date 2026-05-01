@@ -1,6 +1,6 @@
 #include "async_web_server.hpp"
 
-static const char *TAG = "ASYNC_WEB_SERVER";
+static const char* TAG = "ASYNC_WEB_SERVER";
 
 AsyncWebServer::AsyncWebServer() : server_(NULL), request_queue(NULL), worker_ready_count(NULL)
 {
@@ -14,16 +14,14 @@ AsyncWebServer::~AsyncWebServer()
 esp_err_t AsyncWebServer::start(Config config)
 {
     worker_handles.reserve(config.async_worker_task_num);
-    start_workers(config.async_worker_task_num, config.async_worker_stack_size, config.async_worker_task_priority, config.worker_core_id);
+    start_workers(config.async_worker_task_num, config.async_worker_stack_size, config.async_worker_task_priority,
+                  config.worker_core_id);
 
     config.httpd_config.max_open_sockets = config.max_open_sockets;
     config.httpd_config.lru_purge_enable = true;
-    config.httpd_config.stack_size = 8192;
+    config.httpd_config.stack_size       = 8192;
 
-    ESP_RETURN_ON_ERROR(
-        httpd_start(&server_, &config.httpd_config),
-        TAG,
-        "Failed to start server");
+    ESP_RETURN_ON_ERROR(httpd_start(&server_, &config.httpd_config), TAG, "Failed to start server");
 
     ESP_LOGI(TAG, "Server started successfully.");
 
@@ -36,7 +34,7 @@ esp_err_t AsyncWebServer::stop()
     {
         ESP_LOGI(TAG, "Stopping server...");
         esp_err_t err = httpd_stop(server_);
-        server_ = NULL;
+        server_       = NULL;
         return err;
     }
 
@@ -61,7 +59,7 @@ esp_err_t AsyncWebServer::stop()
         request_queue = NULL;
     }
 
-    for (RouteContext *ctx : route_contexts)
+    for (RouteContext* ctx : route_contexts)
     {
         delete ctx;
     }
@@ -70,18 +68,18 @@ esp_err_t AsyncWebServer::stop()
     return ESP_OK;
 }
 
-void AsyncWebServer::registerRoute(const char *uri, httpd_method_t method, AsyncHandler func, void *arg)
+void AsyncWebServer::registerRoute(const char* uri, httpd_method_t method, AsyncHandler func, void* arg)
 {
     // 1. Allocate memory to hold the function pointer
-    RouteContext *ctx = new RouteContext;
-    ctx->handler = func;
-    ctx->arg = arg;
+    RouteContext* ctx = new RouteContext;
+    ctx->handler      = func;
+    ctx->arg          = arg;
 
     httpd_uri_t http_uri = {};
-    http_uri.uri = uri;
-    http_uri.method = method;
-    http_uri.handler = async_handler; // Point to our static shim (see below)
-    http_uri.user_ctx = ctx;          // Store our context here
+    http_uri.uri         = uri;
+    http_uri.method      = method;
+    http_uri.handler     = async_handler;  // Point to our static shim (see below)
+    http_uri.user_ctx    = ctx;            // Store our context here
 
     route_contexts.push_back(ctx);
 
@@ -91,11 +89,11 @@ void AsyncWebServer::registerRoute(const char *uri, httpd_method_t method, Async
     if (err != ESP_OK)
     {
         ESP_LOGE(TAG, "Failed to register handler for %s", uri);
-        delete ctx; // Clean up memory if registration fails
+        delete ctx;  // Clean up memory if registration fails
     }
 }
 
-esp_err_t AsyncWebServer::async_handler(httpd_req_t *req)
+esp_err_t AsyncWebServer::async_handler(httpd_req_t* req)
 {
     ESP_LOGD(TAG, "%s uri: %s", get_method_str(req->method), req->uri);
 
@@ -112,10 +110,9 @@ esp_err_t AsyncWebServer::async_handler(httpd_req_t *req)
     }
 }
 
-esp_err_t AsyncWebServer::queue_request(httpd_req_t *req)
+esp_err_t AsyncWebServer::queue_request(httpd_req_t* req)
 {
-
-    RouteContext *ctx = (RouteContext *)req->user_ctx;
+    RouteContext* ctx = (RouteContext*)req->user_ctx;
 
     if (!ctx || !ctx->handler)
     {
@@ -124,8 +121,8 @@ esp_err_t AsyncWebServer::queue_request(httpd_req_t *req)
     }
 
     // must create a copy of the request that we own
-    httpd_req_t *copy = NULL;
-    esp_err_t err = httpd_req_async_handler_begin(req, &copy);
+    httpd_req_t* copy = NULL;
+    esp_err_t    err  = httpd_req_async_handler_begin(req, &copy);
     if (err != ESP_OK)
     {
         return err;
@@ -133,9 +130,9 @@ esp_err_t AsyncWebServer::queue_request(httpd_req_t *req)
 
     // create the job for the worker
     AsyncRequest job;
-    job.req = copy;
-    job.handler = ctx->handler;
-    job.arg = ctx->arg;
+    job.req           = copy;
+    job.handler       = ctx->handler;
+    job.arg           = ctx->arg;
     job.start_time_us = esp_timer_get_time();
 
     int ticks = 0;
@@ -145,7 +142,7 @@ esp_err_t AsyncWebServer::queue_request(httpd_req_t *req)
     if (xSemaphoreTake(worker_ready_count, ticks) != pdTRUE)
     {
         ESP_LOGE(TAG, "No workers are available");
-        httpd_req_async_handler_complete(copy); // cleanup
+        httpd_req_async_handler_complete(copy);  // cleanup
         return ESP_FAIL;
     }
 
@@ -179,7 +176,7 @@ void AsyncWebServer::worker_task()
 
                 // mark complete using the COPY
                 // This cleans up the memory allocated by 'begin' and closes/frees the socket usage
-                int64_t end_time = esp_timer_get_time();
+                int64_t end_time    = esp_timer_get_time();
                 int64_t duration_us = end_time - async_req.start_time_us;
 
                 ESP_LOGI(TAG, "%s processed in %.2f ms", async_req.req->uri, duration_us / 1000.0f);
@@ -194,20 +191,18 @@ void AsyncWebServer::worker_task()
     vTaskDelete(NULL);
 }
 
-void AsyncWebServer::worker_task_wrapper(void *arg)
+void AsyncWebServer::worker_task_wrapper(void* arg)
 {
-    AsyncWebServer *instance = (AsyncWebServer *)arg;
-    instance->worker_task(); // Call instance method
+    AsyncWebServer* instance = (AsyncWebServer*)arg;
+    instance->worker_task();  // Call instance method
 }
 
 // start worker threads
 esp_err_t AsyncWebServer::start_workers(uint8_t num_workers, uint32_t stack_size, uint8_t priority, int core_id)
 {
-
     // counting semaphore keeps track of available workers
-    worker_ready_count = xSemaphoreCreateCounting(
-        num_workers, // Max Count
-        0);          // Initial Count
+    worker_ready_count = xSemaphoreCreateCounting(num_workers,  // Max Count
+                                                  0);           // Initial Count
     if (worker_ready_count == NULL)
     {
         ESP_LOGE(TAG, "Failed to create workers counting Semaphore");
@@ -228,14 +223,10 @@ esp_err_t AsyncWebServer::start_workers(uint8_t num_workers, uint32_t stack_size
     {
         TaskHandle_t hdl = NULL;
 
-        BaseType_t res = xTaskCreatePinnedToCore(
-            worker_task_wrapper, // Static wrapper
-            "async_req_worker",
-            stack_size,
-            this, // Pass instance as argument
-            priority,
-            &hdl,
-            core_id);
+        BaseType_t res = xTaskCreatePinnedToCore(worker_task_wrapper,  // Static wrapper
+                                                 "async_req_worker", stack_size,
+                                                 this,  // Pass instance as argument
+                                                 priority, &hdl, core_id);
 
         if (res == pdPASS)
         {
@@ -250,36 +241,36 @@ esp_err_t AsyncWebServer::start_workers(uint8_t num_workers, uint32_t stack_size
     return ESP_OK;
 }
 
-inline const char *AsyncWebServer::get_method_str(int method)
+inline const char* AsyncWebServer::get_method_str(int method)
 {
     switch (method)
     {
-    case HTTP_GET:
-        return "GET";
-    case HTTP_POST:
-        return "POST";
-    case HTTP_PUT:
-        return "PUT";
-    case HTTP_DELETE:
-        return "DELETE";
-    case HTTP_HEAD:
-        return "HEAD";
-    case HTTP_PATCH:
-        return "PATCH";
-    default:
-        return "UNKNOWN";
+        case HTTP_GET:
+            return "GET";
+        case HTTP_POST:
+            return "POST";
+        case HTTP_PUT:
+            return "PUT";
+        case HTTP_DELETE:
+            return "DELETE";
+        case HTTP_HEAD:
+            return "HEAD";
+        case HTTP_PATCH:
+            return "PATCH";
+        default:
+            return "UNKNOWN";
     }
 }
 
-void AsyncWebServer::registerSocketRoute(const char *uri, esp_err_t (*handler)(httpd_req_t *r), void *ctx)
+void AsyncWebServer::registerSocketRoute(const char* uri, esp_err_t (*handler)(httpd_req_t* r), void* ctx)
 {
     httpd_uri_t http_uri = {};
 
-    http_uri.uri = uri;
-    http_uri.method = HTTP_GET;
-    http_uri.handler = handler;
-    http_uri.user_ctx = ctx;
-    http_uri.is_websocket = true;
+    http_uri.uri                      = uri;
+    http_uri.method                   = HTTP_GET;
+    http_uri.handler                  = handler;
+    http_uri.user_ctx                 = ctx;
+    http_uri.is_websocket             = true;
     http_uri.handle_ws_control_frames = true;
 
     esp_err_t err = httpd_register_uri_handler(server_, &http_uri);
@@ -290,20 +281,20 @@ void AsyncWebServer::registerSocketRoute(const char *uri, esp_err_t (*handler)(h
     }
 }
 
-void AsyncWebServer::wsBroadcast(httpd_ws_frame_t *ws_pkt)
+void AsyncWebServer::wsBroadcast(httpd_ws_frame_t* ws_pkt)
 {
     // 1. Prepare a buffer for client FDs
     // 20 is usually plenty for ESP32 (lwIP max is often ~16)
     static const size_t MAX_CLIENTS = 20;
-    int client_fds[MAX_CLIENTS];
-    size_t fds = MAX_CLIENTS;
+    int                 client_fds[MAX_CLIENTS];
+    size_t              fds = MAX_CLIENTS;
 
     // 2. Ask ESP-IDF for the list of ALL connected clients
     esp_err_t ret = httpd_get_client_list(server_, &fds, client_fds);
 
     if (ret != ESP_OK)
     {
-        return; // Server might be stopping or empty
+        return;  // Server might be stopping or empty
     }
 
     // 3. Iterate and Send
@@ -325,4 +316,34 @@ void AsyncWebServer::wsBroadcast(httpd_ws_frame_t *ws_pkt)
             }
         }
     }
+}
+
+uint32_t AsyncWebServer::getActiveWSClientCount()
+{
+    static const size_t MAX_CLIENTS = 20;
+    int                 client_fds[MAX_CLIENTS];
+    size_t              fds = MAX_CLIENTS;
+
+    esp_err_t ret = httpd_get_client_list(server_, &fds, client_fds);
+
+    if (ret != ESP_OK)
+    {
+        return 0;
+    }
+
+    uint32_t client_count = 0;
+
+    for (int i = 0; i < fds; i++)
+    {
+        int fd = client_fds[i];
+
+        httpd_ws_client_info_t info = httpd_ws_get_fd_info(server_, fd);
+
+        if (info == HTTPD_WS_CLIENT_WEBSOCKET)
+        {
+            client_count++;
+        }
+    }
+
+    return client_count;
 }

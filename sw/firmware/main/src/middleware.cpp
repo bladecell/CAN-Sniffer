@@ -1,5 +1,7 @@
 #include "middleware.hpp"
 
+#include <cstdint>
+
 #include "cJSON.h"
 #include "esp_check.h"
 #include "freertos/idf_additions.h"
@@ -358,7 +360,7 @@ esp_err_t get_pid_stream_packet(uint16_t pid, uint8_t* out_packet)
     out_packet[offset++] = MSG_TYPE_PID;
 
     // Length
-    out_packet[offset++] = sizeof(PidWirePacket) - 2;
+    out_packet[offset++] = PID_STREAM_PACKET_SIZE - 2;
 
     // 32 bit pid
     out_packet[offset++] = (pid >> 0) & 0xFF;
@@ -391,6 +393,35 @@ esp_err_t get_pid_stream_packet(uint16_t pid, uint8_t* out_packet)
 
     // 8 bit isValid
     out_packet[offset++] = data.isValid ? 1 : 0;
+
+    return ESP_OK;
+}
+
+esp_err_t get_can_status_packet(uint8_t* out_packet)
+{
+    size_t offset = 0;
+
+    // 8 bit message type
+    out_packet[offset++] = MSG_TYPE_CAN_STATUS;
+
+    // Length
+    out_packet[offset++] = PID_STREAM_PACKET_SIZE - 2;
+
+    // 8 bit state
+    const auto& state    = CanDriver::getInstance().getState();
+    out_packet[offset++] = static_cast<uint8_t>(state);
+
+    // float utilization
+    float    utilization = OBD2::getInstance().getPollTaskUtilization();
+    uint32_t float_bits;
+    memcpy(&float_bits, &utilization, sizeof(utilization));
+    out_packet[offset++] = (float_bits >> 0) & 0xFF;
+    out_packet[offset++] = (float_bits >> 8) & 0xFF;
+    out_packet[offset++] = (float_bits >> 16) & 0xFF;
+    out_packet[offset++] = (float_bits >> 24) & 0xFF;
+
+    // 8 bit isBusConnected
+    out_packet[offset++] = CanDriver::getInstance().isBusConnected() ? 1 : 0;
 
     return ESP_OK;
 }

@@ -4,6 +4,7 @@
 
 #include "can_driver.hpp"
 #include "esp_log_level.h"
+#include "esp_system.h"
 #include "led_status.hpp"
 
 static const char* TAG = "SUPERVISOR";
@@ -27,8 +28,8 @@ void SUPERVISOR::start()
 
     eState = State::STARTING;
 
-    BaseType_t result =
-        xTaskCreatePinnedToCore(taskWrapper, "SupervisorTask", 4096, this, tskIDLE_PRIORITY + 1, &xTaskHandle, 0);
+    BaseType_t result = xTaskCreatePinnedToCore(taskWrapper, "SupervisorTask", SUPERVISOR_TASK_STACK_SIZE, this,
+                                                tskIDLE_PRIORITY + 1, &xTaskHandle, SUPERVISOR_TASK_CORE_ID);
 
     if (result != pdPASS)
     {
@@ -177,4 +178,65 @@ esp_err_t SUPERVISOR::setup_obd()
     ESP_LOGI(TAG, "OBD2 interface initialized");
 
     return ESP_OK;
+}
+
+uint32_t SUPERVISOR::get_uptime_seconds() const
+{
+    return xTaskGetTickCount() / configTICK_RATE_HZ;
+}
+
+std::string SUPERVISOR::get_restart_reason() const
+{
+    esp_reset_reason_t reason = esp_reset_reason();
+    switch (reason)
+    {
+        case ESP_RST_UNKNOWN:
+            return std::string("Unknown");
+        case ESP_RST_POWERON:
+            return std::string("Power on");
+        case ESP_RST_EXT:
+            return std::string("Software reset");
+        case ESP_RST_PANIC:
+            return std::string("Panic reset");
+        case ESP_RST_INT_WDT:
+            return std::string("Interrupt watchdog");
+        case ESP_RST_TASK_WDT:
+            return std::string("Task watchdog");
+        case ESP_RST_WDT:
+            return std::string("Watchdog reset");
+        case ESP_RST_DEEPSLEEP:
+            return std::string("Deep sleep");
+        case ESP_RST_BROWNOUT:
+            return std::string("Brownout reset");
+        case ESP_RST_SDIO:
+            return std::string("SDIO reset");
+        case ESP_RST_USB:
+            return std::string("USB reset");
+        case ESP_RST_JTAG:
+            return std::string("JTAG reset");
+        case ESP_RST_EFUSE:
+            return std::string("Efuse reset");
+        case ESP_RST_PWR_GLITCH:
+            return std::string("Power glitch");
+        case ESP_RST_CPU_LOCKUP:
+            return std::string("CPU lockup");
+        default:
+            return std::string("invalid reason");
+    }
+}
+
+std::string SUPERVISOR::get_MAC_address() const
+{
+    uint8_t mac[6];
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+
+    char buf[18];  // "AA:BB:CC:DD:EE:FF\0"
+    snprintf(buf, sizeof(buf), "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
+    return std::string(buf);
+}
+
+void SUPERVISOR::restart_system()
+{
+    esp_restart();
 }

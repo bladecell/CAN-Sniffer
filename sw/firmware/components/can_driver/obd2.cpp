@@ -348,6 +348,7 @@ void OBD2::pollTask()
 
         // Combined Utilization (Weighted average)
         // 70% based on schedule health, 30% on queue space
+        // Range 0-1
         pollTaskUtilization = (latencyFactor * 0.7f) + (fill * 0.3f);
 
         // 2. Take the most urgent appointment

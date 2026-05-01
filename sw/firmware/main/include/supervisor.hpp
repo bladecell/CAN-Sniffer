@@ -1,8 +1,12 @@
 // supervisor.hpp
+#include <cstdint>
+#include <string>
+
 #include "async_web_server.hpp"
 #include "can_driver.hpp"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_mac.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -14,6 +18,9 @@
 #include "utilities.h"
 #include "webserver.hpp"
 #include "wifi.hpp"
+
+#define SUPERVISOR_TASK_STACK_SIZE 4096
+#define SUPERVISOR_TASK_CORE_ID 1
 
 class SUPERVISOR
 {
@@ -38,6 +45,11 @@ public:
 
     void start();
     void stop();
+
+    uint32_t    get_uptime_seconds() const;
+    std::string get_restart_reason() const;
+    std::string get_MAC_address() const;
+    void        restart_system();
 
 private:
     SUPERVISOR(const SUPERVISOR&)            = delete;

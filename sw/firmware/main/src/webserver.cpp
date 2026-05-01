@@ -1,6 +1,39 @@
 #include "webserver.hpp"
 
+#include "atomic"
+#include "freertos/idf_additions.h"
+
 static const char* TAG = "WEB_SERVER";
+
+static TaskHandle_t      xWSDataStreamTaskHandle = nullptr;
+static SemaphoreHandle_t WSDataStreamSemaphore   = nullptr;
+static std::atomic<bool> wsStreamingEnabled      = false;
+
+static void WSDataStreamTask(void* pvParameters)
+{
+    if (WSDataStreamSemaphore == nullptr)
+    {
+        ESP_LOGE(TAG, "Failed to create WSDataStreamSemaphore");
+        vTaskDelete(xWSDataStreamTaskHandle);
+        return;
+    }
+
+    TickType_t       xLastWakeTime = xTaskGetTickCount();
+    const TickType_t xPeriod       = pdMS_TO_TICKS(WS_DAT_STREAM_PERIOD);
+
+    while (1)
+    {
+        vTaskDelayUntil(&xLastWakeTime, xPeriod);
+        if (wsStreamingEnabled.load())
+        {
+            ws_send_can_status();
+        }
+        else
+        {
+            xSemaphoreTake(WSDataStreamSemaphore, portMAX_DELAY);
+        }
+    }
+}
 
 esp_err_t setup_web_server()
 {
@@ -13,6 +46,12 @@ esp_err_t setup_web_server()
     server_config.httpd_config.max_uri_handlers = 20;
 
     esp_err_t ret = AsyncWebServer::getInstance().start(server_config);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to start web server");
+        return ret;
+    }
+
     AsyncWebServer::getInstance().registerRoute("/", HTTP_GET, index_handler, NULL);
     AsyncWebServer::getInstance().registerRoute("/api/v1/pid_def/*", HTTP_GET, g_pid_def_index_handler, NULL);
     AsyncWebServer::getInstance().registerRoute("/api/v1/pid_def", HTTP_GET, g_pid_def_index_handler, NULL);
@@ -27,11 +66,25 @@ esp_err_t setup_web_server()
     AsyncWebServer::getInstance().registerRoute("/api/v1/req/vin", HTTP_POST, p_vin_index_handler, NULL);
     AsyncWebServer::getInstance().registerRoute("/api/v1/req/dtc*", HTTP_POST, p_dtc_index_handler, NULL);
     AsyncWebServer::getInstance().registerRoute("/api/v1/req/clear_dtc", HTTP_POST, p_clear_dtc_index_handler, NULL);
+    AsyncWebServer::getInstance().registerRoute("/api/v1/system", HTTP_POST, p_system_index_handler, NULL);
+
     AsyncWebServer::getInstance().registerSocketRoute("/ws", ws_socket_handler, NULL);
 
     OBD2::getInstance().subscribe(pid_stream_callback);
 
-    return ret;
+    WSDataStreamSemaphore = xSemaphoreCreateBinary();
+
+    BaseType_t result =
+        xTaskCreatePinnedToCore(WSDataStreamTask, "WSDataStreamTask", WS_DAT_STREAM_TASK_STACK_SIZE, NULL,
+                                WS_DAT_STREAM_TASK_PRIORITY, &xWSDataStreamTaskHandle, WS_DAT_STREAM_TASK_CORE_ID);
+
+    if (result != pdPASS)
+    {
+        ESP_LOGE(TAG, "Failed to create WSDataStreamTask!");
+        return ESP_FAIL;
+    }
+
+    return ESP_OK;
 }
 
 esp_err_t send_json_response(httpd_req_t* req, cJSON* root)
@@ -115,7 +168,7 @@ esp_err_t g_pid_def_index_handler(httpd_req_t* req, void* arg)
 
     if (sscanf(req->uri, "/api/v1/pid_def/%d", &target_pid) == 1)
     {
-        if (target_pid < 0 || target_pid > 255)
+        if (target_pid < 0 || target_pid > 0xFFFF)
         {
             ESP_LOGW(TAG, "Invalid PID requested: %d", target_pid);
             return httpd_resp_send_404(req);
@@ -133,7 +186,7 @@ esp_err_t g_pid_data_index_handler(httpd_req_t* req, void* arg)
 
     if (sscanf(req->uri, "/api/v1/pid_data/%d", &target_pid) == 1)
     {
-        if (target_pid < 0 || target_pid > 255)
+        if (target_pid < 0 || target_pid > 0xFFFF)
         {
             ESP_LOGW(TAG, "Invalid PID requested: %d", target_pid);
             return httpd_resp_send_404(req);
@@ -235,6 +288,8 @@ esp_err_t ws_socket_handler(httpd_req_t* req)
     if (req->method == HTTP_GET)
     {
         ESP_LOGI(TAG, "WS Connect: Client #%d", sockfd);
+        wsStreamingEnabled.store(true);
+        xSemaphoreGive(WSDataStreamSemaphore);
         return ESP_OK;
     }
 
@@ -253,7 +308,12 @@ esp_err_t ws_socket_handler(httpd_req_t* req)
     if (ws_pkt.type == HTTPD_WS_TYPE_CLOSE)
     {
         ESP_LOGI(TAG, "WS Client #%d Sent Close Frame", sockfd);
-
+        uint32_t wcClientCount = AsyncWebServer::getInstance().getActiveWSClientCount();
+        if (wcClientCount == 0)
+        {
+            enable_pid_stream(false);
+            wsStreamingEnabled.store(false);
+        }
         httpd_ws_send_frame(req, &ws_pkt);
         return ESP_OK;
     }
@@ -304,7 +364,7 @@ void pid_stream_callback(uint16_t pid)
     if (!b_pid_stream_enabled)
         return;
 
-    uint8_t packet[20];
+    uint8_t packet[PID_STREAM_PACKET_SIZE];
 
     esp_err_t err = get_pid_stream_packet(pid, packet);
 
@@ -313,7 +373,7 @@ void pid_stream_callback(uint16_t pid)
         httpd_ws_frame_t ws_frame;
         memset(&ws_frame, 0, sizeof(httpd_ws_frame_t));
         ws_frame.payload = packet;
-        ws_frame.len     = sizeof(PidWirePacket);
+        ws_frame.len     = PID_STREAM_PACKET_SIZE;
         ws_frame.type    = HTTPD_WS_TYPE_BINARY;
 
         AsyncWebServer::getInstance().wsBroadcast(&ws_frame);
@@ -321,5 +381,32 @@ void pid_stream_callback(uint16_t pid)
     else
     {
         ESP_LOGW(TAG, "Failed to get PID stream packet for PID 0x%02X - %s", pid, esp_err_to_name(err));
+    }
+}
+
+esp_err_t p_system_index_handler(httpd_req_t* req, void* arg)
+{
+    return ESP_OK;
+}
+
+void ws_send_can_status()
+{
+    uint8_t packet[CAN_STATUS_PACKET_SIZE];
+
+    esp_err_t err = get_can_status_packet(packet);
+
+    if (err == ESP_OK)
+    {
+        httpd_ws_frame_t ws_frame;
+        memset(&ws_frame, 0, sizeof(httpd_ws_frame_t));
+        ws_frame.payload = packet;
+        ws_frame.len     = PID_STREAM_PACKET_SIZE;
+        ws_frame.type    = HTTPD_WS_TYPE_BINARY;
+
+        AsyncWebServer::getInstance().wsBroadcast(&ws_frame);
+    }
+    else
+    {
+        ESP_LOGW(TAG, "Failed to get Can Status stream packet - %s", esp_err_to_name(err));
     }
 }
