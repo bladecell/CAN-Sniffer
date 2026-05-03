@@ -5,6 +5,8 @@
 #include "cJSON.h"
 #include "esp_http_server.h"
 #include "obd2.hpp"
+#include "supervisor.hpp"
+#include "utilities.h"
 
 #define MSG_TYPE_LOG 0x01
 #define MSG_TYPE_PID 0x02
@@ -19,6 +21,7 @@ cJSON* m_pid_data_json(int filter_id);
 void   m_pid_poll_set_running(bool running);
 cJSON* m_can_bus_json();
 cJSON* m_obdii_json();
+cJSON* m_system_json();
 cJSON* m_vin_json();
 cJSON* m_dtc_json(int mode);
 cJSON* m_vin_request();

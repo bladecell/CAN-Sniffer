@@ -1,8 +1,10 @@
 // supervisor.hpp
+#pragma once
 #include <cstdint>
 #include <string>
 
 #include "async_web_server.hpp"
+#include "battery.hpp"
 #include "can_driver.hpp"
 #include "esp_err.h"
 #include "esp_log.h"
@@ -46,10 +48,15 @@ public:
     void start();
     void stop();
 
-    uint32_t    get_uptime_seconds() const;
-    std::string get_restart_reason() const;
-    std::string get_MAC_address() const;
-    void        restart_system();
+    uint32_t          get_uptime_seconds() const;
+    std::string       get_restart_reason() const;
+    std::string       get_MAC_address() const;
+    float             get_battery_voltage() const;
+    void              restart_system();
+    SUPERVISOR::State get_state() const
+    {
+        return eState;
+    }
 
 private:
     SUPERVISOR(const SUPERVISOR&)            = delete;
@@ -64,11 +71,10 @@ private:
     static esp_err_t setup_wifi();
     static esp_err_t setup_can();
     static esp_err_t setup_obd();
+    static esp_err_t setup_battery();
 
-    esp_err_t (*setup_functions[4])() = {
-        SUPERVISOR::setup_wifi,
-        SUPERVISOR::setup_can,
-        SUPERVISOR::setup_obd,
-        setup_web_server,
+    esp_err_t (*setup_functions[5])() = {
+        SUPERVISOR::setup_wifi, SUPERVISOR::setup_can,     SUPERVISOR::setup_obd,
+        setup_web_server,       SUPERVISOR::setup_battery,
     };
 };

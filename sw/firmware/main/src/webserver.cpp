@@ -1,3 +1,4 @@
+// webserver.cpp
 #include "webserver.hpp"
 
 #include "atomic"
@@ -386,7 +387,9 @@ void pid_stream_callback(uint16_t pid)
 
 esp_err_t p_system_index_handler(httpd_req_t* req, void* arg)
 {
-    return ESP_OK;
+    cJSON* root = m_system_json();
+
+    return send_json_response(req, root);
 }
 
 void ws_send_can_status()

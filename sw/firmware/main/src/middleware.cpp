@@ -6,6 +6,7 @@
 #include "esp_check.h"
 #include "freertos/idf_additions.h"
 #include "freertos/projdefs.h"
+#include "utilities.h"
 
 cJSON* get_single_pid_def_json(const PIDDefinition* def)
 {
@@ -219,6 +220,21 @@ cJSON* m_obdii_json()
     cJSON_AddItemToObject(supported_pids, "groups", groups);
 
     cJSON_AddItemToObject(root, "supported_pids", supported_pids);
+
+    return root;
+}
+
+cJSON* m_system_json()
+{
+    cJSON* root = cJSON_CreateObject();
+
+    // Add System information to the JSON object
+    cJSON_AddNumberToObject(root, "app_version", APP_VERSION_MAJOR + APP_VERION_MINOR * 0.1);
+    cJSON_AddNumberToObject(root, "uptime_s", SUPERVISOR::getInstance().get_uptime_seconds());
+    cJSON_AddStringToObject(root, "pid_initialized", SUPERVISOR::getInstance().get_restart_reason().c_str());
+    cJSON_AddStringToObject(root, "mac", SUPERVISOR::getInstance().get_MAC_address().c_str());
+    cJSON_AddNumberToObject(root, "state", static_cast<uint32_t>(SUPERVISOR::getInstance().get_state()));
+    cJSON_AddNumberToObject(root, "battery_voltage", SUPERVISOR::getInstance().get_battery_voltage());
 
     return root;
 }

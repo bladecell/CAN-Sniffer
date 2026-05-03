@@ -89,6 +89,7 @@ void SUPERVISOR::task()
                 }
                 else
                 {
+                    ESP_LOGE(TAG, "Failed to initialize modules");
                     eState = State::ERROR;
                 }
                 break;
@@ -180,6 +181,11 @@ esp_err_t SUPERVISOR::setup_obd()
     return ESP_OK;
 }
 
+esp_err_t SUPERVISOR::setup_battery()
+{
+    return battery_init();
+}
+
 uint32_t SUPERVISOR::get_uptime_seconds() const
 {
     return xTaskGetTickCount() / configTICK_RATE_HZ;
@@ -239,4 +245,9 @@ std::string SUPERVISOR::get_MAC_address() const
 void SUPERVISOR::restart_system()
 {
     esp_restart();
+}
+
+float SUPERVISOR::get_battery_voltage() const
+{
+    return battery_read();
 }
