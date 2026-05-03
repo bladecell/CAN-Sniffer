@@ -1,14 +1,12 @@
 #pragma once
 
-#include <atomic>
 #include <cstdint>
 #include <vector>
 
-#include "esp_check.h"
 #include "esp_http_server.h"
-#include "esp_log.h"
-#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/queue.h"
 #include "freertos/semphr.h"
 
 #define MAX_WS_CLIENTS CONFIG_LWIP_MAX_LISTENING_TCP
@@ -51,7 +49,7 @@ public:
         void*        arg;
     };
 
-    static inline const char* get_method_str(int method);
+    static const char* get_method_str(int method);
 
     esp_err_t        queue_request(httpd_req_t* req);
     static esp_err_t async_handler(httpd_req_t* req);

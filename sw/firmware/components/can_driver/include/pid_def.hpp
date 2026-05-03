@@ -7,11 +7,13 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "obd2_utils.hpp"
-#include "tinyexpr.h"
+
+// Forward declaration for tinyexpr
+struct te_expr;
 
 class PIDDefinition
 {
-private:
+public:
     uint32_t    id_;
     uint8_t     mode_;
     uint16_t    pid_;

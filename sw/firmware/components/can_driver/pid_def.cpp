@@ -1,6 +1,7 @@
 // pid_def.cpp
 #include "pid_def.hpp"
 
+#include "tinyexpr.h"
 #include "tinyexpr_helpers.h"  // safe here - no cycle, obd2.hpp fully visible
 
 PIDDefinition::PIDDefinition(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std::string name, std::string unit,

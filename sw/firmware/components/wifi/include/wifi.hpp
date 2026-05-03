@@ -11,41 +11,18 @@
 
 #pragma once
 
+#pragma once
+
 #include <vector>
-#include <algorithm>
-#include <functional>
-#include <cstring>
 #include <string>
 #include <atomic>
+#include <functional>
 
-#include "esp_mac.h"
+#include "esp_err.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
-#include "esp_log.h"
-#include "esp_err.h"
-#include "nvs_flash.h"
-#include "mdns.h"
-
-#define HOSTNAME "can-sniffer"
-#define MDNS_INSTANCE "ESP32 CAN Sniffer"
-
-// Define a placeholder for "No Action" if you want your code to be more readable
-#define NO_ACTION (void)0
-
-// The ERROR_CHECK Macro
-#define ERROR_CHECK(x, str, action, ...)                                 \
-    do                                                                   \
-    {                                                                    \
-        esp_err_t err_rc_ = (x);                                         \
-        if (unlikely(err_rc_ != ESP_OK))                                 \
-        {                                                                \
-            ESP_LOGE(TAG, "%s(%d): " str ": %s", __FUNCTION__, __LINE__, \
-                     ##__VA_ARGS__, esp_err_to_name(err_rc_));           \
-            action;                                                      \
-        }                                                                \
-    } while (0)
-
-// TODO Wifi Connected and disconnected callbacks
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 class WIFI
 {

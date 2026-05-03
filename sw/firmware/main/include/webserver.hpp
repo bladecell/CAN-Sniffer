@@ -1,21 +1,16 @@
 // webserver.hpp
 #pragma once
-#include "async_web_server.hpp"
-#include "freertos/FreeRTOS.h"
-#include "freertos/semphr.h"
-#include "freertos/task.h"
-#include "middleware.hpp"
-#include "obd2.hpp"
-#include "web_assets.h"
-#include "wifi.hpp"
+
+#include <stddef.h>
+#include "esp_err.h"
+
+// Forward declarations
+struct cJSON;
+struct httpd_req;
+typedef struct httpd_req httpd_req_t;
 
 #define WS_START_PID_STREAM 0xA0
 #define WS_STOP_PID_STREAM 0xA1
-
-#define WS_DAT_STREAM_TASK_STACK_SIZE 2048
-#define WS_DAT_STREAM_TASK_PRIORITY (tskIDLE_PRIORITY + 1)
-#define WS_DAT_STREAM_TASK_CORE_ID 1
-#define WS_DAT_STREAM_PERIOD 1000
 
 esp_err_t setup_web_server();
 

@@ -1,12 +1,12 @@
 // middleware.hpp
 #pragma once
 #include <cstdint>
-
+#include "esp_err.h"
 #include "cJSON.h"
-#include "esp_http_server.h"
-#include "obd2.hpp"
-#include "supervisor.hpp"
-#include "utilities.h"
+
+// Forward declarations to minimize includes
+class PIDDefinition;
+struct PIDData_t;
 
 #define MSG_TYPE_LOG 0x01
 #define MSG_TYPE_PID 0x02
@@ -28,7 +28,7 @@ cJSON* m_vin_request();
 cJSON* m_dtc_request(int mode);
 cJSON* m_clear_dtc_request();
 
-cJSON* get_single_pid_def_json(const PIDDef_t& pi);
+cJSON* get_single_pid_def_json(const PIDDefinition* def);
 cJSON* get_single_pid_data_json(uint16_t pid, const PIDData_t& pd);
 
 esp_err_t get_pid_stream_packet(uint16_t pid, uint8_t* out_packet);

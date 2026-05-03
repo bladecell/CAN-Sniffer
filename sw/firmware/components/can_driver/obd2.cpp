@@ -11,10 +11,16 @@
 
 #include "obd2.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
+#include <cstring>
+#include <sys/types.h>
 
 #include "can_driver.hpp"
+#include "esp_check.h"
 #include "esp_err.h"
+#include "esp_log.h"
 #include "obd2_utils.hpp"
 
 static const char* TAG = "OBD2";

@@ -1,4 +1,7 @@
 #include "async_web_server.hpp"
+#include "esp_check.h"
+#include "esp_log.h"
+#include "esp_timer.h"
 
 static const char* TAG = "ASYNC_WEB_SERVER";
 
@@ -241,7 +244,7 @@ esp_err_t AsyncWebServer::start_workers(uint8_t num_workers, uint32_t stack_size
     return ESP_OK;
 }
 
-inline const char* AsyncWebServer::get_method_str(int method)
+const char* AsyncWebServer::get_method_str(int method)
 {
     switch (method)
     {

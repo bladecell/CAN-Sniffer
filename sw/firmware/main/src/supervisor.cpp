@@ -2,16 +2,24 @@
 
 #include "supervisor.hpp"
 
+#include "battery.hpp"
 #include "can_driver.hpp"
-#include "esp_log_level.h"
+#include "esp_log.h"
+#include "esp_mac.h"
 #include "esp_system.h"
 #include "led_status.hpp"
+#include "obd2.hpp"
+#include "secrets.h"
+#include "utilities.h"
+#include "webserver.hpp"
+#include "wifi.hpp"
 
 static const char* TAG = "SUPERVISOR";
 
 SUPERVISOR::SUPERVISOR()
 {
     // initialization code
+    setup_functions[3] = setup_web_server;
 }
 SUPERVISOR::~SUPERVISOR()
 {

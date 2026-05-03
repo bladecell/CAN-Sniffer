@@ -2,6 +2,13 @@
 
 #include "obd2_dtb.hpp"
 
+#include <algorithm>
+#include <cmath>
+#include <cstring>
+#include <memory>
+#include <set>
+
+#include "esp_log.h"
 #include "obd2_utils.hpp"
 
 static const char* TAG = "OBD2DTB";

@@ -3,6 +3,7 @@
 #include <cstring>
 
 #include "esp_log.h"
+#include "nvs_flash.h"
 
 static const char* TAG           = "SETTINGS";
 static const char* NVS_NAMESPACE = "storage";

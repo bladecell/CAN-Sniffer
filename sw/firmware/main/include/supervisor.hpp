@@ -3,23 +3,9 @@
 #include <cstdint>
 #include <string>
 
-#include "async_web_server.hpp"
-#include "battery.hpp"
-#include "can_driver.hpp"
 #include "esp_err.h"
-#include "esp_log.h"
-#include "esp_mac.h"
-#include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "led_status.hpp"
-#include "obd2.hpp"
-#include "obd2_utils.hpp"
-#include "secrets.h"
-#include "settings.hpp"
-#include "utilities.h"
-#include "webserver.hpp"
-#include "wifi.hpp"
 
 #define SUPERVISOR_TASK_STACK_SIZE 4096
 #define SUPERVISOR_TASK_CORE_ID 1
@@ -75,6 +61,6 @@ private:
 
     esp_err_t (*setup_functions[5])() = {
         SUPERVISOR::setup_wifi, SUPERVISOR::setup_can,     SUPERVISOR::setup_obd,
-        setup_web_server,       SUPERVISOR::setup_battery,
+        nullptr,       SUPERVISOR::setup_battery,
     };
 };

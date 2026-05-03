@@ -1,11 +1,16 @@
 #include "middleware.hpp"
 
 #include <cstdint>
+#include <cstring>
+#include <vector>
 
 #include "cJSON.h"
 #include "esp_check.h"
-#include "freertos/idf_additions.h"
-#include "freertos/projdefs.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/semphr.h"
+#include "obd2.hpp"
+#include "supervisor.hpp"
 #include "utilities.h"
 
 cJSON* get_single_pid_def_json(const PIDDefinition* def)

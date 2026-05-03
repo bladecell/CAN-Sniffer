@@ -4,8 +4,15 @@
 #include "freertos/projdefs.h"
 #include "freertos/queue.h"
 #include "hal/twai_types.h"
+#include "obd2_simulator.hpp"
 
 static const char* TAG = "CAN_DRIVER";
+
+#define LOG_CAN_FRAME(LOG_TAG, DIR, CAN_ID, DATA_PTR, LEN)                                                         \
+    ESP_LOGD(LOG_TAG, "%s %X %02X %02X %02X %02X %02X %02X %02X %02X", DIR, CAN_ID, (LEN) > 0 ? (DATA_PTR)[0] : 0, \
+             (LEN) > 1 ? (DATA_PTR)[1] : 0, (LEN) > 2 ? (DATA_PTR)[2] : 0, (LEN) > 3 ? (DATA_PTR)[3] : 0,          \
+             (LEN) > 4 ? (DATA_PTR)[4] : 0, (LEN) > 5 ? (DATA_PTR)[5] : 0, (LEN) > 6 ? (DATA_PTR)[6] : 0,          \
+             (LEN) > 7 ? (DATA_PTR)[7] : 0)
 
 CanDriver::CanDriver()
 {

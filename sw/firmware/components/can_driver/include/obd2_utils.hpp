@@ -7,7 +7,8 @@
 #include <string>
 #include <vector>
 
-#include "can_driver.hpp"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 #define OBD2_FUNCTIONAL_ID 0x7DF
 #define OBD2_RESPONSE_BASE_ID 0x7E8

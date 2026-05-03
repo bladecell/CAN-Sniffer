@@ -8,20 +8,18 @@
  * @copyright Copyright (c) 2025
  *
  */
-
 #pragma once
 
-#include <math.h>
-#include <sys/types.h>
-
-#include <algorithm>
+#include <atomic>
+#include <string>
 #include <vector>
 
 #include "can_driver.hpp"
-#include "esp_check.h"
 #include "esp_err.h"
-#include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/semphr.h"
+#include "freertos/task.h"
 #include "obd2_dtb.hpp"
 #include "obd2_utils.hpp"
 

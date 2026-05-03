@@ -1,8 +1,11 @@
 // obd2_simulator.cpp
 #include "obd2_simulator.hpp"
 
-#include <math.h>
+#include <cmath>
+#include <vector>
 
+#include "can_driver.hpp"
+#include "esp_log.h"
 #include "esp_random.h"
 #include "obd2_utils.hpp"
 

@@ -1,8 +1,24 @@
-// webserver.cpp
 #include "webserver.hpp"
 
-#include "atomic"
-#include "freertos/idf_additions.h"
+#include <atomic>
+#include <cstring>
+
+#include "async_web_server.hpp"
+#include "cJSON.h"
+#include "esp_http_server.h"
+#include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/semphr.h"
+#include "middleware.hpp"
+#include "obd2.hpp"
+#include "web_assets.h"
+#include "wifi.hpp"
+
+#define WS_DAT_STREAM_TASK_STACK_SIZE 2048
+#define WS_DAT_STREAM_TASK_PRIORITY (tskIDLE_PRIORITY + 1)
+#define WS_DAT_STREAM_TASK_CORE_ID 1
+#define WS_DAT_STREAM_PERIOD 1000
 
 static const char* TAG = "WEB_SERVER";
 

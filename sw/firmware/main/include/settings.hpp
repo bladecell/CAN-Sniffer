@@ -1,6 +1,6 @@
 #pragma once
 
-#include "nvs_flash.h"
+#include "esp_err.h"
 #include "nvs.h"
 #include "wifi.hpp"
 #include "can_driver.hpp"

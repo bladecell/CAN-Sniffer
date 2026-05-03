@@ -3,9 +3,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_err.h"
-#include "esp_log.h"
-#include "can_driver.hpp"
-#include "obd2_utils.hpp"
 
 // Forward Declaration: This tells the compiler that CanDriver exists,
 // allowing us to use pointers/references without circular includes.
