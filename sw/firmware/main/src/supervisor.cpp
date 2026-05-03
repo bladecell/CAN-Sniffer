@@ -7,6 +7,7 @@
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_system.h"
+#include "esp_timer.h"
 #include "led_status.hpp"
 #include "obd2.hpp"
 #include "secrets.h"
@@ -196,7 +197,7 @@ esp_err_t SUPERVISOR::setup_battery()
 
 uint32_t SUPERVISOR::get_uptime_seconds() const
 {
-    return xTaskGetTickCount() / configTICK_RATE_HZ;
+    return (uint32_t)(esp_timer_get_time() / 1000000ULL);
 }
 
 std::string SUPERVISOR::get_restart_reason() const

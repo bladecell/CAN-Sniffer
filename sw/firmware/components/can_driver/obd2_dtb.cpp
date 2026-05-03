@@ -146,41 +146,40 @@ esp_err_t OBD2DTB::updateData(const CanDriver::CanFrame& frame)
         mode == RESPONSE_READ_DATA_BY_IDENTIFIER ? (uint16_t)(frame.data[2] << 8) | frame.data[3] : frame.data[2];
     uint32_t id = frame.header.id;
 
-    esp_err_t ret;
-    auto      it = pidData.find(pid);
-    if (it != pidData.end())
+    auto it = pidData.find(pid);
+    if (it == pidData.end())
     {
-        if (xSemaphoreTake(it->second.mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
-            return ESP_ERR_TIMEOUT;
+        return ESP_ERR_NOT_FOUND;
+    }
 
-        float val = 0.f;
-        if (mode == RESPONSE_READ_DATA_BY_IDENTIFIER)
-        {
-            ret = PID_DEF.at(pid).evaluate(&frame.data[4], frame.length - 4, val);
-        }
-        else
-        {
-            ret = PID_DEF.at(pid).evaluate(&frame.data[3], frame.length - 3, val);
-        }
-        it->second.value = val;
-
-        it->second.lastUpdated = pdTICKS_TO_MS(xTaskGetTickCount());
-        if (mode == RESPONSE_CURRENT_DATA && it->second.id != OBD2_FUNCTIONAL_ID)
-        {
-            it->second.id = id - 8;
-        }
-        if (frame.length > PID_DATA_LENGTH)
-        {
-            ESP_LOGW(TAG, "Frame length %d exceeds PID data length %d, truncating", frame.length, PID_DATA_LENGTH);
-        }
-        memcpy(it->second.data, frame.data, PID_DATA_LENGTH < frame.length ? PID_DATA_LENGTH : frame.length);
-
-        xSemaphoreGive(it->second.mtx_);
+    float val = 0.f;
+    esp_err_t ret;
+    if (mode == RESPONSE_READ_DATA_BY_IDENTIFIER)
+    {
+        ret = PID_DEF.at(pid).evaluate(&frame.data[4], frame.length - 4, val);
     }
     else
     {
-        ret = ESP_ERR_NOT_FOUND;
+        ret = PID_DEF.at(pid).evaluate(&frame.data[3], frame.length - 3, val);
     }
+
+    if (xSemaphoreTake(it->second.mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
+        return ESP_ERR_TIMEOUT;
+
+    it->second.value = val;
+
+    it->second.lastUpdated = pdTICKS_TO_MS(xTaskGetTickCount());
+    if (mode == RESPONSE_CURRENT_DATA && it->second.id != OBD2_FUNCTIONAL_ID)
+    {
+        it->second.id = id - 8;
+    }
+    if (frame.length > PID_DATA_LENGTH)
+    {
+        ESP_LOGW(TAG, "Frame length %d exceeds PID data length %d, truncating", frame.length, PID_DATA_LENGTH);
+    }
+    memcpy(it->second.data, frame.data, PID_DATA_LENGTH < frame.length ? PID_DATA_LENGTH : frame.length);
+
+    xSemaphoreGive(it->second.mtx_);
 
     return ret;
 }
@@ -466,9 +465,9 @@ esp_err_t OBD2DTB::setUpdateInterval(uint16_t pid, UpdateRate interval_ms)
     }
 
     pidData[pid].updateInterval_ms = interval_ms;
-    return ESP_OK;
 
     xSemaphoreGive(pidData.at(pid).mtx_);
+    return ESP_OK;
 }
 
 esp_err_t OBD2DTB::setIsSupported(uint16_t pid, bool supported)

@@ -213,7 +213,7 @@ esp_err_t AsyncWebServer::start_workers(uint8_t num_workers, uint32_t stack_size
     }
 
     // create queue
-    request_queue = xQueueCreate(1, sizeof(AsyncWebServer::AsyncRequest));
+    request_queue = xQueueCreate(num_workers, sizeof(AsyncWebServer::AsyncRequest));
     if (request_queue == NULL)
     {
         ESP_LOGE(TAG, "Failed to create request_queue");
