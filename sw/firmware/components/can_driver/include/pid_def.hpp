@@ -30,8 +30,8 @@ public:
     std::string icon_;
 
     te_expr*                        compiledFormula_ = nullptr;
-    static inline double            vars_storage_[4] = {0, 0, 0, 0};
-    static inline SemaphoreHandle_t eval_mutex       = xSemaphoreCreateMutex();
+    double                          vars_storage_[4] = {0, 0, 0, 0};
+    SemaphoreHandle_t               instance_mutex_  = nullptr;
 
 public:
     PIDDefinition(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std::string name, std::string unit,

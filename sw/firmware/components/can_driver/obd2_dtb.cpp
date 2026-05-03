@@ -152,7 +152,7 @@ esp_err_t OBD2DTB::updateData(const CanDriver::CanFrame& frame)
         return ESP_ERR_NOT_FOUND;
     }
 
-    float val = 0.f;
+    float     val = 0.f;
     esp_err_t ret;
     if (mode == RESPONSE_READ_DATA_BY_IDENTIFIER)
     {

@@ -426,7 +426,8 @@ esp_err_t get_can_status_packet(uint8_t* out_packet)
     out_packet[offset++] = MSG_TYPE_CAN_STATUS;
 
     // Length
-    out_packet[offset++] = PID_STREAM_PACKET_SIZE - 2;
+    out_packet[offset++] = CAN_STATUS_PACKET_SIZE - 2;
+
 
     // 8 bit state
     const auto& state    = CanDriver::getInstance().getState();

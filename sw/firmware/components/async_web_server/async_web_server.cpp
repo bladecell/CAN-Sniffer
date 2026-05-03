@@ -1,4 +1,5 @@
 #include "async_web_server.hpp"
+
 #include "esp_check.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -7,6 +8,7 @@ static const char* TAG = "ASYNC_WEB_SERVER";
 
 AsyncWebServer::AsyncWebServer() : server_(NULL), request_queue(NULL), worker_ready_count(NULL)
 {
+    ws_mutex = xSemaphoreCreateMutex();
 }
 
 AsyncWebServer::~AsyncWebServer()
@@ -286,39 +288,45 @@ void AsyncWebServer::registerSocketRoute(const char* uri, esp_err_t (*handler)(h
 
 void AsyncWebServer::wsBroadcast(httpd_ws_frame_t* ws_pkt)
 {
+    if (!server_ || !ws_mutex)
+    {
+        return;
+    }
+
+    if (xSemaphoreTake(ws_mutex, pdMS_TO_TICKS(200)) != pdTRUE)
+    {
+        ESP_LOGW(TAG, "WS Broadcast timeout (busy)");
+        return;
+    }
+
     // 1. Prepare a buffer for client FDs
-    // 20 is usually plenty for ESP32 (lwIP max is often ~16)
     static const size_t MAX_CLIENTS = 20;
     int                 client_fds[MAX_CLIENTS];
     size_t              fds = MAX_CLIENTS;
 
-    // 2. Ask ESP-IDF for the list of ALL connected clients
     esp_err_t ret = httpd_get_client_list(server_, &fds, client_fds);
 
     if (ret != ESP_OK)
     {
-        return;  // Server might be stopping or empty
+        xSemaphoreGive(ws_mutex);
+        return;
     }
 
-    // 3. Iterate and Send
     for (int i = 0; i < fds; i++)
     {
         int fd = client_fds[i];
 
-        // 4. IMPORTANT: Check if this client is actually a WebSocket
-        // (The list includes normal HTTP clients too!)
-        httpd_ws_client_info_t info = httpd_ws_get_fd_info(server_, fd);
-
-        if (info == HTTPD_WS_CLIENT_WEBSOCKET)
+        if (httpd_ws_get_fd_info(server_, fd) == HTTPD_WS_CLIENT_WEBSOCKET)
         {
-            // Send Async so we don't block the CAN task
             esp_err_t ret = httpd_ws_send_frame_async(server_, fd, ws_pkt);
             if (ret != ESP_OK)
             {
-                ESP_LOGW(TAG, "Dropped frame for FD %d: %s\n", fd, esp_err_to_name(ret));
+                ESP_LOGW(TAG, "Dropped frame for FD %d: %s", fd, esp_err_to_name(ret));
             }
         }
     }
+
+    xSemaphoreGive(ws_mutex);
 }
 
 uint32_t AsyncWebServer::getActiveWSClientCount()

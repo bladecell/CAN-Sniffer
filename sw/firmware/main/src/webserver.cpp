@@ -8,8 +8,8 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 #include "middleware.hpp"
 #include "obd2.hpp"
 #include "web_assets.h"
@@ -56,7 +56,7 @@ esp_err_t setup_web_server()
 {
     AsyncWebServer::Config server_config;
     server_config.async_worker_task_num         = 5;
-    server_config.max_open_sockets              = 5;
+    server_config.max_open_sockets              = 7;
     server_config.async_worker_task_priority    = 5;
     server_config.async_worker_stack_size       = 8192;
     server_config.httpd_config.uri_match_fn     = httpd_uri_match_wildcard;
@@ -83,7 +83,7 @@ esp_err_t setup_web_server()
     AsyncWebServer::getInstance().registerRoute("/api/v1/req/vin", HTTP_POST, p_vin_index_handler, NULL);
     AsyncWebServer::getInstance().registerRoute("/api/v1/req/dtc*", HTTP_POST, p_dtc_index_handler, NULL);
     AsyncWebServer::getInstance().registerRoute("/api/v1/req/clear_dtc", HTTP_POST, p_clear_dtc_index_handler, NULL);
-    AsyncWebServer::getInstance().registerRoute("/api/v1/system", HTTP_POST, p_system_index_handler, NULL);
+    AsyncWebServer::getInstance().registerRoute("/api/v1/system", HTTP_GET, p_system_index_handler, NULL);
 
     AsyncWebServer::getInstance().registerSocketRoute("/ws", ws_socket_handler, NULL);
 
@@ -312,7 +312,6 @@ esp_err_t ws_socket_handler(httpd_req_t* req)
 
     httpd_ws_frame_t ws_pkt;
     memset(&ws_pkt, 0, sizeof(httpd_ws_frame_t));
-    ws_pkt.type = HTTPD_WS_TYPE_BINARY;
 
     esp_err_t ret = httpd_ws_recv_frame(req, &ws_pkt, 0);
 
@@ -326,18 +325,17 @@ esp_err_t ws_socket_handler(httpd_req_t* req)
     {
         ESP_LOGI(TAG, "WS Client #%d Sent Close Frame", sockfd);
         uint32_t wcClientCount = AsyncWebServer::getInstance().getActiveWSClientCount();
-        if (wcClientCount == 0)
+        if (wcClientCount <= 1)
         {
             enable_pid_stream(false);
             wsStreamingEnabled.store(false);
         }
-        httpd_ws_send_frame(req, &ws_pkt);
-        return ESP_OK;
+        return httpd_ws_send_frame(req, &ws_pkt);
     }
 
     if (ws_pkt.len > 0)
     {
-        uint8_t* buf = (uint8_t*)malloc(ws_pkt.len);
+        uint8_t* buf = (uint8_t*)malloc(ws_pkt.len + 1);
         if (!buf)
             return ESP_ERR_NO_MEM;
 
@@ -346,22 +344,27 @@ esp_err_t ws_socket_handler(httpd_req_t* req)
 
         if (ret == ESP_OK)
         {
-            uint8_t command = buf[0];
-
-            switch (command)
+            if (ws_pkt.type == HTTPD_WS_TYPE_TEXT)
             {
-                case WS_START_PID_STREAM:
-                    enable_pid_stream(true);
-                    ESP_LOGI(TAG, "Starting PID Stream");
-                    break;
-
-                case WS_STOP_PID_STREAM:
-                    enable_pid_stream(false);
-                    ESP_LOGI(TAG, "Stopping PID Stream");
-                    break;
-
-                default:
-                    ESP_LOGW(TAG, "Unknown WS Command: 0x%02X", command);
+                buf[ws_pkt.len] = 0;
+                ESP_LOGD(TAG, "WS Text: %s", (char*)buf);
+            }
+            else if (ws_pkt.type == HTTPD_WS_TYPE_BINARY)
+            {
+                uint8_t command = buf[0];
+                switch (command)
+                {
+                    case WS_START_PID_STREAM:
+                        enable_pid_stream(true);
+                        ESP_LOGI(TAG, "Starting PID Stream");
+                        break;
+                    case WS_STOP_PID_STREAM:
+                        enable_pid_stream(false);
+                        ESP_LOGI(TAG, "Stopping PID Stream");
+                        break;
+                    default:
+                        ESP_LOGW(TAG, "Unknown WS Command: 0x%02X", command);
+                }
             }
         }
         free(buf);
@@ -410,7 +413,8 @@ esp_err_t p_system_index_handler(httpd_req_t* req, void* arg)
 
 void ws_send_can_status()
 {
-    uint8_t packet[CAN_STATUS_PACKET_SIZE];
+    // Use a static buffer because httpd_ws_send_frame_async does not copy the payload.
+    static uint8_t packet[CAN_STATUS_PACKET_SIZE];
 
     esp_err_t err = get_can_status_packet(packet);
 
@@ -419,7 +423,7 @@ void ws_send_can_status()
         httpd_ws_frame_t ws_frame;
         memset(&ws_frame, 0, sizeof(httpd_ws_frame_t));
         ws_frame.payload = packet;
-        ws_frame.len     = PID_STREAM_PACKET_SIZE;
+        ws_frame.len     = CAN_STATUS_PACKET_SIZE;
         ws_frame.type    = HTTPD_WS_TYPE_BINARY;
 
         AsyncWebServer::getInstance().wsBroadcast(&ws_frame);

@@ -20,7 +20,8 @@ PIDDefinition::PIDDefinition(uint32_t id, uint8_t mode, uint16_t pid, uint8_t le
       priority_(priority),
       updateInterval_ms_((uint16_t)interval),
       color_(color),
-      icon_(std::move(icon))
+      icon_(std::move(icon)),
+      instance_mutex_(xSemaphoreCreateMutex())
 {
     te_variable te_vars[] = {
         {"A", &vars_storage_[0], TE_VARIABLE, 0},          {"B", &vars_storage_[1], TE_VARIABLE, 0},
@@ -37,6 +38,8 @@ PIDDefinition::~PIDDefinition()
 {
     if (compiledFormula_)
         te_free(compiledFormula_);
+    if (instance_mutex_)
+        vSemaphoreDelete(instance_mutex_);
 }
 
 PIDDefinition::PIDDefinition(PIDDefinition&& other) noexcept
@@ -54,26 +57,31 @@ PIDDefinition::PIDDefinition(PIDDefinition&& other) noexcept
       updateInterval_ms_(other.updateInterval_ms_),
       color_(other.color_),
       icon_(std::move(other.icon_)),
-      compiledFormula_(other.compiledFormula_)
+      compiledFormula_(other.compiledFormula_),
+      instance_mutex_(other.instance_mutex_)
 {
     other.compiledFormula_ = nullptr;
+    other.instance_mutex_  = nullptr;
+    for (int i = 0; i < 4; i++) vars_storage_[i] = other.vars_storage_[i];
 }
 
 esp_err_t PIDDefinition::evaluate(const uint8_t* frameData, uint8_t len, float& result) const
 {
-    if (!compiledFormula_)
+    if (!compiledFormula_ || !instance_mutex_)
         return ESP_ERR_INVALID_STATE;
 
-    if (xSemaphoreTake(eval_mutex, pdMS_TO_TICKS(10)) == pdTRUE)
+    if (xSemaphoreTake(instance_mutex_, pdMS_TO_TICKS(10)) == pdTRUE)
     {
+        // Internal state modification is safe here as it's a mutable-logical operation protected by mutex
+        PIDDefinition* mutable_this = const_cast<PIDDefinition*>(this);
         for (int i = 0; i < 4; i++)
         {
-            vars_storage_[i] = (i < len) ? (double)frameData[i] : 0.0;
+            mutable_this->vars_storage_[i] = (i < len) ? (double)frameData[i] : 0.0;
         }
 
         result = (float)te_eval(compiledFormula_);
 
-        xSemaphoreGive(eval_mutex);
+        xSemaphoreGive(instance_mutex_);
         return ESP_OK;
     }
     return ESP_ERR_TIMEOUT;

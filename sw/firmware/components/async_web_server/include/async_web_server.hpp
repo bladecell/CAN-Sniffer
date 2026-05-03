@@ -75,6 +75,8 @@ private:
     QueueHandle_t request_queue;
     // Track the number of free workers at any given time
     SemaphoreHandle_t worker_ready_count;
+    // Mutex for WebSocket broadcasts
+    SemaphoreHandle_t ws_mutex;
     // Each worker has its own thread
     std::vector<TaskHandle_t>  worker_handles;
     std::vector<RouteContext*> route_contexts;

@@ -1,6 +1,8 @@
 // battery.cpp
 #include "battery.hpp"
 
+#include <cmath>
+
 #include "esp_adc/adc_oneshot.h"
 #include "esp_check.h"
 #include "esp_log.h"
@@ -39,5 +41,6 @@ float battery_read()
         sum += raw;
     }
     float mv = (static_cast<float>(sum) / NUM_SAMPLES / 4095.0f) * 3300.0f;
-    return (mv / 1000.0f) * DIVIDER_RATIO;
+    float v  = (mv / 1000.0f) * DIVIDER_RATIO;
+    return roundf(v * 10.0f) / 10.0f;
 }
