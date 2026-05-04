@@ -12,7 +12,6 @@
   onMount(() => {
     canStore.connect();
     canStore.loadDefinitions();
-    canStore.startCanPolling();
     canStore.getObd2Status();
 
     // 3. Listen for manual URL changes (Back/Forward button)
@@ -24,7 +23,6 @@
 
     const cleanup = () => {
       canStore.disconnect();
-      canStore.stopCanPolling();
     };
 
     window.addEventListener("beforeunload", cleanup);

@@ -2,6 +2,7 @@
   import PIDCardWrapper from "$lib/components/PIDCardWrapper.svelte";
   import { canStore } from "./lib/canStore.svelte.js";
   import { untrack, onDestroy } from "svelte";
+  import OverviewCard from "$lib/components/OverviewCard.svelte";
 
   function createCardFromPID(pidData) {
     return {
@@ -18,7 +19,7 @@
   }
 
   let item = $state();
-  let cards = ["card", "chart", "gauge"];
+  let cards = ["card", "chart", "gauge", "bar"];
   let cardIndex = $state(0);
 
   // 2. Add a simple state to track which mode we are in
@@ -85,6 +86,10 @@
   {:else}
     <p>Loading...</p>
   {/if}
+</div>
+
+<div class="pid-container">
+  <OverviewCard color="#f59e0b" pids={[0x0c, 0x2206, 0x04]} />
 </div>
 
 <style>

@@ -11,11 +11,13 @@
     card: { w: 12, h: 7 },
     chart: { w: 16, h: 12 },
     gauge: { w: 12, h: 12 },
+    bar: { w: 12, h: 12 },
   };
   const MAX_SIZES = {
     card: { w: MIN_SIZES.card.w * 1.5, h: MIN_SIZES.card.h * 1.5 },
     chart: { w: MIN_SIZES.chart.w * 1.5, h: MIN_SIZES.chart.h * 1.5 },
     gauge: { w: MIN_SIZES.gauge.w * 1.5, h: MIN_SIZES.gauge.h * 1.5 },
+    bar: { w: MIN_SIZES.gauge.w * 1.5, h: MIN_SIZES.gauge.h * 1.5 },
   };
 
   let containerWidth = $state(0);
@@ -197,12 +199,10 @@
   function toggleMode(id) {
     const item = items.find((i) => i.id === id);
     if (item) {
-      item.displayMode =
-        item.displayMode === "card"
-          ? "chart"
-          : (item.displayMode =
-              item.displayMode === "chart" ? "gauge" : "card");
-      items = [...items]; // Trigger reactivity
+      const modes = ["card", "chart", "gauge", "bar"];
+      const current = modes.indexOf(item.displayMode);
+      item.displayMode = modes[(current + 1) % modes.length];
+      items = [...items];
     }
     closeMenu();
   }

@@ -96,8 +96,15 @@ export class CanStore {
         const view = new DataView(data);
         const type = view.getUint8(0);
 
-        if (type === 0x02) {
-            this.parsePidPacket(view);
+        switch (type) {
+            case 0x02:
+                this.parsePidPacket(view);
+                break;
+            case 0x03:
+                this.parseCanStatusPacket(view);
+                break;
+            default:
+                break
         }
     }
 
@@ -105,6 +112,45 @@ export class CanStore {
         this.listeners.add(callback);
         // Return an unsubscribe function to prevent memory leaks
         return () => this.listeners.delete(callback);
+    }
+
+    wsCanStatus = $state({ state: "Not Connnected", utilization: 0, battery_voltage: 0 });
+
+    parseCanStatusPacket(view) {
+        const previousState = this.wsCanStatus?.state;
+        const length = view.getUint8(1);
+        if (length !== view.byteLength - 2) {
+            console.warn("Invalid Can Status packet length");
+            return;
+        }
+        const state = view.getUint8(2, true);
+        const utilization = view.getFloat32(3, true);
+        const battery_voltage = view.getFloat32(7, true);
+        const can_bus_state_name = ["Not Initialized", "Off", "Not Connected", "Connected"];
+
+        this.wsCanStatus = {
+            state: can_bus_state_name[state],
+            utilization: Math.round(utilization * 100),
+            battery_voltage: battery_voltage,
+        };
+
+        const currentState = this.wsCanStatus?.state;
+
+        if (previousState != currentState) {
+            if (currentState === "Connected") {
+                alertStore.add("CAN Bus Connected", "success");
+            } else {
+                alertStore.add("CAN Bus " + currentState, "error");
+            }
+        }
+
+        if (utilization > 0.9) {
+            alertStore.add("CAN Bus Utilization is above 90%", "warning");
+        }
+
+        if (battery_voltage < 12 && battery_voltage > 0) {
+            alertStore.add("Car battery voltage is below 12V", "warning");
+        }
     }
 
     parsePidPacket(view) {
@@ -167,6 +213,19 @@ export class CanStore {
         }
     }
 
+    system = $state([]);
+
+    async requestSystem() {
+        try {
+            const response = await fetch("/api/v1/system");
+            const result = await response.json();
+
+            this.system = result.data;
+        } catch (e) {
+            console.error("Failed to load PIDs", e);
+        }
+    }
+
     pidDefinitions = $state([]);
 
     async loadDefinitions() {
@@ -186,7 +245,6 @@ export class CanStore {
 
     async getCanStatus() {
         try {
-            const previousState = this.canStatus?.state;
 
             const response = await fetch("/api/v1/can_bus");
             if (!response.ok) throw new Error(response.statusText);
@@ -194,42 +252,10 @@ export class CanStore {
             const result = await response.json();
             this.canStatus = result;
 
-            const currentState = this.canStatus?.state;
-
-            if (previousState === "connected" && currentState !== "connected") {
-                alertStore.add("CAN Bus Disconnected", "error");
-            }
-
-            if (previousState !== "connected" && currentState === "connected") {
-                if (previousState !== undefined) {
-                    alertStore.add("CAN Bus Connected", "success");
-                }
-            }
-
         } catch (e) {
             console.error("Failed to load CAN status", e);
         }
     }
-
-    startCanPolling(intervalMs = this.canCurrentRate) {
-        this.stopCanPolling();
-
-        this.canCurrentRate = intervalMs;
-
-        this.getCanStatus();
-
-        this.canPollInterval = setInterval(() => {
-            this.getCanStatus();
-        }, intervalMs);
-    }
-
-    stopCanPolling() {
-        if (this.canPollInterval) {
-            clearInterval(this.canPollInterval);
-            this.canPollInterval = null;
-        }
-    }
-
 
     obd2Status = $state(null);
 
@@ -284,6 +310,40 @@ export class CanStore {
             console.error("Failed to request VIN", e);
         }
     }
+
+    dtc = $state([]);
+    totalDTCs = $state(0);
+
+    async getDTC() {
+        try {
+            const response = await fetch("/api/v1/dtc");
+            const result = await response.json();
+            this.dtc = result.dtcs;
+            this.totalDTCs = result.dtcs.reduce((sum, mode) => sum + mode.dtc_count, 0);
+        } catch (e) {
+            console.error("Failed to load DTC", e);
+        }
+    }
+
+    async requestDTC(mode = -1) {
+        try {
+            const request_url = mode === -1 ? "/api/v1/req/dtc" : `/api/v1/req/dtc?mode=${mode}`;
+            const response = await fetch(request_url, {
+                method: "POST"
+            });
+
+            const result = await response.json();
+
+            if (result.status === "success") {
+                this.getDTC();
+            }
+        } catch (e) {
+            console.error("Failed to request DTC", e);
+        }
+    }
+
+
+
 
 }
 
