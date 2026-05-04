@@ -54,9 +54,6 @@ public:
     void      requestSuppPids();
     void      getSupportedPids(supportedPIDsGroup_t& supportedPIDsGroup);
     esp_err_t requestVIN();
-    void      requestConfirmedDTCs();
-    void      requestPendingDTCs();
-    void      requestPermanentDTCs();
     esp_err_t requestDTC(uint8_t mode);
     void      requestClearDTCs();
     esp_err_t queryMsg(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len);

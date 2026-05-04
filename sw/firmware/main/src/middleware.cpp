@@ -7,8 +7,8 @@
 #include "cJSON.h"
 #include "esp_check.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 #include "obd2.hpp"
 #include "supervisor.hpp"
 #include "utilities.h"
@@ -300,13 +300,14 @@ cJSON* m_vin_request()
 {
     cJSON* root = cJSON_CreateObject();
 
-    if (OBD2::getInstance().requestVIN() == ESP_OK)
+    if (esp_err_t err = OBD2::getInstance().requestVIN() == ESP_OK)
     {
         cJSON_AddStringToObject(root, "status", "success");
     }
     else
     {
         cJSON_AddStringToObject(root, "status", "error");
+        cJSON_AddStringToObject(root, "reason", esp_err_to_name(err));
     }
 
     return root;
@@ -317,41 +318,28 @@ cJSON* m_dtc_request(int mode)
     esp_err_t err = ESP_OK;
     if (mode == -1)
     {
-        OBD2::getInstance().requestConfirmedDTCs();
-        vTaskDelay(pdMS_TO_TICKS(200));
-        OBD2::getInstance().requestPendingDTCs();
-        vTaskDelay(pdMS_TO_TICKS(200));
-        OBD2::getInstance().requestPermanentDTCs();
+        err = OBD2::getInstance().requestDTC(MODE_DTCS);
+        if (err == ESP_OK)
+            err = OBD2::getInstance().requestDTC(MODE_PENDING_DTCS);
+        if (err == ESP_OK)
+            err = OBD2::getInstance().requestDTC(MODE_PERMANENT_DTCS);
     }
     else
     {
-        switch (mode)
-        {
-            case MODE_DTCS:
-                OBD2::getInstance().requestConfirmedDTCs();
-                break;
-            case MODE_PENDING_DTCS:
-                OBD2::getInstance().requestPendingDTCs();
-                break;
-            case MODE_PERMANENT_DTCS:
-                OBD2::getInstance().requestPermanentDTCs();
-                break;
-            default:
-                err = ESP_ERR_INVALID_ARG;
-                break;
-        }
+        err = OBD2::getInstance().requestDTC(mode);
     }
-    cJSON* root = cJSON_CreateObject();
 
+    cJSON* root = cJSON_CreateObject();
     if (err == ESP_OK)
     {
         cJSON_AddStringToObject(root, "status", "success");
+        // add DTC data here
     }
     else
     {
         cJSON_AddStringToObject(root, "status", "error");
+        cJSON_AddStringToObject(root, "reason", esp_err_to_name(err));
     }
-
     return root;
 }
 
@@ -428,7 +416,6 @@ esp_err_t get_can_status_packet(uint8_t* out_packet)
     // Length
     out_packet[offset++] = CAN_STATUS_PACKET_SIZE - 2;
 
-
     // 8 bit state
     const auto& state    = CanDriver::getInstance().getState();
     out_packet[offset++] = static_cast<uint8_t>(state);
@@ -437,6 +424,14 @@ esp_err_t get_can_status_packet(uint8_t* out_packet)
     float    utilization = OBD2::getInstance().getPollTaskUtilization();
     uint32_t float_bits;
     memcpy(&float_bits, &utilization, sizeof(utilization));
+    out_packet[offset++] = (float_bits >> 0) & 0xFF;
+    out_packet[offset++] = (float_bits >> 8) & 0xFF;
+    out_packet[offset++] = (float_bits >> 16) & 0xFF;
+    out_packet[offset++] = (float_bits >> 24) & 0xFF;
+
+    // float battery voltage
+    float battery_voltage = SUPERVISOR::getInstance().get_battery_voltage();
+    memcpy(&float_bits, &battery_voltage, sizeof(battery_voltage));
     out_packet[offset++] = (float_bits >> 0) & 0xFF;
     out_packet[offset++] = (float_bits >> 8) & 0xFF;
     out_packet[offset++] = (float_bits >> 16) & 0xFF;

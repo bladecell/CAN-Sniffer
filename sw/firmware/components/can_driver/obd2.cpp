@@ -11,11 +11,12 @@
 
 #include "obd2.hpp"
 
+#include <sys/types.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
-#include <sys/types.h>
 
 #include "can_driver.hpp"
 #include "esp_check.h"
@@ -650,13 +651,13 @@ esp_err_t OBD2::parseDTCs(std::vector<CanDriver::CanFrame>& frames, uint8_t mode
 
     switch (mode)
     {
-        case MODE_DTCS:
+        case RESPONSE_DTCS:
             xSemaphoreGive(dtcData.confirmedReadySemaphore);
             break;
-        case MODE_PENDING_DTCS:
+        case RESPONSE_PENDING_DTCS:
             xSemaphoreGive(dtcData.pendingReadySemaphore);
             break;
-        case MODE_PERMANENT_DTCS:
+        case RESPONSE_PERMANENT_DTCS:
             xSemaphoreGive(dtcData.permanentReadySemaphore);
             break;
         default:
@@ -750,60 +751,44 @@ esp_err_t OBD2::requestVIN()
 
 esp_err_t OBD2::requestDTC(uint8_t mode)
 {
-    SemaphoreHandle_t sem = NULL;  // Local handle to work with
+    SemaphoreHandle_t* sem = NULL;
 
-    // 1. Assign the handle based on mode
     switch (mode)
     {
         case MODE_DTCS:
-            sem = dtcData.confirmedReadySemaphore;
+            sem = &dtcData.confirmedReadySemaphore;
             break;
         case MODE_PENDING_DTCS:
-            sem = dtcData.pendingReadySemaphore;
+            sem = &dtcData.pendingReadySemaphore;
             break;
         case MODE_PERMANENT_DTCS:
-            sem = dtcData.permanentReadySemaphore;
+            sem = &dtcData.permanentReadySemaphore;
             break;
         default:
             return ESP_ERR_INVALID_ARG;
     }
 
-    if (sem == NULL)
+    if (*sem == NULL)
     {
         ESP_LOGE(TAG, "Semaphore for mode %02x not initialized!", mode);
         return ESP_ERR_INVALID_STATE;
     }
 
-    xSemaphoreTake(sem, 0);
+    ESP_RETURN_ON_ERROR(clearDTC(mode), TAG, "Failed to clear DTCs");
+
+    // Drain any stale tokens before requesting
+    while (xSemaphoreTake(*sem, 0) == pdTRUE)
+        ;
 
     req(OBD2_FUNCTIONAL_ID, mode, 0x00, 2, 0);
 
-    if (xSemaphoreTake(sem, pdMS_TO_TICKS(2000)) != pdTRUE)
+    if (xSemaphoreTake(*sem, pdMS_TO_TICKS(2000)) != pdTRUE)
     {
         ESP_LOGW(TAG, "DTC Request %s timed out", OBD2_MODE_TO_STR(mode));
         return ESP_ERR_TIMEOUT;
     }
 
     return ESP_OK;
-}
-
-void OBD2::requestConfirmedDTCs()
-{
-    req(OBD2_FUNCTIONAL_ID, MODE_DTCS, 0x00, 2, 0);
-    clearDTC(MODE_DTCS);
-}
-
-void OBD2::requestPendingDTCs()
-{
-    req(OBD2_FUNCTIONAL_ID, MODE_PENDING_DTCS, 0x00, 2, 0);
-    clearDTC(MODE_PENDING_DTCS);
-}
-
-//
-void OBD2::requestPermanentDTCs()
-{
-    req(OBD2_FUNCTIONAL_ID, MODE_PERMANENT_DTCS, 0x00, 2, 0);
-    clearDTC(MODE_PERMANENT_DTCS);
 }
 
 void OBD2::requestClearDTCs()

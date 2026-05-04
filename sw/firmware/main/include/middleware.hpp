@@ -1,8 +1,9 @@
 // middleware.hpp
 #pragma once
 #include <cstdint>
-#include "esp_err.h"
+
 #include "cJSON.h"
+#include "esp_err.h"
 
 // Forward declarations to minimize includes
 class PIDDefinition;
@@ -13,7 +14,7 @@ struct PIDData_t;
 #define MSG_TYPE_CAN_STATUS 0x03
 
 #define PID_STREAM_PACKET_SIZE 20
-#define CAN_STATUS_PACKET_SIZE 8
+#define CAN_STATUS_PACKET_SIZE 12
 
 // Middlewares
 cJSON* m_pid_def_json(int filter_id);
