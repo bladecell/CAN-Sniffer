@@ -241,13 +241,13 @@
             resizerClass="grid-item-resizer"
             previewClass="grid-item-preview"
           >
-            {#snippet children()}
+            {#snippet moveHandle({ moveStart })}
               <!-- svelte-ignore a11y_no_static_element_interactions -->
               <div
                 style="width: 100%; height: 100%;"
                 oncontextmenu={(e) => handleRightClick(e, item.id)}
               >
-                <PIDCardWrapper {...item} />
+                <PIDCardWrapper {...item} {moveStart} />
               </div>
             {/snippet}
           </GridItem>

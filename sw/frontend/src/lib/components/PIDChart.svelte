@@ -15,6 +15,7 @@
     update_interval_ms = 500,
     min = 0,
     max = 100,
+    moveStart = null,
     ...rest
   } = $props();
 
@@ -148,6 +149,16 @@
       if (chartInstance) chartInstance.destroy();
     };
   });
+
+  let longPressTimer;
+
+  function handlePointerDown(e, moveStart) {
+    longPressTimer = setTimeout(() => moveStart(e), 300);
+  }
+
+  function handlePointerUp() {
+    clearTimeout(longPressTimer);
+  }
 </script>
 
 <article
@@ -155,7 +166,14 @@
   class:disabled={!supported}
   style="background: color-mix(in srgb, {color} 5%, transparent);"
 >
-  <header class="card-header">
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <header
+    class="card-header"
+    onpointerdown={moveStart ? (e) => handlePointerDown(e, moveStart) : null}
+    onpointerup={handlePointerUp}
+    onpointermove={handlePointerUp}
+    style="cursor: {moveStart ? 'grab' : 'default'}; touch-action: pan-y;"
+  >
     <div
       class="icon"
       style="background: color-mix(in srgb, {color} 20%, transparent);"

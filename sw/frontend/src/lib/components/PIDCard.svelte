@@ -10,6 +10,7 @@
     color = "#10b981",
     min = 0,
     max = 100,
+    moveStart = null,
     ...rest
   } = $props();
 
@@ -32,6 +33,16 @@
   });
 
   const displayValue = $derived(supported ? currentValue.toFixed(1) : "···");
+
+  let longPressTimer;
+
+  function handlePointerDown(e, moveStart) {
+    longPressTimer = setTimeout(() => moveStart(e), 300);
+  }
+
+  function handlePointerUp() {
+    clearTimeout(longPressTimer);
+  }
 </script>
 
 <article
@@ -39,7 +50,14 @@
   class:disabled={!supported}
   style="background: color-mix(in srgb, {color} 5%, transparent);"
 >
-  <div class="card-header">
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <header
+    class="card-header"
+    onpointerdown={moveStart ? (e) => handlePointerDown(e, moveStart) : null}
+    onpointerup={handlePointerUp}
+    onpointermove={handlePointerUp}
+    style="cursor: {moveStart ? 'grab' : 'default'}; touch-action: pan-y;"
+  >
     <div
       class="icon"
       style="background: color-mix(in srgb, {color} 20%, transparent);"
@@ -47,7 +65,7 @@
       <Icon name={icon} size={32} />
     </div>
     <div class="status" style:--status-color={status}></div>
-  </div>
+  </header>
 
   <div class="card-body">
     <span class="label">{label}</span>
@@ -96,7 +114,10 @@
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    margin-bottom: 12px;
+    margin-bottom: 8px;
+    background: none;
+    border: none;
+    flex-shrink: 0;
   }
 
   .icon {

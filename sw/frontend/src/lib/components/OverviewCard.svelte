@@ -4,7 +4,12 @@
   import { on } from "svelte/events";
   import { CanStore } from "../canStore.svelte";
 
-  let { pids = [0x0c, 0x2206, 0x04], color = "#3b82f6", ...rest } = $props();
+  let {
+    pids = [0x0c, 0x2206, 0x04],
+    color = "#3b82f6",
+    moveStart = null,
+    ...rest
+  } = $props();
 
   onMount(async () => {
     await canStore.requestVin();
@@ -37,10 +42,27 @@
       color: `#${def?.color.toString(16).padStart(6, "0")}`,
     };
   }
+
+  let longPressTimer;
+
+  function handlePointerDown(e, moveStart) {
+    longPressTimer = setTimeout(() => moveStart(e), 300);
+  }
+
+  function handlePointerUp() {
+    clearTimeout(longPressTimer);
+  }
 </script>
 
 <article class="overview-card" style="--brand-color: {color}" {...rest}>
-  <div class="card-header">
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <header
+    class="card-header"
+    onpointerdown={moveStart ? (e) => handlePointerDown(e, moveStart) : null}
+    onpointerup={handlePointerUp}
+    onpointermove={handlePointerUp}
+    style="cursor: {moveStart ? 'grab' : 'default'}; touch-action: pan-y;"
+  >
     <div class="titles">
       <div class="label">System Overview</div>
       <div class="vin-text">{vin}</div>
@@ -58,7 +80,7 @@
         <span class="badge-value">{state}</span>
       </div>
     </div>
-  </div>
+  </header>
 
   <div class="card-body">
     <!-- Main Stats: Battery and DTC -->
@@ -118,6 +140,8 @@
     justify-content: space-between;
     align-items: flex-start;
     margin-bottom: 16px;
+    background: none;
+    border: none;
   }
 
   .header-badges {

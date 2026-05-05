@@ -11,6 +11,7 @@
     color = "#10b981",
     min = 0,
     max = 100,
+    moveStart = null,
     ...rest
   } = $props();
 
@@ -34,6 +35,16 @@
 
   // value label x position tracks the fill, clamped so it doesn't overflow
   const labelX = $derived(Math.min(PAD + fillWidth, PAD + BAR_W - 2));
+
+  let longPressTimer;
+
+  function handlePointerDown(e, moveStart) {
+    longPressTimer = setTimeout(() => moveStart(e), 300);
+  }
+
+  function handlePointerUp() {
+    clearTimeout(longPressTimer);
+  }
 </script>
 
 <article
@@ -42,7 +53,14 @@
   style="background: color-mix(in srgb, {color} 5%, transparent);"
   {...rest}
 >
-  <header class="card-header" data-swapy-handle>
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <header
+    class="card-header"
+    onpointerdown={moveStart ? (e) => handlePointerDown(e, moveStart) : null}
+    onpointerup={handlePointerUp}
+    onpointermove={handlePointerUp}
+    style="cursor: {moveStart ? 'grab' : 'default'}; touch-action: pan-y;"
+  >
     <div
       class="icon"
       style="background: color-mix(in srgb, {color} 20%, transparent);"

@@ -60,6 +60,8 @@
 
 <ToastContainer />
 
+<!-- TODO: long press and swiping on mobile fix -->
+
 <style>
   .main-content {
     margin-top: 100px;
