@@ -8,3 +8,4 @@ sw/dependencies.lock
 sw/~$OBDII-PIDs.xlsx
 sw/OBDII-PIDs.xlsx
 sw/firmware/~$OBDII-PIDs.xlsx
+sw/firmware/main/include/secrets.h
