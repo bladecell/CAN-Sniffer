@@ -1,0 +1,28 @@
+path = "/home/jpojsl/.espressif"
+idf_path = "/home/jpojsl/.espressif/v5.5.3/esp-idf"
+esp_idf_json_path = "/home/jpojsl/.espressif/tools"
+tool_download_folder_name = "/home/jpojsl/.espressif/dist"
+tool_install_folder_name = "/home/jpojsl/.espressif/tools"
+target = ["esp32s3"]
+idf_versions = ["v5.5.3"]
+tools_json_file = "tools/tools.json"
+config_file_save_path = "eim_config.toml"
+non_interactive = true
+wizard_all_questions = false
+mirror = "https://dl.espressif.com/github_assets"
+idf_mirror = "https://github.com"
+pypi_mirror = "https://pypi.org/simple"
+recurse_submodules = true
+install_all_prerequisites = true
+skip_prerequisites_check = false
+cleanup = false
+python_env_folder_name = "python"
+activation_script_path_override = "/home/jpojsl/.espressif/tools"
+python_version_override = "python313"
+create_bat_activation_script = false
+
+[idf_features_per_version]
+"v5.5.3" = ["core"]
+
+[idf_tools_per_version]
+"v5.5.3" = ["xtensa-esp-elf-gdb", "xtensa-esp-elf", "esp-clang", "esp-clang-libs", "riscv32-esp-elf", "esp32ulp-elf", "cmake", "openocd-esp32", "ninja", "esp-rom-elfs"]

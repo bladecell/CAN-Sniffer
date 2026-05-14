@@ -1,5 +1,8 @@
 // main.cpp
+#include "esp_err.h"
 #include "esp_log.h"
+#include "freertos/idf_additions.h"
+#include "freertos/projdefs.h"
 #include "led_status.hpp"
 #include "obd2.hpp"
 #include "obd2_utils.hpp"
@@ -23,16 +26,22 @@ extern "C" void app_main(void)
 
     SUPERVISOR::getInstance().start();
 
+    while (SUPERVISOR::getInstance().get_state() != SUPERVISOR::State::RUNNING)
+    {
+        vTaskDelay(pdMS_TO_TICKS(250));
+    }
+
+    esp_err_t ret;
     // 1. Engine Load: A * 100 / 255
-    OBD2::getInstance().addPID(OBD2_FUNCTIONAL_ID, MODE_CURRENT_DATA, PID_ENGINE_LOAD, 2, "Engine Load", PERCENTAGE,
-                               "Calculated engine load", "A * 100 / 255", 0.0f, 100.0f, 2, UPDATE_FAST, 0xf59e0b,
-                               "gauge");
-
+    ret = OBD2::getInstance().addPID(OBD2_FUNCTIONAL_ID, MODE_CURRENT_DATA, PID_ENGINE_LOAD, 2, "Engine Load",
+                                     PERCENTAGE, "Calculated engine load", "A * 100 / 255", 0.0f, 100.0f, 2,
+                                     UPDATE_FAST, 0xf59e0b, "gauge");
+    ESP_LOGI(TAG, "PID added: %s", esp_err_to_name(ret));
     // 2. Coolant Temp: A - 40
-    OBD2::getInstance().addPID(OBD2_FUNCTIONAL_ID, MODE_CURRENT_DATA, PID_COOLANT_TEMP, 2, "Coolant Temp",
-                               DEGREES_CELCIUS, "Engine coolant temperature", "A - 40", -40.0f, 215.0f, 3, UPDATE_SLOW,
-                               0xef4444, "thermometer");
-
+    ret = OBD2::getInstance().addPID(OBD2_FUNCTIONAL_ID, MODE_CURRENT_DATA, PID_COOLANT_TEMP, 2, "Coolant Temp",
+                                     DEGREES_CELCIUS, "Engine coolant temperature", "A - 40", -40.0f, 215.0f, 3,
+                                     UPDATE_SLOW, 0xef4444, "thermometer");
+    ESP_LOGI(TAG, "PID added: %s", esp_err_to_name(ret));
     // 3. Engine RPM: ((A * 256) + B) / 4
     OBD2::getInstance().addPID(OBD2_FUNCTIONAL_ID, MODE_CURRENT_DATA, PID_ENGINE_RPM, 2, "Engine RPM", RPM,
                                "Engine speed", "((A * 256) + B) / 4", 0.0f, 16383.75f, 1, UPDATE_FAST, 0x3b82f6,

@@ -60,7 +60,7 @@ esp_err_t setup_web_server()
     server_config.async_worker_task_priority    = 5;
     server_config.async_worker_stack_size       = 8192;
     server_config.httpd_config.uri_match_fn     = httpd_uri_match_wildcard;
-    server_config.httpd_config.max_uri_handlers = 20;
+    server_config.httpd_config.max_uri_handlers = 24;
 
     esp_err_t ret = AsyncWebServer::getInstance().start(server_config);
     if (ret != ESP_OK)
@@ -71,7 +71,9 @@ esp_err_t setup_web_server()
 
     AsyncWebServer::getInstance().registerRoute("/", HTTP_GET, index_handler, NULL);
     AsyncWebServer::getInstance().registerRoute("/api/v1/pid_def/*", HTTP_GET, g_pid_def_index_handler, NULL);
+    AsyncWebServer::getInstance().registerRoute("/api/v1/pid_def/*", HTTP_DELETE, d_pid_def_index_handler, NULL);
     AsyncWebServer::getInstance().registerRoute("/api/v1/pid_def", HTTP_GET, g_pid_def_index_handler, NULL);
+    AsyncWebServer::getInstance().registerRoute("/api/v1/pid_def", HTTP_POST, p_pid_def_index_handler, NULL);
     AsyncWebServer::getInstance().registerRoute("/api/v1/can_bus", HTTP_GET, g_can_bus_index_handler, NULL);
     AsyncWebServer::getInstance().registerRoute("/api/v1/obd2", HTTP_GET, g_obdii_index_handler, NULL);
     AsyncWebServer::getInstance().registerRoute("/api/v1/pid_data/*", HTTP_GET, g_pid_data_index_handler, NULL);
@@ -83,7 +85,15 @@ esp_err_t setup_web_server()
     AsyncWebServer::getInstance().registerRoute("/api/v1/req/vin", HTTP_POST, p_vin_index_handler, NULL);
     AsyncWebServer::getInstance().registerRoute("/api/v1/req/dtc*", HTTP_POST, p_dtc_index_handler, NULL);
     AsyncWebServer::getInstance().registerRoute("/api/v1/req/clear_dtc", HTTP_POST, p_clear_dtc_index_handler, NULL);
-    AsyncWebServer::getInstance().registerRoute("/api/v1/system", HTTP_GET, p_system_index_handler, NULL);
+    AsyncWebServer::getInstance().registerRoute("/api/v1/system", HTTP_GET, g_system_index_handler, NULL);
+    AsyncWebServer::getInstance().registerRoute("/api/v1/system/reboot", HTTP_POST, p_system_reboot_index_handler,
+                                                NULL);
+
+    AsyncWebServer::getInstance().registerRoute("/api/v1/settings/wifi", HTTP_GET, g_settings_wifi_index_handler, NULL);
+    AsyncWebServer::getInstance().registerRoute("/api/v1/settings/can", HTTP_GET, g_settings_can_index_handler, NULL);
+    AsyncWebServer::getInstance().registerRoute("/api/v1/settings/wifi", HTTP_POST, p_settings_wifi_index_handler,
+                                                NULL);
+    AsyncWebServer::getInstance().registerRoute("/api/v1/settings/can", HTTP_POST, p_settings_can_index_handler, NULL);
 
     AsyncWebServer::getInstance().registerSocketRoute("/ws", ws_socket_handler, NULL);
 
@@ -188,11 +198,11 @@ esp_err_t g_pid_def_index_handler(httpd_req_t* req, void* arg)
         if (target_pid < 0 || target_pid > 0xFFFF)
         {
             ESP_LOGW(TAG, "Invalid PID requested: %d", target_pid);
-            return httpd_resp_send_404(req);
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid PID requested");
         }
     }
 
-    cJSON* root = m_pid_def_json(target_pid);
+    cJSON* root = m_pid_def_get(target_pid);
 
     return send_json_response(req, root);
 }
@@ -206,11 +216,11 @@ esp_err_t g_pid_data_index_handler(httpd_req_t* req, void* arg)
         if (target_pid < 0 || target_pid > 0xFFFF)
         {
             ESP_LOGW(TAG, "Invalid PID requested: %d", target_pid);
-            return httpd_resp_send_404(req);
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid PID requested");
         }
     }
 
-    cJSON* root = m_pid_data_json(target_pid);
+    cJSON* root = m_pid_data_get(target_pid);
 
     return send_json_response(req, root);
 }
@@ -220,7 +230,7 @@ esp_err_t p_pid_poll_data_index_handler(httpd_req_t* req, void* arg)
     bool running = false;
     if (get_query_bool(req, "running", &running) != ESP_OK)
     {
-        esp_err_t ret = httpd_resp_send_404(req);
+        esp_err_t ret = httpd_resp_send_500(req);
         return ret;
     }
 
@@ -234,21 +244,21 @@ esp_err_t p_pid_poll_data_index_handler(httpd_req_t* req, void* arg)
 
 esp_err_t g_can_bus_index_handler(httpd_req_t* req, void* arg)
 {
-    cJSON* root = m_can_bus_json();
+    cJSON* root = m_can_bus_get();
 
     return send_json_response(req, root);
 }
 
 esp_err_t g_obdii_index_handler(httpd_req_t* req, void* arg)
 {
-    cJSON* root = m_obdii_json();
+    cJSON* root = m_obdii_get();
 
     return send_json_response(req, root);
 }
 
 esp_err_t g_vin_index_handler(httpd_req_t* req, void* arg)
 {
-    cJSON* root = m_vin_json();
+    cJSON* root = m_vin_get();
 
     return send_json_response(req, root);
 }
@@ -262,7 +272,7 @@ esp_err_t g_dtc_index_handler(httpd_req_t* req, void* arg)
         return ret;
     }
 
-    cJSON* root = m_dtc_json(mode);
+    cJSON* root = m_dtc_get(mode);
 
     return send_json_response(req, root);
 }
@@ -386,7 +396,7 @@ void pid_stream_callback(uint16_t pid)
 
     uint8_t packet[PID_STREAM_PACKET_SIZE];
 
-    esp_err_t err = get_pid_stream_packet(pid, packet);
+    esp_err_t err = pid_stream_packet_get(pid, packet);
 
     if (err == ESP_OK)
     {
@@ -404,9 +414,9 @@ void pid_stream_callback(uint16_t pid)
     }
 }
 
-esp_err_t p_system_index_handler(httpd_req_t* req, void* arg)
+esp_err_t g_system_index_handler(httpd_req_t* req, void* arg)
 {
-    cJSON* root = m_system_json();
+    cJSON* root = m_system_get();
 
     return send_json_response(req, root);
 }
@@ -416,7 +426,7 @@ void ws_send_can_status()
     // Use a static buffer because httpd_ws_send_frame_async does not copy the payload.
     static uint8_t packet[CAN_STATUS_PACKET_SIZE];
 
-    esp_err_t err = get_can_status_packet(packet);
+    esp_err_t err = can_status_packet_get(packet);
 
     if (err == ESP_OK)
     {
@@ -432,4 +442,105 @@ void ws_send_can_status()
     {
         ESP_LOGW(TAG, "Failed to get Can Status stream packet - %s", esp_err_to_name(err));
     }
+}
+
+cJSON* get_validated_json_payload(httpd_req_t* req, size_t max_size)
+{
+    size_t total_len = req->content_len;
+
+    if (total_len <= 0)
+    {
+        ESP_LOGW(TAG, "Empty content length");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Content-Length required");
+        return NULL;
+    }
+
+    if (total_len > max_size)
+    {
+        ESP_LOGW(TAG, "Payload too large: %d bytes", total_len);
+        httpd_resp_send_err(req, HTTPD_413_CONTENT_TOO_LARGE, "JSON too large");
+        return NULL;
+    }
+
+    char* buf = (char*)malloc(total_len + 1);
+    if (buf == NULL)
+    {
+        ESP_LOGE(TAG, "Failed to allocate memory for JSON");
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Server OOM");
+        return NULL;
+    }
+
+    int ret = httpd_req_recv(req, buf, total_len);
+    if (ret <= 0)
+    {
+        free(buf);
+        return NULL;
+    }
+    buf[ret] = '\0';
+
+    cJSON* root = cJSON_Parse(buf);
+    free(buf);
+
+    if (root == NULL)
+    {
+        ESP_LOGW(TAG, "Invalid JSON format");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+        return NULL;
+    }
+
+    return root;
+}
+
+esp_err_t p_pid_def_index_handler(httpd_req_t* req, void* arg)
+{
+    cJSON* root = get_validated_json_payload(req, 1024);
+
+    if (root == NULL)
+    {
+        return ESP_FAIL;
+    }
+    return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Not Implemented");
+}
+
+esp_err_t d_pid_def_index_handler(httpd_req_t* req, void* arg)
+{
+    int target_pid = -1;
+
+    if (sscanf(req->uri, "/api/v1/pid_def/%d", &target_pid) == 1)
+    {
+        if (target_pid < 0 || target_pid > 0xFFFF)
+        {
+            ESP_LOGW(TAG, "Invalid PID requested: %d", target_pid);
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid PID requested");
+        }
+    }
+
+    cJSON* root = m_pid_def_delete(target_pid);
+
+    return send_json_response(req, root);
+}
+
+esp_err_t g_settings_wifi_index_handler(httpd_req_t* req, void* arg)
+{
+    return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Not Implemented");
+}
+
+esp_err_t g_settings_can_index_handler(httpd_req_t* req, void* arg)
+{
+    return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Not Implemented");
+}
+
+esp_err_t p_settings_wifi_index_handler(httpd_req_t* req, void* arg)
+{
+    return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Not Implemented");
+}
+
+esp_err_t p_settings_can_index_handler(httpd_req_t* req, void* arg)
+{
+    return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Not Implemented");
+}
+
+esp_err_t p_system_reboot_index_handler(httpd_req_t* req, void* arg)
+{
+    return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Not Implemented");
 }

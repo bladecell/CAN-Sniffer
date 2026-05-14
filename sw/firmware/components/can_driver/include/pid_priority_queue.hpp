@@ -115,6 +115,61 @@ public:
         return root;
     }
 
+    void removePID(uint16_t targetPid)
+    {
+        if (xSemaphoreTake(lock, portMAX_DELAY))
+        {
+            for (int i = 0; i < size; i++)
+            {
+                if (heap[i].pid == targetPid)
+                {
+                    PollRequest movedItem = heap[size - 1];
+                    heap[i]               = movedItem;
+                    size--;
+
+                    if (size == 0 || i == size)
+                    {
+                        break;
+                    }
+
+                    // 2. Repair Down (Sift Down)
+                    int  current     = i;
+                    bool shiftedDown = false;
+                    while (true)
+                    {
+                        int small = current, l = 2 * current + 1, r = 2 * current + 2;
+                        if (l < size && heap[l] < heap[small])
+                            small = l;
+                        if (r < size && heap[r] < heap[small])
+                            small = r;
+
+                        if (small != current)
+                        {
+                            swap(current, small);
+                            current     = small;
+                            shiftedDown = true;
+                        }
+                        else
+                            break;
+                    }
+
+                    if (!shiftedDown)
+                    {
+                        int up = i;
+                        while (up != 0 && heap[up] < heap[(up - 1) / 2])
+                        {
+                            swap(up, (up - 1) / 2);
+                            up = (up - 1) / 2;
+                        }
+                    }
+
+                    break;
+                }
+            }
+            xSemaphoreGive(lock);
+        }
+    }
+
     TickType_t getWait()
     {
         if (size == 0)

@@ -29,9 +29,9 @@ public:
     uint32_t    color_;
     std::string icon_;
 
-    te_expr*                        compiledFormula_ = nullptr;
-    double                          vars_storage_[4] = {0, 0, 0, 0};
-    SemaphoreHandle_t               instance_mutex_  = nullptr;
+    te_expr*                  compiledFormula_ = nullptr;
+    mutable double            vars_storage_[4] = {0, 0, 0, 0};
+    mutable SemaphoreHandle_t instance_mutex_  = nullptr;
 
 public:
     PIDDefinition(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std::string name, std::string unit,

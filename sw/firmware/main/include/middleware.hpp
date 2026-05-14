@@ -17,20 +17,27 @@ struct PIDData_t;
 #define CAN_STATUS_PACKET_SIZE 12
 
 // Middlewares
-cJSON* m_pid_def_json(int filter_id);
-cJSON* m_pid_data_json(int filter_id);
+cJSON* m_pid_def_get(int filter_id);
+cJSON* m_pid_data_get(int filter_id);
+cJSON* m_pid_def_delete(int filter_id);
 void   m_pid_poll_set_running(bool running);
-cJSON* m_can_bus_json();
-cJSON* m_obdii_json();
-cJSON* m_system_json();
-cJSON* m_vin_json();
-cJSON* m_dtc_json(int mode);
+cJSON* m_can_bus_get();
+cJSON* m_obdii_get();
+cJSON* m_system_get();
+cJSON* m_vin_get();
+cJSON* m_dtc_get(int mode);
 cJSON* m_vin_request();
 cJSON* m_dtc_request(int mode);
 cJSON* m_clear_dtc_request();
 
-cJSON* get_single_pid_def_json(const PIDDefinition* def);
-cJSON* get_single_pid_data_json(uint16_t pid, const PIDData_t& pd);
+cJSON* m_pid_def_set(cJSON* payload);
+cJSON* m_settings_wifi_get();
+cJSON* m_settings_can_get();
+cJSON* m_settings_wifi_set(cJSON* payload);
+cJSON* m_settings_can_set(cJSON* payload);
 
-esp_err_t get_pid_stream_packet(uint16_t pid, uint8_t* out_packet);
-esp_err_t get_can_status_packet(uint8_t* out_packet);
+cJSON* single_pid_def_get(uint16_t pid);
+cJSON* single_pid_data_get(uint16_t pid);
+
+esp_err_t pid_stream_packet_get(uint16_t pid, uint8_t* out_packet);
+esp_err_t can_status_packet_get(uint8_t* out_packet);

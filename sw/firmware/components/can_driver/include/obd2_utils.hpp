@@ -133,19 +133,18 @@ struct PIDDef_t
 
 struct PIDData_t
 {
-    uint32_t          id;
-    float             value;
-    uint32_t          lastUpdated;
-    uint8_t           data[PID_DATA_LENGTH];
-    bool              isSupported;
-    bool              isValid;
-    UpdateRate        updateInterval_ms;
-    SemaphoreHandle_t mtx_;
+    uint32_t   id;
+    float      value;
+    uint32_t   lastUpdated;
+    uint8_t    data[PID_DATA_LENGTH];
+    bool       isSupported;
+    bool       isValid;
+    UpdateRate updateInterval_ms;
 };
 
 struct PollRequest
 {
-    uint32_t   pid;
+    uint16_t   pid;
     TickType_t nextWake;
     uint32_t   interval;
     uint8_t    priority;
@@ -185,3 +184,32 @@ typedef struct
     SemaphoreHandle_t        permanentReadySemaphore;
     SemaphoreHandle_t        mtx_;
 } DTCData_t;
+
+class MutexGuard
+{
+public:
+    explicit MutexGuard(SemaphoreHandle_t mtx, TickType_t timeout = portMAX_DELAY) : _mtx(mtx)
+    {
+        if (_mtx != nullptr)
+        {
+            _locked = (xSemaphoreTake(_mtx, timeout) == pdTRUE);
+        }
+    }
+
+    ~MutexGuard()
+    {
+        if (_mtx != nullptr && _locked)
+        {
+            xSemaphoreGive(_mtx);
+        }
+    }
+
+    bool isLocked() const
+    {
+        return _locked;
+    }
+
+private:
+    SemaphoreHandle_t _mtx;
+    bool              _locked = false;
+};

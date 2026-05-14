@@ -22,6 +22,7 @@
 #include "esp_check.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "obd2_data_model.hpp"
 #include "obd2_utils.hpp"
 
 static const char* TAG = "OBD2";
@@ -116,7 +117,7 @@ void OBD2::requestSuppPids()
     supportedPIDsGroup = {};
     for (uint16_t pid_marker = 0; pid_marker <= PID_PIDS_SUPPORTED_C0_DF; pid_marker += 0x20)
     {
-        req(OBD2_FUNCTIONAL_ID, MODE_CURRENT_DATA, pid_marker, 2, 0);
+        req(OBD2_FUNCTIONAL_ID, MODE_CURRENT_DATA, pid_marker, 2, 0, 0);
 
         if (xSemaphoreTake(xRequestNextPIDSemaphore, pdMS_TO_TICKS(500)) != pdTRUE)
         {
@@ -138,8 +139,8 @@ void OBD2::getSupportedPids(supportedPIDsGroup_t& supportedPIDsGroup)
  * Function that adds a PID to the OBD2 data model at runtime.
  * This allows dynamic configuration of which PIDs to monitor without needing to hardcode them at compile time.
  * The function checks if the PID is supported based on previously retrieved supported PID bitmaps and then adds it to
- * the polling queue if valid. Calls the addPID function of the OBD2DTB class to maintain the data model and ensure
- * thread safety when accessing PID data.
+ * the polling queue if valid. Calls the addPID function of the OBD2DataModel class to maintain the data model and
+ * ensure thread safety when accessing PID data.
  *
  * @param id The CAN ID to use for requests related to this PID (e.g., functional or physical ID)
  * @param mode The OBD-II mode (e.g., current data, data by identifier)
@@ -164,29 +165,51 @@ esp_err_t OBD2::addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std
                        std::string desc, std::string formula, float minV, float maxV, uint8_t priority,
                        UpdateRate interval, uint32_t color, std::string icon)
 {
-    return OBD2DTB::addPID(id, mode, pid, len, name, unit, desc, formula, minV, maxV, priority, interval, color, icon);
+    esp_err_t ret = OBD2DataModel::addPID(id, mode, pid, len, name, unit, desc, formula, minV, maxV, priority, interval,
+                                          color, icon);
+
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
 
     if (mode == MODE_CURRENT_DATA)
     {
+        if (pid == 0)
+            return ESP_ERR_INVALID_ARG;
+
         uint8_t groupIdx = ((pid - 1) & 0xE0) >> 5;
 
         if (groupIdx < SUPPORTED_PIDS_GROUP_COUNT)
         {
-            uint32_t& group = supportedPIDsGroup.pidGroup[groupIdx];
-            group |= (1UL << ((pid - 1) % 32));
-            if (group & (1UL << ((pid - 1) % 32)))
+            uint8_t bitPos = 31 - ((pid - 1) % 32);
+
+            if (supportedPIDsGroup.pidGroup[groupIdx] & (1UL << bitPos))
             {
-                req(id, mode, pid, len, priority, true);  // Directly add to polling queue for supported PIDs
+                MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
+
+                if (!guard.isLocked())
+                {
+                    return ESP_ERR_TIMEOUT;
+                }
+                _setIsSupported(pid, true);
+                if (continuousRunning)
+                {
+                    req(id, mode, pid, len, interval, priority, true);
+                }
             }
         }
     }
     else if (mode == MODE_READ_DATA_BY_IDENTIFIER)
     {
-        req(id, mode, pid, len, priority, true);  // Directly add to polling queue
+        if (continuousRunning)
+        {
+            req(id, mode, pid, len, interval, priority, true);
+        }
     }
     else
     {
-        return ESP_ERR_INVALID_ARG;  // Unsupported mode for addPID
+        return ESP_ERR_INVALID_ARG;
     }
 
     return ESP_OK;
@@ -200,16 +223,17 @@ esp_err_t OBD2::requestPID(uint16_t pid)
         return ESP_ERR_NOT_SUPPORTED;
     }
 
-    req(getId(pid), getMode(pid), pid, getLen(pid), getPriority(pid));
+    req(getId(pid), getMode(pid), pid, getLen(pid), 0, getPriority(pid));
 
     return ESP_OK;
 }
 
-void OBD2::req(uint32_t id, uint8_t mode, uint32_t pid, uint8_t len, uint8_t priority, bool isRecurring)
+void OBD2::req(uint32_t id, uint8_t mode, uint32_t pid, uint8_t len, uint32_t interval, uint8_t priority,
+               bool isRecurring)
 {
     PollRequest req;
     req.pid         = pid;
-    req.interval    = 0;
+    req.interval    = interval;
     req.nextWake    = xTaskGetTickCount();
     req.priority    = priority;
     req.isRecurring = isRecurring;
@@ -533,6 +557,7 @@ esp_err_t OBD2::parseRDBI(const CanDriver::CanFrame& f)
 {
     uint16_t  pid = (uint16_t)(f.data[2] << 8) | f.data[3];
     esp_err_t ret;
+
     if (f.data[1] == 0x7F)
     {
         uint8_t rejectedService = f.data[2];
@@ -558,27 +583,38 @@ esp_err_t OBD2::parseDerivedData(const CanDriver::CanFrame& f)
 {
     uint16_t  pid = (uint16_t)(f.data[2] << 8) | f.data[3];
     esp_err_t ret;
-    auto      it = pidData.find(pid);
-    if (it != pidData.end())
     {
-        float result = 0.0f;
-        ret          = PID_DEF.at(pid).evaluate(nullptr, 0, result);
-        if (xSemaphoreTake(it->second.mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
+        MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
+
+        if (!guard.isLocked())
         {
-            setValid(pid, false);
             return ESP_ERR_TIMEOUT;
         }
 
-        it->second.value       = result;
-        it->second.id          = OBD2_FUNCTIONAL_ID;
-        it->second.lastUpdated = xTaskGetTickCount();
-        it->second.isValid     = true;
-        xSemaphoreGive(it->second.mtx_);
-    }
-    else
-    {
-        ret = ESP_ERR_NOT_FOUND;
-        setValid(pid, false);
+        PIDData_t* pdat = nullptr;
+        ret             = _getData(pid, pdat);
+        if (ret != ESP_OK || pdat == nullptr)
+        {
+            _setValid(pid, false);
+            return (ret == ESP_OK) ? ESP_ERR_NOT_FOUND : ret;
+        }
+
+        const PIDDefinition* pdef = nullptr;
+        ret                       = _getDef(pid, pdef);
+
+        if (ret != ESP_OK || pdef == nullptr)
+        {
+            _setValid(pid, false);
+            return (ret == ESP_OK) ? ESP_ERR_NOT_FOUND : ret;
+        }
+
+        float result = 0.0f;
+        ret          = pdef->evaluate(nullptr, 0, result);
+
+        pdat->value       = result;
+        pdat->id          = OBD2_FUNCTIONAL_ID;
+        pdat->lastUpdated = xTaskGetTickCount();
+        pdat->isValid     = true;
     }
 
     runPidUpdateCallbacks(pid);
@@ -623,7 +659,7 @@ esp_err_t OBD2::parseDTCs(std::vector<CanDriver::CanFrame>& frames, uint8_t mode
             if (halved)
             {
                 rawDTC = (hi_half << 8) | frame.data[idx++];
-                ERR_ACCUMULATE(ret, setDTC(rawDTC, mode));
+                ERR_ACCUMULATE(ret, _setDTC(rawDTC, mode));
                 dtc_rem--;
                 halved = false;
             }
@@ -638,7 +674,7 @@ esp_err_t OBD2::parseDTCs(std::vector<CanDriver::CanFrame>& frames, uint8_t mode
             {
                 uint8_t  dtc_high = frame.data[idx++];
                 uint16_t rawDTC   = (dtc_high << 8) | frame.data[idx++];
-                ERR_ACCUMULATE(ret, setDTC(rawDTC, mode));
+                ERR_ACCUMULATE(ret, _setDTC(rawDTC, mode));
                 dtc_rem--;
             }
         }
@@ -684,6 +720,13 @@ esp_err_t OBD2::parseSupportedPIDs(const CanDriver::CanFrame& f)
         uint8_t groupIdx                      = (pidGroup >> 5);
         supportedPIDsGroup.pidGroup[groupIdx] = supportedPIDs;
 
+        MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
+
+        if (!guard.isLocked())
+        {
+            return false;
+        }
+
         for (uint8_t i = 0; i < 32; ++i)
         {
             if (supportedPIDs & (1UL << (31 - i)))
@@ -691,18 +734,18 @@ esp_err_t OBD2::parseSupportedPIDs(const CanDriver::CanFrame& f)
                 uint8_t supportedPID = pidGroup + 1 + i;
                 supportedPIDsGroup.numberOfSupportedPIDs++;
 
-                if (!pidExists(supportedPID))
+                if (!_pidExists(supportedPID))
                 {
                     ESP_LOGD(TAG, "PID 0x%02X supported by vehicle", supportedPID);
                     continue;
                 }
 
-                ret = setIsSupported(supportedPID, true);
+                ret = _setIsSupported(supportedPID, true);
                 if (ret != ESP_OK)
                 {
                     ESP_LOGD(TAG, "Failed to set PID 0x%02X as supported: %s", supportedPID, esp_err_to_name(ret));
                 }
-                esp_err_t ret2 = setId(supportedPID, f.header.id - RESPONSE_ID_OFFSET);
+                esp_err_t ret2 = _setId(supportedPID, f.header.id - RESPONSE_ID_OFFSET);
                 if (ret2 != ESP_OK)
                 {
                     ESP_LOGD(TAG, "Failed to set PID 0x%02X request ID: %s", supportedPID, esp_err_to_name(ret));
@@ -737,7 +780,7 @@ esp_err_t OBD2::requestVIN()
         return ESP_ERR_INVALID_STATE;
     }
 
-    req(OBD2_FUNCTIONAL_ID, MODE_VEHICLE_INFO, PID_VIN, 2, 0);
+    req(OBD2_FUNCTIONAL_ID, MODE_VEHICLE_INFO, PID_VIN, 2, 0, 0);
 
     xSemaphoreTake(vinData.vinReadySemaphore, 0);
 
@@ -780,7 +823,7 @@ esp_err_t OBD2::requestDTC(uint8_t mode)
     while (xSemaphoreTake(*sem, 0) == pdTRUE)
         ;
 
-    req(OBD2_FUNCTIONAL_ID, mode, 0x00, 2, 0);
+    req(OBD2_FUNCTIONAL_ID, mode, 0x00, 2, 0, 0);
 
     if (xSemaphoreTake(*sem, pdMS_TO_TICKS(2000)) != pdTRUE)
     {
@@ -793,7 +836,7 @@ esp_err_t OBD2::requestDTC(uint8_t mode)
 
 void OBD2::requestClearDTCs()
 {
-    req(OBD2_FUNCTIONAL_ID, MODE_CLEAR_DTCS, 0x00, 2, 0);
+    req(OBD2_FUNCTIONAL_ID, MODE_CLEAR_DTCS, 0x00, 2, 0, 0);
 }
 
 esp_err_t OBD2::captureMultiFrame(const CanDriver::CanFrame& f)
@@ -874,7 +917,7 @@ esp_err_t OBD2::captureMultiFrame(const CanDriver::CanFrame& f)
 
 inline void OBD2::sendFlowControlFrame(uint32_t id)
 {
-    req(id, 0x00, 0x00, 0x30, 0);
+    req(id, 0x00, 0x00, 0x30, 0, 0);
 }
 
 esp_err_t OBD2::parseMultiFrame(std::vector<CanDriver::CanFrame>& frames)

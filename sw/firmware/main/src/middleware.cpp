@@ -13,65 +13,44 @@
 #include "supervisor.hpp"
 #include "utilities.h"
 
-cJSON* get_single_pid_def_json(const PIDDefinition* def)
+cJSON* single_pid_def_get(uint16_t pid)
 {
     cJSON* item = cJSON_CreateObject();
 
-    if (def == nullptr)
-    {
-        return item;
-    }
-
-    cJSON_AddNumberToObject(item, "pid", def->pid());
-    cJSON_AddNumberToObject(item, "mode", def->mode());
-    cJSON_AddStringToObject(item, "name", def->name().c_str());
-    cJSON_AddStringToObject(item, "unit", def->unit().c_str());
-    cJSON_AddStringToObject(item, "description", def->description().c_str());
-    cJSON_AddNumberToObject(item, "minValue", def->minValue());
-    cJSON_AddNumberToObject(item, "maxValue", def->maxValue());
-    cJSON_AddNumberToObject(item, "priority", def->priority());
-    cJSON_AddNumberToObject(item, "update_interval_ms", def->updateInterval());
-    cJSON_AddNumberToObject(item, "color", def->color());
-    cJSON_AddStringToObject(item, "icon", def->icon().c_str());
-    cJSON_AddStringToObject(item, "formula", def->formula().c_str());
-
-    return item;
-}
-
-cJSON* get_single_pid_data_json(uint16_t pid, const PIDData_t& pd)
-{
-    uint32_t id, lastUpdated, updateInterval;
-    float    value;
-    bool     isSupported, isValid;
-
-    if (xSemaphoreTake(pd.mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
-    {
-        return nullptr;
-    }
-
-    id             = pd.id;
-    value          = pd.value;
-    lastUpdated    = pd.lastUpdated;
-    isSupported    = pd.isSupported;
-    isValid        = pd.isValid;
-    updateInterval = pd.updateInterval_ms;
-
-    xSemaphoreGive(pd.mtx_);
-
-    cJSON* item = cJSON_CreateObject();
-
-    cJSON_AddNumberToObject(item, "id", id);
     cJSON_AddNumberToObject(item, "pid", pid);
-    cJSON_AddNumberToObject(item, "value", value);
-    cJSON_AddNumberToObject(item, "lastUpdated", lastUpdated);
-    cJSON_AddBoolToObject(item, "isSupported", isSupported);
-    cJSON_AddBoolToObject(item, "isValid", isValid);
-    cJSON_AddNumberToObject(item, "update_interval_ms", updateInterval);
+    cJSON_AddNumberToObject(item, "mode", OBD2::getInstance().getMode(pid));
+    cJSON_AddStringToObject(item, "name", OBD2::getInstance().getName(pid).c_str());
+    cJSON_AddStringToObject(item, "unit", OBD2::getInstance().getUnit(pid).c_str());
+    cJSON_AddStringToObject(item, "description", OBD2::getInstance().getDescription(pid).c_str());
+    cJSON_AddNumberToObject(item, "minValue", OBD2::getInstance().getMinValue(pid));
+    cJSON_AddNumberToObject(item, "maxValue", OBD2::getInstance().getMaxValue(pid));
+    cJSON_AddNumberToObject(item, "priority", OBD2::getInstance().getPriority(pid));
+    cJSON_AddNumberToObject(item, "update_interval_ms", OBD2::getInstance().getUpdateInterval(pid));
+    cJSON_AddNumberToObject(item, "color", OBD2::getInstance().getColor(pid));
+    cJSON_AddStringToObject(item, "icon", OBD2::getInstance().getIcon(pid).c_str());
+    cJSON_AddStringToObject(item, "formula", OBD2::getInstance().getFormula(pid).c_str());
 
     return item;
 }
 
-cJSON* m_pid_def_json(int filter_id)
+cJSON* single_pid_data_get(uint16_t pid)
+{
+    cJSON* item = cJSON_CreateObject();
+
+    auto& obd = OBD2::getInstance();
+
+    cJSON_AddNumberToObject(item, "id", obd.getId(pid));
+    cJSON_AddNumberToObject(item, "pid", pid);
+    cJSON_AddNumberToObject(item, "value", obd.getValue(pid));
+    cJSON_AddNumberToObject(item, "lastUpdated", obd.getLastUpdated(pid));
+    cJSON_AddBoolToObject(item, "isSupported", obd.isSup(pid));
+    cJSON_AddBoolToObject(item, "isValid", obd.isValid(pid));
+    cJSON_AddNumberToObject(item, "update_interval_ms", obd.getUpdateInterval(pid));
+
+    return item;
+}
+
+cJSON* m_pid_def_get(int filter_id)
 {
     cJSON* root       = cJSON_CreateObject();
     cJSON* data_array = cJSON_CreateArray();
@@ -79,16 +58,11 @@ cJSON* m_pid_def_json(int filter_id)
 
     if (filter_id >= 0)
     {
-        const PIDDefinition* def = nullptr;
-
-        if (OBD2::getInstance().getDef((uint16_t)filter_id, def) == ESP_OK)
+        cJSON* item = single_pid_def_get((uint16_t)filter_id);
+        if (item)
         {
-            cJSON* item = get_single_pid_def_json(def);
-            if (item)
-            {
-                cJSON_AddItemToArray(data_array, item);
-                count++;
-            }
+            cJSON_AddItemToArray(data_array, item);
+            count++;
         }
     }
     else
@@ -96,15 +70,11 @@ cJSON* m_pid_def_json(int filter_id)
         std::vector<uint16_t> pids = OBD2::getInstance().getPIDs();
         for (const auto& pid : pids)
         {
-            const PIDDefinition* def = nullptr;
-            if (OBD2::getInstance().getDef(pid, def) == ESP_OK)
+            cJSON* item = single_pid_def_get(pid);
+            if (item)
             {
-                cJSON* item = get_single_pid_def_json(def);
-                if (item)
-                {
-                    cJSON_AddItemToArray(data_array, item);
-                    count++;
-                }
+                cJSON_AddItemToArray(data_array, item);
+                count++;
             }
         }
     }
@@ -115,7 +85,7 @@ cJSON* m_pid_def_json(int filter_id)
     return root;
 }
 
-cJSON* m_pid_data_json(int filter_id)
+cJSON* m_pid_data_get(int filter_id)
 {
     cJSON* root       = cJSON_CreateObject();
     cJSON* data_array = cJSON_CreateArray();
@@ -123,16 +93,11 @@ cJSON* m_pid_data_json(int filter_id)
 
     if (filter_id >= 0)
     {
-        PIDData_t pd;
-
-        if (OBD2::getInstance().getData((uint16_t)filter_id, pd) == ESP_OK)
+        cJSON* item = single_pid_data_get((uint16_t)filter_id);
+        if (item)
         {
-            cJSON* item = get_single_pid_data_json((uint16_t)filter_id, pd);
-            if (item)
-            {
-                cJSON_AddItemToArray(data_array, item);
-                count++;
-            }
+            cJSON_AddItemToArray(data_array, item);
+            count++;
         }
     }
     else
@@ -140,15 +105,11 @@ cJSON* m_pid_data_json(int filter_id)
         std::vector<uint16_t> pids = OBD2::getInstance().getPIDs();
         for (const auto& pid : pids)
         {
-            PIDData_t pd;
-            if (OBD2::getInstance().getData(pid, pd) == ESP_OK)
+            cJSON* item = single_pid_data_get(pid);
+            if (item)
             {
-                cJSON* item = get_single_pid_data_json(pid, pd);
-                if (item)
-                {
-                    cJSON_AddItemToArray(data_array, item);
-                    count++;
-                }
+                cJSON_AddItemToArray(data_array, item);
+                count++;
             }
         }
     }
@@ -171,7 +132,7 @@ void m_pid_poll_set_running(bool running)
     }
 }
 
-cJSON* m_can_bus_json()
+cJSON* m_can_bus_get()
 {
     cJSON* root = cJSON_CreateObject();
 
@@ -203,7 +164,7 @@ cJSON* m_can_bus_json()
     return root;
 }
 
-cJSON* m_obdii_json()
+cJSON* m_obdii_get()
 {
     cJSON* root = cJSON_CreateObject();
 
@@ -229,7 +190,7 @@ cJSON* m_obdii_json()
     return root;
 }
 
-cJSON* m_system_json()
+cJSON* m_system_get()
 {
     cJSON* root = cJSON_CreateObject();
 
@@ -244,7 +205,7 @@ cJSON* m_system_json()
     return root;
 }
 
-cJSON* m_vin_json()
+cJSON* m_vin_get()
 {
     cJSON* root = cJSON_CreateObject();
 
@@ -253,7 +214,7 @@ cJSON* m_vin_json()
     return root;
 }
 
-cJSON* m_dtc_json(int mode)
+cJSON* m_dtc_get(int mode)
 {
     cJSON* root         = cJSON_CreateObject();
     cJSON* items        = cJSON_CreateArray();
@@ -353,16 +314,8 @@ cJSON* m_clear_dtc_request()
     return root;
 }
 
-esp_err_t get_pid_stream_packet(uint16_t pid, uint8_t* out_packet)
+esp_err_t pid_stream_packet_get(uint16_t pid, uint8_t* out_packet)
 {
-    PIDData_t data;
-
-    esp_err_t err = OBD2::getInstance().getData(pid, data);
-    if (err != ESP_OK)
-    {
-        return err;
-    }
-
     size_t offset = 0;
 
     // 8 bit message type
@@ -379,34 +332,37 @@ esp_err_t get_pid_stream_packet(uint16_t pid, uint8_t* out_packet)
 
     // float value
     uint32_t float_bits;
-    memcpy(&float_bits, &data.value, sizeof(data.value));
+    float    float_value = OBD2::getInstance().getValue(pid);
+    memcpy(&float_bits, &float_value, sizeof(float_value));
     out_packet[offset++] = (float_bits >> 0) & 0xFF;
     out_packet[offset++] = (float_bits >> 8) & 0xFF;
     out_packet[offset++] = (float_bits >> 16) & 0xFF;
     out_packet[offset++] = (float_bits >> 24) & 0xFF;
 
     // 32 bit lastUpdated
-    out_packet[offset++] = (data.lastUpdated >> 0) & 0xFF;
-    out_packet[offset++] = (data.lastUpdated >> 8) & 0xFF;
-    out_packet[offset++] = (data.lastUpdated >> 16) & 0xFF;
-    out_packet[offset++] = (data.lastUpdated >> 24) & 0xFF;
+    uint32_t lastUpdated = OBD2::getInstance().getLastUpdated(pid);
+    out_packet[offset++] = (lastUpdated >> 0) & 0xFF;
+    out_packet[offset++] = (lastUpdated >> 8) & 0xFF;
+    out_packet[offset++] = (lastUpdated >> 16) & 0xFF;
+    out_packet[offset++] = (lastUpdated >> 24) & 0xFF;
 
     // 32 bit interval
-    out_packet[offset++] = (data.updateInterval_ms >> 0) & 0xFF;
-    out_packet[offset++] = (data.updateInterval_ms >> 8) & 0xFF;
-    out_packet[offset++] = (data.updateInterval_ms >> 16) & 0xFF;
-    out_packet[offset++] = (data.updateInterval_ms >> 24) & 0xFF;
+    uint32_t updateInterval_ms = OBD2::getInstance().getUpdateInterval(pid);
+    out_packet[offset++]       = (updateInterval_ms >> 0) & 0xFF;
+    out_packet[offset++]       = (updateInterval_ms >> 8) & 0xFF;
+    out_packet[offset++]       = (updateInterval_ms >> 16) & 0xFF;
+    out_packet[offset++]       = (updateInterval_ms >> 24) & 0xFF;
 
     // 8 bit isSupported
-    out_packet[offset++] = data.isSupported ? 1 : 0;
+    out_packet[offset++] = OBD2::getInstance().isSup(pid) ? 1 : 0;
 
     // 8 bit isValid
-    out_packet[offset++] = data.isValid ? 1 : 0;
+    out_packet[offset++] = OBD2::getInstance().isValid(pid) ? 1 : 0;
 
     return ESP_OK;
 }
 
-esp_err_t get_can_status_packet(uint8_t* out_packet)
+esp_err_t can_status_packet_get(uint8_t* out_packet)
 {
     size_t offset = 0;
 
@@ -441,4 +397,9 @@ esp_err_t get_can_status_packet(uint8_t* out_packet)
     out_packet[offset++] = CanDriver::getInstance().isBusConnected() ? 1 : 0;
 
     return ESP_OK;
+}
+
+cJSON* m_pid_def_delete(int filter_id)
+{
+    return cJSON_CreateObject();
 }

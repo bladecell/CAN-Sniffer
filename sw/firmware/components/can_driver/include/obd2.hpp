@@ -11,6 +11,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -20,13 +21,13 @@
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
-#include "obd2_dtb.hpp"
+#include "obd2_data_model.hpp"
 #include "obd2_utils.hpp"
 
 #define POLL_TASK_PERIOD_MS MIN_TRANSMIT_PERIOD_MS
 #define ERR_ACCUMULATE(result, expr) ((result) = (result) ?: (expr))
 
-class OBD2 : public OBD2DTB
+class OBD2 : public OBD2DataModel
 {
 public:
     OBD2();
@@ -79,8 +80,9 @@ private:
     static void       pollTaskWrapper(void* param);
     TaskHandle_t      PollTaskHandle{nullptr};
     std::atomic<bool> pollStaticGroup = false;
-    void  req(uint32_t id, uint8_t mode, uint32_t pid, uint8_t len, uint8_t priority, bool isRecurring = false);
-    float pollTaskUtilization = 0.0f;
+    void              req(uint32_t id, uint8_t mode, uint32_t pid, uint8_t len, uint32_t interval, uint8_t priority,
+                          bool isRecurring = false);
+    float             pollTaskUtilization = 0.0f;
 
     // Receiving Task
     void         receiveTask();
