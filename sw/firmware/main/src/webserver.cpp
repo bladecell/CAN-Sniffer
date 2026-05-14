@@ -394,7 +394,7 @@ void pid_stream_callback(uint16_t pid)
     if (!b_pid_stream_enabled)
         return;
 
-    uint8_t packet[PID_STREAM_PACKET_SIZE];
+    static uint8_t packet[PID_STREAM_PACKET_SIZE];
 
     esp_err_t err = pid_stream_packet_get(pid, packet);
 

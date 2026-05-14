@@ -432,13 +432,13 @@ void CanDriver::healthCheckTaskWrapper(void* param)
     driver->healthCheckTask();
 }
 
+// TODO - detect disconnect when connected but noone it transmitting, add logic to ping if no transmission has not been
+// mage in a while
 void CanDriver::healthCheckTask()
 {
     STATE   prevState            = STATE::NOT_INITIALIZED;
     uint8_t successfulPingsCount = 0;
 
-    // Initial Wait Barrier
-    // This ensures the task sits idle until init() calls xTaskNotifyGive()
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
     vTaskDelay(pdMS_TO_TICKS(50));
@@ -449,13 +449,11 @@ void CanDriver::healthCheckTask()
         {
             case STATE::NOT_INITIALIZED:
             {
-                // Wait until initialized
                 ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
                 break;
             }
             case STATE::NOT_CONNECTED:
             {
-                // Ping the bus periodically
                 esp_err_t ret = pingBus();
                 if (ret != ESP_OK)
                 {
@@ -481,7 +479,6 @@ void CanDriver::healthCheckTask()
             }
             case STATE::CONNECTED:
             {
-                // Monitor for errors
                 ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
                 if (consecutiveAckErrors.load() > 3)
                 {
@@ -504,7 +501,6 @@ void CanDriver::healthCheckTask()
                     connectionChangeCb(false);
                 }
 
-                // Attempt recovery
                 ESP_LOGI(TAG, "Attempting CAN bus recovery from BUS OFF");
                 esp_err_t ret = twai_node_recover(nodeHdl);
                 if (ret != ESP_OK)

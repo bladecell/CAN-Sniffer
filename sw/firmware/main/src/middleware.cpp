@@ -273,9 +273,10 @@ cJSON* m_dtc_get(int mode)
 
 cJSON* m_vin_request()
 {
-    cJSON* root = cJSON_CreateObject();
+    cJSON*    root = cJSON_CreateObject();
+    esp_err_t err  = OBD2::getInstance().requestVIN();
 
-    if (esp_err_t err = OBD2::getInstance().requestVIN() == ESP_OK)
+    if (err == ESP_OK)
     {
         cJSON_AddStringToObject(root, "status", "success");
     }
