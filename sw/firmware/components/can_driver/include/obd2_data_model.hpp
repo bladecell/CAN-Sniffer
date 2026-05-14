@@ -1,6 +1,8 @@
 // obd2_dtb.hpp
 #pragma once
 
+#include <math.h>
+
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -19,21 +21,72 @@ public:
     void initDef();
     bool pidExists(uint16_t pid) const;
     // PID_DEF Getters
-    uint32_t    getId_Def(uint16_t pid) const;
-    uint8_t     getMode(uint16_t pid) const;
-    uint8_t     getLen(uint16_t pid) const;
-    std::string getName(uint16_t pid) const;
-    std::string getUnit(uint16_t pid) const;
-    std::string getDescription(uint16_t pid) const;
-    float       getMinValue(uint16_t pid) const;
-    float       getMaxValue(uint16_t pid) const;
-    uint8_t     getPriority(uint16_t pid) const;
-    uint16_t    getUpdateInterval(uint16_t pid) const;
-    uint32_t    getColor(uint16_t pid) const;
-    std::string getIcon(uint16_t pid) const;
-    std::string getFormula(uint16_t pid) const;
+    inline uint32_t getId_Def(uint16_t pid) const
+    {
+        return _getDefFieldWithLock(pid, &PIDDefinition::id, (uint32_t)0);
+    }
+
+    inline uint8_t getMode(uint16_t pid) const
+    {
+        return _getDefFieldWithLock(pid, &PIDDefinition::mode, (uint8_t)0);
+    }
+
+    inline uint8_t getLen(uint16_t pid) const
+    {
+        return _getDefFieldWithLock(pid, &PIDDefinition::len, (uint8_t)0);
+    }
+
+    inline std::string getName(uint16_t pid) const
+    {
+        return _getDefFieldWithLock(pid, &PIDDefinition::name, "Unknown");
+    }
+
+    inline std::string getUnit(uint16_t pid) const
+    {
+        return _getDefFieldWithLock(pid, &PIDDefinition::unit, "Unknown");
+    }
+
+    inline std::string getDescription(uint16_t pid) const
+    {
+        return _getDefFieldWithLock(pid, &PIDDefinition::description, "Unknown");
+    }
+
+    inline float getMinValue(uint16_t pid) const
+    {
+        return _getDefFieldWithLock(pid, &PIDDefinition::minValue, NAN);
+    }
+
+    inline float getMaxValue(uint16_t pid) const
+    {
+        return _getDefFieldWithLock(pid, &PIDDefinition::maxValue, NAN);
+    }
+
+    inline uint8_t getPriority(uint16_t pid) const
+    {
+        return _getDefFieldWithLock(pid, &PIDDefinition::priority, (uint8_t)0);
+    }
+
+    inline uint16_t getUpdateInterval(uint16_t pid) const
+    {
+        return _getDefFieldWithLock(pid, &PIDDefinition::updateInterval, (uint16_t)0);
+    }
+
+    inline uint32_t getColor(uint16_t pid) const
+    {
+        return _getDefFieldWithLock(pid, &PIDDefinition::color, (uint32_t)0xFFFFFF);
+    }
+
+    inline std::string getIcon(uint16_t pid) const
+    {
+        return _getDefFieldWithLock(pid, &PIDDefinition::icon, "Unknown");
+    }
+
+    inline std::string getFormula(uint16_t pid) const
+    {
+        return _getDefFieldWithLock(pid, &PIDDefinition::formula, "Unknown");
+    }
     // PIDDefinition *getDef(uint16_t pid) const;
-    esp_err_t getDef(uint16_t pid, const PIDDefinition*& outDef) const;
+    esp_err_t getDef(uint16_t pid, PIDDefinitionData& outDef) const;
 
     // Special Getters
     std::string              getVIN() const;
@@ -41,18 +94,35 @@ public:
 
     esp_err_t updateData(const CanDriver::CanFrame& frame);
     // PID Data Getters
-    float     getValue(uint16_t pid, uint32_t timeout_ms = 500);
-    float     getValueUnsafe(uint16_t pid, uint32_t timeout_ms = 500);
-    uint32_t  getLastUpdated(uint16_t pid) const;
-    uint32_t  getId(uint16_t pid) const;
-    esp_err_t getRawData(uint16_t pid, uint8_t* outData) const;
-    uint8_t   getRawDataByte(uint16_t pid, uint8_t idx) const;
-    uint8_t   getRawDataByteUnsafe(uint16_t pid, uint8_t idx) const;
-    bool      isValid(uint16_t pid) const;
-    bool      isSup(uint16_t pid) const;
-    esp_err_t getData(uint16_t pid, PIDData_t*& pd) const;
+    inline float getValue(uint16_t pid)
+    {
+        return _getDataFieldWithLock(pid, &PIDData_t::value, NAN);
+    }
 
-    esp_err_t setValid(uint16_t pid, bool valid);
+    inline uint32_t getLastUpdated(uint16_t pid) const
+    {
+        return _getDataFieldWithLock(pid, &PIDData_t::lastUpdated, (uint32_t)0);
+    }
+
+    inline uint32_t getId(uint16_t pid) const
+    {
+        return _getDataFieldWithLock(pid, &PIDData_t::id, (uint32_t)0);
+    }
+
+    inline bool isValid(uint16_t pid) const
+    {
+        return _getDataFieldWithLock(pid, &PIDData_t::isValid, false);
+    }
+
+    inline bool isSup(uint16_t pid) const
+    {
+        return _getDataFieldWithLock(pid, &PIDData_t::isSupported, false);
+    }
+    uint8_t   getRawDataByte(uint16_t pid, uint8_t idx) const;
+    esp_err_t getRawData(uint16_t pid, uint8_t* outData) const;
+    float     getValueUnsafe(uint16_t pid);
+    uint8_t   getRawDataByteUnsafe(uint16_t pid, uint8_t idx) const;
+    esp_err_t getData(uint16_t pid, PIDData_t& pd) const;
 
     esp_err_t             clearDTC(uint8_t mode);
     std::string           decodeDTC(uint16_t rawDTC);
@@ -104,36 +174,97 @@ protected:
     mutable SemaphoreHandle_t pidMapMtx = nullptr;
     bool                      _isSup(uint16_t pid) const;
     bool                      _pidExists(uint16_t pid) const;
-    // PID_DEF Getters without mutex
-    uint32_t    _getId_Def(uint16_t pid) const;
-    uint8_t     _getMode(uint16_t pid) const;
-    uint8_t     _getLen(uint16_t pid) const;
-    std::string _getName(uint16_t pid) const;
-    std::string _getUnit(uint16_t pid) const;
-    std::string _getDescription(uint16_t pid) const;
-    float       _getMinValue(uint16_t pid) const;
-    float       _getMaxValue(uint16_t pid) const;
-    uint8_t     _getPriority(uint16_t pid) const;
-    uint16_t    _getUpdateInterval(uint16_t pid) const;
-    uint32_t    _getColor(uint16_t pid) const;
-    std::string _getIcon(uint16_t pid) const;
-    std::string _getFormula(uint16_t pid) const;
-    esp_err_t   _getDef(uint16_t pid, const PIDDefinition*& outDef) const;
+
     // PID Data Getters without mutex
-    float     _getValue(uint16_t pid, uint32_t timeout_ms = 500);
-    uint32_t  _getLastUpdated(uint16_t pid) const;
-    uint32_t  _getId(uint16_t pid) const;
+    esp_err_t _getDef(uint16_t pid, const PIDDefinition*& outDef) const;
+    esp_err_t _getData(uint16_t pid, PIDData_t*& pd) const;
     esp_err_t _getRawData(uint16_t pid, uint8_t* outData) const;
     uint8_t   _getRawDataByte(uint16_t pid, uint8_t idx) const;
-    bool      _isValid(uint16_t pid) const;
-    esp_err_t _getData(uint16_t pid, PIDData_t*& pd) const;
 
     esp_err_t _setDTC(uint16_t rawDTC, uint8_t mode);
 
-    // PID Data Setters without mutex
-    esp_err_t _setUpdateInterval(uint16_t pid, UpdateRate interval_ms);
-    esp_err_t _setValid(uint16_t pid, bool valid);
-    esp_err_t _setIsSupported(uint16_t pid, bool supported);
-    esp_err_t _setLastUpdated(uint16_t pid, uint32_t lastUpdated);
-    esp_err_t _setId(uint16_t pid, uint32_t id);
+    template <typename F>
+    esp_err_t withPidMapLock(F&& func) const
+    {
+        MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
+        if (!guard.isLocked())
+        {
+            return ESP_ERR_TIMEOUT;
+        }
+        return func();
+    }
+
+    template <typename T, typename D>
+    auto _getDefField(uint16_t pid, T (PIDDefinition::*getter)() const, D defaultValue) const ->
+        typename std::decay<T>::type
+    {
+        using ReturnType         = typename std::decay<T>::type;
+        const PIDDefinition* def = nullptr;
+        if (_getDef(pid, def) == ESP_OK && def != nullptr)
+        {
+            return (def->*getter)();
+        }
+        return static_cast<ReturnType>(defaultValue);
+    }
+
+    template <typename T>
+    T _getDataField(uint16_t pid, T PIDData_t::* field, T defaultValue) const
+    {
+        PIDData_t* pd = nullptr;
+        if (_getData(pid, pd) == ESP_OK && pd != nullptr)
+            return pd->*field;
+        return defaultValue;
+    }
+
+    // Locked Helpers (Wrappers)
+
+    template <typename T, typename D>
+    auto _getDefFieldWithLock(uint16_t pid, T (PIDDefinition::*getter)() const, D defaultValue) const ->
+        typename std::decay<T>::type
+    {
+        using ReturnType = typename std::decay<T>::type;
+        ReturnType value = static_cast<ReturnType>(defaultValue);
+
+        withPidMapLock(
+            [&]()
+            {
+                value = _getDefField(pid, getter, defaultValue);
+                return ESP_OK;
+            });
+
+        return value;
+    }
+
+    template <typename T>
+    T _getDataFieldWithLock(uint16_t pid, T PIDData_t::* field, T defaultValue) const
+    {
+        T value = defaultValue;
+        withPidMapLock(
+            [&]()
+            {
+                value = _getDataField(pid, field, defaultValue);
+                return ESP_OK;
+            });
+        return value;
+    }
+
+    // Internal Setter (No Lock)
+    template <typename T, typename V>
+    esp_err_t _setDataField(uint16_t pid, T PIDData_t::* field, V value)
+    {
+        PIDData_t* pd  = nullptr;
+        esp_err_t  ret = _getData(pid, pd);
+        if (ret != ESP_OK || pd == nullptr)
+            return ret;
+
+        pd->*field = static_cast<T>(value);
+        return ESP_OK;
+    }
+
+    // Thread-Safe Setter (With Lock)
+    template <typename T, typename V>
+    esp_err_t _setDataFieldWithLock(uint16_t pid, T PIDData_t::* field, V value)
+    {
+        return withPidMapLock([&]() { return _setDataField(pid, field, value); });
+    }
 };

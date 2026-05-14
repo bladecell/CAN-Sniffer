@@ -167,7 +167,6 @@ esp_err_t OBD2::addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std
 {
     esp_err_t ret = OBD2DataModel::addPID(id, mode, pid, len, name, unit, desc, formula, minV, maxV, priority, interval,
                                           color, icon);
-
     if (ret != ESP_OK)
     {
         return ret;
@@ -179,20 +178,19 @@ esp_err_t OBD2::addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std
             return ESP_ERR_INVALID_ARG;
 
         uint8_t groupIdx = ((pid - 1) & 0xE0) >> 5;
-
         if (groupIdx < SUPPORTED_PIDS_GROUP_COUNT)
         {
             uint8_t bitPos = 31 - ((pid - 1) % 32);
 
             if (supportedPIDsGroup.pidGroup[groupIdx] & (1UL << bitPos))
             {
-                MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
+                withPidMapLock(
+                    [&]()
+                    {
+                        _setDataField(pid, &PIDData_t::isSupported, true);
+                        return ESP_OK;
+                    });
 
-                if (!guard.isLocked())
-                {
-                    return ESP_ERR_TIMEOUT;
-                }
-                _setIsSupported(pid, true);
                 if (continuousRunning)
                 {
                     req(id, mode, pid, len, interval, priority, true);
@@ -217,13 +215,23 @@ esp_err_t OBD2::addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std
 
 esp_err_t OBD2::requestPID(uint16_t pid)
 {
-    if (!isSup(pid))
-    {
-        ESP_LOGW(TAG, "PID 0x%02X is not supported or not recognized", pid);
-        return ESP_ERR_NOT_SUPPORTED;
-    }
+    withPidMapLock(
+        [&]()
+        {
+            if (!_getDataField(pid, &PIDData_t::isSupported, false))
+            {
+                ESP_LOGW(TAG, "PID 0x%02X is not supported or not recognized", pid);
+                return ESP_ERR_NOT_SUPPORTED;
+            }
 
-    req(getId(pid), getMode(pid), pid, getLen(pid), 0, getPriority(pid));
+            uint32_t id       = _getDataField(pid, &PIDData_t::id, (uint32_t)0);
+            uint8_t  mode     = _getDefField(pid, &PIDDefinition::mode, (uint8_t)0);
+            uint8_t  len      = _getDefField(pid, &PIDDefinition::len, (uint8_t)0);
+            uint8_t  priority = _getDefField(pid, &PIDDefinition::priority, (uint8_t)0);
+
+            req(id, mode, pid, len, 0, priority);
+            return ESP_OK;
+        });
 
     return ESP_OK;
 }
@@ -546,7 +554,7 @@ esp_err_t OBD2::parseCurrentData(const CanDriver::CanFrame& f)
             ret = updateData(f);
     }
 
-    setValid(pid, ret == ESP_OK);
+    _setDataFieldWithLock(pid, &PIDData_t::isValid, ret == ESP_OK);
 
     runPidUpdateCallbacks(pid);
 
@@ -572,7 +580,7 @@ esp_err_t OBD2::parseRDBI(const CanDriver::CanFrame& f)
         ret = updateData(f);
     }
 
-    setValid(pid, ret == ESP_OK);
+    _setDataFieldWithLock(pid, &PIDData_t::isValid, ret == ESP_OK);
 
     runPidUpdateCallbacks(pid);
 
@@ -581,43 +589,44 @@ esp_err_t OBD2::parseRDBI(const CanDriver::CanFrame& f)
 
 esp_err_t OBD2::parseDerivedData(const CanDriver::CanFrame& f)
 {
-    uint16_t  pid = (uint16_t)(f.data[2] << 8) | f.data[3];
-    esp_err_t ret;
+    uint16_t pid = (uint16_t)(f.data[2] << 8) | f.data[3];
+
+    esp_err_t ret = withPidMapLock(
+        [&]() -> esp_err_t
+        {
+            PIDData_t* pdat = nullptr;
+            esp_err_t  err  = _getData(pid, pdat);
+
+            if (err != ESP_OK || pdat == nullptr)
+            {
+                _setDataField(pid, &PIDData_t::isValid, false);
+                return (err == ESP_OK) ? ESP_ERR_NOT_FOUND : err;
+            }
+
+            const PIDDefinition* pdef = nullptr;
+            err                       = _getDef(pid, pdef);
+
+            if (err != ESP_OK || pdef == nullptr)
+            {
+                _setDataField(pid, &PIDData_t::isValid, false);
+                return (err == ESP_OK) ? ESP_ERR_NOT_FOUND : err;
+            }
+
+            float result = 0.0f;
+            err          = pdef->evaluate(nullptr, 0, result);
+
+            pdat->value       = result;
+            pdat->id          = OBD2_FUNCTIONAL_ID;
+            pdat->lastUpdated = xTaskGetTickCount();
+            pdat->isValid     = true;
+
+            return err;
+        });
+
+    if (ret == ESP_OK)
     {
-        MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
-
-        if (!guard.isLocked())
-        {
-            return ESP_ERR_TIMEOUT;
-        }
-
-        PIDData_t* pdat = nullptr;
-        ret             = _getData(pid, pdat);
-        if (ret != ESP_OK || pdat == nullptr)
-        {
-            _setValid(pid, false);
-            return (ret == ESP_OK) ? ESP_ERR_NOT_FOUND : ret;
-        }
-
-        const PIDDefinition* pdef = nullptr;
-        ret                       = _getDef(pid, pdef);
-
-        if (ret != ESP_OK || pdef == nullptr)
-        {
-            _setValid(pid, false);
-            return (ret == ESP_OK) ? ESP_ERR_NOT_FOUND : ret;
-        }
-
-        float result = 0.0f;
-        ret          = pdef->evaluate(nullptr, 0, result);
-
-        pdat->value       = result;
-        pdat->id          = OBD2_FUNCTIONAL_ID;
-        pdat->lastUpdated = xTaskGetTickCount();
-        pdat->isValid     = true;
+        runPidUpdateCallbacks(pid);
     }
-
-    runPidUpdateCallbacks(pid);
 
     return ret;
 }
@@ -705,59 +714,46 @@ esp_err_t OBD2::parseDTCs(std::vector<CanDriver::CanFrame>& frames, uint8_t mode
 
 esp_err_t OBD2::parseSupportedPIDs(const CanDriver::CanFrame& f)
 {
-    uint16_t  pidGroup = f.data[2];
-    esp_err_t ret      = ESP_OK;
+    uint16_t pidGroup = f.data[2];
     if (pidGroup % 0x20 != 0)
     {
-        ESP_LOGE(TAG, "Invalid PID group in supported PIDs response: 0x%02X", pidGroup);
+        ESP_LOGE(TAG, "Invalid PID group: 0x%02X", pidGroup);
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (f.length >= 4)
-    {
-        uint32_t supportedPIDs = (f.data[3] << 24) | (f.data[4] << 16) | (f.data[5] << 8) | (f.data[6]);
+    if (f.length < 4)
+        return ESP_OK;
 
-        uint8_t groupIdx                      = (pidGroup >> 5);
-        supportedPIDsGroup.pidGroup[groupIdx] = supportedPIDs;
+    uint32_t supportedPIDs = (f.data[3] << 24) | (f.data[4] << 16) | (f.data[5] << 8) | (f.data[6]);
+    uint8_t  groupIdx      = (pidGroup >> 5);
 
-        MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
+    supportedPIDsGroup.pidGroup[groupIdx] = supportedPIDs;
 
-        if (!guard.isLocked())
+    esp_err_t ret = withPidMapLock(
+        [&]()
         {
-            return false;
-        }
-
-        for (uint8_t i = 0; i < 32; ++i)
-        {
-            if (supportedPIDs & (1UL << (31 - i)))
+            for (uint8_t i = 0; i < 32; ++i)
             {
-                uint8_t supportedPID = pidGroup + 1 + i;
-                supportedPIDsGroup.numberOfSupportedPIDs++;
+                if (supportedPIDs & (1UL << (31 - i)))
+                {
+                    uint16_t supportedPID = pidGroup + 1 + i;
+                    supportedPIDsGroup.numberOfSupportedPIDs++;
 
-                if (!_pidExists(supportedPID))
-                {
-                    ESP_LOGD(TAG, "PID 0x%02X supported by vehicle", supportedPID);
-                    continue;
-                }
+                    if (!_pidExists(supportedPID))
+                        continue;
 
-                ret = _setIsSupported(supportedPID, true);
-                if (ret != ESP_OK)
-                {
-                    ESP_LOGD(TAG, "Failed to set PID 0x%02X as supported: %s", supportedPID, esp_err_to_name(ret));
-                }
-                esp_err_t ret2 = _setId(supportedPID, f.header.id - RESPONSE_ID_OFFSET);
-                if (ret2 != ESP_OK)
-                {
-                    ESP_LOGD(TAG, "Failed to set PID 0x%02X request ID: %s", supportedPID, esp_err_to_name(ret));
-                    ret = ret2;
+                    _setDataField(supportedPID, &PIDData_t::isSupported, true);
+                    _setDataField(supportedPID, &PIDData_t::id, f.header.id - RESPONSE_ID_OFFSET);
                 }
             }
-        }
-        if (supportedPIDs << 31)
-        {
-            xSemaphoreGive(xRequestNextPIDSemaphore);
-        }
+            return ESP_OK;
+        });
+
+    if (supportedPIDs & 0x00000001)
+    {
+        xSemaphoreGive(xRequestNextPIDSemaphore);
     }
+
     return ret;
 }
 

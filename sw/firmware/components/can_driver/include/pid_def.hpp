@@ -11,6 +11,23 @@
 // Forward declaration for tinyexpr
 struct te_expr;
 
+struct PIDDefinitionData
+{
+    uint32_t    id;
+    uint8_t     mode;
+    uint16_t    pid;
+    uint8_t     len;
+    std::string name;
+    std::string unit;
+    std::string description;
+    std::string formula;
+    float       minValue;
+    float       maxValue;
+    uint16_t    updateInterval_ms;
+    uint32_t    color;
+    std::string icon;
+};
+
 class PIDDefinition
 {
 public:

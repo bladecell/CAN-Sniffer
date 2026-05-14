@@ -43,99 +43,93 @@ esp_err_t OBD2DataModel::addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t
                                 std::string unit, std::string desc, std::string formula, float minV, float maxV,
                                 uint8_t priority, UpdateRate interval, uint32_t color, std::string icon)
 {
-    MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
+    return withPidMapLock(
+        [&]() -> esp_err_t
+        {
+            if (PID_DEF.find(pid) != PID_DEF.end())
+            {
+                return ESP_ERR_INVALID_ARG;
+            }
 
-    if (!guard.isLocked())
-    {
-        return ESP_ERR_TIMEOUT;
-    }
+            PID_DEF.try_emplace(pid, id, mode, pid, len, name, unit, desc, formula, minV, maxV, priority, interval,
+                                color, icon);
 
-    if (PID_DEF.find(pid) != PID_DEF.end())
-    {
-        return ESP_ERR_INVALID_ARG;
-    }
+            bool defaultSupported = (mode == MODE_READ_DATA_BY_IDENTIFIER || mode == MODE_DERIVED_DATA);
 
-    PID_DEF.try_emplace(pid, id, mode, pid, len, name, unit, desc, formula, minV, maxV, priority, interval, color,
-                        icon);
+            pidData[pid] = {.id                = id,
+                            .value             = 0.0f,
+                            .lastUpdated       = 0,
+                            .data              = {0},
+                            .isSupported       = defaultSupported,
+                            .isValid           = false,
+                            .updateInterval_ms = interval};
 
-    pidData[pid] = {.id          = id,
-                    .value       = 0.0f,
-                    .lastUpdated = 0,
-                    .data        = {0},
-                    .isSupported = mode == MODE_READ_DATA_BY_IDENTIFIER || mode == MODE_DERIVED_DATA ? true : false,
-                    .isValid     = false,
-                    .updateInterval_ms = interval};
-
-    return ESP_OK;
+            return ESP_OK;
+        });
 }
 
 esp_err_t OBD2DataModel::removePID(uint16_t pid)
 {
-    MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
+    return withPidMapLock(
+        [&]() -> esp_err_t
+        {
+            if (!_pidExists(pid))
+            {
+                return ESP_ERR_NOT_FOUND;
+            }
 
-    if (!guard.isLocked())
-    {
-        return ESP_ERR_TIMEOUT;
-    }
+            pidData.erase(pid);
+            PID_DEF.erase(pid);
 
-    if (!pidExists(pid))
-    {
-        return ESP_ERR_NOT_FOUND;
-    }
+            pollQueue.removePID(pid);
 
-    pidData.erase(pid);
-    PID_DEF.erase(pid);
-
-    pollQueue.removePID(pid);
-
-    return ESP_OK;
+            return ESP_OK;
+        });
 }
-
 void OBD2DataModel::startPolling()
 {
     pollQueue.clear();
-    TickType_t         now = xTaskGetTickCount();
+    const TickType_t   now = xTaskGetTickCount();
     std::set<uint32_t> RequestByDataIdentifierIds;
 
-    MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
-
-    if (!guard.isLocked())
-    {
-        return;
-    }
-
-    for (const auto& [pid, info] : PID_DEF)
-    {
-        if (!_isSup(pid))
-            continue;
-
-        uint32_t interval = info.updateInterval();
-        if (interval == 0)
-            continue;
-
-        PollRequest req;
-        req.pid         = pid;
-        req.interval    = interval;
-        req.nextWake    = now;
-        req.priority    = info.priority();
-        req.isRecurring = true;
-        req.id          = info.id();
-        req.mode        = info.mode();
-        req.len         = info.len();
-
-        pollQueue.push(req);
-
-        if (info.mode() == MODE_READ_DATA_BY_IDENTIFIER)
+    withPidMapLock(
+        [&]()
         {
-            RequestByDataIdentifierIds.insert(info.id());
-        }
-    }
+            for (const auto& [pid, info] : PID_DEF)
+            {
+                if (!_getDataField(pid, &PIDData_t::isSupported, false))
+                    continue;
 
-    for (const auto& id : RequestByDataIdentifierIds)
+                uint32_t interval = info.updateInterval();
+                if (interval == 0)
+                    continue;
+
+                PollRequest req;
+                req.pid         = pid;
+                req.interval    = interval;
+                req.nextWake    = now;
+                req.priority    = info.priority();
+                req.isRecurring = true;
+                req.id          = info.id();
+                req.mode        = info.mode();
+                req.len         = info.len();
+
+                pollQueue.push(req);
+
+                if (info.mode() == MODE_READ_DATA_BY_IDENTIFIER)
+                {
+                    RequestByDataIdentifierIds.insert(info.id());
+                }
+            }
+            return ESP_OK;
+        });
+
+    // This part doesn't access the PID map, so it can stay outside the lock
+    for (const uint32_t id : RequestByDataIdentifierIds)
     {
         PollRequest req;
         req.pid         = 1;
-        req.interval    = 2000;  // Arbitrary interval for session maintenance
+        req.interval    = 2000;
         req.nextWake    = now;
         req.priority    = 1;
         req.isRecurring = true;
@@ -148,59 +142,59 @@ void OBD2DataModel::startPolling()
 
 esp_err_t OBD2DataModel::updateData(const CanDriver::CanFrame& frame)
 {
-    uint16_t mode = frame.data[1];
-    uint16_t pid =
-        mode == RESPONSE_READ_DATA_BY_IDENTIFIER ? (uint16_t)(frame.data[2] << 8) | frame.data[3] : frame.data[2];
-    uint32_t  id = frame.header.id;
-    esp_err_t ret;
+    const uint8_t  mode          = frame.data[1];
+    const bool     isRDBI        = (mode == RESPONSE_READ_DATA_BY_IDENTIFIER);
+    const uint16_t pid           = isRDBI ? (uint16_t)(frame.data[2] << 8) | frame.data[3] : frame.data[2];
+    const uint8_t  payloadOffset = isRDBI ? 4 : 3;
 
-    MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
+    return withPidMapLock(
+        [&]() -> esp_err_t
+        {
+            PIDData_t*           pdat = nullptr;
+            const PIDDefinition* pdef = nullptr;
 
-    if (!guard.isLocked())
-    {
-        return ESP_ERR_TIMEOUT;
-    }
+            if (_getData(pid, pdat) != ESP_OK || pdat == nullptr)
+                return ESP_ERR_NOT_FOUND;
+            if (_getDef(pid, pdef) != ESP_OK || pdef == nullptr)
+                return ESP_ERR_NOT_FOUND;
 
-    PIDData_t* pdat = nullptr;
-    ret             = _getData(pid, pdat);
-    if (ret != ESP_OK || pdat == nullptr)
-    {
-        return (ret == ESP_OK) ? ESP_ERR_NOT_FOUND : ret;
-    }
+            float     val = 0.f;
+            esp_err_t ret = pdef->evaluate(&frame.data[payloadOffset], frame.length - payloadOffset, val);
 
-    const PIDDefinition* pdef = nullptr;
-    ret                       = _getDef(pid, pdef);
+            if (ret == ESP_OK)
+            {
+                pdat->value       = val;
+                pdat->lastUpdated = pdTICKS_TO_MS(xTaskGetTickCount());
 
-    if (ret != ESP_OK || pdef == nullptr)
-    {
-        return (ret == ESP_OK) ? ESP_ERR_NOT_FOUND : ret;
-    }
+                if (mode == RESPONSE_CURRENT_DATA && pdat->id != OBD2_FUNCTIONAL_ID)
+                {
+                    pdat->id = frame.header.id - 8;
+                }
 
-    float val = 0.f;
+                memcpy(pdat->data, frame.data, PID_DATA_LENGTH < frame.length ? PID_DATA_LENGTH : frame.length);
+            }
 
-    if (mode == RESPONSE_READ_DATA_BY_IDENTIFIER)
-    {
-        ret = pdef->evaluate(&frame.data[4], frame.length - 4, val);
-    }
-    else
-    {
-        ret = pdef->evaluate(&frame.data[3], frame.length - 3, val);
-    }
+            return ret;
+        });
+}
 
-    pdat->value = val;
+bool OBD2DataModel::_pidExists(uint16_t pid) const
+{
+    return PID_DEF.find(pid) != PID_DEF.end();
+}
 
-    pdat->lastUpdated = pdTICKS_TO_MS(xTaskGetTickCount());
-    if (mode == RESPONSE_CURRENT_DATA && pdat->id != OBD2_FUNCTIONAL_ID)
-    {
-        pdat->id = id - 8;
-    }
-    if (frame.length > PID_DATA_LENGTH)
-    {
-        ESP_LOGW(TAG, "Frame length %d exceeds PID data length %d, truncating", frame.length, PID_DATA_LENGTH);
-    }
-    memcpy(pdat->data, frame.data, PID_DATA_LENGTH < frame.length ? PID_DATA_LENGTH : frame.length);
+bool OBD2DataModel::pidExists(uint16_t pid) const
+{
+    bool exists = false;
 
-    return ret;
+    withPidMapLock(
+        [&]()
+        {
+            exists = _pidExists(pid);
+            return ESP_OK;
+        });
+
+    return exists;
 }
 
 esp_err_t OBD2DataModel::_getData(uint16_t pid, PIDData_t*& pd) const
@@ -217,18 +211,21 @@ esp_err_t OBD2DataModel::_getData(uint16_t pid, PIDData_t*& pd) const
     return ESP_OK;
 }
 
-esp_err_t OBD2DataModel::getData(uint16_t pid, PIDData_t*& pd) const
+esp_err_t OBD2DataModel::getData(uint16_t pid, PIDData_t& pd) const
 {
-    MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
+    return withPidMapLock(
+        [&]()
+        {
+            PIDData_t* internalPtr = nullptr;
+            esp_err_t  ret         = _getData(pid, internalPtr);
 
-    if (!guard.isLocked())
-    {
-        return ESP_ERR_TIMEOUT;
-    }
+            if (ret == ESP_OK && internalPtr != nullptr)
+            {
+                pd = *internalPtr;
+            }
 
-    esp_err_t ret = _getData(pid, pd);
-
-    return ret;
+            return ret;
+        });
 }
 
 esp_err_t OBD2DataModel::_getDef(uint16_t pid, const PIDDefinition*& outDef) const
@@ -245,18 +242,33 @@ esp_err_t OBD2DataModel::_getDef(uint16_t pid, const PIDDefinition*& outDef) con
     return ESP_OK;
 }
 
-esp_err_t OBD2DataModel::getDef(uint16_t pid, const PIDDefinition*& outDef) const
+esp_err_t OBD2DataModel::getDef(uint16_t pid, PIDDefinitionData& outDef) const
 {
-    MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
+    return withPidMapLock(
+        [&]()
+        {
+            const PIDDefinition* internalPtr = nullptr;
+            esp_err_t            ret         = _getDef(pid, internalPtr);
 
-    if (!guard.isLocked())
-    {
-        return ESP_ERR_TIMEOUT;
-    }
+            if (ret == ESP_OK && internalPtr != nullptr)
+            {
+                outDef.id                = internalPtr->id_;
+                outDef.mode              = internalPtr->mode_;
+                outDef.pid               = internalPtr->pid_;
+                outDef.len               = internalPtr->len_;
+                outDef.name              = internalPtr->name_;
+                outDef.unit              = internalPtr->unit_;
+                outDef.description       = internalPtr->description_;
+                outDef.formula           = internalPtr->formula_;
+                outDef.minValue          = internalPtr->minValue_;
+                outDef.maxValue          = internalPtr->maxValue_;
+                outDef.updateInterval_ms = internalPtr->updateInterval_ms_;
+                outDef.color             = internalPtr->color_;
+                outDef.icon              = internalPtr->icon_;
+            }
 
-    esp_err_t ret = _getDef(pid, outDef);
-
-    return ret;
+            return ret;
+        });
 }
 
 // PID_DEF Getters
@@ -265,577 +277,22 @@ std::vector<uint16_t> OBD2DataModel::getPIDs() const
 {
     std::vector<uint16_t> keys;
 
-    MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
+    withPidMapLock(
+        [&]()
+        {
+            keys.reserve(PID_DEF.size());
 
-    if (!guard.isLocked())
-    {
-        return keys;
-    }
-
-    keys.reserve(PID_DEF.size());
-
-    for (const auto& pair : PID_DEF)
-    {
-        keys.push_back(pair.first);
-    }
+            for (const auto& [pid, info] : PID_DEF)
+            {
+                keys.push_back(pid);
+            }
+            return ESP_OK;
+        });
 
     return keys;
 }
 
-bool OBD2DataModel::_pidExists(uint16_t pid) const
-{
-    return PID_DEF.find(pid) != PID_DEF.end();
-}
-
-bool OBD2DataModel::pidExists(uint16_t pid) const
-{
-    MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
-
-    if (!guard.isLocked())
-    {
-        return false;
-    }
-
-    return _pidExists(pid);
-}
-
-uint32_t OBD2DataModel::_getId_Def(uint16_t pid) const
-{
-    const PIDDefinition* def = nullptr;
-    esp_err_t            ret = _getDef(pid, def);
-    if (ret != ESP_OK || def == nullptr)
-    {
-        return 0;
-    };
-
-    return def->id();
-}
-
-uint32_t OBD2DataModel::getId_Def(uint16_t pid) const
-{
-    MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
-
-    if (!guard.isLocked())
-    {
-        return 0;
-    }
-
-    const PIDDefinition* def = nullptr;
-    esp_err_t            ret = _getDef(pid, def);
-    if (ret != ESP_OK || def == nullptr)
-    {
-        return 0;
-    };
-
-    return def->id();
-}
-
-uint8_t OBD2DataModel::_getMode(uint16_t pid) const
-{
-    const PIDDefinition* def = nullptr;
-    esp_err_t            ret = _getDef(pid, def);
-    if (ret != ESP_OK || def == nullptr)
-    {
-        return 0;
-    };
-
-    return def->mode();
-}
-
-uint8_t OBD2DataModel::getMode(uint16_t pid) const
-{
-    MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
-
-    if (!guard.isLocked())
-    {
-        return 0;
-    }
-
-    const PIDDefinition* def = nullptr;
-    esp_err_t            ret = _getDef(pid, def);
-    if (ret != ESP_OK || def == nullptr)
-    {
-        return 0;
-    };
-
-    return def->mode();
-}
-
-uint8_t OBD2DataModel::_getLen(uint16_t pid) const
-{
-    const PIDDefinition* def = nullptr;
-    esp_err_t            ret = _getDef(pid, def);
-    if (ret != ESP_OK || def == nullptr)
-    {
-        return 0;
-    };
-
-    return def->len();
-}
-
-uint8_t OBD2DataModel::getLen(uint16_t pid) const
-{
-    MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
-
-    if (!guard.isLocked())
-    {
-        return 0;
-    }
-
-    const PIDDefinition* def = nullptr;
-    esp_err_t            ret = _getDef(pid, def);
-    if (ret != ESP_OK || def == nullptr)
-    {
-        return 0;
-    };
-
-    return def->len();
-}
-
-std::string OBD2DataModel::_getName(uint16_t pid) const
-{
-    const PIDDefinition* def = nullptr;
-    esp_err_t            ret = _getDef(pid, def);
-    if (ret != ESP_OK || def == nullptr)
-    {
-        return "Unknown PID";
-    };
-
-    return def->name();
-}
-
-std::string OBD2DataModel::getName(uint16_t pid) const
-{
-    MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
-
-    if (!guard.isLocked())
-    {
-        return "Mutex Timeout";
-    }
-
-    const PIDDefinition* def = nullptr;
-    esp_err_t            ret = _getDef(pid, def);
-    if (ret != ESP_OK || def == nullptr)
-    {
-        return "Unknown PID";
-    };
-
-    return def->name();
-}
-
-std::string OBD2DataModel::_getUnit(uint16_t pid) const
-{
-    const PIDDefinition* def = nullptr;
-    esp_err_t            ret = _getDef(pid, def);
-    if (ret != ESP_OK || def == nullptr)
-    {
-        return "Unknown PID";
-    };
-
-    return def->unit();
-}
-
-std::string OBD2DataModel::getUnit(uint16_t pid) const
-{
-    MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
-
-    if (!guard.isLocked())
-    {
-        return "Mutex Timeout";
-    }
-
-    const PIDDefinition* def = nullptr;
-    esp_err_t            ret = _getDef(pid, def);
-    if (ret != ESP_OK || def == nullptr)
-    {
-        return "Unknown PID";
-    };
-
-    return def->unit();
-}
-
-std::string OBD2DataModel::_getDescription(uint16_t pid) const
-{
-    const PIDDefinition* def = nullptr;
-    esp_err_t            ret = _getDef(pid, def);
-    if (ret != ESP_OK || def == nullptr)
-    {
-        return "Unknown PID";
-    };
-
-    return def->description();
-}
-
-std::string OBD2DataModel::getDescription(uint16_t pid) const
-{
-    MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
-
-    if (!guard.isLocked())
-    {
-        return "Mutex Timeout";
-    }
-
-    const PIDDefinition* def = nullptr;
-    esp_err_t            ret = _getDef(pid, def);
-    if (ret != ESP_OK || def == nullptr)
-    {
-        return "Unknown PID";
-    };
-
-    return def->description();
-}
-
-float OBD2DataModel::_getMinValue(uint16_t pid) const
-{
-    const PIDDefinition* def = nullptr;
-    esp_err_t            ret = _getDef(pid, def);
-    if (ret != ESP_OK || def == nullptr)
-    {
-        return NAN;
-    };
-
-    return def->maxValue();
-}
-
-float OBD2DataModel::getMinValue(uint16_t pid) const
-{
-    MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
-
-    if (!guard.isLocked())
-    {
-        return NAN;
-    }
-
-    const PIDDefinition* def = nullptr;
-    esp_err_t            ret = _getDef(pid, def);
-    if (ret != ESP_OK || def == nullptr)
-    {
-        return NAN;
-    };
-
-    return def->minValue();
-}
-float OBD2DataModel::_getMaxValue(uint16_t pid) const
-{
-    const PIDDefinition* def = nullptr;
-    esp_err_t            ret = _getDef(pid, def);
-    if (ret != ESP_OK || def == nullptr)
-    {
-        return NAN;
-    };
-
-    return def->maxValue();
-}
-
-float OBD2DataModel::getMaxValue(uint16_t pid) const
-{
-    MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
-
-    if (!guard.isLocked())
-    {
-        return NAN;
-    }
-
-    const PIDDefinition* def = nullptr;
-    esp_err_t            ret = _getDef(pid, def);
-    if (ret != ESP_OK || def == nullptr)
-    {
-        return NAN;
-    };
-
-    return def->maxValue();
-}
-
-uint8_t OBD2DataModel::_getPriority(uint16_t pid) const
-{
-    const PIDDefinition* def = nullptr;
-    esp_err_t            ret = _getDef(pid, def);
-    if (ret != ESP_OK || def == nullptr)
-    {
-        return 0;
-    };
-
-    return def->priority();
-}
-
-uint8_t OBD2DataModel::getPriority(uint16_t pid) const
-{
-    MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
-
-    if (!guard.isLocked())
-    {
-        return 0;
-    }
-
-    const PIDDefinition* def = nullptr;
-    esp_err_t            ret = _getDef(pid, def);
-    if (ret != ESP_OK || def == nullptr)
-    {
-        return 0;
-    };
-
-    return def->priority();
-}
-
-uint16_t OBD2DataModel::_getUpdateInterval(uint16_t pid) const
-{
-    const PIDDefinition* def = nullptr;
-    esp_err_t            ret = _getDef(pid, def);
-    if (ret != ESP_OK || def == nullptr)
-    {
-        return 0;
-    };
-
-    return def->updateInterval();
-}
-
-uint16_t OBD2DataModel::getUpdateInterval(uint16_t pid) const
-{
-    MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
-
-    if (!guard.isLocked())
-    {
-        return 0;
-    }
-
-    const PIDDefinition* def = nullptr;
-    esp_err_t            ret = _getDef(pid, def);
-    if (ret != ESP_OK || def == nullptr)
-    {
-        return 0;
-    };
-
-    return def->updateInterval();
-}
-
-uint32_t OBD2DataModel::_getColor(uint16_t pid) const
-{
-    const PIDDefinition* def = nullptr;
-    esp_err_t            ret = _getDef(pid, def);
-    if (ret != ESP_OK || def == nullptr)
-    {
-        return 0xFFFFFF;
-    };
-
-    return def->color();
-}
-
-uint32_t OBD2DataModel::getColor(uint16_t pid) const
-{
-    MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
-
-    if (!guard.isLocked())
-    {
-        return 0xFFFFFF;
-    }
-
-    const PIDDefinition* def = nullptr;
-    esp_err_t            ret = _getDef(pid, def);
-    if (ret != ESP_OK || def == nullptr)
-    {
-        return 0xFFFFFF;
-    };
-
-    return def->color();
-}
-
-std::string OBD2DataModel::_getIcon(uint16_t pid) const
-{
-    const PIDDefinition* def = nullptr;
-    esp_err_t            ret = _getDef(pid, def);
-    if (ret != ESP_OK || def == nullptr)
-    {
-        return "Unknown PID";
-    };
-
-    return def->icon();
-}
-
-std::string OBD2DataModel::getIcon(uint16_t pid) const
-{
-    MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
-
-    if (!guard.isLocked())
-    {
-        return "Mutex Timeout";
-    }
-
-    const PIDDefinition* def = nullptr;
-    esp_err_t            ret = _getDef(pid, def);
-    if (ret != ESP_OK || def == nullptr)
-    {
-        return "Unknown PID";
-    };
-
-    return def->icon();
-}
-
-std::string OBD2DataModel::_getFormula(uint16_t pid) const
-{
-    const PIDDefinition* def = nullptr;
-    esp_err_t            ret = _getDef(pid, def);
-    if (ret != ESP_OK || def == nullptr)
-    {
-        return "Unknown PID";
-    };
-
-    return def->formula();
-}
-
-std::string OBD2DataModel::getFormula(uint16_t pid) const
-{
-    MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
-
-    if (!guard.isLocked())
-    {
-        return "Mutex Timeout";
-    }
-
-    const PIDDefinition* def = nullptr;
-    esp_err_t            ret = _getDef(pid, def);
-    if (ret != ESP_OK || def == nullptr)
-    {
-        return "Unknown PID";
-    };
-
-    return def->formula();
-}
-
-float OBD2DataModel::_getValue(uint16_t pid, uint32_t timeout_ms)
-{
-    PIDData_t* pd  = nullptr;
-    esp_err_t  ret = _getData(pid, pd);
-    if (ret != ESP_OK || pd == nullptr)
-    {
-        return NAN;
-    };
-
-    return pd->value;
-}
-
-float OBD2DataModel::getValueUnsafe(uint16_t pid, uint32_t timeout_ms)
-{
-    PIDData_t* pd  = nullptr;
-    esp_err_t  ret = _getData(pid, pd);
-    if (ret != ESP_OK || pd == nullptr)
-    {
-        return NAN;
-    };
-
-    return pd->value;
-}
-
-float OBD2DataModel::getValue(uint16_t pid, uint32_t timeout_ms)
-{
-    MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
-
-    if (!guard.isLocked())
-    {
-        return NAN;
-    }
-    PIDData_t* pd  = nullptr;
-    esp_err_t  ret = _getData(pid, pd);
-    if (ret != ESP_OK || pd == nullptr)
-    {
-        return ret;
-    };
-
-    return pd->value;
-}
-
-uint32_t OBD2DataModel::_getLastUpdated(uint16_t pid) const
-{
-    PIDData_t* pd  = nullptr;
-    esp_err_t  ret = _getData(pid, pd);
-    if (ret != ESP_OK || pd == nullptr)
-    {
-        return 0;
-    };
-
-    return pd->lastUpdated;
-}
-
-uint32_t OBD2DataModel::getLastUpdated(uint16_t pid) const
-{
-    MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
-
-    if (!guard.isLocked())
-    {
-        return 0;
-    }
-    PIDData_t* pd  = nullptr;
-    esp_err_t  ret = _getData(pid, pd);
-    if (ret != ESP_OK || pd == nullptr)
-    {
-        return 0;
-    };
-
-    return pd->lastUpdated;
-}
-
-uint32_t OBD2DataModel::_getId(uint16_t pid) const
-{
-    PIDData_t* pd  = nullptr;
-    esp_err_t  ret = _getData(pid, pd);
-    if (ret != ESP_OK || pd == nullptr)
-    {
-        return 0;
-    };
-
-    return pd->id;
-}
-
-uint32_t OBD2DataModel::getId(uint16_t pid) const
-{
-    MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
-
-    if (!guard.isLocked())
-    {
-        return 0;
-    }
-    PIDData_t* pd  = nullptr;
-    esp_err_t  ret = _getData(pid, pd);
-    if (ret != ESP_OK || pd == nullptr)
-    {
-        return 0;
-    };
-
-    return pd->id;
-}
-
-esp_err_t OBD2DataModel::_getRawData(uint16_t pid, uint8_t* outData) const
-{
-    PIDData_t* pd  = nullptr;
-    esp_err_t  ret = _getData(pid, pd);
-    if (ret != ESP_OK || pd == nullptr)
-    {
-        return ret;
-    };
-
-    memcpy(outData, pd->data, PID_DATA_LENGTH);
-
-    return ESP_OK;
-}
-
-esp_err_t OBD2DataModel::getRawData(uint16_t pid, uint8_t* outData) const
-{
-    MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
-
-    if (!guard.isLocked())
-    {
-        return ESP_ERR_TIMEOUT;
-    }
-    PIDData_t* pd  = nullptr;
-    esp_err_t  ret = _getData(pid, pd);
-    if (ret != ESP_OK || pd == nullptr)
-    {
-        return ret;
-    };
-
-    memcpy(outData, pd->data, PID_DATA_LENGTH);
-
-    return ESP_OK;
-}
+// Array / Buffer Getters
 
 uint8_t OBD2DataModel::_getRawDataByte(uint16_t pid, uint8_t idx) const
 {
@@ -856,34 +313,68 @@ uint8_t OBD2DataModel::_getRawDataByte(uint16_t pid, uint8_t idx) const
     }
 }
 
-uint8_t OBD2DataModel::getRawDataByteUnsafe(uint16_t pid, uint8_t idx) const
+uint8_t OBD2DataModel::getRawDataByte(uint16_t pid, uint8_t idx) const
+{
+    uint8_t byte = 0;
+    withPidMapLock(
+        [&]()
+        {
+            PIDData_t* pd = nullptr;
+            if (_getData(pid, pd) == ESP_OK && pd != nullptr && idx < PID_DATA_LENGTH)
+            {
+                byte = pd->data[idx];
+            }
+            return ESP_OK;
+        });
+    return byte;
+}
+
+esp_err_t OBD2DataModel::_getRawData(uint16_t pid, uint8_t* outData) const
 {
     PIDData_t* pd  = nullptr;
     esp_err_t  ret = _getData(pid, pd);
     if (ret != ESP_OK || pd == nullptr)
     {
-        return 0;
+        return ret;
     };
 
-    if (idx < PID_DATA_LENGTH)
-    {
-        return pd->data[idx];
-    }
-    else
-    {
-        return 0;
-    }
+    memcpy(outData, pd->data, PID_DATA_LENGTH);
+
+    return ESP_OK;
 }
 
-uint8_t OBD2DataModel::getRawDataByte(uint16_t pid, uint8_t idx) const
+esp_err_t OBD2DataModel::getRawData(uint16_t pid, uint8_t* outData) const
 {
-    MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
+    if (outData == nullptr)
+        return ESP_ERR_INVALID_ARG;
 
-    if (!guard.isLocked())
+    return withPidMapLock(
+        [&]()
+        {
+            PIDData_t* pd  = nullptr;
+            esp_err_t  err = _getData(pid, pd);
+            if (err == ESP_OK && pd != nullptr)
+            {
+                memcpy(outData, pd->data, 8);
+            }
+            return err;
+        });
+}
+
+float OBD2DataModel::getValueUnsafe(uint16_t pid)
+{
+    PIDData_t* pd  = nullptr;
+    esp_err_t  ret = _getData(pid, pd);
+    if (ret != ESP_OK || pd == nullptr)
     {
-        return 0;
-    }
+        return NAN;
+    };
 
+    return pd->value;
+}
+
+uint8_t OBD2DataModel::getRawDataByteUnsafe(uint16_t pid, uint8_t idx) const
+{
     PIDData_t* pd  = nullptr;
     esp_err_t  ret = _getData(pid, pd);
     if (ret != ESP_OK || pd == nullptr)
@@ -917,153 +408,6 @@ std::string OBD2DataModel::getVIN() const
 
     xSemaphoreGive(vinData.mtx_);
     return result;
-}
-
-bool OBD2DataModel::_isValid(uint16_t pid) const
-{
-    PIDData_t* pd  = nullptr;
-    esp_err_t  ret = _getData(pid, pd);
-    if (ret != ESP_OK || pd == nullptr)
-    {
-        return false;
-    };
-
-    return pd->isValid;
-}
-
-bool OBD2DataModel::isValid(uint16_t pid) const
-{
-    MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
-
-    if (!guard.isLocked())
-    {
-        return false;
-    }
-
-    PIDData_t* pd = nullptr;
-    if (_getData(pid, pd) != ESP_OK && pd == nullptr)
-    {
-        return false;
-    };
-
-    return pd->isValid;
-}
-
-bool OBD2DataModel::_isSup(uint16_t pid) const
-{
-    PIDData_t* pd  = nullptr;
-    esp_err_t  ret = _getData(pid, pd);
-    if (ret != ESP_OK || pd == nullptr)
-    {
-        return false;
-    };
-
-    return pd->isSupported;
-}
-
-bool OBD2DataModel::isSup(uint16_t pid) const
-{
-    MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
-
-    if (!guard.isLocked())
-    {
-        return false;
-    }
-
-    PIDData_t* pd  = nullptr;
-    esp_err_t  ret = _getData(pid, pd);
-    if (ret != ESP_OK || pd == nullptr)
-    {
-        return false;
-    };
-
-    return pd->isSupported;
-}
-
-esp_err_t OBD2DataModel::setValid(uint16_t pid, bool valid)
-{
-    MutexGuard guard(pidMapMtx, pdMS_TO_TICKS(100));
-
-    if (!guard.isLocked())
-    {
-        return false;
-    }
-
-    PIDData_t* pd  = nullptr;
-    esp_err_t  ret = _getData(pid, pd);
-    if (ret != ESP_OK || pd == nullptr)
-    {
-        return ret;
-    };
-
-    pd->isValid = valid;
-    return ESP_OK;
-}
-
-esp_err_t OBD2DataModel::_setValid(uint16_t pid, bool valid)
-{
-    PIDData_t* pd  = nullptr;
-    esp_err_t  ret = _getData(pid, pd);
-    if (ret != ESP_OK || pd == nullptr)
-    {
-        return ret;
-    };
-
-    pd->isValid = valid;
-    return ESP_OK;
-}
-
-esp_err_t OBD2DataModel::_setUpdateInterval(uint16_t pid, UpdateRate interval_ms)
-{
-    PIDData_t* pd  = nullptr;
-    esp_err_t  ret = _getData(pid, pd);
-    if (ret != ESP_OK || pd == nullptr)
-    {
-        return ret;
-    };
-
-    pd->updateInterval_ms = interval_ms;
-
-    return ESP_OK;
-}
-
-esp_err_t OBD2DataModel::_setIsSupported(uint16_t pid, bool supported)
-{
-    PIDData_t* pd  = nullptr;
-    esp_err_t  ret = _getData(pid, pd);
-    if (ret != ESP_OK || pd == nullptr)
-    {
-        return ret;
-    };
-
-    pd->isSupported = supported;
-    return ESP_OK;
-}
-
-esp_err_t OBD2DataModel::_setLastUpdated(uint16_t pid, uint32_t lastUpdated)
-{
-    PIDData_t* pd  = nullptr;
-    esp_err_t  ret = _getData(pid, pd);
-    if (ret != ESP_OK || pd == nullptr)
-    {
-        return ret;
-    };
-
-    pd->lastUpdated = lastUpdated;
-    return ESP_OK;
-}
-
-esp_err_t OBD2DataModel::_setId(uint16_t pid, uint32_t id)
-{
-    PIDData_t* pd  = nullptr;
-    esp_err_t  ret = _getData(pid, pd);
-    if (ret != ESP_OK || pd == nullptr)
-    {
-        return ret;
-    };
-
-    pd->id = id;
-    return ESP_OK;
 }
 
 esp_err_t OBD2DataModel::_setDTC(uint16_t rawDTC, uint8_t mode)

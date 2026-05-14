@@ -15,37 +15,51 @@
 
 cJSON* single_pid_def_get(uint16_t pid)
 {
+    // Create a local struct to hold the snapshot
+    PIDDefinitionData def;
+
+    if (OBD2::getInstance().getDef(pid, def) != ESP_OK)
+    {
+        return cJSON_CreateObject();
+    }
+
     cJSON* item = cJSON_CreateObject();
 
-    cJSON_AddNumberToObject(item, "pid", pid);
-    cJSON_AddNumberToObject(item, "mode", OBD2::getInstance().getMode(pid));
-    cJSON_AddStringToObject(item, "name", OBD2::getInstance().getName(pid).c_str());
-    cJSON_AddStringToObject(item, "unit", OBD2::getInstance().getUnit(pid).c_str());
-    cJSON_AddStringToObject(item, "description", OBD2::getInstance().getDescription(pid).c_str());
-    cJSON_AddNumberToObject(item, "minValue", OBD2::getInstance().getMinValue(pid));
-    cJSON_AddNumberToObject(item, "maxValue", OBD2::getInstance().getMaxValue(pid));
-    cJSON_AddNumberToObject(item, "priority", OBD2::getInstance().getPriority(pid));
-    cJSON_AddNumberToObject(item, "update_interval_ms", OBD2::getInstance().getUpdateInterval(pid));
-    cJSON_AddNumberToObject(item, "color", OBD2::getInstance().getColor(pid));
-    cJSON_AddStringToObject(item, "icon", OBD2::getInstance().getIcon(pid).c_str());
-    cJSON_AddStringToObject(item, "formula", OBD2::getInstance().getFormula(pid).c_str());
+    // Use the struct data - no more mutex calls here
+    cJSON_AddNumberToObject(item, "pid", def.pid);
+    cJSON_AddNumberToObject(item, "mode", def.mode);
+    cJSON_AddNumberToObject(item, "id", def.id);
+    cJSON_AddStringToObject(item, "name", def.name.c_str());
+    cJSON_AddStringToObject(item, "unit", def.unit.c_str());
+    cJSON_AddStringToObject(item, "description", def.description.c_str());
+    cJSON_AddNumberToObject(item, "minValue", def.minValue);
+    cJSON_AddNumberToObject(item, "maxValue", def.maxValue);
+    cJSON_AddNumberToObject(item, "update_interval_ms", def.updateInterval_ms);
+    cJSON_AddNumberToObject(item, "color", def.color);
+    cJSON_AddStringToObject(item, "icon", def.icon.c_str());
+    cJSON_AddStringToObject(item, "formula", def.formula.c_str());
 
     return item;
 }
 
 cJSON* single_pid_data_get(uint16_t pid)
 {
+    PIDData_t data;
+
+    if (OBD2::getInstance().getData(pid, data) != ESP_OK)
+    {
+        return cJSON_CreateObject();
+    }
+
     cJSON* item = cJSON_CreateObject();
 
-    auto& obd = OBD2::getInstance();
-
-    cJSON_AddNumberToObject(item, "id", obd.getId(pid));
+    cJSON_AddNumberToObject(item, "id", data.id);
     cJSON_AddNumberToObject(item, "pid", pid);
-    cJSON_AddNumberToObject(item, "value", obd.getValue(pid));
-    cJSON_AddNumberToObject(item, "lastUpdated", obd.getLastUpdated(pid));
-    cJSON_AddBoolToObject(item, "isSupported", obd.isSup(pid));
-    cJSON_AddBoolToObject(item, "isValid", obd.isValid(pid));
-    cJSON_AddNumberToObject(item, "update_interval_ms", obd.getUpdateInterval(pid));
+    cJSON_AddNumberToObject(item, "value", data.value);
+    cJSON_AddNumberToObject(item, "lastUpdated", data.lastUpdated);
+    cJSON_AddBoolToObject(item, "isSupported", data.isSupported);
+    cJSON_AddBoolToObject(item, "isValid", data.isValid);
+    cJSON_AddNumberToObject(item, "update_interval_ms", data.updateInterval_ms);
 
     return item;
 }
