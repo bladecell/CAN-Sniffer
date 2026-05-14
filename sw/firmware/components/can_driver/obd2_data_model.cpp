@@ -361,7 +361,7 @@ esp_err_t OBD2DataModel::getRawData(uint16_t pid, uint8_t* outData) const
         });
 }
 
-float OBD2DataModel::getValueUnsafe(uint16_t pid)
+float OBD2DataModel::getValueUnsafe(uint16_t pid) const
 {
     PIDData_t* pd  = nullptr;
     esp_err_t  ret = _getData(pid, pd);
@@ -520,7 +520,7 @@ std::string OBD2DataModel::decodeDTC(uint16_t rawDTC)
     return std::string(dtc);
 }
 
-std::vector<std::string> OBD2DataModel::getDTC(uint8_t mode)
+std::vector<std::string> OBD2DataModel::getDTC(uint8_t mode) const
 {
     std::vector<std::string> result;
 

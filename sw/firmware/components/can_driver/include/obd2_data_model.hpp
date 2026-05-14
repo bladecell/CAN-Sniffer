@@ -90,11 +90,11 @@ public:
 
     // Special Getters
     std::string              getVIN() const;
-    std::vector<std::string> getDTC(uint8_t mode);
+    std::vector<std::string> getDTC(uint8_t mode) const;
 
     esp_err_t updateData(const CanDriver::CanFrame& frame);
     // PID Data Getters
-    inline float getValue(uint16_t pid)
+    inline float getValue(uint16_t pid) const
     {
         return _getDataFieldWithLock(pid, &PIDData_t::value, NAN);
     }
@@ -120,7 +120,7 @@ public:
     }
     uint8_t   getRawDataByte(uint16_t pid, uint8_t idx) const;
     esp_err_t getRawData(uint16_t pid, uint8_t* outData) const;
-    float     getValueUnsafe(uint16_t pid);
+    float     getValueUnsafe(uint16_t pid) const;
     uint8_t   getRawDataByteUnsafe(uint16_t pid, uint8_t idx) const;
     esp_err_t getData(uint16_t pid, PIDData_t& pd) const;
 
