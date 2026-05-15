@@ -1,20 +1,18 @@
-<script>
-  import { canStore } from "$lib/canStore.svelte.js";
+<script lang="ts">
+  import { usePidData } from "$lib/pidHelpers.svelte.ts";
   import Icon from "../Icon.svelte";
 
-  let {
-    pid,
-    label = "Metric",
-    description = "",
-    unit = "%",
-    icon = "gear",
-    color = "#10b981",
-    min = 0,
-    max = 100,
-    moveStart = null,
-    ...rest
-  } = $props();
+  interface Props {
+    pid: number | string;
+    [key: string]: any;
+  }
 
+  let { pid, ...rest }: Props = $props();
+
+  // Everything is fetched and automatically stays reactive using getters
+  const metric = usePidData(() => pid);
+
+  // Layout Constants
   const BAR_H = 10;
   const BAR_R = 5;
   const VB_W = 200;
@@ -23,57 +21,36 @@
   const BAR_W = VB_W - PAD * 2;
   const BAR_Y = 22;
 
-  const pidData = $derived(canStore.pids.get(pid));
-  const currentValue = $derived(pidData?.value ?? 0);
-  const supported = $derived(pidData?.supported ?? false);
-  const displayValue = $derived(supported ? currentValue.toFixed(1) : "···");
-
-  const fillWidth = $derived.by(() => {
-    const clamped = Math.max(min, Math.min(max, currentValue));
-    return ((clamped - min) / (max - min)) * BAR_W;
+  // Compute layout values derived directly from the helper state
+  const fillWidth = $derived.by((): number => {
+    const clamped = Math.max(
+      metric.min,
+      Math.min(metric.max, metric.currentValue),
+    );
+    return ((clamped - metric.min) / (metric.max - metric.min)) * BAR_W;
   });
-
-  // value label x position tracks the fill, clamped so it doesn't overflow
-  const labelX = $derived(Math.min(PAD + fillWidth, PAD + BAR_W - 2));
-
-  let longPressTimer;
-
-  function handlePointerDown(e, moveStart) {
-    longPressTimer = setTimeout(() => moveStart(e), 300);
-  }
-
-  function handlePointerUp() {
-    clearTimeout(longPressTimer);
-  }
 </script>
 
 <article
   class="pid-card"
-  class:disabled={!supported}
-  style="background: color-mix(in srgb, {color} 5%, transparent);"
+  class:disabled={!metric.supported}
+  style="background: color-mix(in srgb, {metric.color} 5%, transparent);"
   {...rest}
 >
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <header
-    class="card-header"
-    onpointerdown={moveStart ? (e) => handlePointerDown(e, moveStart) : null}
-    onpointerup={handlePointerUp}
-    onpointermove={handlePointerUp}
-    style="cursor: {moveStart ? 'grab' : 'default'}; touch-action: pan-y;"
-  >
+  <header class="card-header">
     <div
       class="icon"
-      style="background: color-mix(in srgb, {color} 20%, transparent);"
+      style="background: color-mix(in srgb, {metric.color} 20%, transparent);"
     >
-      <Icon name={icon} size={32} />
+      <Icon name={metric.icon} size={32} />
     </div>
     <div class="titles">
-      <div class="label">{label}</div>
+      <div class="label">{metric.label}</div>
       <div
         class="subtitle"
-        style="color: color-mix(in srgb, {color} 70%, transparent);"
+        style="color: color-mix(in srgb, {metric.color} 70%, transparent);"
       >
-        {description}
+        {metric.description}
       </div>
     </div>
   </header>
@@ -89,11 +66,10 @@
       </clipPath>
     </defs>
 
-    <!-- Value fixed at top right -->
-    <text x={PAD + BAR_W} y={BAR_Y - 4} text-anchor="end" class="value-label"
-      >{displayValue}<tspan class="unit-tspan"> {unit}</tspan></text
-    >
-    <!-- Track -->
+    <text x={PAD + BAR_W} y={BAR_Y - 4} text-anchor="end" class="value-label">
+      {metric.displayValue}<tspan class="unit-tspan"> {metric.unit}</tspan>
+    </text>
+
     <rect
       x={PAD}
       y={BAR_Y}
@@ -102,27 +78,26 @@
       rx={BAR_R}
       fill="var(--pico-muted-border-color)"
     />
-    <!-- Fill -->
+
     <rect
       x={PAD}
       y={BAR_Y}
       width={fillWidth}
       height={BAR_H}
       rx={0}
-      fill={color}
+      fill={metric.color}
       class="fill-bar"
       clip-path="url(#bar-clip-{pid})"
     />
-    <!-- Min label -->
+
     <text x={PAD} y={BAR_Y + BAR_H + 10} text-anchor="start" class="range-label"
-      >{min}</text
+      >{metric.min}</text
     >
-    <!-- Max label -->
     <text
       x={PAD + BAR_W}
       y={BAR_Y + BAR_H + 10}
       text-anchor="end"
-      class="range-label">{max}</text
+      class="range-label">{metric.max}</text
     >
   </svg>
 </article>

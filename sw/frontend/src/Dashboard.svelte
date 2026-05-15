@@ -77,13 +77,6 @@
             w: MIN_SIZES.card.w + 1,
             h: MIN_SIZES.card.h + 1,
             pid: c.pid,
-            label: c.name,
-            description: c.description,
-            unit: c.unit,
-            icon: c.icon,
-            color: `#${c.color.toString(16).padStart(6, "0")}`,
-            min: c.minValue || 0,
-            max: c.maxValue || 100,
           }));
 
           applyOrRepackLayout(initialItems, currentCols);
@@ -241,7 +234,7 @@
             resizerClass="grid-item-resizer"
             previewClass="grid-item-preview"
           >
-            {#snippet moveHandle({ moveStart })}
+            {#snippet moveHandle({ moveStart, resizeStart })}
               <!-- svelte-ignore a11y_no_static_element_interactions -->
               <div
                 style="width: 100%; height: 100%;"

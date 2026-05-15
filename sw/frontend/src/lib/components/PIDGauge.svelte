@@ -1,19 +1,17 @@
-<script>
-  import { canStore } from "$lib/canStore.svelte.js";
+<script lang="ts">
+  import { usePidData } from "$lib/pidHelpers.svelte.ts";
   import Icon from "../Icon.svelte";
 
-  let {
-    pid,
-    label = "Metric",
-    description = "",
-    unit = "%",
-    icon = "gear",
-    color = "#10b981",
-    min = 0,
-    max = 100,
-    moveStart = null,
-    ...rest
-  } = $props();
+  interface Props {
+    pid: number | string;
+    moveStart?: ((e: PointerEvent) => void) | null;
+    [key: string]: any;
+  }
+
+  let { pid, moveStart = null, ...rest }: Props = $props();
+
+  // Connect to our shared reactive library via a getter function closure
+  const metric = usePidData(() => pid);
 
   // ── Geometry (SVG user-unit space, original CX=50 CY=50) ──────────────────
   const R = 38;
@@ -21,19 +19,12 @@
   const CX = 50;
   const CY = 50;
 
-  // Arc: 210° → -30° clockwise (240° sweep)
-  // Bounding box of arc + half-stroke padding:
-  //   x: 7.5 → 92.5  (w=85)
-  //   y: 7.5 → 73.5  (h=66)
-  // viewBox is cropped to exactly this, so:
-  //   CX in viewBox space = 50 - 7.5 = 42.5
-  //   CY in viewBox space = 50 - 7.5 = 42.5
   const VB_X = 7.5;
   const VB_Y = 7.5;
   const VB_W = 85;
   const VB_H = 66;
 
-  const toRad = (d) => (d * Math.PI) / 180;
+  const toRad = (d: number) => (d * Math.PI) / 180;
   const sx = CX + R * Math.cos(toRad(210));
   const sy = CY - R * Math.sin(toRad(210));
   const ex = CX + R * Math.cos(toRad(-30));
@@ -42,35 +33,37 @@
   const arcLen = 2 * Math.PI * R * (240 / 360);
 
   // Text anchor in viewBox space
-  const TX = CX; // 50 — same x, viewBox origin handles offset
-  const TY_val = CY - 4; // 46
-  const TY_unit = CY + 13; // 63 — within VB_H=66 ✓
+  const TX = CX;
+  const TY_val = CY - 4;
+  const TY_unit = CY + 13;
 
-  const pidData = $derived(canStore.pids.get(pid));
-  const currentValue = $derived(pidData?.value ?? 0);
-  const supported = $derived(pidData?.supported ?? false);
-  const displayValue = $derived(supported ? currentValue.toFixed(1) : "···");
-
-  const progress = $derived.by(() => {
-    const clamped = Math.max(min, Math.min(max, currentValue));
-    return ((clamped - min) / (max - min)) * arcLen;
+  // Compute progress state using centralized helper properties
+  const progress = $derived.by((): number => {
+    const clamped = Math.max(
+      metric.min,
+      Math.min(metric.max, metric.currentValue),
+    );
+    return ((clamped - metric.min) / (metric.max - metric.min)) * arcLen;
   });
 
-  let longPressTimer;
+  let longPressTimer: ReturnType<typeof setTimeout> | undefined;
 
-  function handlePointerDown(e, moveStart) {
-    longPressTimer = setTimeout(() => moveStart(e), 300);
+  function handlePointerDown(
+    e: PointerEvent,
+    callback: (e: PointerEvent) => void,
+  ): void {
+    longPressTimer = setTimeout(() => callback(e), 300);
   }
 
-  function handlePointerUp() {
+  function handlePointerUp(): void {
     clearTimeout(longPressTimer);
   }
 </script>
 
 <article
   class="pid-card"
-  class:disabled={!supported}
-  style="background: color-mix(in srgb, {color} 5%, transparent);"
+  class:disabled={!metric.supported}
+  style="background: color-mix(in srgb, {metric.color} 5%, transparent);"
   {...rest}
 >
   <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -83,17 +76,17 @@
   >
     <div
       class="icon"
-      style="background: color-mix(in srgb, {color} 20%, transparent);"
+      style="background: color-mix(in srgb, {metric.color} 20%, transparent);"
     >
-      <Icon name={icon} size={32} />
+      <Icon name={metric.icon} size={32} />
     </div>
     <div class="titles">
-      <div class="label">{label}</div>
+      <div class="label">{metric.label}</div>
       <div
         class="subtitle"
-        style="color: color-mix(in srgb, {color} 70%, transparent);"
+        style="color: color-mix(in srgb, {metric.color} 70%, transparent);"
       >
-        {description}
+        {metric.description}
       </div>
     </div>
   </header>
@@ -115,7 +108,7 @@
     <path
       d={trackD}
       fill="none"
-      stroke={color}
+      stroke={metric.color}
       stroke-width={STROKE}
       stroke-linecap="round"
       stroke-dasharray="{progress} {arcLen + 100}"
@@ -127,16 +120,20 @@
       y={TY_val}
       text-anchor="middle"
       dominant-baseline="central"
-      class="gauge-value">{displayValue}</text
+      class="gauge-value"
     >
+      {metric.displayValue}
+    </text>
     <!-- Unit -->
     <text
       x={TX}
       y={TY_unit}
       text-anchor="middle"
       dominant-baseline="central"
-      class="gauge-unit">{unit}</text
+      class="gauge-unit"
     >
+      {metric.unit}
+    </text>
   </svg>
 </article>
 

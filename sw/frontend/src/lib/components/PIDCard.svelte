@@ -1,54 +1,49 @@
-<script>
+<script lang="ts">
   import Icon from "$lib/Icon.svelte";
-  import { canStore } from "$lib/canStore.svelte.js";
+  import { usePidData } from "$lib/pidHelpers.svelte.ts";
 
-  let {
-    pid,
-    label = "Metric",
-    unit = "%",
-    icon = "gear",
-    color = "#10b981",
-    min = 0,
-    max = 100,
-    moveStart = null,
-    ...rest
-  } = $props();
-
-  const pidData = $derived(canStore.pids.get(pid));
-
-  const currentValue = $derived(pidData?.value ?? 0);
-
-  const isValid = $derived(pidData?.valid ?? false);
-
-  const supported = $derived(pidData?.supported ?? false);
-
-  const status = $derived.by(() => {
-    if (!supported) return "#6b7280";
-    if (!isValid) return "#ef4444";
-
-    const pct = ((currentValue - min) / (max - min)) * 100;
-
-    if (pct >= 20 && pct <= 80) return "var(--normal-color)"; // Green (Normal)
-    return "var(--warning-color)"; // Orange (Warning)
-  });
-
-  const displayValue = $derived(supported ? currentValue.toFixed(1) : "···");
-
-  let longPressTimer;
-
-  function handlePointerDown(e, moveStart) {
-    longPressTimer = setTimeout(() => moveStart(e), 300);
+  interface Props {
+    pid: number | string;
+    moveStart?: ((e: PointerEvent) => void) | null;
+    [key: string]: any;
   }
 
-  function handlePointerUp() {
+  let { pid, moveStart = null, ...rest }: Props = $props();
+
+  // Consume our shared reactive helper library via a getter function closure
+  const metric = usePidData(() => pid);
+
+  // Compute status state purely dependent on our helper values
+  const status = $derived.by((): string => {
+    if (!metric.supported) return "#6b7280";
+    if (!metric.isValid) return "#ef4444";
+
+    const pct =
+      ((metric.currentValue - metric.min) / (metric.max - metric.min)) * 100;
+
+    if (pct >= 20 && pct <= 80) return "var(--normal-color)";
+    return "var(--warning-color)";
+  });
+
+  let longPressTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function handlePointerDown(
+    e: PointerEvent,
+    callback: (e: PointerEvent) => void,
+  ): void {
+    longPressTimer = setTimeout(() => callback(e), 300);
+  }
+
+  function handlePointerUp(): void {
     clearTimeout(longPressTimer);
   }
 </script>
 
 <article
   class="pid-card"
-  class:disabled={!supported}
-  style="background: color-mix(in srgb, {color} 5%, transparent);"
+  class:disabled={!metric.supported}
+  style="background: color-mix(in srgb, {metric.color} 5%, transparent);"
+  {...rest}
 >
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <header
@@ -60,18 +55,18 @@
   >
     <div
       class="icon"
-      style="background: color-mix(in srgb, {color} 20%, transparent);"
+      style="background: color-mix(in srgb, {metric.color} 20%, transparent);"
     >
-      <Icon name={icon} size={32} />
+      <Icon name={metric.icon} size={32} />
     </div>
     <div class="status" style:--status-color={status}></div>
   </header>
 
   <div class="card-body">
-    <span class="label">{label}</span>
+    <span class="label">{metric.label}</span>
     <div class="value">
-      <span class="number">{displayValue}</span>
-      <span class="unit">{unit}</span>
+      <span class="number">{metric.displayValue}</span>
+      <span class="unit">{metric.unit}</span>
     </div>
   </div>
 </article>

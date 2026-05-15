@@ -1,44 +1,41 @@
-<script>
+<script lang="ts">
   import { canStore } from "$lib/canStore.svelte.js";
   import { onMount, untrack, tick } from "svelte";
   import uPlot from "uplot";
   import "uplot/dist/uPlot.min.css";
   import Icon from "$lib/Icon.svelte";
+  import { usePidData } from "$lib/pidHelpers.svelte.ts";
+
+  interface Props {
+    pid: number | string;
+    update_interval_ms?: number;
+    moveStart?: ((e: PointerEvent) => void) | null;
+    [key: string]: any;
+  }
 
   let {
     pid,
-    label = "Metric",
-    description = "",
-    unit = "%",
-    icon = "gear",
-    color = "#ff6b6b",
     update_interval_ms = 500,
-    min = 0,
-    max = 100,
     moveStart = null,
     ...rest
-  } = $props();
+  }: Props = $props();
 
-  // --- REACTIVE DATA ---
-  const pidData = $derived(canStore.pids.get(pid));
-  const currentValue = $derived(pidData?.value ?? 0);
-  const supported = $derived(pidData?.supported ?? false);
-  const displayValue = $derived(supported ? currentValue.toFixed(1) : "···");
+  // Instantiate the library with our reactive prop getter closure
+  const metric = usePidData(() => pid);
 
   // --- STATE ---
-  let chartRef = $state();
+  let chartRef = $state<HTMLDivElement>();
   let wrapperWidth = $state(300);
   let wrapperHeight = $state(120);
-  let chartInstance = null;
+  let chartInstance: uPlot | null = null;
 
+  // Track size modifications reactively (keeps uPlot's fast size engine)
   $effect(() => {
-    // We track width and height
     const w = wrapperWidth;
     const h = wrapperHeight;
 
     untrack(() => {
       if (chartInstance && w > 0 && h > 0) {
-        // uPlot's built-in resize method is extremely fast
         chartInstance.setSize({
           width: Math.floor(w),
           height: Math.floor(h),
@@ -47,13 +44,12 @@
     });
   });
 
-  // Use plain arrays (not $state) to hold data.
-  // This prevents Svelte from looping when we call .push()
-  let timeData = [];
-  let valueData = [];
+  // Plain standard arrays to bypass Svelte proxy overhead loop during push/shift mutations
+  let timeData: number[] = [];
+  let valueData: number[] = [];
   const MAX_HISTORY_SEC = 60;
 
-  function hexToRgba(hex, alpha) {
+  function hexToRgba(hex: string, alpha: number): string {
     hex = hex.replace("#", "");
     const r = parseInt(hex.substring(0, 2), 16);
     const g = parseInt(hex.substring(2, 4), 16);
@@ -65,17 +61,24 @@
     let unsubscribe = () => {};
 
     const setup = async () => {
-      // 1. HYDRATE (Load the background history)
+      // Isolate library reads using untrack so we only capture baseline options on initialization
+      const config = untrack(() => ({
+        color: metric.color,
+        min: metric.min,
+        max: metric.max,
+      }));
+
+      // 1. HYDRATE (Load background historical frames)
       const data = canStore.pids.get(pid);
-      if (data && data.history.length > 0) {
-        // Map history to uPlot arrays
-        timeData = data.history.map((h) => h.timestamp);
-        valueData = data.history.map((h) => h.value);
+      if (data && data.history && data.history.length > 0) {
+        timeData = data.history.map((h: any) => h.timestamp);
+        valueData = data.history.map((h: any) => h.value);
       }
 
       await tick();
+      if (!chartRef) return;
 
-      const opts = {
+      const opts: uPlot.Options = {
         width: wrapperWidth,
         height: wrapperHeight,
         cursor: { show: false },
@@ -83,22 +86,25 @@
         padding: [10, 0, 10, 0],
         scales: {
           x: { time: true },
-          y: { range: () => [Number(min), Number(max)], clean: true },
+          y: {
+            range: () => [Number(config.min), Number(config.max)],
+            clean: true,
+          },
         },
         axes: [{ show: false }, { show: false }],
         series: [
           {},
           {
-            stroke: color,
+            stroke: config.color,
             width: 3,
-            paths: uPlot.paths.spline(),
+            paths: uPlot.paths.spline ? uPlot.paths.spline() : undefined,
             points: { show: false },
             spanGaps: true,
             fill: (u) => {
               const ctx = u.ctx;
               const gradient = ctx.createLinearGradient(0, 0, 0, u.bbox.height);
-              gradient.addColorStop(0, hexToRgba(color, 0.4));
-              gradient.addColorStop(1, hexToRgba(color, 0.0));
+              gradient.addColorStop(0, hexToRgba(config.color, 0.4));
+              gradient.addColorStop(1, hexToRgba(config.color, 0.0));
               return gradient;
             },
           },
@@ -106,14 +112,15 @@
         hooks: {
           drawSeries: [
             (u) => {
-              if (!supported || u.data[1].length === 0) return;
+              // Read supported safely from proxy frame stream
+              if (!metric.supported || u.data[1].length === 0) return;
               const ctx = u.ctx;
               const lastIdx = u.data[0].length - 1;
               const cx = u.valToPos(u.data[0][lastIdx], "x", true);
               const cy = u.valToPos(u.data[1][lastIdx], "y", true);
               ctx.beginPath();
               ctx.arc(cx, cy, 5, 0, 2 * Math.PI);
-              ctx.fillStyle = color;
+              ctx.fillStyle = config.color;
               ctx.fill();
             },
           ],
@@ -122,49 +129,57 @@
 
       chartInstance = new uPlot(opts, [timeData, valueData], chartRef);
 
-      unsubscribe = canStore.subscribe((update) => {
-        // Only care about updates for THIS specific chart's PID
+      // Continuous stream event subscription
+      unsubscribe = canStore.subscribe((update: any) => {
         if (update.pid !== pid) return;
 
-        // Push new data to the local arrays
         timeData.push(update.timestamp);
         valueData.push(update.value);
 
-        // Slide the 60s window
-        const cutoff = update.timestamp - 60000; // if timestamp is ms
+        const cutoff = update.timestamp - MAX_HISTORY_SEC * 1000;
         while (timeData.length > 0 && timeData[0] < cutoff) {
           timeData.shift();
           valueData.shift();
         }
 
-        // Tell uPlot to redraw with the new points
-        chartInstance.setData([timeData, valueData]);
+        if (chartInstance) {
+          chartInstance.setData([timeData, valueData], false);
+
+          chartInstance.setScale("x", {
+            min: cutoff,
+            max: update.timestamp,
+          });
+        }
       });
     };
 
     setup();
 
     return () => {
-      unsubscribe(); // Stop listening when chart is destroyed
+      unsubscribe();
       if (chartInstance) chartInstance.destroy();
     };
   });
 
-  let longPressTimer;
+  let longPressTimer: ReturnType<typeof setTimeout> | undefined;
 
-  function handlePointerDown(e, moveStart) {
-    longPressTimer = setTimeout(() => moveStart(e), 300);
+  function handlePointerDown(
+    e: PointerEvent,
+    callback: (e: PointerEvent) => void,
+  ): void {
+    longPressTimer = setTimeout(() => callback(e), 300);
   }
 
-  function handlePointerUp() {
+  function handlePointerUp(): void {
     clearTimeout(longPressTimer);
   }
 </script>
 
 <article
   class="pid-card"
-  class:disabled={!supported}
-  style="background: color-mix(in srgb, {color} 5%, transparent);"
+  class:disabled={!metric.supported}
+  style="background: color-mix(in srgb, {metric.color} 5%, transparent);"
+  {...rest}
 >
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <header
@@ -176,25 +191,25 @@
   >
     <div
       class="icon"
-      style="background: color-mix(in srgb, {color} 20%, transparent);"
+      style="background: color-mix(in srgb, {metric.color} 20%, transparent);"
     >
-      <Icon name={icon} size={32} />
+      <Icon name={metric.icon} size={32} />
     </div>
     <div class="titles">
-      <div class="label">{label}</div>
+      <div class="label">{metric.label}</div>
       <div
         class="subtitle"
-        style="color: color-mix(in srgb, {color} 70%, transparent);"
+        style="color: color-mix(in srgb, {metric.color} 70%, transparent);"
       >
-        {description}
+        {metric.description}
       </div>
     </div>
 
     <div
       class="badge"
-      style="background: color-mix(in srgb, {color} 10%, transparent); color: {color};"
+      style="background: color-mix(in srgb, {metric.color} 10%, transparent); color: {metric.color};"
     >
-      {displayValue}<span class="unit">{unit}</span>
+      {metric.displayValue}<span class="unit">{metric.unit}</span>
     </div>
   </header>
 

@@ -148,7 +148,7 @@ export class CanStore {
             alertStore.add("CAN Bus Utilization is above 90%", "warning");
         }
 
-        if (battery_voltage < 12 && battery_voltage > 0) {
+        if (battery_voltage < 11.8 && battery_voltage > 1) {
             alertStore.add("Car battery voltage is below 12V", "warning");
         }
     }
