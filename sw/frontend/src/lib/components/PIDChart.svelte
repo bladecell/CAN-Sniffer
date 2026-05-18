@@ -5,23 +5,18 @@
   import "uplot/dist/uPlot.min.css";
   import Icon from "$lib/Icon.svelte";
   import { usePidData } from "$lib/pidHelpers.svelte.ts";
+  import type { PidGridItem } from "$lib/types"; // Import our contract type
 
   interface Props {
-    pid: number | string;
+    item: PidGridItem; // Expect our structural routing definition explicitly
     update_interval_ms?: number;
-    moveStart?: ((e: PointerEvent) => void) | null;
     [key: string]: any;
   }
 
-  let {
-    pid,
-    update_interval_ms = 500,
-    moveStart = null,
-    ...rest
-  }: Props = $props();
+  let { item, update_interval_ms = 500, ...rest }: Props = $props();
 
   // Instantiate the library with our reactive prop getter closure
-  const metric = usePidData(() => pid);
+  const metric = usePidData(() => item.pid);
 
   // --- STATE ---
   let chartRef = $state<HTMLDivElement>();
@@ -63,13 +58,14 @@
     const setup = async () => {
       // Isolate library reads using untrack so we only capture baseline options on initialization
       const config = untrack(() => ({
+        pid: item.pid,
         color: metric.color,
         min: metric.min,
         max: metric.max,
       }));
 
       // 1. HYDRATE (Load background historical frames)
-      const data = canStore.pids.get(pid);
+      const data = canStore.pids.get(config.pid);
       if (data && data.history && data.history.length > 0) {
         timeData = data.history.map((h: any) => h.timestamp);
         valueData = data.history.map((h: any) => h.value);
@@ -112,7 +108,6 @@
         hooks: {
           drawSeries: [
             (u) => {
-              // Read supported safely from proxy frame stream
               if (!metric.supported || u.data[1].length === 0) return;
               const ctx = u.ctx;
               const lastIdx = u.data[0].length - 1;
@@ -129,9 +124,9 @@
 
       chartInstance = new uPlot(opts, [timeData, valueData], chartRef);
 
-      // Continuous stream event subscription
+      // Continuous stream event subscription mapping to our targeted configuration ID
       unsubscribe = canStore.subscribe((update: any) => {
-        if (update.pid !== pid) return;
+        if (update.pid !== config.pid) return;
 
         timeData.push(update.timestamp);
         valueData.push(update.value);
@@ -160,19 +155,6 @@
       if (chartInstance) chartInstance.destroy();
     };
   });
-
-  let longPressTimer: ReturnType<typeof setTimeout> | undefined;
-
-  function handlePointerDown(
-    e: PointerEvent,
-    callback: (e: PointerEvent) => void,
-  ): void {
-    longPressTimer = setTimeout(() => callback(e), 300);
-  }
-
-  function handlePointerUp(): void {
-    clearTimeout(longPressTimer);
-  }
 </script>
 
 <article
@@ -181,14 +163,7 @@
   style="background: color-mix(in srgb, {metric.color} 5%, transparent);"
   {...rest}
 >
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <header
-    class="card-header"
-    onpointerdown={moveStart ? (e) => handlePointerDown(e, moveStart) : null}
-    onpointerup={handlePointerUp}
-    onpointermove={handlePointerUp}
-    style="cursor: {moveStart ? 'grab' : 'default'}; touch-action: pan-y;"
-  >
+  <header class="card-header">
     <div
       class="icon"
       style="background: color-mix(in srgb, {metric.color} 20%, transparent);"
@@ -223,16 +198,14 @@
 </article>
 
 <style>
-  /* MATCHES YOUR EXISTING CARD STYLE */
+  /* All visual layout configurations remain completely untouched */
   .pid-card {
     width: 100%;
     height: 100%;
     box-sizing: border-box;
     margin: 0;
-
     display: flex;
     flex-direction: column;
-
     padding: 16px;
     border: 1px solid var(--pico-muted-border-color);
     border-radius: 12px;
@@ -257,7 +230,6 @@
     box-shadow: none;
   }
 
-  /* HEADER SECTION */
   .card-header {
     display: flex;
     justify-content: space-between;

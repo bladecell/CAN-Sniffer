@@ -1,16 +1,17 @@
 <script lang="ts">
   import { usePidData } from "$lib/pidHelpers.svelte.ts";
+  import type { PidGridItem } from "$lib/types"; // Import our contract type
   import Icon from "../Icon.svelte";
 
   interface Props {
-    pid: number | string;
+    item: PidGridItem; // Expect our structural routing definition explicitly
     [key: string]: any;
   }
 
-  let { pid, ...rest }: Props = $props();
+  let { item, ...rest }: Props = $props();
 
   // Everything is fetched and automatically stays reactive using getters
-  const metric = usePidData(() => pid);
+  const metric = usePidData(() => item.pid);
 
   // Layout Constants
   const BAR_H = 10;
@@ -61,7 +62,8 @@
     preserveAspectRatio="xMidYMid meet"
   >
     <defs>
-      <clipPath id="bar-clip-{pid}">
+      <!-- Fixed ID selector to target using our type-safe item layer -->
+      <clipPath id="bar-clip-{item.pid}">
         <rect x={PAD} y={BAR_Y} width={BAR_W} height={BAR_H} rx={BAR_R} />
       </clipPath>
     </defs>
@@ -87,7 +89,7 @@
       rx={0}
       fill={metric.color}
       class="fill-bar"
-      clip-path="url(#bar-clip-{pid})"
+      clip-path="url(#bar-clip-{item.pid})"
     />
 
     <text x={PAD} y={BAR_Y + BAR_H + 10} text-anchor="start" class="range-label"
@@ -103,6 +105,7 @@
 </article>
 
 <style>
+  /* All visual layout configurations remain completely untouched */
   .pid-card {
     width: 100%;
     height: 100%;

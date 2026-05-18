@@ -1,17 +1,17 @@
 <script lang="ts">
   import Icon from "$lib/Icon.svelte";
   import { usePidData } from "$lib/pidHelpers.svelte.ts";
+  import type { PidGridItem } from "$lib/types"; // Import your contract type
 
   interface Props {
-    pid: number | string;
-    moveStart?: ((e: PointerEvent) => void) | null;
+    item: PidGridItem; // Expect our structural routing definition explicitly
     [key: string]: any;
   }
 
-  let { pid, moveStart = null, ...rest }: Props = $props();
+  let { item, ...rest }: Props = $props();
 
-  // Consume our shared reactive helper library via a getter function closure
-  const metric = usePidData(() => pid);
+  // Consume our shared reactive helper library using the pid inside the layout item
+  const metric = usePidData(() => item.pid);
 
   // Compute status state purely dependent on our helper values
   const status = $derived.by((): string => {
@@ -24,19 +24,6 @@
     if (pct >= 20 && pct <= 80) return "var(--normal-color)";
     return "var(--warning-color)";
   });
-
-  let longPressTimer: ReturnType<typeof setTimeout> | undefined;
-
-  function handlePointerDown(
-    e: PointerEvent,
-    callback: (e: PointerEvent) => void,
-  ): void {
-    longPressTimer = setTimeout(() => callback(e), 300);
-  }
-
-  function handlePointerUp(): void {
-    clearTimeout(longPressTimer);
-  }
 </script>
 
 <article
@@ -45,14 +32,7 @@
   style="background: color-mix(in srgb, {metric.color} 5%, transparent);"
   {...rest}
 >
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <header
-    class="card-header"
-    onpointerdown={moveStart ? (e) => handlePointerDown(e, moveStart) : null}
-    onpointerup={handlePointerUp}
-    onpointermove={handlePointerUp}
-    style="cursor: {moveStart ? 'grab' : 'default'}; touch-action: pan-y;"
-  >
+  <header class="card-header">
     <div
       class="icon"
       style="background: color-mix(in srgb, {metric.color} 20%, transparent);"
@@ -72,16 +52,15 @@
 </article>
 
 <style>
+  /* Your layout styles are beautiful and remain exactly the same */
   .pid-card {
     width: 100%;
     height: 100%;
     box-sizing: border-box;
     margin: 0;
-
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-
     padding: 16px;
     border: 1px solid var(--pico-muted-border-color);
     border-radius: 12px;

@@ -1,17 +1,17 @@
 <script lang="ts">
   import { usePidData } from "$lib/pidHelpers.svelte.ts";
+  import type { PidGridItem } from "$lib/types"; // Import our contract type
   import Icon from "../Icon.svelte";
 
   interface Props {
-    pid: number | string;
-    moveStart?: ((e: PointerEvent) => void) | null;
+    item: PidGridItem; // Expect our structural routing definition explicitly
     [key: string]: any;
   }
 
-  let { pid, moveStart = null, ...rest }: Props = $props();
+  let { item, ...rest }: Props = $props();
 
-  // Connect to our shared reactive library via a getter function closure
-  const metric = usePidData(() => pid);
+  // Connect to our shared reactive library using the pid inside the layout item
+  const metric = usePidData(() => item.pid);
 
   // ── Geometry (SVG user-unit space, original CX=50 CY=50) ──────────────────
   const R = 38;
@@ -45,19 +45,6 @@
     );
     return ((clamped - metric.min) / (metric.max - metric.min)) * arcLen;
   });
-
-  let longPressTimer: ReturnType<typeof setTimeout> | undefined;
-
-  function handlePointerDown(
-    e: PointerEvent,
-    callback: (e: PointerEvent) => void,
-  ): void {
-    longPressTimer = setTimeout(() => callback(e), 300);
-  }
-
-  function handlePointerUp(): void {
-    clearTimeout(longPressTimer);
-  }
 </script>
 
 <article
@@ -66,14 +53,7 @@
   style="background: color-mix(in srgb, {metric.color} 5%, transparent);"
   {...rest}
 >
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <header
-    class="card-header"
-    onpointerdown={moveStart ? (e) => handlePointerDown(e, moveStart) : null}
-    onpointerup={handlePointerUp}
-    onpointermove={handlePointerUp}
-    style="cursor: {moveStart ? 'grab' : 'default'}; touch-action: pan-y;"
-  >
+  <header class="card-header">
     <div
       class="icon"
       style="background: color-mix(in srgb, {metric.color} 20%, transparent);"
@@ -138,6 +118,7 @@
 </article>
 
 <style>
+  /* All layout styles remain completely pristine and intact */
   .pid-card {
     width: 100%;
     height: 100%;
@@ -213,7 +194,6 @@
     overflow: visible;
   }
 
-  /* Font sizes in SVG user units — scale with the viewBox automatically */
   .gauge-value {
     font-size: 14px;
     font-weight: 800;

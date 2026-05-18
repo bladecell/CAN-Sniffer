@@ -202,20 +202,6 @@
   </details>
 </div>
 
-{#key renderKey}
-  {#if renderCards.length > 0}
-    <div use:swapyAction class="cards-grid">
-      {#each renderCards as card, index (card.pid)}
-        <div data-swapy-slot={index.toString()}>
-          <div data-swapy-item={card.pid.toString()}>
-            <PIDCard {...card} />
-          </div>
-        </div>
-      {/each}
-    </div>
-  {/if}
-{/key}
-
 <style>
   .status-group {
     display: flex;
