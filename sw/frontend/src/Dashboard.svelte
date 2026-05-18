@@ -18,20 +18,55 @@
   const MOBILE_GAP = 12;
   const flipDurationMs = 200;
 
+  // --- COMPONENT CONSTRAINT EXPORT SCHEMATICS ---
+  const MODULE_CONFIGS = {
+    pid: {
+      card: {
+        min: { w: 12, h: 7 },
+        max: { w: 18, h: 10 },
+      },
+      chart: {
+        min: { w: 18, h: 14 },
+        max: { w: 53, h: 28 },
+      },
+      gauge: {
+        min: { w: 14, h: 14 },
+        max: { w: 20, h: 20 },
+      },
+      bar: {
+        min: { w: 12, h: 10 },
+        max: { w: 18, h: 14 },
+      },
+    },
+    battery: {
+      min: { w: 12, h: 12 },
+      max: { w: 18, h: 18 },
+    },
+    dtcs: {
+      min: { w: 24, h: 14 },
+      max: { w: 53, h: 28 },
+    },
+    overview: {
+      min: { w: 36, h: 16 },
+      max: { w: 78, h: 32 },
+    },
+  } as const;
+
   let containerWidth = $state(0);
   let isInitialized = $state(false);
   let isAddMenuOpen = $state(false);
   let items = $state<any[]>([]);
   let previewItem = $state<any>(null);
 
-  // Controlled reactively via our long-press timers to prevent event clashing
   let dragDisabled = $state(true);
 
   let isModalOpen = $state(false);
   let modalTargetItem = $state<any | null>(null);
   let modalIsNewCard = $state(false);
 
+  // Resizing Tracking Subsystems
   let resizingItemId = $state<string | null>(null);
+  let activeConfig = { minW: 4, maxW: 60, minH: 2, maxH: 50 };
   let initialMouseX = 0;
   let initialMouseY = 0;
   let initialWidthPx = 0;
@@ -85,18 +120,17 @@
     items = e.detail.items;
     const { source } = e.detail.info;
     if (source === SOURCES.POINTER) {
-      dragDisabled = true; // Instantly lock dragging after a card drops
+      dragDisabled = true;
     }
     saveLayout();
   }
 
-  // Exposed callback to allow child items to unlock the grid's engine
   function triggerDragActivation() {
     dragDisabled = false;
   }
 
   function startResizing(event: any, id: string) {
-    dragDisabled = true; // Blocks dragging actions while adjusting metrics
+    dragDisabled = true;
 
     const clientX = event.touches ? event.touches[0].clientX : event.clientX;
     const clientY = event.touches ? event.touches[0].clientY : event.clientY;
@@ -106,6 +140,29 @@
 
     const cardElement = targetEl.closest(".unified-flow-card");
     if (!cardElement) return;
+
+    const item = items.find((i) => i.id === id);
+    if (!item) return;
+
+    // FIX: Parse nested structural properties vs flat configurations correctly
+    const type = (item.cardType || "pid") as keyof typeof MODULE_CONFIGS;
+    let limits;
+
+    if (type === "pid") {
+      const mode = (item.displayMode ||
+        "card") as keyof (typeof MODULE_CONFIGS)["pid"];
+      limits = MODULE_CONFIGS.pid[mode] || MODULE_CONFIGS.pid.card;
+    } else {
+      limits = MODULE_CONFIGS[type];
+    }
+
+    // Cache dimensions in active memory variables
+    activeConfig = {
+      minW: limits.min.w,
+      maxW: limits.max.w,
+      minH: limits.min.h,
+      maxH: limits.max.h,
+    };
 
     resizingItemId = id;
     initialMouseX = clientX;
@@ -131,7 +188,7 @@
   }
 
   function queueResizeUpdateTouch(e: TouchEvent) {
-    if (resizingItemId) e.preventDefault(); // Lock mobile window scrolling
+    if (resizingItemId) e.preventDefault();
     latestPointerEvent = e.touches[0] as unknown as PointerEvent;
     if (!animationFrameToken) {
       animationFrameToken = requestAnimationFrame(processThrottledResize);
@@ -158,8 +215,57 @@
     }
 
     lastRenderTime = currentTime - (timeElapsed % RENDER_INTERVAL_MS);
-    resizeDeltaX = latestPointerEvent.clientX - initialMouseX;
-    resizeDeltaY = latestPointerEvent.clientY - initialMouseY;
+
+    const isMobile = window.innerWidth <= 768;
+    const activeColsCount = isMobile ? MOBILE_COLS : DESKTOP_COLS;
+    const currentGap = isMobile ? MOBILE_GAP : DESKTOP_GAP;
+
+    const singleCellWidthPx =
+      (containerWidth - (activeColsCount - 1) * currentGap) / activeColsCount;
+
+    let rawDeltaX = latestPointerEvent.clientX - initialMouseX;
+    let rawDeltaY = latestPointerEvent.clientY - initialMouseY;
+
+    const projectedWidthPx = initialWidthPx + rawDeltaX;
+    const projectedHeightPx = initialHeightPx + rawDeltaY;
+
+    const projectedW = Math.round(
+      (projectedWidthPx + currentGap) / (singleCellWidthPx + currentGap),
+    );
+    const projectedH = Math.round(
+      (projectedHeightPx + currentGap) / (ROW_HEIGHT_PX + currentGap),
+    );
+
+    // Clamp bounds against configuration map and screen columns threshold
+    const dynamicMaxW = Math.min(activeColsCount, activeConfig.maxW);
+
+    if (projectedW < activeConfig.minW) {
+      resizeDeltaX =
+        activeConfig.minW * singleCellWidthPx +
+        (activeConfig.minW - 1) * currentGap -
+        initialWidthPx;
+    } else if (projectedW > dynamicMaxW) {
+      resizeDeltaX =
+        dynamicMaxW * singleCellWidthPx +
+        (dynamicMaxW - 1) * currentGap -
+        initialWidthPx;
+    } else {
+      resizeDeltaX = rawDeltaX;
+    }
+
+    if (projectedH < activeConfig.minH) {
+      resizeDeltaY =
+        activeConfig.minH * ROW_HEIGHT_PX +
+        (activeConfig.minH - 1) * currentGap -
+        initialHeightPx;
+    } else if (projectedH > activeConfig.maxH) {
+      resizeDeltaY =
+        activeConfig.maxH * ROW_HEIGHT_PX +
+        (activeConfig.maxH - 1) * currentGap -
+        initialHeightPx;
+    } else {
+      resizeDeltaY = rawDeltaY;
+    }
   }
 
   function stopResizing() {
@@ -183,8 +289,13 @@
           (finalHeightPx + currentGap) / (ROW_HEIGHT_PX + currentGap),
         );
 
-        item.w = Math.max(4, Math.min(activeColsCount, finalW));
-        item.h = Math.max(2, Math.min(50, finalH));
+        const dynamicMaxW = Math.min(activeColsCount, activeConfig.maxW);
+
+        item.w = Math.max(activeConfig.minW, Math.min(dynamicMaxW, finalW));
+        item.h = Math.max(
+          activeConfig.minH,
+          Math.min(activeConfig.maxH, finalH),
+        );
         items = [...items];
       }
     }
@@ -216,10 +327,20 @@
   function openAddPresetSettings(
     type: "pid" | "battery" | "dtcs" | "overview",
   ) {
+    let defaultW = 10,
+      defaultH = 7;
+    if (type === "pid") {
+      defaultW = MODULE_CONFIGS.pid.card.min.w;
+      defaultH = MODULE_CONFIGS.pid.card.min.h;
+    } else {
+      defaultW = MODULE_CONFIGS[type].min.w;
+      defaultH = MODULE_CONFIGS[type].min.h;
+    }
+
     modalTargetItem = {
       cardType: type,
-      w: type === "pid" ? 10 : 6,
-      h: type === "pid" ? 7 : 6,
+      w: defaultW,
+      h: defaultH,
     };
     modalIsNewCard = true;
     isModalOpen = true;
@@ -283,9 +404,6 @@
         dragDisabled: dragDisabled || !!resizingItemId,
         dropTargetStyle: {},
         type: "dashboard",
-        /* STABLE DIMENSIONS DURING DRAG: 
-           Injects grid tokens explicitly as local inline CSS custom properties 
-           onto the floating clone container before it leaves the grid context. */
         transformDraggedElement: (element, item) => {
           if (element) {
             element.style.setProperty("--card-w", (item.w || 10).toString());
@@ -380,12 +498,11 @@
 </div>
 
 <style>
+  /* Base structural layout styles remain completely untouched */
   .unified-flow-dashboard {
     width: 100%;
     overflow-x: hidden;
   }
-
-  /* RESIZING LAYOUT STATE LOCKS */
   .user-is-resizing,
   .user-is-resizing * {
     cursor: se-resize !important;
@@ -395,8 +512,6 @@
   .user-is-resizing .unified-grid-zone {
     pointer-events: auto !important;
   }
-
-  /* BASE GRID AREA CANVAS CONFIGURATIONS */
   .unified-grid-zone {
     display: grid !important;
     grid-template-columns: repeat(60, minmax(0, 1fr)) !important;
@@ -406,22 +521,18 @@
     width: 100%;
     min-height: 300px;
     padding: 12px;
+    padding-bottom: 250px !important;
     outline: none !important;
   }
-
   .unified-flow-card {
     grid-column: span var(--card-w, 10);
     grid-row: span var(--card-h, 7) !important;
-    width: 100% !important; /* Locks grid scale smoothly when idle */
+    width: 100% !important;
     height: calc(
       (var(--card-h) * 10px) + ((var(--card-h) - 1) * 16px)
     ) !important;
     transition: transform 0.15s ease;
   }
-
-  /* ACTIVE LIVE RESIZING TRANSFORMS:
-     Bypasses layout grid column restrictions dynamically mid-gesture 
-     by appending raw calculated pixel deltas directly onto the axes. */
   .is-resizing-target {
     z-index: 1000 !important;
     position: relative;
@@ -432,8 +543,6 @@
         var(--resize-dy, 0px)
     ) !important;
   }
-
-  /* MOBILE 24-COLUMN RESPONSIVE LAYOUT MATRIX */
   @media (max-width: 768px) {
     .unified-grid-zone {
       grid-template-columns: repeat(24, minmax(0, 1fr)) !important;
@@ -453,7 +562,6 @@
       ) !important;
     }
   }
-
   .card-inner-hull {
     position: relative;
     width: 100%;
@@ -464,7 +572,6 @@
     background: rgba(30, 30, 35, 0.6);
     border: 1px solid rgba(255, 255, 255, 0.05);
   }
-
   .empty-placeholder {
     display: flex;
     justify-content: center;
@@ -474,8 +581,6 @@
     border-radius: 12px;
     color: #a0a0a5;
   }
-
-  /* FLOATING ACTION INTERFACE CONTROLS */
   .fab-container {
     position: fixed;
     bottom: 2rem;
@@ -562,7 +667,6 @@
     background: rgba(16, 185, 129, 0.1);
     color: #34d399;
   }
-
   .unified-grid-zone:focus,
   .unified-grid-zone:focus-within,
   :global(#dnd-action-dragged-el),
@@ -570,32 +674,18 @@
     outline: none !important;
     box-shadow: none !important;
   }
-
-  /* --- DRAGGED CLONE & PLACEHOLDER STRUCTURAL LOCKS --- */
-
-  /* Target the active floating element currently being dragged by the user */
   :global(#dnd-action-dragged-el) {
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6) !important;
     border-radius: 8px !important;
     opacity: 0.95 !important;
-
-    /* FIXED HORIZONTAL WIDTH STABILITY PRESERVATION:
-       Translates column spans into standalone absolute pixel values while detached.
-       Formula parameters: (100% viewport width minus layout padding and gap boundaries) 
-       divided by total grid column tracks, scaled by column span variables.
-    */
     width: calc(
       (((100vw - 24px) - (60 - 1) * 16px) / 60 * var(--card-w)) +
         ((var(--card-w) - 1) * 16px)
     ) !important;
-
-    /* Fixed vertical height stability preservation */
     height: calc(
       (var(--card-h) * 10px) + ((var(--card-h) - 1) * 16px)
     ) !important;
   }
-
-  /* Modifies standalone floating drag parameters matching mobile 24-column grid rules */
   @media (max-width: 768px) {
     :global(#dnd-action-dragged-el) {
       width: calc(
@@ -607,20 +697,17 @@
       ) !important;
     }
   }
-
-  /* Target the underlying ghost slot layout left behind in the active grid track array */
   :global(.unified-grid-zone > div[style*="visibility: hidden"]) {
     visibility: visible !important;
     opacity: 0.15 !important;
     background: rgba(255, 255, 255, 0.02) !important;
     border: 2px dashed rgba(255, 255, 255, 0.2) !important;
     border-radius: 8px;
-    width: 100% !important; /* Ghost frames inherit correctly inside the live grid stream */
+    width: 100% !important;
     height: calc(
       (var(--card-h) * 10px) + ((var(--card-h) - 1) * 16px)
     ) !important;
   }
-
   @media (max-width: 768px) {
     :global(.unified-grid-zone > div[style*="visibility: hidden"]) {
       height: calc(

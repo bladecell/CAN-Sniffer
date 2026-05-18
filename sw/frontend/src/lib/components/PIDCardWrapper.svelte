@@ -1,3 +1,8 @@
+<script lang="ts" module>
+  // Svelte 5 module state: ensures only one menu is open across all dashboard instances
+  let activeMenuId = $state<string | null>(null);
+</script>
+
 <script lang="ts">
   import PIDCard from "$lib/components/PIDCard.svelte";
   import PIDChartCard from "$lib/components/PIDChart.svelte";
@@ -26,11 +31,10 @@
   }: Props = $props();
 
   let wrapperElement = $state<HTMLElement | null>(null);
-  let menu = $state<{ show: boolean; x: number; y: number }>({
-    show: false,
-    x: 0,
-    y: 0,
-  });
+  
+  // Local state for coordinates, but visibility is controlled by the module-level activeMenuId
+  let menuPos = $state({ x: 0, y: 0 });
+  let isMenuOpen = $derived(activeMenuId === item.id);
 
   let dragTimer: ReturnType<typeof setTimeout>;
   let popupTimer: ReturnType<typeof setTimeout>;
@@ -40,7 +44,7 @@
 
   function triggerHaptic(duration: number | number[]) {
     if (typeof navigator !== "undefined" && navigator.vibrate) {
-      // Patterns or slightly longer durations work better across different hardware
+      navigator.vibrate(0);
       navigator.vibrate(duration);
     }
   }
@@ -48,7 +52,7 @@
   function engageHoldTracking(
     clientX: number,
     clientY: number,
-    originalEvent: PointerEvent,
+    originalEvent: any,
   ) {
     if (originalEvent.button && originalEvent.button !== 0) return;
 
@@ -58,25 +62,26 @@
     )
       return;
 
-    // Stop propagation immediately on down-press
-    originalEvent.stopPropagation();
+    isTouchDevice = originalEvent.type === "touchstart" || originalEvent.pointerType === "touch";
+    
+    if (isTouchDevice) {
+      triggerHaptic(20); // Immediate feedback to prime the engine
+    }
 
     startCoords = { x: clientX, y: clientY };
-    isTouchDevice = originalEvent.pointerType === "touch";
-
     clearAllTimers();
 
     if (!isTouchDevice) {
       onRequestDrag();
     } else {
       dragTimer = setTimeout(() => {
-        if (!menu.show) triggerHaptic(40); // Increased from 15ms
+        if (!isMenuOpen) triggerHaptic(50);
         onRequestDrag();
       }, dragDelay);
     }
 
     popupTimer = setTimeout(() => {
-      triggerHaptic(menu.show ? [20, 10, 20] : 60); // Pattern for close, single pulse for open
+      triggerHaptic(isMenuOpen ? [30, 30, 30] : [70, 40, 70]);
       triggerMenu(clientX, clientY);
       clearAllTimers();
     }, popupDelay);
@@ -105,30 +110,46 @@
   }
 
   function triggerMenu(x: number, y: number) {
-    if (menu.show) {
-      menu.show = false;
+    if (isMenuOpen) {
+      activeMenuId = null;
     } else {
-      menu.show = true;
-      menu.x = x;
-      menu.y = y;
+      const MENU_WIDTH = 220;
+      const MENU_HEIGHT = 110;
+      
+      let finalX = x;
+      let finalY = y;
+      
+      // If menu would go off-screen to the right, open it to the left of the touch point
+      if (x + MENU_WIDTH > window.innerWidth) {
+        finalX = x - MENU_WIDTH;
+      }
+      
+      // If it would go off-screen at the bottom, shift it up
+      if (y + MENU_HEIGHT > window.innerHeight) {
+        finalY = window.innerHeight - MENU_HEIGHT - 12;
+      }
+
+      menuPos.x = Math.max(12, finalX);
+      menuPos.y = Math.max(12, finalY);
+      activeMenuId = item.id;
     }
   }
 
   // FIX: Only close if the click actually happened OUTSIDE this specific card wrapper node
   function handleWindowCloseEvent(e: Event) {
     if (
-      menu.show &&
+      isMenuOpen &&
       wrapperElement &&
       !wrapperElement.contains(e.target as Node)
     ) {
-      menu.show = false;
+      activeMenuId = null;
     }
   }
 </script>
 
 <svelte:window
   onclick={handleWindowCloseEvent}
-  onscroll={() => (menu.show = false)}
+  onscroll={() => { if (isMenuOpen) activeMenuId = null; }}
   ontouchstart={handleWindowCloseEvent}
 />
 
@@ -137,8 +158,14 @@
   class="pid-card-wrapper"
   oncontextmenu={handleContextMenu}
   onpointerdown={(e) => engageHoldTracking(e.clientX, e.clientY, e)}
+  ontouchstart={(e) => {
+    isTouchDevice = true;
+    const touch = e.touches[0];
+    engageHoldTracking(touch.clientX, touch.clientY, e);
+  }}
   onpointermove={(e) => monitorMovement(e.clientX, e.clientY)}
   onpointerup={clearAllTimers}
+  ontouchend={clearAllTimers}
   onpointercancel={clearAllTimers}
 >
   {#if item.displayMode === "chart"}
@@ -171,17 +198,17 @@
     ></div>
   {/if}
 
-  {#if menu.show}
+  {#if isMenuOpen}
     <div
       class="local-context-menu"
-      style="top: {menu.y}px; left: {menu.x}px;"
+      style="top: {menuPos.y}px; left: {menuPos.x}px;"
       onclick={(e) => e.stopPropagation()}
       ontouchstart={(e) => e.stopPropagation()}
     >
       <button
         onclick={() => {
           onOpenSettings?.(item);
-          menu.show = false;
+          activeMenuId = null;
         }}
       >
         Modify Component Proportions
@@ -191,7 +218,7 @@
         onclick={() => {
           triggerHaptic([30, 40, 30]);
           onDelete?.(item.id);
-          menu.show = false;
+          activeMenuId = null;
         }}
       >
         Remove from Dashboard
