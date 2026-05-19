@@ -49,7 +49,7 @@
   $effect(() => {
     // Sync local changes to the global previewItem for live dashboard updates
     if (!isOpen || !item || internalSync) return;
-    
+
     // Explicitly read key properties to ensure Svelte tracks them
     const { w, h, cardType } = localItem;
     const mode = (localItem as any).displayMode;
@@ -57,11 +57,13 @@
 
     untrack(() => {
       // Re-create object to trigger reference-based reactivity in parent
-      previewItem = { 
-        ...localItem, 
-        w, h, cardType,
+      previewItem = {
+        ...localItem,
+        w,
+        h,
+        cardType,
         displayMode: mode,
-        pid
+        pid,
       };
     });
   });
@@ -75,7 +77,7 @@
       pidItem.displayMode = "card";
       pidItem.pid = canStore.pidDefinitions[0]?.pid || 0;
     }
-    
+
     const newBounds = getModuleBounds(localItem);
     localItem.w = newBounds.min.w;
     localItem.h = newBounds.min.h;
@@ -95,16 +97,23 @@
 
 {#if isOpen}
   <div class="custom-modal-backdrop" onclick={handleCancel}>
-    <article onclick={(e) => e.stopPropagation()} class="pico-orange-glass-modal">
+    <article
+      onclick={(e) => e.stopPropagation()}
+      class="pico-orange-glass-modal"
+    >
       <header class="modal-header-hull">
         <h5 class="modal-title-heading">
           {isNewCard ? "Create System Module" : "Configure Module Parameters"}
         </h5>
-        <button aria-label="Close" class="close-modal-x" onclick={handleCancel}>✕</button>
+        <button aria-label="Close" class="close-modal-x" onclick={handleCancel}
+          >✕</button
+        >
       </header>
 
       <form onsubmit={handleSubmit} class="modal-form-body">
-        <label for="card-type-select" class="field-heading">Module Classification</label>
+        <label for="card-type-select" class="field-heading"
+          >Module Classification</label
+        >
         <select
           id="card-type-select"
           bind:value={localItem.cardType}
@@ -121,12 +130,20 @@
         <div class="steppers-inline-grid">
           <div class="stepper-field-wrapper">
             <span class="field-heading">Grid Width Columns</span>
-            <TelemetryStepper bind:value={localItem.w} min={bounds.min.w} max={bounds.max.w} />
+            <TelemetryStepper
+              bind:value={localItem.w}
+              min={bounds.min.w}
+              max={bounds.max.w}
+            />
           </div>
 
           <div class="stepper-field-wrapper">
             <span class="field-heading">Grid Height Rows</span>
-            <TelemetryStepper bind:value={localItem.h} min={bounds.min.h} max={bounds.max.h} />
+            <TelemetryStepper
+              bind:value={localItem.h}
+              min={bounds.min.h}
+              max={bounds.max.h}
+            />
           </div>
         </div>
 
@@ -137,8 +154,14 @@
           <div class="conditional-settings-panel animate-fade-in">
             <div class="panel-section-title">PID Sensor Parameters</div>
 
-            <label for="pid-sensor-select" class="field-heading">Target Vehicle Sensor Stream</label>
-            <select id="pid-sensor-select" bind:value={pidItem.pid} class="orange-select-field">
+            <label for="pid-sensor-select" class="field-heading"
+              >Target Vehicle Sensor Stream</label
+            >
+            <select
+              id="pid-sensor-select"
+              bind:value={pidItem.pid}
+              class="orange-select-field"
+            >
               {#each canStore.pidDefinitions as definition}
                 <option value={definition.pid}>
                   0x{definition.pid.toString(16).toUpperCase()} — {definition.name}
@@ -146,10 +169,12 @@
               {/each}
             </select>
 
-            <label for="pid-visualization-select" class="field-heading">Widget Visualization Mode</label>
-            <select 
-              id="pid-visualization-select" 
-              bind:value={pidItem.displayMode} 
+            <label for="pid-visualization-select" class="field-heading"
+              >Widget Visualization Mode</label
+            >
+            <select
+              id="pid-visualization-select"
+              bind:value={pidItem.displayMode}
               onchange={handleCardTypeChange}
               class="orange-select-field"
             >
@@ -191,9 +216,18 @@
     padding: 16px;
   }
   .pico-orange-glass-modal {
-    backdrop-filter: var(--backdrop-filter, blur(10px) saturate(1.2)) !important;
-    -webkit-backdrop-filter: var(--backdrop-filter, blur(10px) saturate(1.2)) !important;
-    background-color: var(--backdrop-filter-background, oklch(1 0 0 / 0.01)) !important;
+    backdrop-filter: var(
+      --backdrop-filter,
+      blur(10px) saturate(1.2)
+    ) !important;
+    -webkit-backdrop-filter: var(
+      --backdrop-filter,
+      blur(10px) saturate(1.2)
+    ) !important;
+    background-color: var(
+      --backdrop-filter-background,
+      oklch(1 0 0 / 0.01)
+    ) !important;
     border: var(--pico-border-width) solid var(--pico-form-element-border-color);
     max-width: 500px;
     width: 100%;
@@ -209,6 +243,8 @@
     align-items: center;
     padding: 16px 24px;
     border-bottom: 1px solid var(--pico-border-color);
+    background: transparent;
+    margin: 0;
   }
   .modal-title-heading {
     margin: 0;
@@ -238,7 +274,9 @@
   }
   .orange-select-field {
     margin-bottom: 1rem !important;
-    background-color: rgb(from var(--pico-form-element-background-color) r g b / 0.6);
+    background-color: rgb(
+      from var(--pico-form-element-background-color) r g b / 0.6
+    );
   }
   .steppers-inline-grid {
     display: grid;
@@ -285,13 +323,21 @@
   }
   .apply-btn {
     border: var(--pico-border-width) solid var(--pico-form-element-border-color);
-    background-color: rgb(from var(--pico-form-element-background-color) r g b / 0.6);
+    background-color: rgb(
+      from var(--pico-form-element-background-color) r g b / 0.6
+    );
   }
   .animate-fade-in {
     animation: modalBoxFadeIn 0.18s ease-out forwards;
   }
   @keyframes modalBoxFadeIn {
-    from { opacity: 0; transform: translateY(3px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 </style>
