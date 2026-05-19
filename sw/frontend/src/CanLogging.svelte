@@ -1,5 +1,5 @@
 <script>
-  import PIDCardWrapper from "$lib/components/PIDCardWrapper.svelte";
+  import DashboardCardWrapper from "$lib/components/DashboardCardWrapper.svelte";
   import { canStore } from "./lib/canStore.svelte.js";
   import { untrack, onDestroy } from "svelte";
   import OverviewCard from "$lib/components/OverviewCard.svelte";
@@ -82,7 +82,7 @@
 
 <div class="pid-container">
   {#if item}
-    <PIDCardWrapper {...item} {displayMode} />
+    <DashboardCardWrapper {...item} {displayMode} />
   {:else}
     <p>Loading...</p>
   {/if}

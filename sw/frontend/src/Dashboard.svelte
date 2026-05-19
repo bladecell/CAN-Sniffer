@@ -1,7 +1,7 @@
 <script lang="ts">
   import { dndzone, SOURCES, TRIGGERS } from "svelte-dnd-action";
   import { flip } from "svelte/animate";
-  import PIDCardWrapper from "$lib/components/PIDCardWrapper.svelte";
+  import DashboardCardWrapper from "$lib/components/DashboardCardWrapper.svelte";
   import PIDSettingsModal from "$lib/components/PIDSettingsModal.svelte";
 
   import { canStore } from "$lib/canStore.svelte.js";
@@ -22,24 +22,24 @@
   const MODULE_CONFIGS = {
     pid: {
       card: {
-        min: { w: 12, h: 7 },
-        max: { w: 18, h: 10 },
+        min: { w: 8, h: 7 },
+        max: { w: 18, h: 12 },
       },
       chart: {
-        min: { w: 18, h: 14 },
+        min: { w: 12, h: 10 },
         max: { w: 53, h: 28 },
       },
       gauge: {
-        min: { w: 14, h: 14 },
+        min: { w: 8, h: 11 },
         max: { w: 20, h: 20 },
       },
       bar: {
         min: { w: 12, h: 10 },
-        max: { w: 18, h: 14 },
+        max: { w: 24, h: 14 },
       },
     },
     battery: {
-      min: { w: 12, h: 12 },
+      min: { w: 8, h: 8 },
       max: { w: 18, h: 18 },
     },
     dtcs: {
@@ -47,8 +47,8 @@
       max: { w: 53, h: 28 },
     },
     overview: {
-      min: { w: 36, h: 16 },
-      max: { w: 78, h: 32 },
+      min: { w: 12, h: 10 },
+      max: { w: 53, h: 28 },
     },
   } as const;
 
@@ -85,13 +85,32 @@
         const storedLayout = localStorage.getItem("dashboard-unified-flow");
         if (storedLayout) {
           try {
-            items = JSON.parse(storedLayout);
+            const rawItems = JSON.parse(storedLayout);
+
+            // SANITIZATION GATEWAY: Intercept array elements and guarantee
+            // every single recorded module possesses a unique, stable ID token.
+            if (Array.isArray(rawItems)) {
+              items = rawItems.map((item, index) => {
+                if (!item.id) {
+                  return {
+                    ...item,
+                    id: crypto.randomUUID(), // Safely repair missing or corrupted database IDs
+                  };
+                }
+                return item;
+              });
+            } else {
+              items = [];
+            }
           } catch (e) {
             items = [];
           }
         } else {
           items = [];
         }
+
+        // Save back immediately if we had to fix broken data records
+        saveLayout();
         isInitialized = true;
       });
     }
@@ -129,11 +148,14 @@
     dragDisabled = false;
   }
 
-  function startResizing(event: any, id: string) {
+  function startResizing(event: PointerEvent | TouchEvent, id: string) {
     dragDisabled = true;
 
-    const clientX = event.touches ? event.touches[0].clientX : event.clientX;
-    const clientY = event.touches ? event.touches[0].clientY : event.clientY;
+    // Normalizes coordinates cleanly whether it came from touch or pointer tracking lines
+    const clientX =
+      "touches" in event ? event.touches[0].clientX : event.clientX;
+    const clientY =
+      "touches" in event ? event.touches[0].clientY : event.clientY;
 
     const targetEl = event.target as HTMLElement;
     if (!targetEl) return;
@@ -329,6 +351,7 @@
   ) {
     let defaultW = 10,
       defaultH = 7;
+
     if (type === "pid") {
       defaultW = MODULE_CONFIGS.pid.card.min.w;
       defaultH = MODULE_CONFIGS.pid.card.min.h;
@@ -337,16 +360,26 @@
       defaultH = MODULE_CONFIGS[type].min.h;
     }
 
+    // FIX: Generate a stable temporary ID right here!
+    // This stops svelte-dnd-action from crashing when previewItem synchronizes.
     modalTargetItem = {
+      id: crypto.randomUUID(),
       cardType: type,
       w: defaultW,
       h: defaultH,
+      // If it's a pid card, make sure baseline attributes are initialized safely too
+      ...(type === "pid"
+        ? {
+            pid: canStore.pidDefinitions[0]?.pid || 0,
+            displayMode: "card",
+          }
+        : {}),
     };
+
     modalIsNewCard = true;
     isModalOpen = true;
     isAddMenuOpen = false;
   }
-
   function handleModalSave(configuredItem: any) {
     if (modalIsNewCard) {
       items = [...items, configuredItem];
@@ -405,9 +438,9 @@
         dropTargetStyle: {},
         type: "dashboard",
         transformDraggedElement: (element, item) => {
-          if (element) {
-            element.style.setProperty("--card-w", (item.w || 10).toString());
-            element.style.setProperty("--card-h", (item.h || 7).toString());
+          if (element && item) {
+            element.style.setProperty("--card-w", (item.w ?? 10).toString());
+            element.style.setProperty("--card-h", (item.h ?? 7).toString());
           }
         },
       }}
@@ -415,26 +448,29 @@
       onfinalize={handleFinalize}
     >
       {#each items as item (item.id)}
-        {@const activeItem = previewItem?.id === item.id ? previewItem : item}
+        {@const activeItem =
+          previewItem && previewItem.id === item.id ? previewItem : item}
+
         <div
           class="unified-flow-card"
           class:is-resizing-target={resizingItemId === item.id}
           style="
-            --card-w: {activeItem.w || 10}; 
-            --card-h: {activeItem.h || 7};
+            --card-w: {activeItem?.w ?? item?.w ?? 10}; 
+            --card-h: {activeItem?.h ?? item?.h ?? 7};
             --resize-dx: {resizingItemId === item.id ? resizeDeltaX : 0}px;
             --resize-dy: {resizingItemId === item.id ? resizeDeltaY : 0}px;
           "
           animate:flip={{ duration: flipDurationMs }}
         >
           <div class="card-inner-hull">
-            {#if item.cardType === "pid"}
-              <PIDCardWrapper
+            {#if activeItem && activeItem.cardType}
+              <DashboardCardWrapper
                 item={activeItem}
                 dragDelay={DRAG_HOLD_DELAY_MS}
                 popupDelay={POPUP_HOLD_DELAY_MS}
                 onRequestDrag={triggerDragActivation}
-                resizeStart={(e) => startResizing(e, item.id)}
+                resizeStart={(e: PointerEvent | TouchEvent) =>
+                  startResizing(e, item.id)}
                 onOpenSettings={openEditSettings}
                 onDelete={deleteCard}
               />

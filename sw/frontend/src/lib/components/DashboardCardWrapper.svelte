@@ -9,6 +9,7 @@
   import PIDGauge from "./PIDGauge.svelte";
   import PIDBar from "./PIDBar.svelte";
   import type { PidGridItem } from "$lib/types";
+  import { onDestroy } from "svelte";
 
   interface Props {
     item: PidGridItem;
@@ -21,7 +22,7 @@
   }
 
   let {
-    item,
+    item = {} as PidGridItem, // SAFETY FIX: Provide empty object fallback shape to prevent destructure exceptions
     dragDelay,
     popupDelay,
     onRequestDrag,
@@ -31,16 +32,37 @@
   }: Props = $props();
 
   let wrapperElement = $state<HTMLElement | null>(null);
-  
-  // Local state for coordinates, but visibility is controlled by the module-level activeMenuId
+
+  // Local state for coordinates
   let menuPos = $state({ x: 0, y: 0 });
-  let isMenuOpen = $derived(activeMenuId === item.id);
+
+  // FIXED: Converted from a global $derived expression to local state.
+  // This completely eliminates "derived_inert" stale memory errors when elements unmount.
+  let isMenuOpen = $state(false);
 
   let dragTimer: ReturnType<typeof setTimeout>;
   let popupTimer: ReturnType<typeof setTimeout>;
   let startCoords = { x: 0, y: 0 };
   let isTouchDevice = false;
   const MOVE_SLOP_LIMIT = 15; // Increased for better mobile stability
+
+  // Lifecycle Tracker: Prevents timers and coordinate updates from executing on orphaned objects mid-drag
+  let isDestroyed = false;
+
+  onDestroy(() => {
+    isDestroyed = true;
+    clearAllTimers();
+    // Cleanly yield the global menu lock if this card is deleted or re-rendered
+    if (activeMenuId === item?.id) {
+      activeMenuId = null;
+    }
+  });
+
+  // Keep local visibility in perfect sync with the global module state via an effect
+  $effect(() => {
+    if (isDestroyed || !item?.id) return;
+    isMenuOpen = activeMenuId === item.id;
+  });
 
   function triggerHaptic(duration: number | number[]) {
     if (typeof navigator !== "undefined" && navigator.vibrate) {
@@ -54,6 +76,7 @@
     clientY: number,
     originalEvent: any,
   ) {
+    if (isDestroyed || !item || !item.id) return; // Prevent tracking on incomplete or dead structures
     if (originalEvent.button && originalEvent.button !== 0) return;
 
     const targetPath = originalEvent.target as HTMLElement;
@@ -62,8 +85,10 @@
     )
       return;
 
-    isTouchDevice = originalEvent.type === "touchstart" || originalEvent.pointerType === "touch";
-    
+    isTouchDevice =
+      originalEvent.type === "touchstart" ||
+      originalEvent.pointerType === "touch";
+
     if (isTouchDevice) {
       triggerHaptic(20); // Immediate feedback to prime the engine
     }
@@ -75,20 +100,23 @@
       onRequestDrag();
     } else {
       dragTimer = setTimeout(() => {
+        if (isDestroyed) return;
         if (!isMenuOpen) triggerHaptic(50);
         onRequestDrag();
       }, dragDelay);
     }
 
     popupTimer = setTimeout(() => {
+      if (isDestroyed) return;
       triggerHaptic(isMenuOpen ? [30, 30, 30] : [70, 40, 70]);
+      // FIX: Secure pointer track coordinates safely BEFORE updating visibility flags
       triggerMenu(clientX, clientY);
       clearAllTimers();
     }, popupDelay);
   }
 
   function monitorMovement(clientX: number, clientY: number) {
-    if (!isTouchDevice) return;
+    if (isDestroyed || !isTouchDevice) return;
 
     const totalTravelX = Math.abs(clientX - startCoords.x);
     const totalTravelY = Math.abs(clientY - startCoords.y);
@@ -104,52 +132,60 @@
   }
 
   function handleContextMenu(e: MouseEvent) {
+    if (isDestroyed || !item || !item.id) return;
     e.preventDefault();
     e.stopPropagation();
     triggerMenu(e.clientX, e.clientY);
   }
 
   function triggerMenu(x: number, y: number) {
+    if (isDestroyed || !item || !item.id) return;
+
     if (isMenuOpen) {
       activeMenuId = null;
+      isMenuOpen = false;
     } else {
       const MENU_WIDTH = 220;
       const MENU_HEIGHT = 110;
-      
+
       let finalX = x;
       let finalY = y;
-      
-      // If menu would go off-screen to the right, open it to the left of the touch point
+
       if (x + MENU_WIDTH > window.innerWidth) {
         finalX = x - MENU_WIDTH;
       }
-      
-      // If it would go off-screen at the bottom, shift it up
+
       if (y + MENU_HEIGHT > window.innerHeight) {
         finalY = window.innerHeight - MENU_HEIGHT - 12;
       }
 
+      // Lock positions local to actual user pointer parameters
       menuPos.x = Math.max(12, finalX);
       menuPos.y = Math.max(12, finalY);
+
       activeMenuId = item.id;
+      isMenuOpen = true;
     }
   }
 
-  // FIX: Only close if the click actually happened OUTSIDE this specific card wrapper node
   function handleWindowCloseEvent(e: Event) {
+    if (isDestroyed) return;
     if (
       isMenuOpen &&
       wrapperElement &&
       !wrapperElement.contains(e.target as Node)
     ) {
       activeMenuId = null;
+      isMenuOpen = false;
     }
   }
 </script>
 
 <svelte:window
   onclick={handleWindowCloseEvent}
-  onscroll={() => { if (isMenuOpen) activeMenuId = null; }}
+  onscroll={() => {
+    if (isMenuOpen) activeMenuId = null;
+  }}
   ontouchstart={handleWindowCloseEvent}
 />
 
@@ -168,17 +204,29 @@
   ontouchend={clearAllTimers}
   onpointercancel={clearAllTimers}
 >
-  {#if item.displayMode === "chart"}
-    <PIDChartCard {item} />
-  {:else if item.displayMode === "gauge"}
-    <PIDGauge {item} />
-  {:else if item.displayMode === "bar"}
-    <PIDBar {item} />
+  {#if item && item.cardType}
+    {#if item.cardType === "pid"}
+      {#if item.displayMode === "chart"}
+        <PIDChartCard {item} />
+      {:else if item.displayMode === "gauge"}
+        <PIDGauge {item} />
+      {:else if item.displayMode === "bar"}
+        <PIDBar {item} />
+      {:else}
+        <PIDCard {item} />
+      {/if}
+    {:else if item.cardType === "battery"}
+      <div class="static-panel-placeholder">Battery Monitor Pane</div>
+    {:else if item.cardType === "dtcs"}
+      <div class="static-panel-placeholder">DTC Trouble Log</div>
+    {:else if item.cardType === "overview"}
+      <div class="static-panel-placeholder">Performance Panel</div>
+    {/if}
   {:else}
-    <PIDCard {item} />
+    <div class="card-loading-shimmer">Initializing layout channel...</div>
   {/if}
 
-  {#if resizeStart}
+  {#if resizeStart && item && item.id}
     <div
       class="resize-handle"
       onpointerdown={(e) => {
@@ -198,7 +246,7 @@
     ></div>
   {/if}
 
-  {#if isMenuOpen}
+  {#if isMenuOpen && item && item.id}
     <div
       class="local-context-menu"
       style="top: {menuPos.y}px; left: {menuPos.x}px;"
@@ -209,6 +257,7 @@
         onclick={() => {
           onOpenSettings?.(item);
           activeMenuId = null;
+          isMenuOpen = false;
         }}
       >
         Modify Component Proportions
@@ -219,6 +268,7 @@
           triggerHaptic([30, 40, 30]);
           onDelete?.(item.id);
           activeMenuId = null;
+          isMenuOpen = false;
         }}
       >
         Remove from Dashboard
@@ -255,6 +305,28 @@
     height: 10px;
     border-right: 2px solid rgba(255, 255, 255, 0.4);
     border-bottom: 2px solid rgba(255, 255, 255, 0.4);
+  }
+  .static-panel-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    color: #a0a0a5;
+    font-size: 0.85rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .card-loading-shimmer {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.3);
+    font-style: italic;
   }
   .local-context-menu {
     position: fixed;

@@ -8,7 +8,7 @@
     isOpen: boolean;
     item: PidGridItem | null;
     isNewCard?: boolean;
-    previewItem: any; // FIX: Twinned two-way bind state link
+    previewItem: any;
     onSave: (updatedItem: any) => void;
     onClose: () => void;
   }
@@ -31,35 +31,43 @@
     h: 7,
   });
 
-  let internalSync = false;
+  // Structural safety gate to ignore cascade updates during modal lifecycle changes
+  let internalSync = $state(false);
 
+  // Synchronize incoming data structures safely
   $effect(() => {
+    // If the modal isn't open, completely lock down the reactive sync operations
+    if (!isOpen) return;
+
     if (item) {
       internalSync = true;
       localItem = JSON.parse(JSON.stringify(item));
       previewItem = JSON.parse(JSON.stringify(item));
       setTimeout(() => {
         internalSync = false;
-      }, 0);
+      }, 5);
     } else if (isNewCard) {
       internalSync = true;
+      const immediateId = crypto.randomUUID();
+
       localItem = {
-        id: crypto.randomUUID(),
+        id: immediateId,
         cardType: "pid",
         pid: canStore.pidDefinitions[0]?.pid || 0,
         displayMode: "card",
         w: 10,
         h: 7,
       };
-      previewItem = null;
+
+      previewItem = { ...localItem };
+
       setTimeout(() => {
         internalSync = false;
-      }, 0);
+      }, 5);
     }
   });
 
-  // FIX: Changes update the disconnected previewItem state container only!
-  // The master source grid item is never touched here.
+  // Handle active modification live previews
   $effect(() => {
     const currentW = localItem.w;
     const currentH = localItem.h;
@@ -68,6 +76,7 @@
     const currentCardType = localItem.cardType;
 
     untrack(() => {
+      // Direct escape hatch: do not update anything if sync is active or modal is closing
       if (!isOpen || isNewCard || !item || internalSync) return;
 
       previewItem = {
@@ -100,14 +109,23 @@
   }
 
   function handleCancel() {
-    previewItem = null; // Clear out temporary dashboard canvas layouts
-    onClose();
+    internalSync = true; // Lock all reactive effects immediately
+    previewItem = null; // Safely clear the preview pipeline
+    onClose(); // Close modal synchronously
   }
 
   function handleSubmit(e: SubmitEvent) {
     e.preventDefault();
-    previewItem = null; // Reset preview reference pipeline
-    onSave(localItem); // Permanently write changes to local storage / DB records
+    internalSync = true; // Lock down all reactive effects immediately
+
+    // Extract a deep copy of the verified local parameters
+    const finalData = JSON.parse(JSON.stringify(localItem));
+
+    // Clear the preview assignment right before submitting to the dashboard
+    previewItem = null;
+
+    // Fire the save sequence synchronously to prevent reactive loop timing issues
+    onSave(finalData);
   }
 </script>
 
@@ -208,7 +226,42 @@
 {/if}
 
 <style>
-  /* Styling declarations remain exactly the same as before */
+  .orange-select-field {
+    margin-bottom: 1rem !important;
+    color: var(--pico-color) !important;
+    border: var(--pico-border-width) solid var(--pico-form-element-border-color);
+
+    /* Mirror the visual transparency depth used on your master dialog frame */
+    background-color: rgba(30, 30, 35, 0.65) !important;
+    backdrop-filter: blur(10px) saturate(1.2) !important;
+    -webkit-backdrop-filter: blur(10px) saturate(1.2) !important;
+  }
+
+  .orange-select-field:focus,
+  .orange-select-field:hover {
+    border-color: var(--pico-form-element-color) !important;
+    background-color: rgba(35, 35, 40, 0.8) !important;
+    box-shadow: none;
+  }
+
+  /* Target the individual selection option slots inside the picker pane drop down tree.
+     Since the OS prevents transparency here, we match the solid dark tone of your dashboard base. */
+  .orange-select-field option {
+    background-color: #1c1c21 !important; /* Solid dark theme matching your glass tint */
+    color: var(--pico-color) !important;
+    padding: 8px;
+  }
+
+  /* Optional clean up for your nested conditional panel area */
+  .conditional-settings-panel {
+    background-color: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    padding: 1rem;
+    border-radius: var(--pico-border-radius);
+    margin-bottom: 1.5rem;
+  }
+
+  /* All remaining dashboard/modal styles remain completely unchanged */
   .custom-modal-backdrop {
     position: fixed;
     top: 0;
@@ -231,10 +284,12 @@
       --backdrop-filter,
       blur(10px) saturate(1.2)
     ) !important;
-    background-color: var(
-      --backdrop-filter-background,
-      oklch(1 0 0 / 0.01)
-    ) !important;
+    background-color: rgba(
+      24,
+      24,
+      28,
+      0.75
+    ) !important; /* Stabilized glass layout backdrop base tint */
     border: var(--pico-border-width) solid var(--pico-form-element-border-color);
     max-width: 500px;
     width: 100%;
@@ -286,17 +341,6 @@
     margin-bottom: 0.35rem !important;
     display: block;
   }
-  .orange-select-field {
-    margin-bottom: 1rem !important;
-    background-color: rgb(
-      from var(--pico-form-element-background-color) r g b / 0.6
-    );
-  }
-  .orange-select-field:focus,
-  .orange-select-field:hover {
-    border-color: var(--pico-form-element-color) !important;
-    box-shadow: none;
-  }
   .steppers-inline-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -310,13 +354,6 @@
   .form-section-divider {
     border-color: var(--pico-muted-color);
     margin: 1.25rem 0;
-  }
-  .conditional-settings-panel {
-    background-color: var(--pico-form-element-disabled-background-color);
-    border: 1px solid var(--pico-border-color);
-    padding: 1rem;
-    border-radius: var(--pico-border-radius);
-    margin-bottom: 1.5rem;
   }
   .panel-section-title {
     font-size: 0.7rem;
