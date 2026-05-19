@@ -1,61 +1,99 @@
-// All widgets on the grid must have these basic layout fields
+// src/lib/types.ts
+
+/**
+ * CORE DASHBOARD TYPES
+ */
+
+export type CardType = "pid" | "battery" | "dtcs" | "overview";
+export type PidDisplayMode = "card" | "chart" | "gauge" | "bar";
+export type SpecialDisplayMode = "default" | "compact" | "detailed";
+
 export interface BaseGridItem {
-  id: string;          // Unique instance string (crypto.randomUUID())
-  x: number;
-  y: number;
+  id: string;
   w: number;
   h: number;
-  displayMode: string; // "card" | "chart" | "gauge" | "bar" etc.
+  cardType: CardType;
 }
 
-// Layout shape specifically for a standard vehicle PID card
 export interface PidGridItem extends BaseGridItem {
   cardType: "pid";
-  pid: number;         // Hex code pointer to the firmware definition
-  displayMode: "card" | "chart" | "gauge" | "bar";
+  pid: number;
+  displayMode: PidDisplayMode;
 }
 
-// Layout shape for your upcoming special modules
 export interface SpecialGridItem extends BaseGridItem {
   cardType: "battery" | "dtcs" | "overview";
-  displayMode: "default" | "compact" | "detailed";
+  displayMode: SpecialDisplayMode;
 }
 
-// The master union type for your layout state array
 export type DashboardItem = PidGridItem | SpecialGridItem;
 
-export const MODULE_CONFIGS = {
-  // PID Cards break down into explicit displayMode bounds
+/**
+ * MODULE CONSTRAINTS AND CONFIGURATIONS
+ */
+
+export interface Dimension {
+  w: number;
+  h: number;
+}
+
+export interface Bounds {
+  min: Dimension;
+  max: Dimension;
+}
+
+export type ModuleConfigs = {
+  pid: Record<PidDisplayMode, Bounds>;
+  battery: Bounds;
+  dtcs: Bounds;
+  overview: Bounds;
+};
+
+export const MODULE_CONFIGS: ModuleConfigs = {
   pid: {
     card: {
-      min: { w: 12, h: 7 },
-      max: { w: 18, h: 10 }
+      min: { w: 10, h: 7 },
+      max: { w: 20, h: 12 }
     },
     chart: {
-      min: { w: 18, h: 14 }, // Needs more room for axes and gridlines
-      max: { w: 53, h: 28 }
+      min: { w: 15, h: 12 },
+      max: { w: 60, h: 30 }
     },
     gauge: {
-      min: { w: 14, h: 14 }, // Square layout proportions look best for dials
-      max: { w: 20, h: 20 }
+      min: { w: 12, h: 12 },
+      max: { w: 24, h: 24 }
     },
     bar: {
-      min: { w: 12, h: 10 },
-      max: { w: 18, h: 14 }
+      min: { w: 10, h: 8 },
+      max: { w: 20, h: 15 }
     }
   },
-  
-  // Special cards remain bound to their core module shapes
   battery: {
-    min: { w: 12, h: 12 },
-    max: { w: 18, h: 18 }
+    min: { w: 6, h: 6 },
+    max: { w: 12, h: 12 }
   },
   dtcs: {
-    min: { w: 24, h: 14 },
-    max: { w: 53, h: 28 }
+    min: { w: 10, h: 8 },
+    max: { w: 30, h: 20 }
   },
   overview: {
-    min: { w: 36, h: 16 },
-    max: { w: 78, h: 32 }
+    min: { w: 17, h: 11 },
+    max: { w: 60, h: 20 }
   }
-} as const; // Frozen configuration block
+};
+
+/**
+ * HELPER FUNCTIONS
+ */
+
+export function getModuleBounds(item: DashboardItem): Bounds {
+  const DEFAULT_BOUNDS = MODULE_CONFIGS.pid.card;
+  
+  if (!item) return DEFAULT_BOUNDS;
+
+  if (item.cardType === "pid") {
+    return MODULE_CONFIGS.pid[item.displayMode] || DEFAULT_BOUNDS;
+  }
+  
+  return MODULE_CONFIGS[item.cardType] || DEFAULT_BOUNDS;
+}

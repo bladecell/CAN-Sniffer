@@ -1,80 +1,58 @@
-<script>
+<script lang="ts">
   import { canStore } from "$lib/canStore.svelte.js";
   import { onMount } from "svelte";
-  import { on } from "svelte/events";
-  import { CanStore } from "../canStore.svelte";
+  import { usePidData } from "$lib/pidHelpers.svelte.ts";
+
+  interface Props {
+    pids?: number[];
+    color?: string;
+    [key: string]: any;
+  }
 
   let {
     pids = [0x0c, 0x2206, 0x04],
     color = "#3b82f6",
-    moveStart = null,
     ...rest
-  } = $props();
+  }: Props = $props();
 
   onMount(async () => {
     await canStore.requestVin();
     await canStore.requestDTC();
   });
 
-  const system = $derived(canStore.system || {});
   const vin = $derived(canStore.vin || "--- UNKNOWN ---");
-  const battery = $derived(
-    canStore.wsCanStatus?.battery_voltage.toFixed(1) || "0.0",
-  );
-  const isOnline = $derived(
-    canStore.wsCanStatus?.state === "Connected" ? true : false,
-  );
-  const state = $derived(canStore.wsCanStatus?.state);
+  const battery = $derived(canStore.wsCanStatus?.battery_voltage.toFixed(1) || "0.0");
+  const isOnline = $derived(canStore.wsCanStatus?.state === "Connected");
+  const state = $derived(canStore.wsCanStatus?.state || "Disconnected");
   const utilization = $derived(canStore.wsCanStatus?.utilization ?? 0);
   const dtcCount = $derived(canStore.totalDTCs ?? 0);
 
-  const statusColor = $derived(
-    isOnline ? "var(--pico-ins-color)" : "var(--pico-del-color)",
-  );
+  const statusColor = $derived(isOnline ? "var(--pico-ins-color)" : "var(--pico-del-color)");
 
-  function getPidData(id) {
-    const def = canStore.pidDefinitions.find((d) => d.pid === id);
-    const data = canStore.pids.get(id);
-    return {
-      label: def?.name || id,
-      value: data ? data.value.toFixed(0) : "---",
-      unit: def?.unit || "",
-      color: `#${def?.color.toString(16).padStart(6, "0")}`,
-    };
-  }
-
-  let longPressTimer;
-
-  function handlePointerDown(e, moveStart) {
-    longPressTimer = setTimeout(() => moveStart(e), 300);
-  }
-
-  function handlePointerUp() {
-    clearTimeout(longPressTimer);
-  }
+  // Helper component to render individual PID badges using usePidData
+  // We'll define it as a small internal snippet or just use the data
 </script>
 
+{#snippet pidBadge(pidId: number)}
+  {@const metric = usePidData(() => pidId)}
+  <div class="pid-badge" style="background: color-mix(in srgb, {metric.color} 5%, transparent);">
+    <span class="pid-label">{metric.label}</span>
+    <span class="pid-value">{metric.displayValue}<small>{metric.unit}</small></span>
+  </div>
+{/snippet}
+
 <article class="overview-card" style="--brand-color: {color}" {...rest}>
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <header
-    class="card-header"
-    onpointerdown={moveStart ? (e) => handlePointerDown(e, moveStart) : null}
-    onpointerup={handlePointerUp}
-    onpointermove={handlePointerUp}
-    style="cursor: {moveStart ? 'grab' : 'default'}; touch-action: pan-y;"
-  >
+  <header class="card-header">
     <div class="titles">
       <div class="label">System Overview</div>
       <div class="vin-text">{vin}</div>
     </div>
 
     <div class="header-badges">
-      <!-- Utilization Badge -->
       <div class="badge util-badge">
         <span class="badge-label">Util</span>
         <span class="badge-value">{utilization}%</span>
       </div>
-      <!-- Connection Status Badge -->
       <div class="badge status-badge" style:--status-color={statusColor}>
         <div class="status-dot"></div>
         <span class="badge-value">{state}</span>
@@ -83,7 +61,6 @@
   </header>
 
   <div class="card-body">
-    <!-- Main Stats: Battery and DTC -->
     <div class="stats-row">
       <div class="stat-item">
         <span class="label">Battery</span>
@@ -101,17 +78,9 @@
       </div>
     </div>
 
-    <!-- PIDs Footer Row -->
     <div class="pid-footer">
       {#each pids as pidId}
-        {@const pid = getPidData(pidId)}
-        <div
-          class="pid-badge"
-          style="background: color-mix(in srgb, {pid.color} 5%, transparent);"
-        >
-          <span class="pid-label">{pid.label}</span>
-          <span class="pid-value">{pid.value}<small>{pid.unit}</small></span>
-        </div>
+        {@render pidBadge(pidId)}
       {/each}
     </div>
   </div>
@@ -129,19 +98,14 @@
     border: 1px solid var(--pico-muted-border-color);
     border-radius: 12px;
     background: color-mix(in srgb, var(--brand-color) 5%, transparent);
-    transition:
-      transform 0.2s ease,
-      box-shadow 0.2s ease;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
   }
 
-  /* HEADER & BADGES */
   .card-header {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
     margin-bottom: 16px;
-    background: none;
-    border: none;
   }
 
   .header-badges {
@@ -155,11 +119,7 @@
     align-items: center;
     gap: 6px;
     padding: 4px 8px;
-    background: color-mix(
-      in srgb,
-      var(--pico-muted-border-color) 20%,
-      transparent
-    );
+    background: color-mix(in srgb, var(--pico-muted-border-color) 20%, transparent);
     border-radius: 6px;
     border: 1px solid var(--pico-muted-border-color);
   }
@@ -175,10 +135,8 @@
     font-family: var(--pico-font-family-monospace);
     font-size: 0.7rem;
     font-weight: 800;
-    color: var(--pico-contrast);
   }
 
-  /* STATUS DOT ANIMATION */
   .status-dot {
     width: 6px;
     height: 6px;
@@ -188,17 +146,11 @@
     animation: pulse-glow 2s infinite alternate;
   }
 
-  /* TITLES */
-  .titles {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
+  .titles { display: flex; flex-direction: column; gap: 2px; }
 
   .label {
     font-size: 0.7rem;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
     color: var(--pico-muted-color);
     font-weight: 500;
   }
@@ -207,33 +159,15 @@
     font-family: var(--pico-font-family-monospace);
     font-size: 1.2rem;
     font-weight: 700;
-    color: var(--pico-contrast);
   }
 
-  /* BODY STATS */
-  .card-body {
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-  }
+  .card-body { display: flex; flex-direction: column; gap: 20px; }
 
-  .stats-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-  }
+  .stats-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 
-  .stat-item {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
+  .stat-item { display: flex; flex-direction: column; gap: 4px; }
 
-  .value {
-    display: flex;
-    align-items: baseline;
-    gap: 4px;
-  }
+  .value { display: flex; align-items: baseline; gap: 4px; }
 
   .number {
     font-size: 2rem;
@@ -242,9 +176,7 @@
     font-family: var(--pico-font-family-monospace);
   }
 
-  .number.error {
-    color: var(--pico-del-color);
-  }
+  .number.error { color: var(--pico-del-color); }
 
   .unit {
     font-size: 0.9rem;
@@ -252,12 +184,7 @@
     font-family: var(--pico-font-family-monospace);
   }
 
-  /* PID FOOTER */
-  .pid-footer {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-  }
+  .pid-footer { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 
   .pid-badge {
     padding: 8px;
@@ -291,18 +218,9 @@
   }
 
   @keyframes pulse-glow {
-    0% {
-      opacity: 1;
-      box-shadow: 0 0 1px var(--status-color);
-    }
-    50% {
-      opacity: 0.85;
-      box-shadow: 0 0 6px var(--status-color);
-    }
-    100% {
-      opacity: 1;
-      box-shadow: 0 0 8px var(--status-color);
-    }
+    0% { opacity: 1; box-shadow: 0 0 1px var(--status-color); }
+    50% { opacity: 0.85; box-shadow: 0 0 6px var(--status-color); }
+    100% { opacity: 1; box-shadow: 0 0 8px var(--status-color); }
   }
 
   .overview-card:hover {

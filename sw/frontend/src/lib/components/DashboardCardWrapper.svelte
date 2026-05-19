@@ -1,67 +1,53 @@
 <script lang="ts" module>
-  // Svelte 5 module state: ensures only one menu is open across all dashboard instances
+  // Global state to ensure only one menu is open across all dashboard instances
   let activeMenuId = $state<string | null>(null);
 </script>
 
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import PIDCard from "$lib/components/PIDCard.svelte";
   import PIDChartCard from "$lib/components/PIDChart.svelte";
   import PIDGauge from "./PIDGauge.svelte";
   import PIDBar from "./PIDBar.svelte";
-  import type { PidGridItem } from "$lib/types";
-  import { onDestroy } from "svelte";
+  import OverviewCard from "./OverviewCard.svelte";
+  import type { DashboardItem, PidGridItem } from "$lib/types";
 
   interface Props {
-    item: PidGridItem;
-    dragDelay: number;
-    popupDelay: number;
+    item: DashboardItem;
     onRequestDrag: () => void;
-    resizeStart?: ((e: any) => void) | null;
-    onOpenSettings?: (item: PidGridItem) => void;
-    onDelete?: (id: string) => void;
+    resizeStart: (e: any) => void;
+    onOpenSettings: (item: DashboardItem) => void;
+    onDelete: (id: string) => void;
   }
 
-  let {
-    item = {} as PidGridItem, // SAFETY FIX: Provide empty object fallback shape to prevent destructure exceptions
-    dragDelay,
-    popupDelay,
-    onRequestDrag,
-    resizeStart = null,
-    onOpenSettings,
-    onDelete,
-  }: Props = $props();
+  let { item, onRequestDrag, resizeStart, onOpenSettings, onDelete }: Props =
+    $props();
 
+  // --- LOCAL STATE ---
   let wrapperElement = $state<HTMLElement | null>(null);
-
-  // Local state for coordinates
   let menuPos = $state({ x: 0, y: 0 });
-
-  // FIXED: Converted from a global $derived expression to local state.
-  // This completely eliminates "derived_inert" stale memory errors when elements unmount.
   let isMenuOpen = $state(false);
 
+  // Timers and Tracking
   let dragTimer: ReturnType<typeof setTimeout>;
   let popupTimer: ReturnType<typeof setTimeout>;
   let startCoords = { x: 0, y: 0 };
   let isTouchDevice = false;
-  const MOVE_SLOP_LIMIT = 15; // Increased for better mobile stability
-
-  // Lifecycle Tracker: Prevents timers and coordinate updates from executing on orphaned objects mid-drag
   let isDestroyed = false;
+
+  const MOVE_SLOP_LIMIT = 15;
+  const DRAG_DELAY = 150;
+  const POPUP_DELAY = 1000;
+
+  // Sync visibility with global module state
+  $effect(() => {
+    if (!isDestroyed) isMenuOpen = activeMenuId === item.id;
+  });
 
   onDestroy(() => {
     isDestroyed = true;
-    clearAllTimers();
-    // Cleanly yield the global menu lock if this card is deleted or re-rendered
-    if (activeMenuId === item?.id) {
-      activeMenuId = null;
-    }
-  });
-
-  // Keep local visibility in perfect sync with the global module state via an effect
-  $effect(() => {
-    if (isDestroyed || !item?.id) return;
-    isMenuOpen = activeMenuId === item.id;
+    clearTimers();
+    if (activeMenuId === item.id) activeMenuId = null;
   });
 
   function triggerHaptic(duration: number | number[]) {
@@ -71,214 +57,157 @@
     }
   }
 
-  function engageHoldTracking(
-    clientX: number,
-    clientY: number,
-    originalEvent: any,
-  ) {
-    if (isDestroyed || !item || !item.id) return; // Prevent tracking on incomplete or dead structures
-    if (originalEvent.button && originalEvent.button !== 0) return;
-
-    const targetPath = originalEvent.target as HTMLElement;
-    if (
-      targetPath.closest("button, select, .minimal-ui-stepper, .resize-handle")
-    )
+  function engageHoldTracking(clientX: number, clientY: number, e: any) {
+    if (isDestroyed) return;
+    if (e.button && e.button !== 0) return;
+    if (e.target.closest("button, select, .minimal-ui-stepper, .resize-handle"))
       return;
 
-    isTouchDevice =
-      originalEvent.type === "touchstart" ||
-      originalEvent.pointerType === "touch";
-
-    if (isTouchDevice) {
-      triggerHaptic(20); // Immediate feedback to prime the engine
-    }
+    isTouchDevice = e.type === "touchstart" || e.pointerType === "touch";
+    if (isTouchDevice) triggerHaptic(20);
 
     startCoords = { x: clientX, y: clientY };
-    clearAllTimers();
+    clearTimers();
 
     if (!isTouchDevice) {
       onRequestDrag();
     } else {
       dragTimer = setTimeout(() => {
-        if (isDestroyed) return;
-        if (!isMenuOpen) triggerHaptic(50);
-        onRequestDrag();
-      }, dragDelay);
+        if (!isDestroyed && !isMenuOpen) {
+          triggerHaptic(50);
+          onRequestDrag();
+        }
+      }, DRAG_DELAY);
     }
 
     popupTimer = setTimeout(() => {
-      if (isDestroyed) return;
-      triggerHaptic(isMenuOpen ? [30, 30, 30] : [70, 40, 70]);
-      // FIX: Secure pointer track coordinates safely BEFORE updating visibility flags
-      triggerMenu(clientX, clientY);
-      clearAllTimers();
-    }, popupDelay);
+      if (!isDestroyed) {
+        triggerHaptic(isMenuOpen ? [30, 30, 30] : [70, 40, 70]);
+        openMenu(clientX, clientY);
+      }
+      clearTimers();
+    }, POPUP_DELAY);
   }
 
   function monitorMovement(clientX: number, clientY: number) {
     if (isDestroyed || !isTouchDevice) return;
-
-    const totalTravelX = Math.abs(clientX - startCoords.x);
-    const totalTravelY = Math.abs(clientY - startCoords.y);
-
-    if (totalTravelX > MOVE_SLOP_LIMIT || totalTravelY > MOVE_SLOP_LIMIT) {
-      clearAllTimers();
+    if (
+      Math.abs(clientX - startCoords.x) > MOVE_SLOP_LIMIT ||
+      Math.abs(clientY - startCoords.y) > MOVE_SLOP_LIMIT
+    ) {
+      clearTimers();
     }
   }
 
-  function clearAllTimers() {
+  function clearTimers() {
     clearTimeout(dragTimer);
     clearTimeout(popupTimer);
   }
 
-  function handleContextMenu(e: MouseEvent) {
-    if (isDestroyed || !item || !item.id) return;
-    e.preventDefault();
-    e.stopPropagation();
-    triggerMenu(e.clientX, e.clientY);
+  function openMenu(x: number, y: number) {
+    const W = 220;
+    const H = 110;
+    let finalX = x + W > window.innerWidth ? x - W : x;
+    let finalY = y + H > window.innerHeight ? window.innerHeight - H - 12 : y;
+
+    menuPos = { x: Math.max(12, finalX), y: Math.max(12, finalY) };
+    activeMenuId = item.id;
   }
 
-  function triggerMenu(x: number, y: number) {
-    if (isDestroyed || !item || !item.id) return;
-
-    if (isMenuOpen) {
-      activeMenuId = null;
-      isMenuOpen = false;
-    } else {
-      const MENU_WIDTH = 220;
-      const MENU_HEIGHT = 110;
-
-      let finalX = x;
-      let finalY = y;
-
-      if (x + MENU_WIDTH > window.innerWidth) {
-        finalX = x - MENU_WIDTH;
-      }
-
-      if (y + MENU_HEIGHT > window.innerHeight) {
-        finalY = window.innerHeight - MENU_HEIGHT - 12;
-      }
-
-      // Lock positions local to actual user pointer parameters
-      menuPos.x = Math.max(12, finalX);
-      menuPos.y = Math.max(12, finalY);
-
-      activeMenuId = item.id;
-      isMenuOpen = true;
-    }
-  }
-
-  function handleWindowCloseEvent(e: Event) {
-    if (isDestroyed) return;
+  function handleClose(e: Event) {
     if (
       isMenuOpen &&
       wrapperElement &&
       !wrapperElement.contains(e.target as Node)
     ) {
       activeMenuId = null;
-      isMenuOpen = false;
     }
   }
 </script>
 
 <svelte:window
-  onclick={handleWindowCloseEvent}
-  onscroll={() => {
-    if (isMenuOpen) activeMenuId = null;
-  }}
-  ontouchstart={handleWindowCloseEvent}
+  onclick={handleClose}
+  ontouchstart={handleClose}
+  onscroll={() => isMenuOpen && (activeMenuId = null)}
 />
 
 <div
   bind:this={wrapperElement}
-  class="pid-card-wrapper"
-  oncontextmenu={handleContextMenu}
+  class="dashboard-card-wrapper"
+  oncontextmenu={(e) => {
+    e.preventDefault();
+    openMenu(e.clientX, e.clientY);
+  }}
   onpointerdown={(e) => engageHoldTracking(e.clientX, e.clientY, e)}
   ontouchstart={(e) => {
     isTouchDevice = true;
-    const touch = e.touches[0];
-    engageHoldTracking(touch.clientX, touch.clientY, e);
+    engageHoldTracking(e.touches[0].clientX, e.touches[0].clientY, e);
   }}
   onpointermove={(e) => monitorMovement(e.clientX, e.clientY)}
-  onpointerup={clearAllTimers}
-  ontouchend={clearAllTimers}
-  onpointercancel={clearAllTimers}
+  onpointerup={clearTimers}
+  ontouchend={clearTimers}
+  onpointercancel={clearTimers}
 >
-  {#if item && item.cardType}
-    {#if item.cardType === "pid"}
-      {#if item.displayMode === "chart"}
-        <PIDChartCard {item} />
-      {:else if item.displayMode === "gauge"}
-        <PIDGauge {item} />
-      {:else if item.displayMode === "bar"}
-        <PIDBar {item} />
-      {:else}
-        <PIDCard {item} />
-      {/if}
-    {:else if item.cardType === "battery"}
-      <div class="static-panel-placeholder">Battery Monitor Pane</div>
-    {:else if item.cardType === "dtcs"}
-      <div class="static-panel-placeholder">DTC Trouble Log</div>
-    {:else if item.cardType === "overview"}
-      <div class="static-panel-placeholder">Performance Panel</div>
+  {#if item.cardType === "pid"}
+    {@const pidItem = item as PidGridItem}
+    {#if pidItem.displayMode === "chart"}
+      <PIDChartCard item={pidItem} />
+    {:else if pidItem.displayMode === "gauge"}
+      <PIDGauge item={pidItem} />
+    {:else if pidItem.displayMode === "bar"}
+      <PIDBar item={pidItem} />
+    {:else}
+      <PIDCard item={pidItem} />
     {/if}
-  {:else}
-    <div class="card-loading-shimmer">Initializing layout channel...</div>
+  {:else if item.cardType === "overview"}
+    <OverviewCard />
+  {:else if item.cardType === "battery"}
+    <div class="static-panel-placeholder">Battery Monitor Pane</div>
+  {:else if item.cardType === "dtcs"}
+    <div class="static-panel-placeholder">DTC Trouble Log</div>
   {/if}
 
-  {#if resizeStart && item && item.id}
-    <div
-      class="resize-handle"
-      onpointerdown={(e) => {
-        e.stopPropagation();
-        resizeStart?.(e);
-      }}
-      ontouchstart={(e) => {
-        e.stopPropagation();
-        popupTimer = setTimeout(() => {
-          triggerHaptic(30);
-          resizeStart?.(e);
-        }, popupDelay);
-      }}
-      ontouchend={() => clearTimeout(popupTimer)}
-      ontouchmove={() => clearTimeout(popupTimer)}
-      title="Drag to resize"
-    ></div>
-  {/if}
+  <div
+    class="resize-handle"
+    onpointerdown={(e) => {
+      e.stopPropagation();
+      resizeStart(e);
+    }}
+    ontouchstart={(e) => {
+      e.stopPropagation();
+      popupTimer = setTimeout(() => {
+        triggerHaptic(30);
+        resizeStart(e);
+      }, POPUP_DELAY);
+    }}
+  ></div>
 
-  {#if isMenuOpen && item && item.id}
+  {#if isMenuOpen}
     <div
       class="local-context-menu"
       style="top: {menuPos.y}px; left: {menuPos.x}px;"
       onclick={(e) => e.stopPropagation()}
-      ontouchstart={(e) => e.stopPropagation()}
     >
       <button
         onclick={() => {
-          onOpenSettings?.(item);
+          onOpenSettings(item);
           activeMenuId = null;
-          isMenuOpen = false;
-        }}
+        }}>Modify Proportions</button
       >
-        Modify Component Proportions
-      </button>
       <button
         class="delete-action"
         onclick={() => {
           triggerHaptic([30, 40, 30]);
-          onDelete?.(item.id);
+          onDelete(item.id);
           activeMenuId = null;
-          isMenuOpen = false;
-        }}
+        }}>Remove Module</button
       >
-        Remove from Dashboard
-      </button>
     </div>
   {/if}
 </div>
 
 <style>
-  .pid-card-wrapper {
+  .dashboard-card-wrapper {
     width: 100%;
     height: 100%;
     position: relative;
@@ -292,9 +221,7 @@
     width: 28px;
     height: 28px;
     cursor: se-resize;
-    background: transparent;
     z-index: 100;
-    touch-action: none !important;
   }
   .resize-handle::after {
     content: "";
@@ -317,16 +244,8 @@
     font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-  }
-  .card-loading-shimmer {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-    height: 100%;
-    font-size: 0.8rem;
-    color: rgba(255, 255, 255, 0.3);
-    font-style: italic;
+    background: rgba(30, 30, 35, 0.4);
+    border-radius: 8px;
   }
   .local-context-menu {
     position: fixed;
@@ -335,29 +254,27 @@
     backdrop-filter: blur(12px);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 8px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
     padding: 6px;
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    min-width: 210px;
+    min-width: 200px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
   }
   .local-context-menu button {
     background: transparent;
     color: #e4e4e7;
     border: none;
     text-align: left;
-    padding: 12px 14px;
+    padding: 10px 14px;
     border-radius: 4px;
     cursor: pointer;
     font-size: 0.9rem;
-    font-weight: 500;
   }
   .local-context-menu button:hover {
     background: rgba(255, 255, 255, 0.06);
     color: #ffffff;
   }
-  .local-context-menu button.delete-action {
-    color: #f87171;
+  .delete-action {
+    color: #f87171 !important;
   }
 </style>

@@ -1,21 +1,20 @@
 <script lang="ts">
   import { canStore } from "$lib/canStore.svelte.js";
-  import { onMount, untrack, tick } from "svelte";
+  import { onMount, untrack, tick, onDestroy } from "svelte";
   import uPlot from "uplot";
   import "uplot/dist/uPlot.min.css";
   import Icon from "$lib/Icon.svelte";
   import { usePidData } from "$lib/pidHelpers.svelte.ts";
-  import type { PidGridItem } from "$lib/types"; // Import our contract type
+  import type { PidGridItem } from "$lib/types";
 
   interface Props {
-    item: PidGridItem; // Expect our structural routing definition explicitly
+    item: PidGridItem;
     update_interval_ms?: number;
     [key: string]: any;
   }
 
   let { item, update_interval_ms = 500, ...rest }: Props = $props();
 
-  // Instantiate the library with our reactive prop getter closure
   const metric = usePidData(() => item.pid);
 
   // --- STATE ---
@@ -24,135 +23,126 @@
   let wrapperHeight = $state(120);
   let chartInstance: uPlot | null = null;
 
-  // Track size modifications reactively (keeps uPlot's fast size engine)
-  $effect(() => {
-    const w = wrapperWidth;
-    const h = wrapperHeight;
-
-    untrack(() => {
-      if (chartInstance && w > 0 && h > 0) {
-        chartInstance.setSize({
-          width: Math.floor(w),
-          height: Math.floor(h),
-        });
-      }
-    });
-  });
-
-  // Plain standard arrays to bypass Svelte proxy overhead loop during push/shift mutations
+  // Plain standard arrays for performance
   let timeData: number[] = [];
   let valueData: number[] = [];
   const MAX_HISTORY_SEC = 60;
 
   function hexToRgba(hex: string, alpha: number): string {
-    hex = hex.replace("#", "");
-    const r = parseInt(hex.substring(0, 2), 16);
-    const g = parseInt(hex.substring(2, 4), 16);
-    const b = parseInt(hex.substring(4, 6), 16);
+    const cleanHex = hex.replace("#", "");
+    const r = parseInt(cleanHex.substring(0, 2), 16) || 0;
+    const g = parseInt(cleanHex.substring(2, 4), 16) || 0;
+    const b = parseInt(cleanHex.substring(4, 6), 16) || 0;
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   }
 
-  onMount(() => {
-    let unsubscribe = () => {};
+  // 1. Initialization and Re-configuration Effect
+  $effect(() => {
+    // Track dependencies we want to trigger a RE-INIT or UPDATE
+    const color = metric.color;
+    const min = metric.min;
+    const max = metric.max;
+    const pid = item.pid;
+    const w = wrapperWidth;
+    const h = wrapperHeight;
 
-    const setup = async () => {
-      // Isolate library reads using untrack so we only capture baseline options on initialization
-      const config = untrack(() => ({
-        pid: item.pid,
-        color: metric.color,
-        min: metric.min,
-        max: metric.max,
-      }));
+    if (!chartRef || w <= 0 || h <= 0) return;
 
-      // 1. HYDRATE (Load background historical frames)
-      const data = canStore.pids.get(config.pid);
-      if (data && data.history && data.history.length > 0) {
-        timeData = data.history.map((h: any) => h.timestamp);
-        valueData = data.history.map((h: any) => h.value);
-      }
+    if (!chartInstance) {
+      // First time initialization
+      untrack(() => initChart(pid, color, min, max));
+    } else {
+      // Update existing instance
+      untrack(() => updateChartConfig(color, min, max, w, h));
+    }
+  });
 
-      await tick();
-      if (!chartRef) return;
+  function initChart(pid: number, color: string, min: number, max: number) {
+    const data = canStore.pids.get(pid);
+    if (data?.history?.length) {
+      timeData = data.history.map((h: any) => h.timestamp);
+      valueData = data.history.map((h: any) => h.value);
+    }
 
-      const opts: uPlot.Options = {
-        width: wrapperWidth,
-        height: wrapperHeight,
-        cursor: { show: false },
-        legend: { show: false },
-        padding: [10, 0, 10, 0],
-        scales: {
-          x: { time: true },
-          y: {
-            range: () => [Number(config.min), Number(config.max)],
-            clean: true,
+    const opts: uPlot.Options = {
+      width: wrapperWidth,
+      height: wrapperHeight,
+      cursor: { show: false },
+      legend: { show: false },
+      padding: [10, 0, 10, 0],
+      scales: {
+        x: { time: true },
+        y: {
+          range: (u, min, max) => [Number(metric.min), Number(metric.max)],
+          auto: false,
+        },
+      },
+      axes: [{ show: false }, { show: false }],
+      series: [
+        {},
+        {
+          stroke: () => metric.color,
+          width: 3,
+          paths: uPlot.paths.spline ? uPlot.paths.spline() : undefined,
+          points: { show: false },
+          spanGaps: true,
+          fill: (u) => {
+            const ctx = u.ctx;
+            const gradient = ctx.createLinearGradient(0, 0, 0, u.bbox.height);
+            gradient.addColorStop(0, hexToRgba(metric.color, 0.4));
+            gradient.addColorStop(1, hexToRgba(metric.color, 0.0));
+            return gradient;
           },
         },
-        axes: [{ show: false }, { show: false }],
-        series: [
-          {},
-          {
-            stroke: config.color,
-            width: 3,
-            paths: uPlot.paths.spline ? uPlot.paths.spline() : undefined,
-            points: { show: false },
-            spanGaps: true,
-            fill: (u) => {
-              const ctx = u.ctx;
-              const gradient = ctx.createLinearGradient(0, 0, 0, u.bbox.height);
-              gradient.addColorStop(0, hexToRgba(config.color, 0.4));
-              gradient.addColorStop(1, hexToRgba(config.color, 0.0));
-              return gradient;
-            },
-          },
-        ],
-        hooks: {
-          drawSeries: [
-            (u) => {
-              if (!metric.supported || u.data[1].length === 0) return;
-              const ctx = u.ctx;
-              const lastIdx = u.data[0].length - 1;
-              const cx = u.valToPos(u.data[0][lastIdx], "x", true);
-              const cy = u.valToPos(u.data[1][lastIdx], "y", true);
-              ctx.beginPath();
-              ctx.arc(cx, cy, 5, 0, 2 * Math.PI);
-              ctx.fillStyle = config.color;
-              ctx.fill();
-            },
-          ],
-        },
-      };
-
-      chartInstance = new uPlot(opts, [timeData, valueData], chartRef);
-
-      // Continuous stream event subscription mapping to our targeted configuration ID
-      unsubscribe = canStore.subscribe((update: any) => {
-        if (update.pid !== config.pid) return;
-
-        timeData.push(update.timestamp);
-        valueData.push(update.value);
-
-        const cutoff = update.timestamp - MAX_HISTORY_SEC * 1000;
-        while (timeData.length > 0 && timeData[0] < cutoff) {
-          timeData.shift();
-          valueData.shift();
-        }
-
-        if (chartInstance) {
-          chartInstance.setData([timeData, valueData], false);
-
-          chartInstance.setScale("x", {
-            min: cutoff,
-            max: update.timestamp,
-          });
-        }
-      });
+      ],
     };
 
-    setup();
+    chartInstance = new uPlot(opts, [timeData, valueData], chartRef!);
+  }
+
+  function updateChartConfig(
+    color: string,
+    min: number,
+    max: number,
+    w: number,
+    h: number,
+  ) {
+    if (!chartInstance) return;
+
+    // Update size
+    chartInstance.setSize({ width: Math.floor(w), height: Math.floor(h) });
+
+    // Update Scales
+    chartInstance.setScale("y", { min, max });
+
+    // Redraw to apply dynamic stroke and fill colors from metric.color
+    chartInstance.redraw();
+  }
+
+  // 2. Data Subscription Management
+  onMount(() => {
+    let unsubscribe = canStore.subscribe((update: any) => {
+      if (update.pid !== item.pid) return;
+
+      timeData.push(update.timestamp);
+      valueData.push(update.value);
+
+      const cutoff = update.timestamp - MAX_HISTORY_SEC * 1000;
+      while (timeData.length > 0 && timeData[0] < cutoff) {
+        timeData.shift();
+        valueData.shift();
+      }
+
+      if (chartInstance) {
+        chartInstance.setData([timeData, valueData], false);
+        chartInstance.setScale("x", { min: cutoff, max: update.timestamp });
+      }
+    });
 
     return () => {
       unsubscribe();
-      if (chartInstance) chartInstance.destroy();
+      chartInstance?.destroy();
+      chartInstance = null;
     };
   });
 </script>
@@ -198,7 +188,6 @@
 </article>
 
 <style>
-  /* All visual layout configurations remain completely untouched */
   .pid-card {
     width: 100%;
     height: 100%;
@@ -300,5 +289,6 @@
     position: relative;
     min-height: 0;
     min-width: 0;
+    overflow: hidden;
   }
 </style>
