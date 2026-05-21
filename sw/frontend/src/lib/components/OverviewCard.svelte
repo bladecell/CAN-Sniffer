@@ -21,13 +21,17 @@
   });
 
   const vin = $derived(canStore.vin || "--- UNKNOWN ---");
-  const battery = $derived(canStore.wsCanStatus?.battery_voltage.toFixed(1) || "0.0");
+  const battery = $derived(
+    canStore.wsCanStatus?.battery_voltage.toFixed(1) || "0.0",
+  );
   const isOnline = $derived(canStore.wsCanStatus?.state === "Connected");
   const state = $derived(canStore.wsCanStatus?.state || "Disconnected");
   const utilization = $derived(canStore.wsCanStatus?.utilization ?? 0);
   const dtcCount = $derived(canStore.totalDTCs ?? 0);
 
-  const statusColor = $derived(isOnline ? "var(--pico-ins-color)" : "var(--pico-del-color)");
+  const statusColor = $derived(
+    isOnline ? "var(--pico-ins-color)" : "var(--pico-del-color)",
+  );
 
   // Helper component to render individual PID badges using usePidData
   // We'll define it as a small internal snippet or just use the data
@@ -35,9 +39,14 @@
 
 {#snippet pidBadge(pidId: number)}
   {@const metric = usePidData(() => pidId)}
-  <div class="pid-badge" style="background: color-mix(in srgb, {metric.color} 5%, transparent);">
+  <div
+    class="pid-badge"
+    style="background: color-mix(in srgb, {metric.color} 5%, transparent);"
+  >
     <span class="pid-label">{metric.label}</span>
-    <span class="pid-value">{metric.displayValue}<small>{metric.unit}</small></span>
+    <span class="pid-value"
+      >{metric.displayValue}<small>{metric.unit}</small></span
+    >
   </div>
 {/snippet}
 
@@ -98,7 +107,9 @@
     border: 1px solid var(--pico-muted-border-color);
     border-radius: 12px;
     background: color-mix(in srgb, var(--brand-color) 5%, transparent);
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    transition:
+      transform 0.2s ease,
+      box-shadow 0.2s ease;
   }
 
   .card-header {
@@ -106,6 +117,8 @@
     justify-content: space-between;
     align-items: flex-start;
     margin-bottom: 16px;
+    background: none;
+    border: none;
   }
 
   .header-badges {
@@ -119,7 +132,11 @@
     align-items: center;
     gap: 6px;
     padding: 4px 8px;
-    background: color-mix(in srgb, var(--pico-muted-border-color) 20%, transparent);
+    background: color-mix(
+      in srgb,
+      var(--pico-muted-border-color) 20%,
+      transparent
+    );
     border-radius: 6px;
     border: 1px solid var(--pico-muted-border-color);
   }
@@ -146,7 +163,11 @@
     animation: pulse-glow 2s infinite alternate;
   }
 
-  .titles { display: flex; flex-direction: column; gap: 2px; }
+  .titles {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
 
   .label {
     font-size: 0.7rem;
@@ -161,13 +182,29 @@
     font-weight: 700;
   }
 
-  .card-body { display: flex; flex-direction: column; gap: 20px; }
+  .card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
 
-  .stats-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .stats-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
 
-  .stat-item { display: flex; flex-direction: column; gap: 4px; }
+  .stat-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
 
-  .value { display: flex; align-items: baseline; gap: 4px; }
+  .value {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+  }
 
   .number {
     font-size: 2rem;
@@ -176,7 +213,9 @@
     font-family: var(--pico-font-family-monospace);
   }
 
-  .number.error { color: var(--pico-del-color); }
+  .number.error {
+    color: var(--pico-del-color);
+  }
 
   .unit {
     font-size: 0.9rem;
@@ -184,7 +223,11 @@
     font-family: var(--pico-font-family-monospace);
   }
 
-  .pid-footer { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .pid-footer {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
 
   .pid-badge {
     padding: 8px;
@@ -218,9 +261,18 @@
   }
 
   @keyframes pulse-glow {
-    0% { opacity: 1; box-shadow: 0 0 1px var(--status-color); }
-    50% { opacity: 0.85; box-shadow: 0 0 6px var(--status-color); }
-    100% { opacity: 1; box-shadow: 0 0 8px var(--status-color); }
+    0% {
+      opacity: 1;
+      box-shadow: 0 0 1px var(--status-color);
+    }
+    50% {
+      opacity: 0.85;
+      box-shadow: 0 0 6px var(--status-color);
+    }
+    100% {
+      opacity: 1;
+      box-shadow: 0 0 8px var(--status-color);
+    }
   }
 
   .overview-card:hover {
