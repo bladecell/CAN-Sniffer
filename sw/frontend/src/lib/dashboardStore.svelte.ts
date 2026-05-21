@@ -1,6 +1,6 @@
 // src/lib/dashboardStore.svelte.ts
 import { untrack } from "svelte";
-import type { DashboardItem, CardType, PidDisplayMode } from "./types";
+import type { DashboardItem, CardType, PidDisplayMode, OverviewGridItem } from "./types";
 import { getModuleBounds } from "./types";
 
 const STORAGE_KEY = "dashboard-unified-flow";
@@ -49,6 +49,17 @@ export class DashboardStore {
         w: 10,
         h: 7,
       };
+    } else if (type === "overview") {
+      const bounds = getModuleBounds({ cardType: type, id, w: 0, h: 0, displayMode: "default" } as any);
+      return {
+        id,
+        cardType: "overview",
+        displayMode: "default",
+        w: bounds.min.w,
+        h: bounds.min.h,
+        pids: [0x0c, 0x2206, 0x04], // RPM, Gear, Load (defaults)
+        color: "#3b82f6"
+      } as OverviewGridItem;
     } else {
       const bounds = getModuleBounds({ cardType: type, id, w: 0, h: 0, displayMode: "default" } as any);
       return {

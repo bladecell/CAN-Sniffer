@@ -1,7 +1,12 @@
 <script lang="ts">
   import { canStore } from "$lib/canStore.svelte.js";
   import TelemetryStepper from "./TelemetryStepper.svelte";
-  import type { DashboardItem, PidGridItem } from "$lib/types";
+  import type {
+    DashboardItem,
+    PidGridItem,
+    SpecialGridItem,
+    OverviewGridItem,
+  } from "$lib/types";
   import { MODULE_CONFIGS, getModuleBounds } from "$lib/types";
   import { untrack } from "svelte";
 
@@ -30,7 +35,7 @@
     displayMode: "card",
     w: 10,
     h: 7,
-  } as PidGridItem);
+  } as DashboardItem);
 
   let internalSync = $state(false);
 
@@ -39,8 +44,19 @@
       untrack(() => {
         internalSync = true;
         localItem = JSON.parse(JSON.stringify(item));
-        previewItem = JSON.parse(JSON.stringify(item));
-        // Small delay to allow the effect system to settle before enabling live updates
+
+        // POLYFILL: Ensure Overview cards have required properties
+        if (localItem.cardType === "overview") {
+          const overItem = localItem as OverviewGridItem;
+          if (!overItem.pids || overItem.pids.length !== 3) {
+            overItem.pids = [0x0c, 0x2206, 0x04];
+          }
+          if (!overItem.color) {
+            overItem.color = "#3b82f6";
+          }
+        }
+
+        previewItem = JSON.parse(JSON.stringify(localItem));
         setTimeout(() => (internalSync = false), 50);
       });
     }
@@ -52,32 +68,58 @@
 
     // Explicitly read key properties to ensure Svelte tracks them
     const { w, h, cardType } = localItem;
-    const mode = (localItem as any).displayMode;
-    const pid = (localItem as any).pid;
 
     untrack(() => {
       // Re-create object to trigger reference-based reactivity in parent
-      previewItem = {
-        ...localItem,
-        w,
-        h,
-        cardType,
-        displayMode: mode,
-        pid,
-      };
+      const nextPreview = { ...localItem, w, h, cardType };
+
+      if (localItem.cardType === "pid") {
+        const li = localItem as PidGridItem;
+        (nextPreview as PidGridItem).pid = li.pid;
+        (nextPreview as PidGridItem).displayMode = li.displayMode;
+      } else if (localItem.cardType === "overview") {
+        const li = localItem as OverviewGridItem;
+        (nextPreview as OverviewGridItem).displayMode = li.displayMode;
+        (nextPreview as OverviewGridItem).pids = [...li.pids];
+        (nextPreview as OverviewGridItem).color = li.color;
+      } else {
+        (nextPreview as SpecialGridItem).displayMode = (localItem as any)
+          .displayMode;
+      }
+
+      previewItem = nextPreview as DashboardItem;
     });
   });
 
   const bounds = $derived(getModuleBounds(localItem));
 
   function handleCardTypeChange() {
-    const type = localItem.cardType;
-    if (type === "pid") {
+    // Resets the entire item structure when the classification changes
+    if (localItem.cardType === "pid") {
       const pidItem = localItem as PidGridItem;
-      pidItem.displayMode = "card";
       pidItem.pid = canStore.pidDefinitions[0]?.pid || 0;
+      pidItem.displayMode = "card";
+    } else if (localItem.cardType === "overview") {
+      const overItem = localItem as OverviewGridItem;
+      overItem.displayMode = "default";
+      overItem.pids = [0x0c, 0x2206, 0x04];
+      overItem.color = "#3b82f6";
+    } else {
+      const specialItem = localItem as SpecialGridItem;
+      specialItem.displayMode = "default";
+      delete (specialItem as any).pid;
+      delete (specialItem as any).pids;
+      delete (specialItem as any).color;
     }
+    updateDimensionsToMin();
+  }
 
+  function handleVisualizationChange() {
+    // Only updates the grid bounds based on the new visualization mode
+    updateDimensionsToMin();
+  }
+
+  function updateDimensionsToMin() {
     const newBounds = getModuleBounds(localItem);
     localItem.w = newBounds.min.w;
     localItem.h = newBounds.min.h;
@@ -122,9 +164,9 @@
           class="orange-select-field"
         >
           <option value="pid">OBD-II Parameter</option>
-          <option value="battery">System Battery Monitor Block</option>
+          <option value="battery">System Battery Monitor</option>
           <option value="dtcs">Diagnostic Trouble Codes (DTC)</option>
-          <option value="overview">Overview</option>
+          <option value="overview">Performance Overview</option>
         </select>
 
         <div class="steppers-inline-grid">
@@ -166,6 +208,8 @@
                 <option value={definition.pid}>
                   0x{definition.pid.toString(16).toUpperCase()} — {definition.name}
                 </option>
+              {:else}
+                <option value={0} disabled>No PID definitions available</option>
               {/each}
             </select>
 
@@ -175,20 +219,60 @@
             <select
               id="pid-visualization-select"
               bind:value={pidItem.displayMode}
-              onchange={handleCardTypeChange}
+              onchange={handleVisualizationChange}
               class="orange-select-field"
             >
               <option value="card">Digit Badge</option>
-              <option value="chart">Chart</option>
-              <option value="gauge">Gauge Display</option>
+              <option value="chart">Live History Chart</option>
+              <option value="gauge">Radial Gauge</option>
               <option value="bar">Horizon Bar</option>
             </select>
+          </div>
+        {:else if localItem.cardType === "overview"}
+          {@const overItem = localItem as OverviewGridItem}
+          <div class="conditional-settings-panel animate-fade-in">
+            <div class="panel-section-title">
+              Performance Overview Configuration
+            </div>
+
+            <div class="color-picker-row">
+              <label for="over-color" class="field-heading"
+                >Card Accent Color</label
+              >
+              <input
+                type="color"
+                id="over-color"
+                bind:value={overItem.color}
+                class="pico-color-input"
+              />
+            </div>
+
+            <div class="pids-selection-grid">
+              {#each [0, 1, 2] as idx}
+                <div class="pid-select-field">
+                  <label for="pid-select-{idx}" class="field-heading"
+                    >Footer Metric #{idx + 1}</label
+                  >
+                  <select
+                    id="pid-select-{idx}"
+                    bind:value={overItem.pids[idx]}
+                    class="orange-select-field compact"
+                  >
+                    {#each canStore.pidDefinitions as definition}
+                      <option value={definition.pid}>
+                        {definition.name}
+                      </option>
+                    {/each}
+                  </select>
+                </div>
+              {/each}
+            </div>
           </div>
         {:else}
           <div class="static-presets-notice animate-fade-in">
             <small>
-              The selected <strong>{localItem.cardType.toUpperCase()}</strong> interface
-              component runs on global canvas states. No extra properties are needed.
+              The selected <strong>{localItem.cardType.toUpperCase()}</strong> module
+              uses a specialized layout. No extra properties are needed.
             </small>
           </div>
         {/if}
@@ -278,6 +362,11 @@
       from var(--pico-form-element-background-color) r g b / 0.6
     );
   }
+  .orange-select-field.compact {
+    margin-bottom: 0.5rem !important;
+    font-size: 0.85rem;
+    padding: 6px 8px;
+  }
   .steppers-inline-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -301,6 +390,26 @@
     letter-spacing: 0.06em;
     font-weight: 800;
     margin-bottom: 0.85rem;
+  }
+  .color-picker-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 1.5rem;
+  }
+  .pico-color-input {
+    width: 60px;
+    height: 38px;
+    padding: 2px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--pico-border-color);
+    cursor: pointer;
+  }
+  .pids-selection-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
   }
   .static-presets-notice {
     border: 1px dashed var(--pico-border-color);

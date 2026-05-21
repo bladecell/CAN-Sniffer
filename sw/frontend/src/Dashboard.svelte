@@ -21,7 +21,6 @@
 
   // --- STATE ---
   let containerWidth = $state(0);
-  let isAddMenuOpen = $state(false);
   let dragDisabled = $state(true);
   let previewItem = $state<DashboardItem | null>(null);
 
@@ -29,6 +28,9 @@
   let isModalOpen = $state(false);
   let modalTargetItem = $state<DashboardItem | null>(null);
   let modalIsNewCard = $state(false);
+
+  // Background Context Menu State
+  let bgMenu = $state({ show: false, x: 0, y: 0 });
 
   // Resizing Subsystem
   const resizeHandler = createResizeHandler(
@@ -63,15 +65,16 @@
     isModalOpen = true;
   }
 
-  function openAddPresetSettings(type: CardType) {
-    modalTargetItem = dashboardStore.addItem(type);
+  function openAddWizard() {
+    // Default to adding a PID
+    modalTargetItem = dashboardStore.addItem("pid");
     modalIsNewCard = true;
     isModalOpen = true;
-    isAddMenuOpen = false;
+    bgMenu.show = false;
   }
 
   function handleModalSave(item: DashboardItem) {
-    modalIsNewCard = false; // Prevent deletion in handleModalClose
+    modalIsNewCard = false; 
     dashboardStore.updateItem(item);
     isModalOpen = false;
     modalTargetItem = null;
@@ -85,7 +88,18 @@
     isModalOpen = false;
     modalTargetItem = null;
     previewItem = null;
-    modalIsNewCard = false; // Reset flag
+    modalIsNewCard = false;
+  }
+
+  function handleBgContextMenu(e: MouseEvent) {
+    // Only show if we click the actual grid background, not a card
+    if ((e.target as HTMLElement).classList.contains('unified-grid-zone') || 
+        (e.target as HTMLElement).classList.contains('unified-flow-dashboard')) {
+      e.preventDefault();
+      bgMenu.x = e.clientX;
+      bgMenu.y = e.clientY;
+      bgMenu.show = true;
+    }
   }
 
   $effect(() => {
@@ -97,18 +111,23 @@
   });
 </script>
 
-<svelte:window onscroll={() => (isAddMenuOpen = false)} />
+<svelte:window 
+  onclick={() => (bgMenu.show = false)} 
+  ontouchstart={() => (bgMenu.show = false)} 
+/>
 
 <div
   class="unified-flow-dashboard"
   bind:clientWidth={containerWidth}
   class:user-is-resizing={!!resizeHandler.state.resizingItemId}
+  oncontextmenu={handleBgContextMenu}
 >
   {#if !dashboardStore.isInitialized}
     <div aria-busy="true">Initialising dashboard telemetry channels...</div>
   {:else if dashboardStore.items.length === 0}
     <div class="empty-placeholder">
-      <p>Dashboard canvas workspace is empty. Click the action button below to map modules.</p>
+      <p>Dashboard canvas workspace is empty.</p>
+      <button class="outline" onclick={openAddWizard}>Map First Module</button>
     </div>
   {:else}
     <div
@@ -149,6 +168,7 @@
               onRequestDrag={() => (dragDisabled = false)}
               resizeStart={(e) => resizeHandler.start(e, item.id)}
               onOpenSettings={openEditSettings}
+              onAddNew={openAddWizard}
               onDelete={(id) => dashboardStore.deleteItem(id)}
             />
           </div>
@@ -157,6 +177,16 @@
     </div>
   {/if}
 </div>
+
+{#if bgMenu.show}
+  <div 
+    class="bg-context-menu" 
+    style="top: {bgMenu.y}px; left: {bgMenu.x}px;"
+    onclick={(e) => e.stopPropagation()}
+  >
+    <button onclick={openAddWizard}>Add New Module to Grid</button>
+  </div>
+{/if}
 
 <PIDSettingsModal
   isOpen={isModalOpen}
@@ -167,34 +197,10 @@
   onClose={handleModalClose}
 />
 
-<div class="fab-container">
-  {#if isAddMenuOpen}
-    <div class="fab-menu-popover" onclick={(e) => e.stopPropagation()}>
-      <div class="popover-section-title">New System Modules</div>
-      <button class="fab-menu-item" onclick={() => openAddPresetSettings("battery")}>Battery Monitor</button>
-      <button class="fab-menu-item" onclick={() => openAddPresetSettings("dtcs")}>DTC Trouble Log</button>
-      <button class="fab-menu-item" onclick={() => openAddPresetSettings("overview")}>Performance Panel</button>
-      <div class="popover-divider"></div>
-      <button class="fab-menu-item setup-pid-highlight" onclick={() => openAddPresetSettings("pid")}>
-        <span>＋ Add Dynamic Vehicle PID</span>
-      </button>
-    </div>
-  {/if}
-  <button
-    class="fab-trigger"
-    class:active={isAddMenuOpen}
-    onclick={(e) => {
-      e.stopPropagation();
-      isAddMenuOpen = !isAddMenuOpen;
-    }}
-  >
-    <span class="trigger-icon">＋</span>
-  </button>
-</div>
-
 <style>
   .unified-flow-dashboard {
     width: 100%;
+    min-height: calc(100vh - 120px);
     overflow-x: hidden;
   }
 
@@ -215,8 +221,9 @@
     grid-auto-flow: dense;
     gap: 16px !important;
     width: 100%;
-    min-height: 300px;
+    min-height: 500px;
     padding: 12px;
+    padding-bottom: 200px !important;
     outline: none !important;
   }
 
@@ -240,7 +247,6 @@
     .unified-grid-zone {
       grid-template-columns: repeat(24, minmax(0, 1fr)) !important;
       gap: 12px !important;
-      padding-bottom: 200px !important; /* Added extra space for mobile scrolling */
     }
     .unified-flow-card {
       grid-column: span min(24, var(--card-w, 10)) !important;
@@ -265,97 +271,42 @@
 
   .empty-placeholder {
     display: flex;
+    flex-direction: column;
+    align-items: center;
     justify-content: center;
     text-align: center;
-    padding: 4rem 2rem;
+    padding: 6rem 2rem;
     border: 2px dashed rgba(255, 255, 255, 0.1);
     border-radius: 12px;
     color: #a0a0a5;
+    gap: 1.5rem;
   }
 
-  .fab-container {
+  .bg-context-menu {
     position: fixed;
-    bottom: 2rem;
-    right: 2rem;
-    z-index: 9999;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    pointer-events: none;
-  }
-  .fab-trigger,
-  .fab-menu-popover {
-    pointer-events: auto;
-  }
-  .fab-trigger {
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-    background: #10b981;
-    color: #ffffff;
-    border: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-    cursor: pointer;
-    transition: transform 0.2s, background 0.2s;
-  }
-  .fab-trigger.active {
-    background: #ef4444;
-    transform: rotate(135deg);
-  }
-  .fab-menu-popover {
-    position: absolute;
-    bottom: 72px;
-    right: 0;
-    background: #18181b;
+    z-index: 11000;
+    background: rgba(20, 20, 24, 0.95);
+    backdrop-filter: blur(12px);
     border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 12px;
-    padding: 12px;
-    min-width: 240px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    border-radius: 8px;
+    padding: 6px;
+    min-width: 200px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
   }
-  .popover-section-title {
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    color: #a0a0a5;
-    padding: 4px 8px;
-    font-weight: 700;
-  }
-  .popover-divider {
-    height: 1px;
-    background: rgba(255, 255, 255, 0.08);
-    margin: 6px 4px;
-  }
-  .fab-menu-item {
-    display: flex;
-    align-items: center;
-    width: 100%;
+  .bg-context-menu button {
     background: transparent;
+    color: #10b981;
     border: none;
-    color: #e4e4e7;
-    padding: 10px 12px;
     text-align: left;
-    border-radius: 6px;
+    padding: 12px 14px;
+    border-radius: 4px;
     cursor: pointer;
     font-size: 0.9rem;
-    font-weight: 500;
-  }
-  .fab-menu-item:hover {
-    background: rgba(255, 255, 255, 0.05);
-    color: #ffffff;
-  }
-  .setup-pid-highlight {
-    color: #10b981;
     font-weight: 600;
+    width: 100%;
   }
-  .setup-pid-highlight:hover {
+  .bg-context-menu button:hover {
     background: rgba(16, 185, 129, 0.1);
-    color: #34d399;
   }
 
   :global(#dnd-action-dragged-el) {

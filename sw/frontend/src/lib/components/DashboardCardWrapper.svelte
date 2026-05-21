@@ -10,17 +10,19 @@
   import PIDGauge from "./PIDGauge.svelte";
   import PIDBar from "./PIDBar.svelte";
   import OverviewCard from "./OverviewCard.svelte";
-  import type { DashboardItem, PidGridItem } from "$lib/types";
+  import type { DashboardItem, PidGridItem, OverviewGridItem } from "$lib/types";
+  import { dashboardStore } from "$lib/dashboardStore.svelte";
 
   interface Props {
     item: DashboardItem;
     onRequestDrag: () => void;
     resizeStart: (e: any) => void;
     onOpenSettings: (item: DashboardItem) => void;
+    onAddNew: () => void;
     onDelete: (id: string) => void;
   }
 
-  let { item, onRequestDrag, resizeStart, onOpenSettings, onDelete }: Props =
+  let { item, onRequestDrag, resizeStart, onOpenSettings, onAddNew, onDelete }: Props =
     $props();
 
   // --- LOCAL STATE ---
@@ -38,6 +40,10 @@
   const MOVE_SLOP_LIMIT = 15;
   const DRAG_DELAY = 150;
   const POPUP_DELAY = 1000;
+
+  function handleRequestDrag() {
+    onRequestDrag();
+  }
 
   // Sync visibility with global module state
   $effect(() => {
@@ -70,12 +76,12 @@
     clearTimers();
 
     if (!isTouchDevice) {
-      onRequestDrag();
+      handleRequestDrag();
     } else {
       dragTimer = setTimeout(() => {
         if (!isDestroyed && !isMenuOpen) {
           triggerHaptic(50);
-          onRequestDrag();
+          handleRequestDrag();
         }
       }, DRAG_DELAY);
     }
@@ -106,7 +112,7 @@
 
   function openMenu(x: number, y: number) {
     const W = 220;
-    const H = 110;
+    const H = 140; 
     let finalX = x + W > window.innerWidth ? x - W : x;
     let finalY = y + H > window.innerHeight ? window.innerHeight - H - 12 : y;
 
@@ -160,11 +166,11 @@
       <PIDCard item={pidItem} />
     {/if}
   {:else if item.cardType === "overview"}
-    <OverviewCard />
+    <OverviewCard item={item as OverviewGridItem} />
   {:else if item.cardType === "battery"}
     <div class="static-panel-placeholder">Battery Monitor Pane</div>
   {:else if item.cardType === "dtcs"}
-    <div class="static-panel-placeholder">DTC Trouble Log</div>
+    <div class="static-panel-placeholder">Diagnostic Trouble Log</div>
   {/if}
 
   <div
@@ -192,7 +198,14 @@
         onclick={() => {
           onOpenSettings(item);
           activeMenuId = null;
-        }}>Modify Proportions</button
+        }}>Modify Component</button
+      >
+      <button
+        class="add-action"
+        onclick={() => {
+          onAddNew();
+          activeMenuId = null;
+        }}>Add New Module</button
       >
       <button
         class="delete-action"
@@ -200,7 +213,7 @@
           triggerHaptic([30, 40, 30]);
           onDelete(item.id);
           activeMenuId = null;
-        }}>Remove Module</button
+        }}>Remove from Dashboard</button
       >
     </div>
   {/if}
@@ -246,6 +259,8 @@
     letter-spacing: 0.05em;
     background: rgba(30, 30, 35, 0.4);
     border-radius: 8px;
+    text-align: center;
+    padding: 1rem;
   }
   .local-context-menu {
     position: fixed;
@@ -257,7 +272,7 @@
     padding: 6px;
     display: flex;
     flex-direction: column;
-    min-width: 200px;
+    min-width: 210px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
   }
   .local-context-menu button {
@@ -265,14 +280,18 @@
     color: #e4e4e7;
     border: none;
     text-align: left;
-    padding: 10px 14px;
+    padding: 12px 14px;
     border-radius: 4px;
     cursor: pointer;
     font-size: 0.9rem;
+    font-weight: 500;
   }
   .local-context-menu button:hover {
     background: rgba(255, 255, 255, 0.06);
     color: #ffffff;
+  }
+  .add-action {
+    color: #10b981 !important;
   }
   .delete-action {
     color: #f87171 !important;

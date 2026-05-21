@@ -2,18 +2,14 @@
   import { canStore } from "$lib/canStore.svelte.js";
   import { onMount } from "svelte";
   import { usePidData } from "$lib/pidHelpers.svelte.ts";
+  import type { OverviewGridItem } from "$lib/types";
 
   interface Props {
-    pids?: number[];
-    color?: string;
+    item: OverviewGridItem;
     [key: string]: any;
   }
 
-  let {
-    pids = [0x0c, 0x2206, 0x04],
-    color = "#3b82f6",
-    ...rest
-  }: Props = $props();
+  let { item, ...rest }: Props = $props();
 
   onMount(async () => {
     await canStore.requestVin();
@@ -32,16 +28,15 @@
   const statusColor = $derived(
     isOnline ? "var(--pico-ins-color)" : "var(--pico-del-color)",
   );
-
-  // Helper component to render individual PID badges using usePidData
-  // We'll define it as a small internal snippet or just use the data
 </script>
 
 {#snippet pidBadge(pidId: number)}
   {@const metric = usePidData(() => pidId)}
   <div
     class="pid-badge"
-    style="background: color-mix(in srgb, {metric.color} 5%, transparent);"
+    style="background: color-mix(in srgb, {metric.isValid
+      ? metric.color
+      : '#6b7280'} 15%, transparent);"
   >
     <span class="pid-label">{metric.label}</span>
     <span class="pid-value"
@@ -50,7 +45,7 @@
   </div>
 {/snippet}
 
-<article class="overview-card" style="--brand-color: {color}" {...rest}>
+<article class="overview-card" style="--brand-color: {item.color}" {...rest}>
   <header class="card-header">
     <div class="titles">
       <div class="label">System Overview</div>
@@ -88,7 +83,7 @@
     </div>
 
     <div class="pid-footer">
-      {#each pids as pidId}
+      {#each item.pids as pidId}
         {@render pidBadge(pidId)}
       {/each}
     </div>
@@ -106,7 +101,11 @@
     padding: 16px;
     border: 1px solid var(--pico-muted-border-color);
     border-radius: 12px;
-    background: color-mix(in srgb, var(--brand-color) 5%, transparent);
+    background: color-mix(
+      in srgb,
+      var(--brand-color) 8%,
+      rgba(20, 20, 25, 0.8)
+    );
     transition:
       transform 0.2s ease,
       box-shadow 0.2s ease;
@@ -178,14 +177,17 @@
 
   .vin-text {
     font-family: var(--pico-font-family-monospace);
-    font-size: 1.2rem;
+    font-size: 1.1rem;
     font-weight: 700;
+    color: var(--pico-contrast);
   }
 
   .card-body {
     display: flex;
     flex-direction: column;
     gap: 20px;
+    flex-grow: 1;
+    justify-content: center;
   }
 
   .stats-row {
@@ -227,6 +229,7 @@
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 8px;
+    margin-top: auto;
   }
 
   .pid-badge {
@@ -250,7 +253,7 @@
 
   .pid-value {
     font-family: var(--pico-font-family-monospace);
-    font-size: 1rem;
+    font-size: 0.9rem;
     font-weight: 700;
   }
 

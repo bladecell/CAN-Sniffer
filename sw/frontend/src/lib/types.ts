@@ -22,11 +22,18 @@ export interface PidGridItem extends BaseGridItem {
 }
 
 export interface SpecialGridItem extends BaseGridItem {
-  cardType: "battery" | "dtcs" | "overview";
+  cardType: "battery" | "dtcs";
   displayMode: SpecialDisplayMode;
 }
 
-export type DashboardItem = PidGridItem | SpecialGridItem;
+export interface OverviewGridItem extends BaseGridItem {
+  cardType: "overview";
+  displayMode: SpecialDisplayMode;
+  pids: number[]; // Array of exactly 3 PIDs
+  color: string;  // Hex color string
+}
+
+export type DashboardItem = PidGridItem | SpecialGridItem | OverviewGridItem;
 
 /**
  * MODULE CONSTRAINTS AND CONFIGURATIONS
@@ -51,26 +58,14 @@ export type ModuleConfigs = {
 
 export const MODULE_CONFIGS: ModuleConfigs = {
   pid: {
-    card: {
-      min: { w: 10, h: 7 },
-      max: { w: 20, h: 12 }
-    },
-    chart: {
-      min: { w: 15, h: 12 },
-      max: { w: 60, h: 30 }
-    },
-    gauge: {
-      min: { w: 12, h: 12 },
-      max: { w: 24, h: 24 }
-    },
-    bar: {
-      min: { w: 10, h: 8 },
-      max: { w: 20, h: 15 }
-    }
+    card: { min: { w: 10, h: 7 }, max: { w: 20, h: 12 } },
+    chart: { min: { w: 15, h: 12 }, max: { w: 60, h: 30 } },
+    gauge: { min: { w: 12, h: 12 }, max: { w: 24, h: 24 } },
+    bar: { min: { w: 10, h: 8 }, max: { w: 20, h: 15 } }
   },
   battery: {
-    min: { w: 6, h: 6 },
-    max: { w: 12, h: 12 }
+    min: { w: 10, h: 7 },
+    max: { w: 18, h: 12 }
   },
   dtcs: {
     min: { w: 10, h: 8 },
@@ -95,5 +90,5 @@ export function getModuleBounds(item: DashboardItem): Bounds {
     return MODULE_CONFIGS.pid[item.displayMode] || DEFAULT_BOUNDS;
   }
   
-  return MODULE_CONFIGS[item.cardType] || DEFAULT_BOUNDS;
+  return (MODULE_CONFIGS as any)[item.cardType] || DEFAULT_BOUNDS;
 }
