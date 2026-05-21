@@ -66,25 +66,32 @@
     // Sync local changes to the global previewItem for live dashboard updates
     if (!isOpen || !item || internalSync) return;
 
-    // Explicitly read key properties to ensure Svelte tracks them
+    // Track EVERYTHING we want to see in the live preview
     const { w, h, cardType } = localItem;
+
+    // Read properties dynamically based on type for tracking
+    let p: any, m: any, c: any, ps: any;
+    if (localItem.cardType === "pid") {
+      p = (localItem as PidGridItem).pid;
+      m = (localItem as PidGridItem).displayMode;
+    } else if (localItem.cardType === "overview") {
+      const over = localItem as OverviewGridItem;
+      m = over.displayMode;
+      c = over.color;
+      ps = JSON.stringify(over.pids); // Track deep array changes
+    }
 
     untrack(() => {
       // Re-create object to trigger reference-based reactivity in parent
       const nextPreview = { ...localItem, w, h, cardType };
 
       if (localItem.cardType === "pid") {
-        const li = localItem as PidGridItem;
-        (nextPreview as PidGridItem).pid = li.pid;
-        (nextPreview as PidGridItem).displayMode = li.displayMode;
+        (nextPreview as PidGridItem).pid = p;
+        (nextPreview as PidGridItem).displayMode = m;
       } else if (localItem.cardType === "overview") {
-        const li = localItem as OverviewGridItem;
-        (nextPreview as OverviewGridItem).displayMode = li.displayMode;
-        (nextPreview as OverviewGridItem).pids = [...li.pids];
-        (nextPreview as OverviewGridItem).color = li.color;
-      } else {
-        (nextPreview as SpecialGridItem).displayMode = (localItem as any)
-          .displayMode;
+        (nextPreview as OverviewGridItem).displayMode = m;
+        (nextPreview as OverviewGridItem).pids = JSON.parse(ps);
+        (nextPreview as OverviewGridItem).color = c;
       }
 
       previewItem = nextPreview as DashboardItem;
@@ -361,11 +368,24 @@
     background-color: rgb(
       from var(--pico-form-element-background-color) r g b / 0.6
     );
+    transition:
+      border-color 0.2s ease,
+      box-shadow 0.2s ease;
+    outline: none !important;
+  }
+  .orange-select-field:active,
+  .orange-select-field:focus,
+  .orange-select-field:hover {
+    border: var(--pico-border-width) solid var(--pico-form-element-color);
+    outline: none !important;
+    box-shadow: none !important;
   }
   .orange-select-field.compact {
     margin-bottom: 0.5rem !important;
     font-size: 0.85rem;
     padding: 6px 8px;
+    outline: none !important;
+    box-shadow: none !important;
   }
   .steppers-inline-grid {
     display: grid;
@@ -435,6 +455,17 @@
     background-color: rgb(
       from var(--pico-form-element-background-color) r g b / 0.6
     );
+  }
+  .apply-btn:focus,
+  .apply-btn:active,
+  .apply-btn:hover {
+    border: var(--pico-border-width) solid var(--pico-form-element-color);
+    outline: none !important;
+    box-shadow: none !important;
+  }
+  .apply-btn:active {
+    background-color: rgba(255, 255, 255, 0.1) !important;
+    transition: background-color 0s !important;
   }
   .animate-fade-in {
     animation: modalBoxFadeIn 0.18s ease-out forwards;
