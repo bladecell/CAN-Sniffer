@@ -45,7 +45,7 @@
   </div>
 {/snippet}
 
-<article class="overview-card" style="--brand-color: {item.color}" {...rest}>
+<article class="overview-card" style="--module-accent: {item.color}" {...rest}>
   <header class="card-header">
     <div class="titles">
       <div class="label">System Overview</div>
@@ -103,7 +103,7 @@
     border-radius: 12px;
     background: color-mix(
       in srgb,
-      var(--brand-color) 8%,
+      var(--module-accent) 8%,
       rgba(20, 20, 25, 0.8)
     );
     transition:
@@ -279,7 +279,11 @@
   }
 
   .overview-card:hover {
-    transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border-color: color-mix(
+      in srgb,
+      var(--module-accent) 40%,
+      var(--pico-muted-border-color)
+    ) !important;
   }
 </style>

@@ -29,7 +29,7 @@
 <article
   class="pid-card"
   class:disabled={!metric.supported}
-  style="background: color-mix(in srgb, {metric.color} 5%, transparent);"
+  style="background: color-mix(in srgb, {metric.color} 5%, transparent); --module-accent: {metric.color};"
   {...rest}
 >
   <header class="card-header">
@@ -70,8 +70,12 @@
   }
 
   .pid-card:hover {
-    transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border-color: color-mix(
+      in srgb,
+      var(--module-accent) 40%,
+      var(--pico-muted-border-color)
+    ) !important;
   }
 
   .pid-card.disabled {

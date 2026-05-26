@@ -1,8 +1,9 @@
 <script>
   import DashboardCardWrapper from "$lib/components/DashboardCardWrapper.svelte";
   import { canStore } from "./lib/canStore.svelte.js";
-  import { untrack, onDestroy } from "svelte";
+  import { untrack, onDestroy, onMount } from "svelte";
   import OverviewCard from "$lib/components/OverviewCard.svelte";
+  import DTCCard from "./lib/components/DTCCard.svelte";
 
   function createCardFromPID(pidData) {
     return {
@@ -17,6 +18,10 @@
       max: pidData.maxValue || 100,
     };
   }
+
+  onMount(async () => {
+    await canStore.getDTC();
+  });
 
   let item = $state();
   let cards = ["card", "chart", "gauge", "bar"];
@@ -67,7 +72,7 @@
         const delta = t - previousTimestamp1;
 
         if (delta > 0) {
-          console.log(`Update for PID 4: ${delta}ms, value: ${v}`);
+          // console.log(`Update for PID 4: ${delta}ms, value: ${v}`);
         }
       }
 
@@ -76,20 +81,8 @@
   });
 </script>
 
-<button class="outline" onclick={toggleMode} style="margin-bottom: 1rem;">
-  Switch card
-</button>
-
 <div class="pid-container">
-  {#if item}
-    <DashboardCardWrapper {...item} {displayMode} />
-  {:else}
-    <p>Loading...</p>
-  {/if}
-</div>
-
-<div class="pid-container">
-  <OverviewCard color="#f59e0b" pids={[0x0c, 0x2206, 0x04]} />
+  <DTCCard />
 </div>
 
 <style>

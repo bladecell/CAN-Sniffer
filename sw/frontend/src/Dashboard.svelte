@@ -39,19 +39,29 @@
     MOBILE_COLS,
     ROW_HEIGHT_PX,
     DESKTOP_GAP,
-    MOBILE_GAP
+    MOBILE_GAP,
   );
 
   // --- HANDLERS ---
-  function handleConsider(e: CustomEvent<{ items: DashboardItem[]; info: { source: string; trigger: string } }>) {
+  function handleConsider(
+    e: CustomEvent<{
+      items: DashboardItem[];
+      info: { source: string; trigger: string };
+    }>,
+  ) {
     if (resizeHandler.state.resizingItemId) return;
     dashboardStore.items = e.detail.items;
-    if (e.detail.info.source === SOURCES.KEYBOARD && e.detail.info.trigger === TRIGGERS.DRAG_STOPPED) {
+    if (
+      e.detail.info.source === SOURCES.KEYBOARD &&
+      e.detail.info.trigger === TRIGGERS.DRAG_STOPPED
+    ) {
       dragDisabled = true;
     }
   }
 
-  function handleFinalize(e: CustomEvent<{ items: DashboardItem[]; info: { source: string } }>) {
+  function handleFinalize(
+    e: CustomEvent<{ items: DashboardItem[]; info: { source: string } }>,
+  ) {
     if (resizeHandler.state.resizingItemId) return;
     dashboardStore.setItems(e.detail.items);
     if (e.detail.info.source === SOURCES.POINTER) {
@@ -74,7 +84,7 @@
   }
 
   function handleModalSave(item: DashboardItem) {
-    modalIsNewCard = false; 
+    modalIsNewCard = false;
     dashboardStore.updateItem(item);
     isModalOpen = false;
     modalTargetItem = null;
@@ -93,8 +103,10 @@
 
   function handleBgContextMenu(e: MouseEvent) {
     // Only show if we click the actual grid background, not a card
-    if ((e.target as HTMLElement).classList.contains('unified-grid-zone') || 
-        (e.target as HTMLElement).classList.contains('unified-flow-dashboard')) {
+    if (
+      (e.target as HTMLElement).classList.contains("unified-grid-zone") ||
+      (e.target as HTMLElement).classList.contains("unified-flow-dashboard")
+    ) {
       e.preventDefault();
       bgMenu.x = e.clientX;
       bgMenu.y = e.clientY;
@@ -111,9 +123,9 @@
   });
 </script>
 
-<svelte:window 
-  onclick={() => (bgMenu.show = false)} 
-  ontouchstart={() => (bgMenu.show = false)} 
+<svelte:window
+  onclick={() => (bgMenu.show = false)}
+  ontouchstart={() => (bgMenu.show = false)}
 />
 
 <div
@@ -179,8 +191,8 @@
 </div>
 
 {#if bgMenu.show}
-  <div 
-    class="bg-context-menu" 
+  <div
+    class="bg-context-menu"
     style="top: {bgMenu.y}px; left: {bgMenu.x}px;"
     onclick={(e) => e.stopPropagation()}
   >
@@ -231,7 +243,9 @@
     grid-column: span var(--card-w, 10);
     grid-row: span var(--card-h, 7) !important;
     width: 100% !important;
-    height: calc((var(--card-h) * 10px) + ((var(--card-h) - 1) * 16px)) !important;
+    height: calc(
+      (var(--card-h) * 10px) + ((var(--card-h) - 1) * 16px)
+    ) !important;
     transition: transform 0.15s ease;
   }
 
@@ -240,7 +254,10 @@
     position: relative;
     transition: none !important;
     width: calc(100% + var(--resize-dx, 0px)) !important;
-    height: calc(((var(--card-h) * 10px) + ((var(--card-h) - 1) * 16px)) + var(--resize-dy, 0px)) !important;
+    height: calc(
+      ((var(--card-h) * 10px) + ((var(--card-h) - 1) * 16px)) +
+        var(--resize-dy, 0px)
+    ) !important;
   }
 
   @media (max-width: 768px) {
@@ -250,11 +267,16 @@
     }
     .unified-flow-card {
       grid-column: span min(24, var(--card-w, 10)) !important;
-      height: calc((var(--card-h) * 10px) + ((var(--card-h) - 1) * 12px)) !important;
+      height: calc(
+        (var(--card-h) * 10px) + ((var(--card-h) - 1) * 12px)
+      ) !important;
     }
     .is-resizing-target {
       width: calc(100% + var(--resize-dx, 0px)) !important;
-      height: calc(((var(--card-h) * 10px) + ((var(--card-h) - 1) * 12px)) + var(--resize-dy, 0px)) !important;
+      height: calc(
+        ((var(--card-h) * 10px) + ((var(--card-h) - 1) * 12px)) +
+          var(--resize-dy, 0px)
+      ) !important;
     }
   }
 
@@ -266,7 +288,6 @@
     border-radius: 8px;
     overflow: hidden;
     background: rgba(30, 30, 35, 0.6);
-    border: 1px solid rgba(255, 255, 255, 0.05);
   }
 
   .empty-placeholder {
@@ -291,7 +312,7 @@
     border-radius: 8px;
     padding: 6px;
     min-width: 200px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
   }
   .bg-context-menu button {
     background: transparent;
@@ -313,14 +334,24 @@
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6) !important;
     border-radius: 8px !important;
     opacity: 0.95 !important;
-    width: calc((((100vw - 24px) - (60 - 1) * 16px) / 60 * var(--card-w)) + ((var(--card-w) - 1) * 16px)) !important;
-    height: calc((var(--card-h) * 10px) + ((var(--card-h) - 1) * 16px)) !important;
+    width: calc(
+      (((100vw - 24px) - (60 - 1) * 16px) / 60 * var(--card-w)) +
+        ((var(--card-w) - 1) * 16px)
+    ) !important;
+    height: calc(
+      (var(--card-h) * 10px) + ((var(--card-h) - 1) * 16px)
+    ) !important;
   }
 
   @media (max-width: 768px) {
     :global(#dnd-action-dragged-el) {
-      width: calc((((100vw - 24px) - (24 - 1) * 12px) / 24 * var(--card-w)) + ((var(--card-w) - 1) * 12px)) !important;
-      height: calc((var(--card-h) * 10px) + ((var(--card-h) - 1) * 12px)) !important;
+      width: calc(
+        (((100vw - 24px) - (24 - 1) * 12px) / 24 * var(--card-w)) +
+          ((var(--card-w) - 1) * 12px)
+      ) !important;
+      height: calc(
+        (var(--card-h) * 10px) + ((var(--card-h) - 1) * 12px)
+      ) !important;
     }
   }
 
@@ -331,12 +362,16 @@
     border: 2px dashed rgba(255, 255, 255, 0.2) !important;
     border-radius: 8px;
     width: 100% !important;
-    height: calc((var(--card-h) * 10px) + ((var(--card-h) - 1) * 16px)) !important;
+    height: calc(
+      (var(--card-h) * 10px) + ((var(--card-h) - 1) * 16px)
+    ) !important;
   }
 
   @media (max-width: 768px) {
     :global(.unified-grid-zone > div[style*="visibility: hidden"]) {
-      height: calc((var(--card-h) * 10px) + ((var(--card-h) - 1) * 12px)) !important;
+      height: calc(
+        (var(--card-h) * 10px) + ((var(--card-h) - 1) * 12px)
+      ) !important;
     }
   }
 </style>

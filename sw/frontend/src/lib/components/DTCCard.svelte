@@ -1,0 +1,414 @@
+<script lang="ts">
+  import { canStore } from "$lib/canStore.svelte.js";
+  import type { SpecialGridItem } from "$lib/types";
+  import Icon from "../Icon.svelte";
+
+  interface Props {
+    item: SpecialGridItem;
+    [key: string]: any;
+  }
+
+  let { item, ...rest }: Props = $props();
+
+  // --- RELIABLE NESTED EXTRACTION RIG ---
+  const confirmedCodes = $derived(
+    canStore.dtc?.find((d: any) => d.mode === 3)?.dtc || [],
+  );
+
+  const pendingCodes = $derived(
+    canStore.dtc?.find((d: any) => d.mode === 7)?.dtc || [],
+  );
+
+  const permanentCodes = $derived(
+    canStore.dtc?.find((d: any) => d.mode === 10)?.dtc || [],
+  );
+
+  // --- SEVERITY, ICONS & STATUS RUNES ---
+  const status = $derived.by((): "healthy" | "warn" | "malfunction" => {
+    if (confirmedCodes.length > 0) return "malfunction";
+    if (pendingCodes.length > 0) return "warn";
+    return "healthy";
+  });
+
+  const statusColor = $derived(
+    status === "healthy"
+      ? "var(--normal-color)"
+      : status === "warn"
+        ? "var(--warning-color)"
+        : "var(--error-color)",
+  );
+
+  const statusDescription = $derived(
+    status === "healthy"
+      ? "POWERTRAIN SYSTEMS HEALTHY"
+      : status === "warn"
+        ? `${pendingCodes.length} PENDING FAULT${pendingCodes.length > 1 ? "S" : ""}`
+        : `${confirmedCodes.length} ACTIVE FAULT${confirmedCodes.length > 1 ? "S" : ""}`,
+  );
+</script>
+
+<article
+  class="dtc-card"
+  class:status-warn={status === "warn"}
+  class:status-error={status === "malfunction"}
+  style="--module-accent: {statusColor};"
+  {...rest}
+>
+  <header class="card-header">
+    <div class="icon">
+      <Icon name={"engine"} size={32} />
+    </div>
+    <div class="titles">
+      <div class="label">Diagnostic Troube Codes</div>
+      <div class="subtitle">{statusDescription}</div>
+    </div>
+  </header>
+
+  <div class="dtc-content-body">
+    {#if confirmedCodes.length === 0 && permanentCodes.length === 0 && pendingCodes.length === 0}
+      <div class="empty-log-state">
+        <span>No diagnostic trouble codes logged in ECU memory bank.</span>
+      </div>
+    {:else}
+      <div class="codes-list-container">
+        <div
+          class="code-column"
+          class:empty-column={confirmedCodes.length === 0}
+        >
+          <div class="group-header error-text">
+            <Icon name="alert-circle" size={14} />
+            {confirmedCodes.length} Confirmed
+          </div>
+          <div class="column-viewport">
+            <div
+              class="chips-flex"
+              class:marquee-active={confirmedCodes.length > 3}
+              style="--item-count: {confirmedCodes.length};"
+            >
+              {#each confirmedCodes as code}
+                <span class="dtc-chip confirmed-chip">{code}</span>
+              {:else}
+                <span class="column-placeholder">—</span>
+              {/each}
+
+              {#if confirmedCodes.length > 3}
+                {#each confirmedCodes as code}
+                  <span
+                    class="dtc-chip confirmed-chip duplicate-tag"
+                    aria-hidden="true">{code}</span
+                  >
+                {/each}
+              {/if}
+            </div>
+          </div>
+        </div>
+
+        <div
+          class="code-column"
+          class:empty-column={permanentCodes.length === 0}
+        >
+          <div class="group-header permanent-text">
+            <Icon name="lock" size={14} />
+            {permanentCodes.length} Permanent
+          </div>
+          <div class="column-viewport">
+            <div
+              class="chips-flex"
+              class:marquee-active={permanentCodes.length > 3}
+              style="--item-count: {permanentCodes.length};"
+            >
+              {#each permanentCodes as code}
+                <span class="dtc-chip permanent-chip">{code}</span>
+              {:else}
+                <span class="column-placeholder">—</span>
+              {/each}
+
+              {#if permanentCodes.length > 3}
+                {#each permanentCodes as code}
+                  <span
+                    class="dtc-chip permanent-chip duplicate-tag"
+                    aria-hidden="true">{code}</span
+                  >
+                {/each}
+              {/if}
+            </div>
+          </div>
+        </div>
+
+        <div class="code-column" class:empty-column={pendingCodes.length === 0}>
+          <div class="group-header warn-text">
+            <Icon name="clock" size={14} />
+            {pendingCodes.length} Pending
+          </div>
+          <div class="column-viewport">
+            <div
+              class="chips-flex"
+              class:marquee-active={pendingCodes.length > 3}
+              style="--item-count: {pendingCodes.length};"
+            >
+              {#each pendingCodes as code}
+                <span class="dtc-chip pending-chip">{code}</span>
+              {:else}
+                <span class="column-placeholder">—</span>
+              {/each}
+
+              {#if pendingCodes.length > 3}
+                {#each pendingCodes as code}
+                  <span
+                    class="dtc-chip pending-chip duplicate-tag"
+                    aria-hidden="true">{code}</span
+                  >
+                {/each}
+              {/if}
+            </div>
+          </div>
+        </div>
+      </div>
+    {/if}
+  </div>
+</article>
+
+<style>
+  /* --- CONFIGURABLE CONSTANTS LAYER --- */
+  :root {
+    --seconds-per-item: 5s;
+    --scroll-delay: 5s;
+  }
+
+  .dtc-card {
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 16px;
+    border: 1px solid var(--pico-muted-border-color);
+    border-radius: 12px;
+    transition:
+      transform 0.2s ease,
+      box-shadow 0.2s ease;
+    overflow: hidden;
+  }
+
+  .dtc-card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border-color: color-mix(
+      in srgb,
+      var(--module-accent) 40%,
+      var(--pico-muted-border-color)
+    ) !important;
+  }
+
+  .status-warn {
+    background: color-mix(in srgb, #f59e0b 5%, rgba(25, 25, 30, 0.55));
+  }
+
+  .status-error {
+    background: color-mix(in srgb, #ef4444 5%, rgba(25, 25, 30, 0.55));
+  }
+
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 8px;
+    background: none;
+    border: none;
+  }
+
+  .icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 48px;
+    width: 48px;
+    border-radius: 10px;
+    transition: transform 0.2s ease;
+    background: color-mix(in srgb, var(--module-accent) 20%, transparent);
+  }
+
+  .dtc-card:hover .icon {
+    transform: scale(1.05);
+  }
+
+  .titles {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    align-items: flex-start;
+    flex: 1;
+    padding: 0 12px;
+  }
+
+  .label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--pico-muted-color);
+    font-weight: 500;
+  }
+
+  .subtitle {
+    font-size: 0.65rem;
+    letter-spacing: 0.05em;
+    font-family: var(--pico-font-family-monospace);
+    color: color-mix(in srgb, var(--module-accent) 70%, transparent);
+  }
+
+  .dtc-content-body {
+    flex: 1 1 auto;
+    width: 100%;
+    display: block;
+    min-height: 0;
+  }
+  .empty-log-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    min-height: 60px;
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--pico-muted-color);
+    font-style: italic;
+  }
+
+  .codes-list-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+    width: 100%;
+    height: 100%;
+  }
+
+  .code-column {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background: rgba(0, 0, 0, 0.15);
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.02);
+    min-height: 0;
+    height: 100%;
+  }
+
+  .empty-column {
+    opacity: 0.5;
+  }
+
+  .group-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.62rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    padding-bottom: 6px;
+    flex-shrink: 0;
+  }
+
+  .error-text {
+    color: #ef4444;
+  }
+  .permanent-text {
+    color: #a1a1aa;
+  }
+  .warn-text {
+    color: #f59e0b;
+  }
+
+  .column-viewport {
+    width: 100%;
+    flex: 1 1 auto;
+    overflow: hidden;
+    position: relative;
+    min-height: 0;
+  }
+
+  .chips-flex {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow: visible !important;
+    position: relative;
+    top: 0;
+  }
+
+  .marquee-active {
+    animation: verticalMarquee calc(var(--item-count) * var(--seconds-per-item))
+      linear var(--scroll-delay) infinite;
+  }
+
+  .marquee-active:hover {
+    animation-play-state: paused;
+  }
+
+  @keyframes verticalMarquee {
+    0%,
+    10% {
+      transform: translateY(0);
+    }
+    90%,
+    100% {
+      transform: translateY(
+        calc(-1 * ((var(--item-count) * 29px) + (var(--item-count) * 6px)))
+      );
+    }
+  }
+
+  .dtc-chip {
+    font-family: var(--pico-font-family-monospace);
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 5px 8px;
+    border-radius: 4px;
+    letter-spacing: 0.05em;
+    text-align: center;
+    width: 100%;
+    box-sizing: border-box;
+    height: 29px;
+    flex-shrink: 0;
+  }
+
+  .column-placeholder {
+    font-size: 0.75rem;
+    color: var(--pico-muted-color);
+    text-align: center;
+    padding: 4px 0;
+  }
+
+  .confirmed-chip {
+    background: rgba(239, 68, 68, 0.16);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+  }
+  .permanent-chip {
+    background: rgba(161, 161, 170, 0.1);
+    color: #d4d4d8;
+    border: 1px solid rgba(161, 161, 170, 0.2);
+  }
+  .clip-chip,
+  .pending-chip {
+    background: rgba(245, 158, 11, 0.12);
+    color: #fbbf24;
+    border: 1px solid rgba(245, 158, 11, 0.2);
+  }
+
+  @media (max-width: 500px) {
+    .codes-list-container {
+      grid-template-columns: 1fr;
+      gap: 16px;
+    }
+    .column-viewport {
+      height: auto;
+      overflow: visible;
+    }
+    .marquee-active {
+      animation: none;
+    }
+  }
+</style>

@@ -150,30 +150,21 @@
 <article
   class="pid-card"
   class:disabled={!metric.supported}
-  style="background: color-mix(in srgb, {metric.color} 5%, transparent);"
+  style="--module-accent: {metric.color};"
   {...rest}
 >
   <header class="card-header">
-    <div
-      class="icon"
-      style="background: color-mix(in srgb, {metric.color} 20%, transparent);"
-    >
+    <div class="icon">
       <Icon name={metric.icon} size={32} />
     </div>
     <div class="titles">
       <div class="label">{metric.label}</div>
-      <div
-        class="subtitle"
-        style="color: color-mix(in srgb, {metric.color} 70%, transparent);"
-      >
+      <div class="subtitle">
         {metric.description}
       </div>
     </div>
 
-    <div
-      class="badge"
-      style="background: color-mix(in srgb, {metric.color} 10%, transparent); color: {metric.color};"
-    >
+    <div class="badge">
       {metric.displayValue}<span class="unit">{metric.unit}</span>
     </div>
   </header>
@@ -195,6 +186,7 @@
     margin: 0;
     display: flex;
     flex-direction: column;
+    background: color-mix(in srgb, var(--module-accent) 5%, transparent);
     padding: 16px;
     border: 1px solid var(--pico-muted-border-color);
     border-radius: 12px;
@@ -205,8 +197,12 @@
   }
 
   .pid-card:hover {
-    transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border-color: color-mix(
+      in srgb,
+      var(--module-accent) 40%,
+      var(--pico-muted-border-color)
+    ) !important;
   }
 
   .pid-card.disabled {
@@ -236,6 +232,7 @@
     width: 48px;
     border-radius: 10px;
     transition: transform 0.2s ease;
+    background: color-mix(in srgb, var(--module-accent) 20%, transparent);
   }
 
   .pid-card:hover .icon {
@@ -263,6 +260,7 @@
     font-size: 0.65rem;
     letter-spacing: 0.05em;
     font-family: var(--pico-font-family-monospace);
+    color: color-mix(in srgb, var(--module-accent) 70%, transparent);
   }
 
   .badge {
@@ -279,6 +277,12 @@
   .badge .unit {
     font-size: 0.8rem;
     font-weight: 500;
+    color: var(--module-accent);
+  }
+
+  .badge {
+    color: var(--module-accent);
+    background: color-mix(in srgb, var(--module-accent) 10%, transparent);
   }
 
   .chart-wrapper {
