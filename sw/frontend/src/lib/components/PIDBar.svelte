@@ -33,148 +33,81 @@
 </script>
 
 <article
-  class="pid-card"
+  class="dashboard-card pid-bar-card"
   class:disabled={!metric.supported}
-  style="background: color-mix(in srgb, {metric.color} 5%, transparent); --module-accent: {metric.color};"
+  style="--module-accent: {metric.color};"
   {...rest}
 >
-  <header class="card-header">
-    <div
-      class="icon"
-      style="background: color-mix(in srgb, {metric.color} 20%, transparent);"
-    >
+  <header class="dashboard-card-header">
+    <div class="dashboard-card-icon">
       <Icon name={metric.icon} size={32} />
     </div>
-    <div class="titles">
-      <div class="label">{metric.label}</div>
-      <div
-        class="subtitle"
-        style="color: color-mix(in srgb, {metric.color} 70%, transparent);"
-      >
+    <div class="dashboard-card-titles">
+      <div class="dashboard-card-label">{metric.label}</div>
+      <div class="dashboard-card-subtitle">
         {metric.description}
       </div>
     </div>
   </header>
 
-  <svg
-    class="bar-svg"
-    viewBox="0 0 {VB_W} {VB_H}"
-    preserveAspectRatio="xMidYMid meet"
-  >
-    <defs>
-      <!-- Fixed ID selector to target using our type-safe item layer -->
-      <clipPath id="bar-clip-{item.pid}">
-        <rect x={PAD} y={BAR_Y} width={BAR_W} height={BAR_H} rx={BAR_R} />
-      </clipPath>
-    </defs>
-
-    <text x={PAD + BAR_W} y={BAR_Y - 4} text-anchor="end" class="value-label">
-      {metric.displayValue}<tspan class="unit-tspan"> {metric.unit}</tspan>
-    </text>
-
-    <rect
-      x={PAD}
-      y={BAR_Y}
-      width={BAR_W}
-      height={BAR_H}
-      rx={BAR_R}
-      fill="var(--pico-muted-border-color)"
-    />
-
-    <rect
-      x={PAD}
-      y={BAR_Y}
-      width={fillWidth}
-      height={BAR_H}
-      rx={0}
-      fill={metric.color}
-      class="fill-bar"
-      clip-path="url(#bar-clip-{item.pid})"
-    />
-
-    <text x={PAD} y={BAR_Y + BAR_H + 10} text-anchor="start" class="range-label"
-      >{metric.min}</text
+  <div class="dashboard-card-body">
+    <svg
+      class="bar-svg"
+      viewBox="0 0 {VB_W} {VB_H}"
+      preserveAspectRatio="xMidYMid meet"
     >
-    <text
-      x={PAD + BAR_W}
-      y={BAR_Y + BAR_H + 10}
-      text-anchor="end"
-      class="range-label">{metric.max}</text
-    >
-  </svg>
+      <defs>
+        <clipPath id="bar-clip-{item.pid}">
+          <rect x={PAD} y={BAR_Y} width={BAR_W} height={BAR_H} rx={BAR_R} />
+        </clipPath>
+      </defs>
+
+      <text x={PAD + BAR_W} y={BAR_Y - 4} text-anchor="end" class="value-label">
+        {metric.displayValue}<tspan class="unit-tspan"> {metric.unit}</tspan>
+      </text>
+
+      <rect
+        x={PAD}
+        y={BAR_Y}
+        width={BAR_W}
+        height={BAR_H}
+        rx={BAR_R}
+        fill="var(--pico-muted-border-color)"
+      />
+
+      <rect
+        x={PAD}
+        y={BAR_Y}
+        width={fillWidth}
+        height={BAR_H}
+        rx={0}
+        fill={metric.color}
+        class="fill-bar"
+        clip-path="url(#bar-clip-{item.pid})"
+      />
+
+      <text
+        x={PAD}
+        y={BAR_Y + BAR_H + 10}
+        text-anchor="start"
+        class="range-label">{metric.min}</text
+      >
+      <text
+        x={PAD + BAR_W}
+        y={BAR_Y + BAR_H + 10}
+        text-anchor="end"
+        class="range-label">{metric.max}</text
+      >
+    </svg>
+  </div>
 </article>
 
 <style>
   /* All visual layout configurations remain completely untouched */
-  .pid-card {
-    width: 100%;
-    height: 100%;
-    box-sizing: border-box;
-    margin: 0;
-    display: flex;
-    flex-direction: column;
-    padding: 16px;
-    border: 1px solid var(--pico-muted-border-color);
-    border-radius: 12px;
+  .pid-bar-card {
     transition:
       transform 0.2s ease,
       box-shadow 0.2s ease;
-    overflow: hidden;
-  }
-
-  .pid-card:hover {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    border-color: color-mix(
-      in srgb,
-      var(--module-accent) 40%,
-      var(--pico-muted-border-color)
-    ) !important;
-  }
-
-  .card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 8px;
-    background: none;
-    border: none;
-    flex-shrink: 0;
-  }
-
-  .label {
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--pico-muted-color);
-    font-weight: 500;
-  }
-
-  .icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 48px;
-    width: 48px;
-    border-radius: 10px;
-    transition: transform 0.2s ease;
-  }
-
-  .pid-card:hover .icon {
-    transform: scale(1.05);
-  }
-
-  .titles {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    align-items: flex-start;
-    flex: 1;
-    padding: 0 12px;
-  }
-
-  .subtitle {
-    font-size: 0.65rem;
-    font-family: var(--pico-font-family-monospace);
   }
 
   .bar-svg {
@@ -205,10 +138,5 @@
     font-size: 7px;
     fill: var(--pico-muted-color);
     font-family: var(--pico-font-family-monospace);
-  }
-
-  .disabled {
-    opacity: 0.4;
-    filter: grayscale(100%);
   }
 </style>

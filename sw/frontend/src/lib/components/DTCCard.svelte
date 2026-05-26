@@ -1,6 +1,6 @@
 <script lang="ts">
   import { canStore } from "$lib/canStore.svelte.js";
-  import type { SpecialGridItem } from "$lib/types";
+  import type { SpecialGridItem, DtcModeData } from "$lib/types";
   import Icon from "../Icon.svelte";
 
   interface Props {
@@ -12,15 +12,15 @@
 
   // --- RELIABLE NESTED EXTRACTION RIG ---
   const confirmedCodes = $derived(
-    canStore.dtc?.find((d: any) => d.mode === 3)?.dtc || [],
+    (canStore.dtc as DtcModeData[])?.find((d) => d.mode === 3)?.dtc || [],
   );
 
   const pendingCodes = $derived(
-    canStore.dtc?.find((d: any) => d.mode === 7)?.dtc || [],
+    (canStore.dtc as DtcModeData[])?.find((d) => d.mode === 7)?.dtc || [],
   );
 
   const permanentCodes = $derived(
-    canStore.dtc?.find((d: any) => d.mode === 10)?.dtc || [],
+    (canStore.dtc as DtcModeData[])?.find((d) => d.mode === 10)?.dtc || [],
   );
 
   // --- SEVERITY, ICONS & STATUS RUNES ---
@@ -48,23 +48,23 @@
 </script>
 
 <article
-  class="dtc-card"
+  class="dashboard-card dtc-card"
   class:status-warn={status === "warn"}
   class:status-error={status === "malfunction"}
   style="--module-accent: {statusColor};"
   {...rest}
 >
-  <header class="card-header">
-    <div class="icon">
+  <header class="dashboard-card-header">
+    <div class="dashboard-card-icon">
       <Icon name={"engine"} size={32} />
     </div>
-    <div class="titles">
-      <div class="label">Diagnostic Troube Codes</div>
-      <div class="subtitle">{statusDescription}</div>
+    <div class="dashboard-card-titles">
+      <div class="dashboard-card-label">Diagnostic Troube Codes</div>
+      <div class="dashboard-card-subtitle">{statusDescription}</div>
     </div>
   </header>
 
-  <div class="dtc-content-body">
+  <div class="dashboard-card-body dtc-content-body">
     {#if confirmedCodes.length === 0 && permanentCodes.length === 0 && pendingCodes.length === 0}
       <div class="empty-log-state">
         <span>No diagnostic trouble codes logged in ECU memory bank.</span>
@@ -176,28 +176,7 @@
   }
 
   .dtc-card {
-    width: 100%;
-    height: 100%;
-    box-sizing: border-box;
-    margin: 0;
-    display: flex;
-    flex-direction: column;
-    padding: 16px;
-    border: 1px solid var(--pico-muted-border-color);
-    border-radius: 12px;
-    transition:
-      transform 0.2s ease,
-      box-shadow 0.2s ease;
-    overflow: hidden;
-  }
-
-  .dtc-card:hover {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    border-color: color-mix(
-      in srgb,
-      var(--module-accent) 40%,
-      var(--pico-muted-border-color)
-    ) !important;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
   }
 
   .status-warn {
@@ -208,60 +187,6 @@
     background: color-mix(in srgb, #ef4444 5%, rgba(25, 25, 30, 0.55));
   }
 
-  .card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 8px;
-    background: none;
-    border: none;
-  }
-
-  .icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 48px;
-    width: 48px;
-    border-radius: 10px;
-    transition: transform 0.2s ease;
-    background: color-mix(in srgb, var(--module-accent) 20%, transparent);
-  }
-
-  .dtc-card:hover .icon {
-    transform: scale(1.05);
-  }
-
-  .titles {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    align-items: flex-start;
-    flex: 1;
-    padding: 0 12px;
-  }
-
-  .label {
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--pico-muted-color);
-    font-weight: 500;
-  }
-
-  .subtitle {
-    font-size: 0.65rem;
-    letter-spacing: 0.05em;
-    font-family: var(--pico-font-family-monospace);
-    color: color-mix(in srgb, var(--module-accent) 70%, transparent);
-  }
-
-  .dtc-content-body {
-    flex: 1 1 auto;
-    width: 100%;
-    display: block;
-    min-height: 0;
-  }
   .empty-log-state {
     display: flex;
     align-items: center;

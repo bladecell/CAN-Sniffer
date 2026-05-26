@@ -9,6 +9,11 @@
   import { onMount } from "svelte";
   import ToastContainer from "./lib/components/ToastContainer.svelte";
 
+  onMount(async () => {
+    await canStore.requestVin();
+    await canStore.requestDTC();
+  });
+
   onMount(() => {
     canStore.connect();
     canStore.loadDefinitions();

@@ -10,7 +10,8 @@
   import PIDGauge from "./PIDGauge.svelte";
   import PIDBar from "./PIDBar.svelte";
   import OverviewCard from "./OverviewCard.svelte";
-  import type { DashboardItem, PidGridItem, OverviewGridItem } from "$lib/types";
+  import DTCCard from "./DTCCard.svelte";
+  import type { DashboardItem, PidGridItem, OverviewGridItem, SpecialGridItem } from "$lib/types";
   import { dashboardStore } from "$lib/dashboardStore.svelte";
 
   interface Props {
@@ -170,7 +171,7 @@
   {:else if item.cardType === "battery"}
     <div class="static-panel-placeholder">Battery Monitor Pane</div>
   {:else if item.cardType === "dtcs"}
-    <div class="static-panel-placeholder">Diagnostic Trouble Log</div>
+    <DTCCard item={item as SpecialGridItem} />
   {/if}
 
   <div

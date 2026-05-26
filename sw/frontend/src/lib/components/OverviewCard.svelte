@@ -11,11 +11,6 @@
 
   let { item, ...rest }: Props = $props();
 
-  onMount(async () => {
-    await canStore.requestVin();
-    await canStore.requestDTC();
-  });
-
   const vin = $derived(canStore.vin || "--- UNKNOWN ---");
   const battery = $derived(
     canStore.wsCanStatus?.battery_voltage.toFixed(1) || "0.0",
@@ -45,10 +40,10 @@
   </div>
 {/snippet}
 
-<article class="overview-card" style="--module-accent: {item.color}" {...rest}>
-  <header class="card-header">
-    <div class="titles">
-      <div class="label">System Overview</div>
+<article class="dashboard-card overview-card" style="--module-accent: {item.color}" {...rest}>
+  <header class="dashboard-card-header">
+    <div class="dashboard-card-titles">
+      <div class="dashboard-card-label">System Overview</div>
       <div class="vin-text">{vin}</div>
     </div>
 
@@ -64,20 +59,20 @@
     </div>
   </header>
 
-  <div class="card-body">
+  <div class="dashboard-card-body card-body">
     <div class="stats-row">
       <div class="stat-item">
-        <span class="label">Battery</span>
-        <div class="value">
-          <span class="number">{battery}</span>
-          <span class="unit">V</span>
+        <span class="dashboard-card-label">Battery</span>
+        <div class="dashboard-card-value-group">
+          <span class="dashboard-card-number">{battery}</span>
+          <span class="dashboard-card-unit">V</span>
         </div>
       </div>
       <div class="stat-item">
-        <span class="label">Diagnostics</span>
-        <div class="value">
-          <span class="number" class:error={dtcCount > 0}>{dtcCount}</span>
-          <span class="unit">DTCs</span>
+        <span class="dashboard-card-label">Diagnostics</span>
+        <div class="dashboard-card-value-group">
+          <span class="dashboard-card-number" class:error={dtcCount > 0}>{dtcCount}</span>
+          <span class="dashboard-card-unit">DTCs</span>
         </div>
       </div>
     </div>
@@ -92,32 +87,12 @@
 
 <style>
   .overview-card {
-    width: 100%;
-    height: 100%;
-    box-sizing: border-box;
-    display: flex;
-    flex-direction: column;
     justify-content: space-between;
-    padding: 16px;
-    border: 1px solid var(--pico-muted-border-color);
-    border-radius: 12px;
     background: color-mix(
       in srgb,
       var(--module-accent) 8%,
       rgba(20, 20, 25, 0.8)
     );
-    transition:
-      transform 0.2s ease,
-      box-shadow 0.2s ease;
-  }
-
-  .card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 16px;
-    background: none;
-    border: none;
   }
 
   .header-badges {
@@ -162,19 +137,6 @@
     animation: pulse-glow 2s infinite alternate;
   }
 
-  .titles {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .label {
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    color: var(--pico-muted-color);
-    font-weight: 500;
-  }
-
   .vin-text {
     font-family: var(--pico-font-family-monospace);
     font-size: 1.1rem;
@@ -183,10 +145,7 @@
   }
 
   .card-body {
-    display: flex;
-    flex-direction: column;
     gap: 20px;
-    flex-grow: 1;
     justify-content: center;
   }
 
@@ -202,27 +161,8 @@
     gap: 4px;
   }
 
-  .value {
-    display: flex;
-    align-items: baseline;
-    gap: 4px;
-  }
-
-  .number {
-    font-size: 2rem;
-    font-weight: 700;
-    line-height: 1;
-    font-family: var(--pico-font-family-monospace);
-  }
-
-  .number.error {
+  .error {
     color: var(--pico-del-color);
-  }
-
-  .unit {
-    font-size: 0.9rem;
-    color: var(--pico-muted-color);
-    font-family: var(--pico-font-family-monospace);
   }
 
   .pid-footer {
@@ -276,14 +216,5 @@
       opacity: 1;
       box-shadow: 0 0 8px var(--status-color);
     }
-  }
-
-  .overview-card:hover {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    border-color: color-mix(
-      in srgb,
-      var(--module-accent) 40%,
-      var(--pico-muted-border-color)
-    ) !important;
   }
 </style>

@@ -148,23 +148,23 @@
 </script>
 
 <article
-  class="pid-card"
+  class="dashboard-card pid-chart-card"
   class:disabled={!metric.supported}
   style="--module-accent: {metric.color};"
   {...rest}
 >
-  <header class="card-header">
-    <div class="icon">
+  <header class="dashboard-card-header">
+    <div class="dashboard-card-icon">
       <Icon name={metric.icon} size={32} />
     </div>
-    <div class="titles">
-      <div class="label">{metric.label}</div>
-      <div class="subtitle">
+    <div class="dashboard-card-titles">
+      <div class="dashboard-card-label">{metric.label}</div>
+      <div class="dashboard-card-subtitle">
         {metric.description}
       </div>
     </div>
 
-    <div class="badge">
+    <div class="chart-badge">
       {metric.displayValue}<span class="unit">{metric.unit}</span>
     </div>
   </header>
@@ -179,91 +179,13 @@
 </article>
 
 <style>
-  .pid-card {
-    width: 100%;
-    height: 100%;
-    box-sizing: border-box;
-    margin: 0;
-    display: flex;
-    flex-direction: column;
-    background: color-mix(in srgb, var(--module-accent) 5%, transparent);
-    padding: 16px;
-    border: 1px solid var(--pico-muted-border-color);
-    border-radius: 12px;
+  .pid-chart-card {
     transition:
       transform 0.2s ease,
       box-shadow 0.2s ease;
-    overflow: hidden;
   }
 
-  .pid-card:hover {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    border-color: color-mix(
-      in srgb,
-      var(--module-accent) 40%,
-      var(--pico-muted-border-color)
-    ) !important;
-  }
-
-  .pid-card.disabled {
-    opacity: 0.4;
-    filter: grayscale(100%);
-  }
-
-  .pid-card.disabled:hover {
-    transform: none;
-    box-shadow: none;
-  }
-
-  .card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 8px;
-    background: none;
-    border: none;
-  }
-
-  .icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 48px;
-    width: 48px;
-    border-radius: 10px;
-    transition: transform 0.2s ease;
-    background: color-mix(in srgb, var(--module-accent) 20%, transparent);
-  }
-
-  .pid-card:hover .icon {
-    transform: scale(1.05);
-  }
-
-  .titles {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    align-items: flex-start;
-    flex: 1;
-    padding: 0 12px;
-  }
-
-  .label {
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--pico-muted-color);
-    font-weight: 500;
-  }
-
-  .subtitle {
-    font-size: 0.65rem;
-    letter-spacing: 0.05em;
-    font-family: var(--pico-font-family-monospace);
-    color: color-mix(in srgb, var(--module-accent) 70%, transparent);
-  }
-
-  .badge {
+  .chart-badge {
     font-size: 1.25rem;
     font-weight: 700;
     padding: 4px 12px;
@@ -272,17 +194,14 @@
     display: flex;
     align-items: baseline;
     gap: 2px;
+    color: var(--module-accent);
+    background: color-mix(in srgb, var(--module-accent) 10%, transparent);
   }
 
-  .badge .unit {
+  .chart-badge .unit {
     font-size: 0.8rem;
     font-weight: 500;
     color: var(--module-accent);
-  }
-
-  .badge {
-    color: var(--module-accent);
-    background: color-mix(in srgb, var(--module-accent) 10%, transparent);
   }
 
   .chart-wrapper {

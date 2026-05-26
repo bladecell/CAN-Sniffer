@@ -36,6 +36,16 @@ export interface OverviewGridItem extends BaseGridItem {
 export type DashboardItem = PidGridItem | SpecialGridItem | OverviewGridItem;
 
 /**
+ * DATA STRUCTURES
+ */
+
+export interface DtcModeData {
+  mode: number;
+  dtc_count: number;
+  dtc: string[];
+}
+
+/**
  * MODULE CONSTRAINTS AND CONFIGURATIONS
  */
 
@@ -68,7 +78,7 @@ export const MODULE_CONFIGS: ModuleConfigs = {
     max: { w: 18, h: 12 }
   },
   dtcs: {
-    min: { w: 10, h: 8 },
+    min: { w: 14, h: 8 },
     max: { w: 30, h: 20 }
   },
   overview: {
