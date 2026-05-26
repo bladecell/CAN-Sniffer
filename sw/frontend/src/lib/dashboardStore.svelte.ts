@@ -8,6 +8,7 @@ const STORAGE_KEY = "dashboard-unified-flow";
 export class DashboardStore {
   items = $state<DashboardItem[]>([]);
   isInitialized = $state(false);
+  activeMenuId = $state<string | null>(null);
 
   constructor() {
     this.load();

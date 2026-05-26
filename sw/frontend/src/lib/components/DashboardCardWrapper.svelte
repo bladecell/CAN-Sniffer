@@ -1,8 +1,3 @@
-<script lang="ts" module>
-  // Global state to ensure only one menu is open across all dashboard instances
-  let activeMenuId = $state<string | null>(null);
-</script>
-
 <script lang="ts">
   import { onDestroy } from "svelte";
   import PIDCard from "$lib/components/PIDCard.svelte";
@@ -11,8 +6,14 @@
   import PIDBar from "./PIDBar.svelte";
   import OverviewCard from "./OverviewCard.svelte";
   import DTCCard from "./DTCCard.svelte";
-  import type { DashboardItem, PidGridItem, OverviewGridItem, SpecialGridItem } from "$lib/types";
+  import type {
+    DashboardItem,
+    PidGridItem,
+    OverviewGridItem,
+    SpecialGridItem,
+  } from "$lib/types";
   import { dashboardStore } from "$lib/dashboardStore.svelte";
+  import { canStore } from "$lib/canStore.svelte";
 
   interface Props {
     item: DashboardItem;
@@ -23,13 +24,18 @@
     onDelete: (id: string) => void;
   }
 
-  let { item, onRequestDrag, resizeStart, onOpenSettings, onAddNew, onDelete }: Props =
-    $props();
+  let {
+    item,
+    onRequestDrag,
+    resizeStart,
+    onOpenSettings,
+    onAddNew,
+    onDelete,
+  }: Props = $props();
 
   // --- LOCAL STATE ---
   let wrapperElement = $state<HTMLElement | null>(null);
   let menuPos = $state({ x: 0, y: 0 });
-  let isMenuOpen = $state(false);
 
   // Timers and Tracking
   let dragTimer: ReturnType<typeof setTimeout>;
@@ -47,14 +53,13 @@
   }
 
   // Sync visibility with global module state
-  $effect(() => {
-    if (!isDestroyed) isMenuOpen = activeMenuId === item.id;
-  });
+  const isMenuOpen = $derived(dashboardStore.activeMenuId === item.id);
 
   onDestroy(() => {
     isDestroyed = true;
     clearTimers();
-    if (activeMenuId === item.id) activeMenuId = null;
+    if (dashboardStore.activeMenuId === item.id)
+      dashboardStore.activeMenuId = null;
   });
 
   function triggerHaptic(duration: number | number[]) {
@@ -113,12 +118,12 @@
 
   function openMenu(x: number, y: number) {
     const W = 220;
-    const H = 140; 
+    const H = 140;
     let finalX = x + W > window.innerWidth ? x - W : x;
     let finalY = y + H > window.innerHeight ? window.innerHeight - H - 12 : y;
 
     menuPos = { x: Math.max(12, finalX), y: Math.max(12, finalY) };
-    activeMenuId = item.id;
+    dashboardStore.activeMenuId = item.id;
   }
 
   function handleClose(e: Event) {
@@ -127,7 +132,7 @@
       wrapperElement &&
       !wrapperElement.contains(e.target as Node)
     ) {
-      activeMenuId = null;
+      dashboardStore.activeMenuId = null;
     }
   }
 </script>
@@ -135,7 +140,7 @@
 <svelte:window
   onclick={handleClose}
   ontouchstart={handleClose}
-  onscroll={() => isMenuOpen && (activeMenuId = null)}
+  onscroll={() => isMenuOpen && (dashboardStore.activeMenuId = null)}
 />
 
 <div
@@ -198,14 +203,28 @@
       <button
         onclick={() => {
           onOpenSettings(item);
-          activeMenuId = null;
+          dashboardStore.activeMenuId = null;
         }}>Modify Component</button
       >
+      <button
+        class={canStore.obd2Status?.continuous_running
+          ? "stop-action"
+          : "start-action"}
+        onclick={() => {
+          const currentState = canStore.obd2Status?.continuous_running ?? false;
+          canStore.setContinuousPolling(!currentState);
+          dashboardStore.activeMenuId = null;
+        }}
+      >
+        {canStore.obd2Status?.continuous_running
+          ? "Stop Polling"
+          : "Start Polling"}
+      </button>
       <button
         class="add-action"
         onclick={() => {
           onAddNew();
-          activeMenuId = null;
+          dashboardStore.activeMenuId = null;
         }}>Add New Module</button
       >
       <button
@@ -213,7 +232,7 @@
         onclick={() => {
           triggerHaptic([30, 40, 30]);
           onDelete(item.id);
-          activeMenuId = null;
+          dashboardStore.activeMenuId = null;
         }}>Remove from Dashboard</button
       >
     </div>
@@ -273,7 +292,7 @@
     padding: 6px;
     display: flex;
     flex-direction: column;
-    min-width: 210px;
+    min-width: 180px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
   }
   .local-context-menu button {
@@ -286,13 +305,18 @@
     cursor: pointer;
     font-size: 0.9rem;
     font-weight: 500;
+    white-space: nowrap;
   }
   .local-context-menu button:hover {
     background: rgba(255, 255, 255, 0.06);
     color: #ffffff;
   }
-  .add-action {
-    color: #10b981 !important;
+  .add-action,
+  .start-action {
+    color: #00b478 !important;
+  }
+  .stop-action {
+    color: #f56b3d !important;
   }
   .delete-action {
     color: #f87171 !important;

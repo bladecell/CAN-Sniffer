@@ -30,7 +30,8 @@
   let modalIsNewCard = $state(false);
 
   // Background Context Menu State
-  let bgMenu = $state({ show: false, x: 0, y: 0 });
+  let bgMenu = $state({ x: 0, y: 0 });
+  const isBgMenuOpen = $derived(dashboardStore.activeMenuId === "background");
 
   // Resizing Subsystem
   const resizeHandler = createResizeHandler(
@@ -80,7 +81,7 @@
     modalTargetItem = dashboardStore.addItem("pid");
     modalIsNewCard = true;
     isModalOpen = true;
-    bgMenu.show = false;
+    dashboardStore.activeMenuId = null;
   }
 
   function handleModalSave(item: DashboardItem) {
@@ -110,7 +111,7 @@
       e.preventDefault();
       bgMenu.x = e.clientX;
       bgMenu.y = e.clientY;
-      bgMenu.show = true;
+      dashboardStore.activeMenuId = "background";
     }
   }
 
@@ -124,8 +125,8 @@
 </script>
 
 <svelte:window
-  onclick={() => (bgMenu.show = false)}
-  ontouchstart={() => (bgMenu.show = false)}
+  onclick={() => (dashboardStore.activeMenuId = null)}
+  ontouchstart={() => (dashboardStore.activeMenuId = null)}
 />
 
 <div
@@ -190,13 +191,27 @@
   {/if}
 </div>
 
-{#if bgMenu.show}
+{#if isBgMenuOpen}
   <div
     class="bg-context-menu"
     style="top: {bgMenu.y}px; left: {bgMenu.x}px;"
     onclick={(e) => e.stopPropagation()}
   >
-    <button onclick={openAddWizard}>Add New Module to Grid</button>
+    <button
+      class={canStore.obd2Status?.continuous_running
+        ? "stop-action"
+        : "start-action"}
+      onclick={() => {
+        const currentState = canStore.obd2Status?.continuous_running ?? false;
+        canStore.setContinuousPolling(!currentState);
+        dashboardStore.activeMenuId = null;
+      }}
+    >
+      {canStore.obd2Status?.continuous_running
+        ? "Stop Polling"
+        : "Start Polling"}
+    </button>
+    <button class="add-action" onclick={openAddWizard}>Add New Module</button>
   </div>
 {/if}
 
@@ -311,7 +326,9 @@
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 8px;
     padding: 6px;
-    min-width: 200px;
+    min-width: 180px;
+    display: flex;
+    flex-direction: column;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
   }
   .bg-context-menu button {
@@ -325,9 +342,18 @@
     font-size: 0.9rem;
     font-weight: 600;
     width: 100%;
+    white-space: nowrap;
   }
   .bg-context-menu button:hover {
-    background: rgba(16, 185, 129, 0.1);
+    background: rgba(255, 255, 255, 0.06);
+    color: #ffffff;
+  }
+  .add-action,
+  .start-action {
+    color: #00b478 !important;
+  }
+  .stop-action {
+    color: #f56b3d !important;
   }
 
   :global(#dnd-action-dragged-el) {
