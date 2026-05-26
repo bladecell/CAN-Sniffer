@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { canStore } from "$lib/canStore.svelte.js";
+  import { canStore } from "$lib/canStore.svelte";
   import { onMount } from "svelte";
   import { usePidData } from "$lib/pidHelpers.svelte.ts";
   import type { OverviewGridItem } from "$lib/types";

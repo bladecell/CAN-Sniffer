@@ -1,18 +1,22 @@
-// src/lib/canStore.svelte.js
+// src/lib/canStore.svelte.ts
 import { SvelteMap } from 'svelte/reactivity';
 import { alertStore } from './alertStore.svelte';
+import type { PidValue, WsCanStatus, PidDefinition, Obd2Status, DtcModeData } from './types';
 
 export const COMMANDS = {
     START_LOG: 0xA0,
     STOP_LOG: 0xA1
 };
 
+export type MessageListener = (update: { pid: number; value: number; timestamp: number }) => void;
+
 export class CanStore {
     connected = $state(false);
-    pids = new SvelteMap();
-    listeners = new Set();
+    pids = new SvelteMap<number, PidValue>();
+    listeners = new Set<MessageListener>();
     isStreaming = $state(false);
-    socket = null;
+    socket: WebSocket | null = null;
+    pollInterval: any = null;
 
     connect() {
         if (this.socket) return;
@@ -57,7 +61,9 @@ export class CanStore {
             this.pollInterval = null;
         }
 
-        this.canStatus = { ...this.canStatus, state: 'disconnected' };
+        if (this.canStatus) {
+            this.canStatus = { ...this.canStatus, state: 'disconnected' };
+        }
 
         console.log("WebSocket disconnected manually.");
     }
@@ -82,7 +88,7 @@ export class CanStore {
         }
     }
 
-    sendByte(byte) {
+    sendByte(byte: number) {
         if (this.socket && this.socket.readyState === WebSocket.OPEN) {
             const buffer = new Uint8Array([byte]);
             this.socket.send(buffer);
@@ -91,7 +97,7 @@ export class CanStore {
         }
     }
 
-    handleMessage(data) {
+    handleMessage(data: any) {
         if (!(data instanceof ArrayBuffer)) return;
         const view = new DataView(data);
         const type = view.getUint8(0);
@@ -108,35 +114,35 @@ export class CanStore {
         }
     }
 
-    subscribe(callback) {
+    subscribe(callback: MessageListener) {
         this.listeners.add(callback);
         // Return an unsubscribe function to prevent memory leaks
         return () => this.listeners.delete(callback);
     }
 
-    wsCanStatus = $state({ state: "Not Connnected", utilization: 0, battery_voltage: 0 });
+    wsCanStatus = $state<WsCanStatus>({ state: "Not Connected", utilization: 0, battery_voltage: 0 });
 
-    parseCanStatusPacket(view) {
+    parseCanStatusPacket(view: DataView) {
         const previousState = this.wsCanStatus?.state;
         const length = view.getUint8(1);
         if (length !== view.byteLength - 2) {
             console.warn("Invalid Can Status packet length");
             return;
         }
-        const state = view.getUint8(2, true);
+        const stateIdx = view.getUint8(2);
         const utilization = view.getFloat32(3, true);
         const battery_voltage = view.getFloat32(7, true);
         const can_bus_state_name = ["Not Initialized", "Off", "Not Connected", "Connected"];
 
         this.wsCanStatus = {
-            state: can_bus_state_name[state],
+            state: can_bus_state_name[stateIdx] || "Unknown",
             utilization: Math.round(utilization * 100),
             battery_voltage: battery_voltage,
         };
 
         const currentState = this.wsCanStatus?.state;
 
-        if (previousState != currentState) {
+        if (previousState !== currentState) {
             if (currentState === "Connected") {
                 alertStore.add("CAN Bus Connected", "success");
             } else {
@@ -153,7 +159,7 @@ export class CanStore {
         }
     }
 
-    parsePidPacket(view) {
+    parsePidPacket(view: DataView) {
         const length = view.getUint8(1);
         if (length !== view.byteLength - 2) {
             console.warn("Invalid PID %d packet length", view.getUint32(2, true));
@@ -213,7 +219,7 @@ export class CanStore {
         }
     }
 
-    system = $state([]);
+    system = $state<any[]>([]);
 
     async requestSystem() {
         try {
@@ -226,7 +232,7 @@ export class CanStore {
         }
     }
 
-    pidDefinitions = $state([]);
+    pidDefinitions = $state<PidDefinition[]>([]);
 
     async loadDefinitions() {
         try {
@@ -239,13 +245,11 @@ export class CanStore {
         }
     }
 
-    canStatus = $state(null);
-    canPollInterval = null;
+    canStatus = $state<any>(null);
     canCurrentRate = $state(5000);
 
     async getCanStatus() {
         try {
-
             const response = await fetch("/api/v1/can_bus");
             if (!response.ok) throw new Error(response.statusText);
 
@@ -257,7 +261,7 @@ export class CanStore {
         }
     }
 
-    obd2Status = $state(null);
+    obd2Status = $state<Obd2Status | null>(null);
 
     async getObd2Status() {
         try {
@@ -270,9 +274,9 @@ export class CanStore {
         }
     }
 
-    async setContinuousPolling(running) {
+    async setContinuousPolling(running: boolean) {
         try {
-            const response = await fetch(`/api/v1/req/pid_poll?running=${running}`, {
+            await fetch(`/api/v1/req/pid_poll?running=${running}`, {
                 method: "POST"
             });
 
@@ -311,7 +315,7 @@ export class CanStore {
         }
     }
 
-    dtc = $state([]);
+    dtc = $state<DtcModeData[]>([]);
     totalDTCs = $state(0);
 
     async getDTC() {
@@ -319,7 +323,7 @@ export class CanStore {
             const response = await fetch("/api/v1/dtc");
             const result = await response.json();
             this.dtc = result.dtcs;
-            this.totalDTCs = result.dtcs.reduce((sum, mode) => sum + mode.dtc_count, 0);
+            this.totalDTCs = result.dtcs.reduce((sum: number, mode: DtcModeData) => sum + mode.dtc_count, 0);
         } catch (e) {
             console.error("Failed to load DTC", e);
         }
@@ -341,10 +345,6 @@ export class CanStore {
             console.error("Failed to request DTC", e);
         }
     }
-
-
-
-
 }
 
 export const canStore = new CanStore();

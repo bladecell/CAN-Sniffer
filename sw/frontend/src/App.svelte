@@ -5,7 +5,7 @@
   import Settings from "./Settings.svelte";
   import Diagnostics from "./Diagnostics.svelte";
   import CanLogging from "./CanLogging.svelte";
-  import { canStore } from "$lib/canStore.svelte.js";
+  import { canStore } from "$lib/canStore.svelte";
   import { onMount } from "svelte";
   import ToastContainer from "./lib/components/ToastContainer.svelte";
 

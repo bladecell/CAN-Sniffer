@@ -8,7 +8,7 @@
 
   import { dashboardStore } from "$lib/dashboardStore.svelte";
   import { createResizeHandler } from "$lib/resizeLogic.svelte";
-  import { canStore } from "$lib/canStore.svelte.js";
+  import { canStore } from "$lib/canStore.svelte";
   import type { DashboardItem, CardType } from "$lib/types";
 
   // --- GRID CONSTANTS ---

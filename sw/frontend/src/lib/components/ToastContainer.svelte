@@ -1,5 +1,5 @@
 <script>
-  import { alertStore } from "$lib/alertStore.svelte.js";
+  import { alertStore } from "$lib/alertStore.svelte";
   import { fly } from "svelte/transition";
   import { flip } from "svelte/animate";
 </script>

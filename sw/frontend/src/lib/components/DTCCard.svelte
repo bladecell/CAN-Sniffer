@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { canStore } from "$lib/canStore.svelte.js";
+  import { canStore } from "$lib/canStore.svelte";
   import type { SpecialGridItem, DtcModeData } from "$lib/types";
   import Icon from "../Icon.svelte";
 

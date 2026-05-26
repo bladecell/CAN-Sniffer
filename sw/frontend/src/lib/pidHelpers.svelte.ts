@@ -1,4 +1,4 @@
-import { canStore } from "$lib/canStore.svelte.js";
+import { canStore } from "$lib/canStore.svelte";
 
 // Type definitions matching your canStore structure
 export interface PidDefinition {

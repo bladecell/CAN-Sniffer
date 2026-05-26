@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { canStore } from "$lib/canStore.svelte.js";
+  import { canStore } from "$lib/canStore.svelte";
   import TelemetryStepper from "./TelemetryStepper.svelte";
   import type {
     DashboardItem,

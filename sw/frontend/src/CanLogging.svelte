@@ -1,6 +1,6 @@
 <script>
   import DashboardCardWrapper from "$lib/components/DashboardCardWrapper.svelte";
-  import { canStore } from "./lib/canStore.svelte.js";
+  import { canStore } from "./lib/canStore.svelte";
   import { untrack, onDestroy, onMount } from "svelte";
   import OverviewCard from "$lib/components/OverviewCard.svelte";
   import DTCCard from "./lib/components/DTCCard.svelte";

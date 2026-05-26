@@ -1,5 +1,5 @@
 <script>
-  import { canStore } from "$lib/canStore.svelte.js";
+  import { canStore } from "$lib/canStore.svelte";
   import { onMount } from "svelte";
   import { on } from "svelte/events";
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { canStore } from "$lib/canStore.svelte.js";
+  import { canStore } from "$lib/canStore.svelte";
   import { onMount, untrack, tick, onDestroy } from "svelte";
   import uPlot from "uplot";
   import "uplot/dist/uPlot.min.css";

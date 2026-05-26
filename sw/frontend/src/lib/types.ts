@@ -45,6 +45,45 @@ export interface DtcModeData {
   dtc: string[];
 }
 
+export interface PidValue {
+  value: number;
+  timestamp: number;
+  rate: number;
+  valid: boolean;
+  supported: boolean;
+  history: { value: number; timestamp: number }[];
+}
+
+export interface WsCanStatus {
+  state: string;
+  utilization: number;
+  battery_voltage: number;
+}
+
+export interface Alert {
+  id: number;
+  message: string;
+  type: "info" | "success" | "warning" | "error";
+}
+
+export interface PidDefinition {
+  pid: number;
+  name: string;
+  description: string;
+  unit: string;
+  icon: string;
+  color: number;
+  minValue?: number;
+  maxValue?: number;
+  updateIntervalMs?: number;
+  supported?: boolean;
+}
+
+export interface Obd2Status {
+  continuous_running: boolean;
+  last_request_time: number;
+}
+
 /**
  * MODULE CONSTRAINTS AND CONFIGURATIONS
  */

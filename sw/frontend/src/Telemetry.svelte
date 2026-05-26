@@ -2,7 +2,7 @@
   import PIDCard from "$lib/components/PIDCard.svelte";
   import CANConnectionCard from "$lib/components/CANConnectionCard.svelte";
   import Switch from "$lib/components/Switch.svelte";
-  import { canStore } from "$lib/canStore.svelte.js";
+  import { canStore } from "$lib/canStore.svelte";
   import { alertStore } from "./lib/alertStore.svelte";
 
   import { createSwapy } from "swapy";
