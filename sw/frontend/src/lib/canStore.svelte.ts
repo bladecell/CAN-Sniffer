@@ -34,6 +34,18 @@ export class CanStore {
             console.log("WebSocket Connected");
             alertStore.add("WebSocket Connected", "success");
             this.connected = true;
+
+            // 1. Load static/status definitions
+            this.loadDefinitions();
+            this.getObd2Status();
+
+            // 2. Fetch last known data immediately from ESP32 storage
+            this.getVin();
+            this.getDTC();
+
+            // 3. Trigger a fresh request to the vehicle ECU
+            this.requestVin();
+            this.requestDTC();
         };
 
         this.socket.onclose = () => {

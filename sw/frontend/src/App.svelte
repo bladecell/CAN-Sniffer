@@ -9,15 +9,8 @@
   import { onMount } from "svelte";
   import ToastContainer from "./lib/components/ToastContainer.svelte";
 
-  onMount(async () => {
-    await canStore.requestVin();
-    await canStore.requestDTC();
-  });
-
   onMount(() => {
     canStore.connect();
-    canStore.loadDefinitions();
-    canStore.getObd2Status();
 
     // 3. Listen for manual URL changes (Back/Forward button)
     const handleHashChange = () => {
