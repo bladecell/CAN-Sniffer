@@ -107,31 +107,34 @@ export function createResizeHandler(
     lastRenderTime = currentTime - (timeElapsed % RENDER_INTERVAL_MS);
 
     const isMobile = window.innerWidth <= 768;
-    const cols = isMobile ? mobileCols : desktopCols;
-    const gap = isMobile ? mobileGap : desktopGap;
+    const gap = isMobile ? 12 : 16;
+    const padding = 12;
+    const cellW = 20;
+    const cellH = 10;
 
-    const cellWidth = (containerWidth() - (cols - 1) * gap) / cols;
+    const availableWidth = containerWidth() - (2 * padding);
+    const dynamicCols = Math.max(1, Math.floor((availableWidth + gap) / (cellW + gap)));
 
     const rawDX = latestPointerEvent.clientX - initialMouseX;
     const rawDY = latestPointerEvent.clientY - initialMouseY;
 
-    const projectedW = Math.round((initialWidthPx + rawDX + gap) / (cellWidth + gap));
-    const projectedH = Math.round((initialHeightPx + rawDY + gap) / (rowHeight + gap));
+    const projectedW = Math.round((initialWidthPx + rawDX + gap) / (cellW + gap));
+    const projectedH = Math.round((initialHeightPx + rawDY + gap) / (cellH + gap));
 
-    const dynamicMaxW = Math.min(cols, state.activeConfig.maxW);
+    const currentMaxW = Math.min(dynamicCols, state.activeConfig.maxW);
 
     if (projectedW < state.activeConfig.minW) {
-      state.resizeDeltaX = state.activeConfig.minW * cellWidth + (state.activeConfig.minW - 1) * gap - initialWidthPx;
-    } else if (projectedW > dynamicMaxW) {
-      state.resizeDeltaX = dynamicMaxW * cellWidth + (dynamicMaxW - 1) * gap - initialWidthPx;
+      state.resizeDeltaX = state.activeConfig.minW * cellW + (state.activeConfig.minW - 1) * gap - initialWidthPx;
+    } else if (projectedW > currentMaxW) {
+      state.resizeDeltaX = currentMaxW * cellW + (currentMaxW - 1) * gap - initialWidthPx;
     } else {
       state.resizeDeltaX = rawDX;
     }
 
     if (projectedH < state.activeConfig.minH) {
-      state.resizeDeltaY = state.activeConfig.minH * rowHeight + (state.activeConfig.minH - 1) * gap - initialHeightPx;
+      state.resizeDeltaY = state.activeConfig.minH * cellH + (state.activeConfig.minH - 1) * gap - initialHeightPx;
     } else if (projectedH > state.activeConfig.maxH) {
-      state.resizeDeltaY = state.activeConfig.maxH * rowHeight + (state.activeConfig.maxH - 1) * gap - initialHeightPx;
+      state.resizeDeltaY = state.activeConfig.maxH * cellH + (state.activeConfig.maxH - 1) * gap - initialHeightPx;
     } else {
       state.resizeDeltaY = rawDY;
     }
@@ -142,15 +145,19 @@ export function createResizeHandler(
       const item = dashboardStore.items.find(i => i.id === state.resizingItemId);
       if (item) {
         const isMobile = window.innerWidth <= 768;
-        const cols = isMobile ? mobileCols : desktopCols;
-        const gap = isMobile ? mobileGap : desktopGap;
-        const cellWidth = (containerWidth() - (cols - 1) * gap) / cols;
+        const gap = isMobile ? 12 : 16;
+        const padding = 12;
+        const cellW = 20;
+        const cellH = 10;
 
-        const finalW = Math.round((initialWidthPx + state.resizeDeltaX + gap) / (cellWidth + gap));
-        const finalH = Math.round((initialHeightPx + state.resizeDeltaY + gap) / (rowHeight + gap));
+        const availableWidth = containerWidth() - (2 * padding);
+        const dynamicCols = Math.max(1, Math.floor((availableWidth + gap) / (cellW + gap)));
 
-        const dynamicMaxW = Math.min(cols, state.activeConfig.maxW);
-        item.w = Math.max(state.activeConfig.minW, Math.min(dynamicMaxW, finalW));
+        const finalW = Math.round((initialWidthPx + state.resizeDeltaX + gap) / (cellW + gap));
+        const finalH = Math.round((initialHeightPx + state.resizeDeltaY + gap) / (cellH + gap));
+
+        const currentMaxW = Math.min(dynamicCols, state.activeConfig.maxW);
+        item.w = Math.max(state.activeConfig.minW, Math.min(currentMaxW, finalW));
         item.h = Math.max(state.activeConfig.minH, Math.min(state.activeConfig.maxH, finalH));
         dashboardStore.updateItem(item);
       }

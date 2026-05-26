@@ -43,6 +43,23 @@
     MOBILE_GAP,
   );
 
+  // --- DYNAMIC GRID MATH ---
+  const gridConstants = $derived(
+    containerWidth > 768
+      ? { gap: 16, padding: 12, cellW: 20, cellH: 10 }
+      : { gap: 12, padding: 12, cellW: 20, cellH: 10 },
+  );
+
+  const dynamicCols = $derived(
+    Math.max(
+      1,
+      Math.floor(
+        (containerWidth - 2 * gridConstants.padding + gridConstants.gap) /
+          (gridConstants.cellW + gridConstants.gap),
+      ),
+    ),
+  );
+
   // --- HANDLERS ---
   function handleConsider(
     e: CustomEvent<{
@@ -134,6 +151,7 @@
   bind:clientWidth={containerWidth}
   class:user-is-resizing={!!resizeHandler.state.resizingItemId}
   oncontextmenu={handleBgContextMenu}
+  style="--container-width: {containerWidth}px;"
 >
   {#if !dashboardStore.isInitialized}
     <div aria-busy="true">Initialising dashboard telemetry channels...</div>
@@ -143,8 +161,15 @@
       <button class="outline" onclick={openAddWizard}>Map First Module</button>
     </div>
   {:else}
-    <div
+      <div
       class="unified-grid-zone"
+      style="
+        --grid-cols: {dynamicCols};
+        --grid-gap: {gridConstants.gap}px;
+        --grid-padding: {gridConstants.padding}px;
+        --cell-w: {gridConstants.cellW}px;
+        --cell-h: {gridConstants.cellH}px;
+      "
       use:dndzone={{
         items: dashboardStore.items,
         flipDurationMs,
@@ -243,23 +268,24 @@
 
   .unified-grid-zone {
     display: grid !important;
-    grid-template-columns: repeat(60, minmax(0, 1fr)) !important;
-    grid-auto-rows: 10px !important;
+    grid-template-columns: repeat(var(--grid-cols), var(--cell-w)) !important;
+    grid-auto-rows: var(--cell-h) !important;
     grid-auto-flow: dense;
-    gap: 16px !important;
+    gap: var(--grid-gap) !important;
     width: 100%;
     min-height: 500px;
-    padding: 12px;
+    padding: var(--grid-padding);
     padding-bottom: 200px !important;
     outline: none !important;
+    justify-content: center;
   }
 
   .unified-flow-card {
-    grid-column: span var(--card-w, 10);
+    grid-column: span min(var(--grid-cols), var(--card-w, 10));
     grid-row: span var(--card-h, 7) !important;
     width: 100% !important;
     height: calc(
-      (var(--card-h) * 10px) + ((var(--card-h) - 1) * 16px)
+      (var(--card-h) * var(--cell-h)) + ((var(--card-h) - 1) * var(--grid-gap))
     ) !important;
     transition: transform 0.15s ease;
   }
@@ -270,28 +296,14 @@
     transition: none !important;
     width: calc(100% + var(--resize-dx, 0px)) !important;
     height: calc(
-      ((var(--card-h) * 10px) + ((var(--card-h) - 1) * 16px)) +
+      ((var(--card-h) * var(--cell-h)) + ((var(--card-h) - 1) * var(--grid-gap))) +
         var(--resize-dy, 0px)
     ) !important;
   }
 
   @media (max-width: 768px) {
     .unified-grid-zone {
-      grid-template-columns: repeat(24, minmax(0, 1fr)) !important;
-      gap: 12px !important;
-    }
-    .unified-flow-card {
-      grid-column: span min(24, var(--card-w, 10)) !important;
-      height: calc(
-        (var(--card-h) * 10px) + ((var(--card-h) - 1) * 12px)
-      ) !important;
-    }
-    .is-resizing-target {
-      width: calc(100% + var(--resize-dx, 0px)) !important;
-      height: calc(
-        ((var(--card-h) * 10px) + ((var(--card-h) - 1) * 12px)) +
-          var(--resize-dy, 0px)
-      ) !important;
+      --grid-gap: 12px;
     }
   }
 
