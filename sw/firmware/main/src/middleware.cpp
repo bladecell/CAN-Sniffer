@@ -329,6 +329,16 @@ cJSON* m_clear_dtc_request()
     return root;
 }
 
+cJSON* m_static_pid_request()
+{
+    cJSON* root = cJSON_CreateObject();
+    OBD2::getInstance().pollRequestStaticPids();
+
+    cJSON_AddStringToObject(root, "status", "success");
+
+    return root;
+}
+
 esp_err_t pid_stream_packet_get(uint16_t pid, uint8_t* out_packet)
 {
     size_t offset = 0;

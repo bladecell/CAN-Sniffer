@@ -52,7 +52,7 @@ public:
 
 public:
     PIDDefinition(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std::string name, std::string unit,
-                  std::string desc, std::string formula, float minV, float maxV, uint8_t priority, UpdateRate interval,
+                  std::string desc, std::string formula, float minV, float maxV, uint8_t priority, uint16_t interval,
                   uint32_t color, std::string icon);
 
     ~PIDDefinition();

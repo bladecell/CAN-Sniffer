@@ -44,8 +44,8 @@ public:
     bool isPidInit() const;
 
     esp_err_t addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std::string name, std::string unit,
-                     std::string desc, std::string formula, float minV, float maxV, uint8_t priority,
-                     UpdateRate interval, uint32_t color, std::string icon) override;
+                     std::string desc, std::string formula, float minV, float maxV, uint8_t priority, uint16_t interval,
+                     uint32_t color, std::string icon) override;
 
     void      startContinuousMode();
     void      stopContinuousMode();
@@ -57,6 +57,7 @@ public:
     esp_err_t requestVIN();
     esp_err_t requestDTC(uint8_t mode);
     void      requestClearDTCs();
+    void      pollRequestStaticPids();
     esp_err_t queryMsg(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len);
 
     float getPollTaskUtilization() const
@@ -75,14 +76,13 @@ private:
     SemaphoreHandle_t xPidConnectedSemaphore = NULL;
 
     // Polling Task
-    void              pollTask();
-    void              pollStatic();
-    static void       pollTaskWrapper(void* param);
-    TaskHandle_t      PollTaskHandle{nullptr};
-    std::atomic<bool> pollStaticGroup = false;
-    void              req(uint32_t id, uint8_t mode, uint32_t pid, uint8_t len, uint32_t interval, uint8_t priority,
-                          bool isRecurring = false);
-    float             pollTaskUtilization = 0.0f;
+    void pollTask();
+
+    static void  pollTaskWrapper(void* param);
+    TaskHandle_t PollTaskHandle{nullptr};
+    void         req(uint32_t id, uint8_t mode, uint32_t pid, uint8_t len, uint32_t interval, uint8_t priority,
+                     bool isRecurring = false);
+    float        pollTaskUtilization = 0.0f;
 
     // Receiving Task
     void         receiveTask();

@@ -103,7 +103,7 @@ const char LITER[]              = "L";
 
 typedef enum
 {
-    UPDATE_STATIC = 16,
+    UPDATE_STATIC = 9999,
     UPDATE_FAST   = 256,
     UPDATE_MEDIUM = 1024,
     UPDATE_SLOW   = 4096,
@@ -133,13 +133,13 @@ struct PIDDef_t
 
 struct PIDData_t
 {
-    uint32_t   id;
-    float      value;
-    uint32_t   lastUpdated;
-    uint8_t    data[PID_DATA_LENGTH];
-    bool       isSupported;
-    bool       isValid;
-    UpdateRate updateInterval_ms;
+    uint32_t id;
+    float    value;
+    uint32_t lastUpdated;
+    uint8_t  data[PID_DATA_LENGTH];
+    bool     isSupported;
+    bool     isValid;
+    uint16_t updateInterval_ms;
 };
 
 struct PollRequest

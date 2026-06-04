@@ -29,6 +29,7 @@ cJSON* m_dtc_get(int mode);
 cJSON* m_vin_request();
 cJSON* m_dtc_request(int mode);
 cJSON* m_clear_dtc_request();
+cJSON* m_static_pid_request();
 
 cJSON* m_pid_def_set(cJSON* payload);
 cJSON* m_settings_wifi_get();

@@ -163,8 +163,15 @@ void OBD2::getSupportedPids(supportedPIDsGroup_t& supportedPIDsGroup)
  */
 esp_err_t OBD2::addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std::string name, std::string unit,
                        std::string desc, std::string formula, float minV, float maxV, uint8_t priority,
-                       UpdateRate interval, uint32_t color, std::string icon)
+                       uint16_t interval, uint32_t color, std::string icon)
 {
+    if (interval < MIN_TRANSMIT_PERIOD_MS)
+    {
+        ESP_LOGW(TAG, "Requested interval %d ms is too low, setting to minimum %d ms", interval,
+                 MIN_TRANSMIT_PERIOD_MS);
+        interval = MIN_TRANSMIT_PERIOD_MS;
+    }
+
     esp_err_t ret = OBD2DataModel::addPID(id, mode, pid, len, name, unit, desc, formula, minV, maxV, priority, interval,
                                           color, icon);
     if (ret != ESP_OK)
@@ -357,9 +364,20 @@ void OBD2::stopContinuousMode()
     pollQueue.clearRecurring();
 }
 
-void OBD2::pollStatic()
+void OBD2::pollRequestStaticPids()
 {
-    pollStaticGroup.store(true);
+    withPidMapLock(
+        [&]()
+        {
+            for (const auto& [pid, def] : PID_DEF)
+            {
+                if (def.updateInterval() == UPDATE_STATIC)
+                {
+                    req(def.id(), def.mode(), pid, def.len(), def.updateInterval(), def.priority(), false);
+                }
+            }
+            return ESP_OK;
+        });
 }
 
 void OBD2::pollTask()

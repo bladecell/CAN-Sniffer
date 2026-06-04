@@ -31,11 +31,16 @@ extern "C" void app_main(void)
         vTaskDelay(pdMS_TO_TICKS(250));
     }
 
+    // TODO - utilization might not be correct
+    //        filter battery - simple exponential filter
+    //        Frontend - on page load it requests vin and dtc at the same time which causes the second request to
+    //        timeout, probably request vin and dtc in the supervisor on can connect and not it the webapp by default
+
     esp_err_t ret;
     // 1. Engine Load: A * 100 / 255
-    ret = OBD2::getInstance().addPID(OBD2_FUNCTIONAL_ID, MODE_CURRENT_DATA, PID_ENGINE_LOAD, 2, "Engine Load",
-                                     PERCENTAGE, "Calculated engine load", "A * 100 / 255", 0.0f, 100.0f, 2,
-                                     UPDATE_FAST, 0xf59e0b, "gauge");
+    ret =
+        OBD2::getInstance().addPID(OBD2_FUNCTIONAL_ID, MODE_CURRENT_DATA, PID_ENGINE_LOAD, 2, "Engine Load", PERCENTAGE,
+                                   "Calculated engine load", "A * 100 / 255", 0.0f, 100.0f, 2, 32, 0xf59e0b, "gauge");
     ESP_LOGI(TAG, "PID added: %s", esp_err_to_name(ret));
     // 2. Coolant Temp: A - 40
     ret = OBD2::getInstance().addPID(OBD2_FUNCTIONAL_ID, MODE_CURRENT_DATA, PID_COOLANT_TEMP, 2, "Coolant Temp",
