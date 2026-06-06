@@ -32,9 +32,6 @@ extern "C" void app_main(void)
     }
 
     // TODO - utilization might not be correct
-    //        filter battery - simple exponential filter
-    //        Frontend - on page load it requests vin and dtc at the same time which causes the second request to
-    //        timeout, probably request vin and dtc in the supervisor on can connect and not it the webapp by default
 
     esp_err_t ret;
     // 1. Engine Load: A * 100 / 255

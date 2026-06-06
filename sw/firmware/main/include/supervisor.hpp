@@ -17,6 +17,7 @@ public:
     {
         UNINITIALIZED,
         STARTING,
+        NOT_CONNECTED,
         RUNNING,
         STOPPING,
         ERROR,
@@ -60,7 +61,6 @@ private:
     static esp_err_t setup_battery();
 
     esp_err_t (*setup_functions[5])() = {
-        SUPERVISOR::setup_wifi, SUPERVISOR::setup_can,     SUPERVISOR::setup_obd,
-        nullptr,       SUPERVISOR::setup_battery,
+        SUPERVISOR::setup_battery, SUPERVISOR::setup_can, SUPERVISOR::setup_obd, SUPERVISOR::setup_wifi, nullptr,
     };
 };

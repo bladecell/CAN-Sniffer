@@ -20,7 +20,7 @@ static const char* TAG = "SUPERVISOR";
 SUPERVISOR::SUPERVISOR()
 {
     // initialization code
-    setup_functions[3] = setup_web_server;
+    setup_functions[4] = setup_web_server;
 }
 SUPERVISOR::~SUPERVISOR()
 {
@@ -72,6 +72,7 @@ void SUPERVISOR::taskWrapper(void* param)
 
 void SUPERVISOR::task()
 {
+    esp_err_t err;
     while (1)
     {
         switch (eState)
@@ -93,8 +94,8 @@ void SUPERVISOR::task()
 
                 if (success)
                 {
-                    eState = State::RUNNING;
-                    ESP_LOGI(TAG, "System RUNNING");
+                    eState = State::NOT_CONNECTED;
+                    ESP_LOGI(TAG, "System INITIALIZED");
                 }
                 else
                 {
@@ -103,6 +104,27 @@ void SUPERVISOR::task()
                 }
                 break;
             }
+            case State::NOT_CONNECTED:
+                if (CanDriver::getInstance().isBusConnected())
+                {
+                    ESP_LOGI(TAG, "CAN bus connected, system RUNNING");
+                    eState = State::RUNNING;
+                    OBD2::getInstance().requestVIN();
+                    err = OBD2::getInstance().requestDTC(MODE_DTCS);
+                    if (err == ESP_OK)
+                        err = OBD2::getInstance().requestDTC(MODE_PENDING_DTCS);
+                    if (err == ESP_OK)
+                        err = OBD2::getInstance().requestDTC(MODE_PERMANENT_DTCS);
+                    if (err != ESP_OK)
+                    {
+                        ESP_LOGW(TAG, "Failed to request DTCs: %s", esp_err_to_name(err));
+                    }
+                }
+                else
+                {
+                    ESP_LOGW(TAG, "Waiting for CAN bus connection...");
+                }
+                break;
             case State::RUNNING:
                 // monitor voltage, bus connection, etc, separate function probably
                 break;

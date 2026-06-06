@@ -42,10 +42,6 @@ export class CanStore {
             // 2. Fetch last known data immediately from ESP32 storage
             this.getVin();
             this.getDTC();
-
-            // 3. Trigger a fresh request to the vehicle ECU
-            this.requestVin();
-            this.requestDTC();
         };
 
         this.socket.onclose = () => {

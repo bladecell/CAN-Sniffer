@@ -6,7 +6,8 @@
 #include "hal/twai_types.h"
 #include "obd2_simulator.hpp"
 
-static const char* TAG = "CAN_DRIVER";
+static const char* TAG                   = "CAN_DRIVER";
+SemaphoreHandle_t  canConnectedSemaphore = nullptr;
 
 #define LOG_CAN_FRAME(LOG_TAG, DIR, CAN_ID, DATA_PTR, LEN)                                                         \
     ESP_LOGD(LOG_TAG, "%s %X %02X %02X %02X %02X %02X %02X %02X %02X", DIR, CAN_ID, (LEN) > 0 ? (DATA_PTR)[0] : 0, \
@@ -126,6 +127,13 @@ esp_err_t CanDriver::init(const Config& config)
     {
         ESP_LOGE(TAG, "Starting TWAI Controller failed: %s", esp_err_to_name(ret));
         return ret;
+    }
+
+    canConnectedSemaphore = xSemaphoreCreateBinary();
+    if (!canConnectedSemaphore)
+    {
+        ESP_LOGE(TAG, "Failed to create canConnectedSemaphore");
+        return ESP_FAIL;
     }
 
     // Start tx task
@@ -405,23 +413,19 @@ esp_err_t CanDriver::flushRxQueue()
 esp_err_t CanDriver::pingBus()
 {
     if (nodeHdl == NULL)
+    {
         return ESP_FAIL;
+    }
 
-    uint8_t      txData[1] = {0x00};
-    twai_frame_t tx        = {};
+    twai_frame_t tx = {};
 
-    tx.header.id           = 0x7FF;
-    tx.header.dlc          = twaifd_len2dlc(sizeof(txData));
-    tx.header.ide          = false;
-    tx.header.rtr          = 0;
-    tx.header.fdf          = 0;
-    tx.header.brs          = 0;
-    tx.header.esi          = 0;
-    tx.header.timestamp    = 0;
-    tx.header.trigger_time = 0;
+    tx.header.id  = 0x7FF;
+    tx.header.dlc = 0;  // No data bytes
+    tx.header.rtr = 1;  // 1 = Remote Transmission Request (Ping)
+    tx.header.ide = 0;  // Standard frame format
 
-    tx.buffer     = txData;
-    tx.buffer_len = sizeof(txData);
+    tx.header.fdf = 0;
+    tx.header.brs = 0;
 
     return twai_node_transmit(nodeHdl, &tx, 0);
 }
@@ -479,6 +483,7 @@ void CanDriver::healthCheckTask()
             }
             case STATE::CONNECTED:
             {
+                xSemaphoreGive(canConnectedSemaphore);
                 ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
                 if (consecutiveAckErrors.load() > 3)
                 {
@@ -560,7 +565,13 @@ void CanDriver::txTask()
     CanDriver::CanFrame f;
     while (1)
     {
-        if (xQueueReceive(txQueue, &f, portMAX_DELAY) == pdTRUE)
+        if (!isBusConnected())
+        {
+            xSemaphoreTake(canConnectedSemaphore, portMAX_DELAY);
+            continue;
+        }
+
+        if (xQueueReceive(txQueue, &f, pdMS_TO_TICKS(HEALTHCHECK_PING_PERIOD_MS)) == pdTRUE)
         {
             TickType_t startTime = xTaskGetTickCount();
 
@@ -579,6 +590,10 @@ void CanDriver::txTask()
             LOG_CAN_FRAME(TAG, "TX -> ", f.header.id, f.data, twaifd_dlc2len(f.header.dlc));
 
             vTaskDelayUntil(&startTime, pdMS_TO_TICKS(MIN_TRANSMIT_PERIOD_MS));
+        }
+        else
+        {
+            pingBus();
         }
     }
 }

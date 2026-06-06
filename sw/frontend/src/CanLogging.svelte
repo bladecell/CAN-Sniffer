@@ -72,7 +72,7 @@
         const delta = t - previousTimestamp1;
 
         if (delta > 0) {
-          // console.log(`Update for PID 4: ${delta}ms, value: ${v}`);
+          console.log(`Update for PID 4: ${delta}ms, value: ${v}`);
         }
       }
 
