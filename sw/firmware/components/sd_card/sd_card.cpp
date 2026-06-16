@@ -1,6 +1,8 @@
 #include "sd_card.hpp"
 
+#include <dirent.h>
 #include <errno.h>
+#include <limits.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -311,6 +313,59 @@ esp_err_t SDCard::write_buffer_to_csv(const char* filename, uint8_t* buffer, siz
 
     ESP_LOGI(TAG, "Successfully appended %zu bytes to %s", size, filename);
     return ESP_OK;
+}
+
+cJSON* scan_directory(const char* path, int depth)
+{
+    if (depth > SCAN_DEPTH_LIMIT)
+        return NULL;
+
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "name", path);
+    cJSON* children = cJSON_CreateArray();
+    cJSON_AddItemToObject(root, "children", children);
+
+    char full_path[PATH_MAX];
+
+    DIR* dir = opendir(path);
+    if (!dir)
+    {
+        return root;
+    }
+
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != NULL)
+    {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+            continue;
+
+        int written = snprintf(full_path, sizeof(full_path), "%s/%s", path, entry->d_name);
+        if (written < 0 || written >= (int)sizeof(full_path))
+        {
+            ESP_LOGW(TAG, "Path too long, skipping: %s/%s", path, entry->d_name);
+            continue;
+        }
+
+        struct stat st;
+        if (stat(full_path, &st) == 0 && S_ISDIR(st.st_mode))
+        {
+            cJSON* sub_dir = scan_directory(full_path, depth + 1);
+            if (sub_dir)
+            {
+                cJSON_AddItemToArray(children, sub_dir);
+            }
+        }
+        else
+        {
+            cJSON* file = cJSON_CreateObject();
+            cJSON_AddStringToObject(file, "name", entry->d_name);
+            cJSON_AddStringToObject(file, "type", "file");
+            cJSON_AddNumberToObject(file, "size", (double)st.st_size);
+            cJSON_AddItemToArray(children, file);
+        }
+    }
+    closedir(dir);
+    return root;
 }
 
 // Memory Constraints: If your mapping table is massive (megabytes of data), don't store it in RAM. Use a binary index

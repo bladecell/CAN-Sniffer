@@ -1,5 +1,6 @@
 #pragma once
 
+#include "cJSON.h"
 #include "driver/gpio.h"
 #include "driver/sdmmc_host.h"
 #include "esp_err.h"
@@ -8,6 +9,7 @@
 #include "soc/gpio_num.h"
 
 #define MAX_FREQUENCY_KHZ 20000
+#define SCAN_DEPTH_LIMIT 5
 
 class SDCard
 {
@@ -57,6 +59,7 @@ public:
     esp_err_t delete_file(const char* path);
     esp_err_t delete_directory(const char* path);
     esp_err_t write_buffer_to_csv(const char* filename, uint8_t* buffer, size_t size);
+    cJSON*    scan_directory(const char* path);
 
     SDCard();
     ~SDCard();
