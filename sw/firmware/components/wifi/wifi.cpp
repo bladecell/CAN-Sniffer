@@ -10,27 +10,28 @@
  */
 
 #include "wifi.hpp"
+
 #include <algorithm>
 #include <cstring>
-#include "esp_mac.h"
+
 #include "esp_log.h"
-#include "nvs_flash.h"
+#include "esp_mac.h"
 #include "mdns.h"
+#include "nvs_flash.h"
 
 #define HOSTNAME "can-sniffer"
 #define MDNS_INSTANCE "ESP32 CAN Sniffer"
 
 // The ERROR_CHECK Macro
-#define ERROR_CHECK(x, str, action, ...)                                 \
-    do                                                                   \
-    {                                                                    \
-        esp_err_t err_rc_ = (x);                                         \
-        if (unlikely(err_rc_ != ESP_OK))                                 \
-        {                                                                \
-            ESP_LOGE(TAG, "%s(%d): " str ": %s", __FUNCTION__, __LINE__, \
-                     ##__VA_ARGS__, esp_err_to_name(err_rc_));           \
-            action;                                                      \
-        }                                                                \
+#define ERROR_CHECK(x, str, action, ...)                                                                           \
+    do                                                                                                             \
+    {                                                                                                              \
+        esp_err_t err_rc_ = (x);                                                                                   \
+        if (unlikely(err_rc_ != ESP_OK))                                                                           \
+        {                                                                                                          \
+            ESP_LOGE(TAG, "%s(%d): " str ": %s", __FUNCTION__, __LINE__, ##__VA_ARGS__, esp_err_to_name(err_rc_)); \
+            action;                                                                                                \
+        }                                                                                                          \
     } while (0)
 
 static const char* TAG = "WIFI";
