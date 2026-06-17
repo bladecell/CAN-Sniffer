@@ -82,4 +82,8 @@ extern "C" void app_main(void)
                                UPDATE_MEDIUM, 0xf97316, "gauge");
 
     // xTaskCreate(t_request_sample, "request_sample", 4096, NULL, 5, NULL);
+    while (1)
+    {
+        vTaskDelay(1000);
+    }
 }

@@ -4,12 +4,14 @@
 
 #include "battery.hpp"
 #include "can_driver.hpp"
+#include "esp_err.h"
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "led_status.hpp"
 #include "obd2.hpp"
+#include "sd_card.hpp"
 #include "secrets.h"
 #include "utilities.h"
 #include "webserver.hpp"
@@ -17,10 +19,12 @@
 
 static const char* TAG = "SUPERVISOR";
 
+#define MOUNT_POINT "/sdcard"
+
 SUPERVISOR::SUPERVISOR()
 {
     // initialization code
-    setup_functions[4] = setup_web_server;
+    setup_functions[5] = setup_web_server;
 }
 SUPERVISOR::~SUPERVISOR()
 {
@@ -138,6 +142,7 @@ void SUPERVISOR::task()
                 ESP_LOGE(TAG, "Unknown state %d", eState);
                 break;
         }
+        SDCard::getInstance().update_card_status();
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
@@ -217,6 +222,29 @@ esp_err_t SUPERVISOR::setup_battery()
     return battery_init();
 }
 
+esp_err_t SUPERVISOR::setup_sd_card()
+{
+    SDCard::Config config;
+    config.miso_pin               = MISO;
+    config.mosi_pin               = MOSI;
+    config.sclk_pin               = SCLK;
+    config.cd_pin                 = SD_DETECT;
+    config.base_path              = MOUNT_POINT;
+    config.slot                   = SDMMC_HOST_SLOT_1;
+    config.max_files              = 5;
+    config.format_if_mount_failed = true;
+
+    esp_err_t ret = SDCard::getInstance().init(config);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to initialize SD card: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ESP_LOGI(TAG, "SD card initialized and mounted at %s", config.base_path);
+    return ESP_OK;
+}
+
 uint32_t SUPERVISOR::get_uptime_seconds() const
 {
     return (uint32_t)(esp_timer_get_time() / 1000000ULL);
@@ -267,7 +295,7 @@ std::string SUPERVISOR::get_MAC_address() const
     uint8_t mac[6];
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
 
-    char buf[18];  // "AA:BB:CC:DD:EE:FF\0"
+    char buf[18];
     snprintf(buf, sizeof(buf), "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
     return std::string(buf);

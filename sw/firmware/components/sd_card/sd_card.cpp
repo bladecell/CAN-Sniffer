@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include "esp_check.h"
+#include "esp_err.h"
 #include "esp_log.h"
 #include "esp_vfs_fat.h"
 
@@ -39,7 +40,6 @@ SDCard::~SDCard()
 
 esp_err_t SDCard::init(const SDCard::Config& config)
 {
-    esp_err_t ret;
     mount_path = config.base_path;
 
     // Mount Settings
@@ -47,6 +47,12 @@ esp_err_t SDCard::init(const SDCard::Config& config)
     mount_config.max_files                = config.max_files;
     mount_config.allocation_unit_size     = 16 * 1024;
     mount_config.disk_status_check_enable = false;
+
+    cd_pin = config.cd_pin;
+
+    gpio_reset_pin(cd_pin);
+    gpio_set_direction(cd_pin, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(cd_pin, GPIO_PULLUP_ONLY);
 
     // Native Host Configuration
     host              = SDMMC_HOST_DEFAULT();
@@ -62,19 +68,54 @@ esp_err_t SDCard::init(const SDCard::Config& config)
     slot_config.d2 = GPIO_NUM_NC;
     slot_config.d3 = GPIO_NUM_NC;
 
-    slot_config.gpio_cd = config.cd_pin;
+    slot_config.gpio_cd = GPIO_NUM_NC;
     slot_config.gpio_wp = GPIO_NUM_NC;
     slot_config.width   = 1;
     slot_config.flags   = 0;
 
-    ret = mount_sdcard();
-    ESP_RETURN_ON_ERROR(ret, TAG, "Failed to mount SD card: %s", esp_err_to_name(ret));
+    last_stable_state = !card_present();
 
-    ESP_LOGI(TAG, "Filesystem mounted successfully");
+    update_card_status();
 
-    print_card_status();
+    if (is_mounted())
+    {
+        print_card_status();
+    }
 
+    ESP_LOGI(TAG, "SDCard driver initialized");
     return ESP_OK;
+}
+
+bool SDCard::card_present()
+{
+    return (gpio_get_level(cd_pin) == 0);
+}
+
+void SDCard::update_card_status()
+{
+    bool current_raw = card_present();
+
+    if (current_raw != last_stable_state)
+    {
+        // Small debounce delay
+        vTaskDelay(pdMS_TO_TICKS(100));
+
+        if (card_present() == current_raw)
+        {
+            last_stable_state = current_raw;
+
+            if (last_stable_state)
+            {
+                ESP_LOGI(TAG, "SD Card detected, mounting...");
+                mount_sdcard();
+            }
+            else
+            {
+                ESP_LOGI(TAG, "SD Card removed, unmounting...");
+                unmount_sdcard();
+            }
+        }
+    }
 }
 
 esp_err_t SDCard::mount_sdcard()
@@ -164,6 +205,7 @@ esp_err_t SDCard::get_sd_info()
     sd_info.is_mmc       = card->is_mmc;
 
     sd_info.is_mounted = is_mounted();
+    sd_info.is_present = card_present();
     strncpy(sd_info.mount_path, mount_path, sizeof(sd_info.mount_path) - 1);
     sd_info.mount_path[sizeof(sd_info.mount_path) - 1] = '\0';
 
@@ -315,7 +357,7 @@ esp_err_t SDCard::write_buffer_to_csv(const char* filename, uint8_t* buffer, siz
     return ESP_OK;
 }
 
-cJSON* scan_directory(const char* path, int depth)
+cJSON* SDCard::scan_directory(const char* path, int depth)
 {
     if (depth > SCAN_DEPTH_LIMIT)
         return NULL;
@@ -326,12 +368,9 @@ cJSON* scan_directory(const char* path, int depth)
     cJSON_AddItemToObject(root, "children", children);
 
     char full_path[PATH_MAX];
-
     DIR* dir = opendir(path);
     if (!dir)
-    {
         return root;
-    }
 
     struct dirent* entry;
     while ((entry = readdir(dir)) != NULL)
@@ -341,19 +380,14 @@ cJSON* scan_directory(const char* path, int depth)
 
         int written = snprintf(full_path, sizeof(full_path), "%s/%s", path, entry->d_name);
         if (written < 0 || written >= (int)sizeof(full_path))
-        {
-            ESP_LOGW(TAG, "Path too long, skipping: %s/%s", path, entry->d_name);
             continue;
-        }
 
         struct stat st;
         if (stat(full_path, &st) == 0 && S_ISDIR(st.st_mode))
         {
             cJSON* sub_dir = scan_directory(full_path, depth + 1);
             if (sub_dir)
-            {
                 cJSON_AddItemToArray(children, sub_dir);
-            }
         }
         else
         {

@@ -59,8 +59,10 @@ private:
     static esp_err_t setup_can();
     static esp_err_t setup_obd();
     static esp_err_t setup_battery();
+    static esp_err_t setup_sd_card();
 
-    esp_err_t (*setup_functions[5])() = {
-        SUPERVISOR::setup_battery, SUPERVISOR::setup_can, SUPERVISOR::setup_obd, SUPERVISOR::setup_wifi, nullptr,
+    esp_err_t (*setup_functions[6])() = {
+        SUPERVISOR::setup_sd_card, SUPERVISOR::setup_battery, SUPERVISOR::setup_can,
+        SUPERVISOR::setup_obd,     SUPERVISOR::setup_wifi,    nullptr,
     };
 };

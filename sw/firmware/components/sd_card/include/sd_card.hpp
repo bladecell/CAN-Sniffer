@@ -9,7 +9,7 @@
 #include "soc/gpio_num.h"
 
 #define MAX_FREQUENCY_KHZ 20000
-#define SCAN_DEPTH_LIMIT 5
+#define SCAN_DEPTH_LIMIT 10
 
 class SDCard
 {
@@ -36,6 +36,7 @@ public:
         bool     is_sdio;
         bool     is_mmc;
         bool     is_mounted;
+        bool     is_present;
     };
 
     esp_err_t init(const SDCard::Config& config);
@@ -53,13 +54,15 @@ public:
     bool exists(const char* path);
     bool is_file(struct stat* st);
     bool is_directory(struct stat* st);
+    bool card_present();
+    void update_card_status();
 
     esp_err_t create_file(const char* path);
     esp_err_t create_directory(const char* path);
     esp_err_t delete_file(const char* path);
     esp_err_t delete_directory(const char* path);
     esp_err_t write_buffer_to_csv(const char* filename, uint8_t* buffer, size_t size);
-    cJSON*    scan_directory(const char* path);
+    cJSON*    scan_directory(const char* path, int depth);
 
     SDCard();
     ~SDCard();
@@ -75,6 +78,9 @@ private:
     SDCard& operator=(const SDCard&) = delete;
     SDCard(SDCard&&)                 = delete;
     SDCard& operator=(SDCard&&)      = delete;
+
+    bool       last_stable_state = false;
+    gpio_num_t cd_pin            = GPIO_NUM_NC;
 
     sdmmc_card_t*              card         = nullptr;
     sdmmc_host_t               host         = {};
