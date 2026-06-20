@@ -27,6 +27,57 @@
 
 static const char* TAG = "OBD2";
 
+class CanLoadTracker
+{
+private:
+    TickType_t  last_slice_tick;
+    uint32_t    tx_count_this_slice;
+    float       current_ema_utilization;
+    const float ALPHA = 0.15f;
+
+public:
+    CanLoadTracker()
+    {
+        last_slice_tick         = xTaskGetTickCount();
+        tx_count_this_slice     = 0;
+        current_ema_utilization = 0.0f;
+    }
+
+    void recordTx()
+    {
+        tx_count_this_slice++;
+    }
+
+    float updateAndGet()
+    {
+        TickType_t now           = xTaskGetTickCount();
+        TickType_t elapsed_ticks = now - last_slice_tick;
+
+        if (elapsed_ticks >= pdMS_TO_TICKS(25))
+        {
+            float elapsed_ms = pdTICKS_TO_MS(elapsed_ticks);
+
+            float max_possible_frames = elapsed_ms / 8.0f;
+
+            float instant_slice_util = 0.0f;
+            if (max_possible_frames > 0.0f)
+            {
+                instant_slice_util = (float)tx_count_this_slice / max_possible_frames;
+            }
+
+            if (instant_slice_util > 1.0f)
+                instant_slice_util = 1.0f;
+
+            current_ema_utilization = (instant_slice_util * ALPHA) + (current_ema_utilization * (1.0f - ALPHA));
+
+            tx_count_this_slice = 0;
+            last_slice_tick     = now;
+        }
+
+        return current_ema_utilization;
+    }
+};
+
 /**
  * @brief Construct a new OBD2::OBD2 object
  *
@@ -106,6 +157,8 @@ esp_err_t OBD2::init()
     {
         ESP_LOGE(TAG, "Failed to create polling task");
     }
+
+    pollQueue.consumerTask = PollTaskHandle;
 
     if (canDriver.isBusConnected())
     {
@@ -257,14 +310,15 @@ void OBD2::req(uint32_t id, uint8_t mode, uint32_t pid, uint8_t len, uint32_t in
                bool isRecurring)
 {
     PollRequest req;
-    req.pid         = pid;
-    req.interval    = interval;
-    req.nextWake    = xTaskGetTickCount();
-    req.priority    = priority;
-    req.isRecurring = isRecurring;
-    req.id          = id;
-    req.mode        = mode;
-    req.len         = len;
+    req.pid          = pid;
+    req.interval     = interval;
+    req.nextWake     = xTaskGetTickCount();
+    req.priority     = priority;
+    req.isRecurring  = isRecurring;
+    req.id           = id;
+    req.mode         = mode;
+    req.len          = len;
+    req.retries_left = DEFAULT_NUMER_OF_RETRIES;
 
     pollQueue.push(req);
 
@@ -397,37 +451,20 @@ void OBD2::pollTaskWrapper(void* param)
 
 void OBD2::pollTask()
 {
-    const float ALPHA = 0.1f;
+    CanLoadTracker busTracker;
 
     while (1)
     {
         TickType_t delay = pollQueue.getWait();
         ulTaskNotifyTake(pdTRUE, delay);
 
-        // If disconnected or empty, naturally decay the utilization down to 0
-        // instead of snapping it instantly to 0.0f.
+        pollTaskUtilization = busTracker.updateAndGet();
+
         if (pollQueue.isEmpty() || !canDriver.isBusConnected())
         {
-            pollTaskUtilization = pollTaskUtilization * (1.0f - ALPHA);  // Smooth decay
-            vTaskDelay(pdMS_TO_TICKS(50));
+            ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(50));
             continue;
         }
-
-        float   fill      = pollQueue.getFillFactor();
-        int32_t latencyMs = pdTICKS_TO_MS(pollQueue.getTopLatency());
-
-        // Normalize latency. Consider changing 100.0f to your highest acceptable lag.
-        float latencyFactor = (float)latencyMs / 100.0f;
-        if (latencyFactor > 1.0f)
-            latencyFactor = 1.0f;
-        if (latencyFactor < 0.0f)
-            latencyFactor = 0.0f;  // Guard against negative ticks clock rolls
-
-        // Calculate the raw snapshot for this specific loop
-        float instantUtilization = (latencyFactor * 0.7f) + (fill * 0.3f);
-
-        // Apply Exponential Moving Average filter
-        pollTaskUtilization = (instantUtilization * ALPHA) + (pollTaskUtilization * (1.0f - ALPHA));
 
         // 2. Take the most urgent appointment
         PollRequest current = pollQueue.pop();
@@ -441,11 +478,18 @@ void OBD2::pollTask()
         {
             esp_err_t err = queryMsg(current.id, current.mode, current.pid, current.len);
 
-            if (err != ESP_OK && (err == ESP_ERR_TIMEOUT || err == ESP_FAIL))
+            if (err == ESP_OK)
             {
-                current.nextWake = xTaskGetTickCount() + pdMS_TO_TICKS(5);
-                pollQueue.push(current);
-                vTaskDelay(1);  // Small yield before retry
+                busTracker.recordTx();
+            }
+            else if (err == ESP_ERR_TIMEOUT || err == ESP_FAIL)
+            {
+                if (current.retries_left > 0)
+                {
+                    current.retries_left--;
+                    current.nextWake = xTaskGetTickCount() + pdMS_TO_TICKS(current.interval);
+                    pollQueue.push(current);
+                }
                 continue;
             }
         }
@@ -453,11 +497,13 @@ void OBD2::pollTask()
         // 4. Reschedule recurring tasks
         if (current.isRecurring && continuousRunning)
         {
-            current.nextWake = xTaskGetTickCount() + pdMS_TO_TICKS(current.interval);
+            current.nextWake     = xTaskGetTickCount() + pdMS_TO_TICKS(current.interval);
+            current.retries_left = DEFAULT_NUMER_OF_RETRIES;
             pollQueue.push(current);
         }
 
-        vTaskDelay(1);
+        taskYIELD();
+        ;
     }
 }
 

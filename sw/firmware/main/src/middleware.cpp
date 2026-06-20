@@ -1,15 +1,21 @@
 #include "middleware.hpp"
 
+#include <sys/_intsup.h>
+
+#include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <vector>
 
 #include "cJSON.h"
 #include "esp_check.h"
+#include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "obd2.hpp"
+#include "sd_card.hpp"
 #include "supervisor.hpp"
 #include "utilities.h"
 
@@ -208,13 +214,164 @@ cJSON* m_system_get()
 {
     cJSON* root = cJSON_CreateObject();
 
-    // Add System information to the JSON object
     cJSON_AddNumberToObject(root, "app_version", APP_VERSION_MAJOR + APP_VERION_MINOR * 0.1);
     cJSON_AddNumberToObject(root, "uptime_s", SUPERVISOR::getInstance().get_uptime_seconds());
     cJSON_AddStringToObject(root, "pid_initialized", SUPERVISOR::getInstance().get_restart_reason().c_str());
     cJSON_AddStringToObject(root, "mac", SUPERVISOR::getInstance().get_MAC_address().c_str());
     cJSON_AddNumberToObject(root, "state", static_cast<uint32_t>(SUPERVISOR::getInstance().get_state()));
     cJSON_AddNumberToObject(root, "battery_voltage", SUPERVISOR::getInstance().get_battery_voltage());
+    cJSON_AddBoolToObject(root, "sd_card_detected", SDCard::getInstance().card_present());
+
+    return root;
+}
+
+cJSON* m_sdcard_info_get()
+{
+    cJSON* root = cJSON_CreateObject();
+
+    SDCard::SDInfo sd_info;
+
+    SDCard::getInstance().get_sd_info(sd_info);
+
+    cJSON_AddStringToObject(root, "name", sd_info.name);
+    cJSON_AddStringToObject(root, "mount_path", sd_info.mount_path);
+    cJSON_AddNumberToObject(root, "capacity", sd_info.capacity_mb);
+    cJSON_AddNumberToObject(root, "used_space_mb", sd_info.used_space_mb);
+    cJSON_AddNumberToObject(root, "max_freq_mhz", sd_info.max_freq_mhz);
+    cJSON_AddBoolToObject(root, "is_sdio", sd_info.is_sdio);
+    cJSON_AddBoolToObject(root, "is_mmc", sd_info.is_mmc);
+    cJSON_AddBoolToObject(root, "is_mounted", sd_info.is_mounted);
+    cJSON_AddBoolToObject(root, "is_present", sd_info.is_present);
+
+    return root;
+}
+
+cJSON* m_sdcard_file_tree_get(const char* path)
+{
+    SDCard::SDInfo sd_info;
+    auto&          sd = SDCard::getInstance();
+
+    sd.get_sd_info(sd_info);
+
+    if (sd_info.is_mounted)
+    {
+        char filepath[512];
+        snprintf(filepath, sizeof(filepath), "%s%s", sd_info.mount_path, path);
+        return sd.scan_directory(filepath, 5);
+    }
+    else
+    {
+        {
+            cJSON* root = cJSON_CreateObject();
+            cJSON_AddStringToObject(root, "status", "error");
+            cJSON_AddStringToObject(root, "reason", esp_err_to_name(ESP_ERR_NOT_FOUND));
+            return root;
+        }
+    }
+}
+
+esp_err_t m_sdcard_file_open_file(const char* path, const char* mode, FILE*& fd)
+{
+    if (mode == nullptr)
+        return ESP_ERR_INVALID_ARG;
+
+    SDCard::SDInfo sd_info;
+    auto&          sd = SDCard::getInstance();
+
+    sd.get_sd_info(sd_info);
+
+    if (!sd_info.is_mounted)
+    {
+        ESP_LOGE("SD", "SD Card not mounted");
+        return ESP_FAIL;
+    }
+
+    if (strstr(path, "..") || strlen(path) <= 1)
+    {
+        return ESP_FAIL;
+    }
+
+    char filepath[512];
+
+    if (strlen(sd_info.mount_path) + strlen(path) >= sizeof(filepath))
+    {
+        ESP_LOGE("HTTP", "Path is too long to fit in buffer!");
+        return ESP_FAIL;
+    }
+
+    strlcpy(filepath, sd_info.mount_path, sizeof(filepath));
+    strlcat(filepath, path, sizeof(filepath));
+
+    fd = fopen(filepath, mode);
+
+    if (!fd)
+    {
+        ESP_LOGE("HTTP", "Failed to open file '%s' in mode '%s'", filepath, mode);
+        return ESP_FAIL;
+    }
+
+    return ESP_OK;
+}
+
+esp_err_t m_sdcard_file_close_file(FILE* fd)
+{
+    if (fd != nullptr)
+    {
+        fclose(fd);
+        return ESP_OK;
+    }
+    return ESP_FAIL;
+}
+
+esp_err_t m_sdcard_file_write_chunk(FILE* fd, const char* chunk, size_t len)
+{
+    if (fd == nullptr)
+        return ESP_FAIL;
+
+    if (fwrite(chunk, 1, len, fd) != len)
+    {
+        return ESP_FAIL;
+    }
+
+    return ESP_OK;
+}
+
+size_t m_sdcard_file_read_chunk(FILE* fd, char* chunk, size_t max_len)
+{
+    if (fd == nullptr)
+        return 0;
+
+    return fread(chunk, 1, max_len, fd);
+}
+
+cJSON* m_sdcard_file_delete_delete(const char* path)
+{
+    SDCard::SDInfo sd_info;
+    auto&          sd   = SDCard::getInstance();
+    esp_err_t      err  = ESP_ERR_NOT_FOUND;
+    cJSON*         root = cJSON_CreateObject();
+
+    sd.get_sd_info(sd_info);
+
+    if (sd_info.is_mounted)
+    {
+        char filepath[512];
+        snprintf(filepath, sizeof(filepath), "%s%s", sd_info.mount_path, path);
+
+        err = sd.delete_file(filepath);
+    }
+
+    if (err == ESP_OK)
+    {
+        cJSON_AddStringToObject(root, "status", "success");
+    }
+    else
+    {
+        {
+            cJSON_AddStringToObject(root, "status", "error");
+            cJSON_AddStringToObject(root, "reason", esp_err_to_name(ESP_ERR_NOT_FOUND));
+        }
+    }
 
     return root;
 }

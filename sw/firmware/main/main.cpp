@@ -37,7 +37,7 @@ extern "C" void app_main(void)
     // 1. Engine Load: A * 100 / 255
     ret =
         OBD2::getInstance().addPID(OBD2_FUNCTIONAL_ID, MODE_CURRENT_DATA, PID_ENGINE_LOAD, 2, "Engine Load", PERCENTAGE,
-                                   "Calculated engine load", "A * 100 / 255", 0.0f, 100.0f, 2, 32, 0xf59e0b, "gauge");
+                                   "Calculated engine load", "A * 100 / 255", 0.0f, 100.0f, 2, 128, 0xf59e0b, "gauge");
     ESP_LOGI(TAG, "PID added: %s", esp_err_to_name(ret));
     // 2. Coolant Temp: A - 40
     ret = OBD2::getInstance().addPID(OBD2_FUNCTIONAL_ID, MODE_CURRENT_DATA, PID_COOLANT_TEMP, 2, "Coolant Temp",

@@ -7,6 +7,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <cstddef>
+
 #include "esp_check.h"
 #include "esp_err.h"
 #include "esp_log.h"
@@ -132,6 +134,8 @@ esp_err_t SDCard::mount_sdcard()
         return ret;
     }
 
+    mount_callback();
+
     return ret;
 }
 
@@ -150,6 +154,8 @@ esp_err_t SDCard::unmount_sdcard()
     }
 
     card = nullptr;
+
+    unmount_callback();
 
     return ESP_OK;
 }
@@ -180,49 +186,64 @@ bool SDCard::is_mounted()
     return card != nullptr;
 }
 
-esp_err_t SDCard::get_sd_info()
+void SDCard::get_sd_info(SDCard::SDInfo& sd_info)
 {
+    sd_info.is_mounted = is_mounted();
+    sd_info.is_present = card_present();
+
     uint64_t total_bytes = 0;
     uint64_t free_bytes  = 0;
 
-    if (mount_path == nullptr || card == nullptr)
-        return ESP_ERR_INVALID_STATE;
-
-    esp_err_t ret = esp_vfs_fat_info(mount_path, &total_bytes, &free_bytes);
-    if (ret != ESP_OK)
+    if (mount_path != nullptr)
     {
-        return ret;
+        esp_vfs_fat_info(mount_path, &total_bytes, &free_bytes);
+        strncpy(sd_info.mount_path, mount_path, sizeof(sd_info.mount_path) - 1);
+        sd_info.mount_path[sizeof(sd_info.mount_path) - 1] = '\0';
+    }
+    else
+    {
+        sd_info.mount_path[0] = '\0';
     }
 
-    strncpy(sd_info.name, card->cid.name, sizeof(sd_info.name) - 1);
-    sd_info.name[sizeof(sd_info.name) - 1] = '\0';
+    sd_info.used_space_mb = (total_bytes >= free_bytes) ? ((total_bytes - free_bytes) / (1024 * 1024)) : 0;
 
-    sd_info.capacity_mb   = ((uint64_t)card->csd.capacity * card->csd.sector_size) / (1024 * 1024);
-    sd_info.used_space_mb = (total_bytes - free_bytes) / (1024 * 1024);
+    if (card != nullptr)
+    {
+        strncpy(sd_info.name, card->cid.name, sizeof(sd_info.name) - 1);
+        sd_info.name[sizeof(sd_info.name) - 1] = '\0';
 
-    sd_info.max_freq_mhz = card->max_freq_khz / 1000;
-    sd_info.is_sdio      = card->is_sdio;
-    sd_info.is_mmc       = card->is_mmc;
-
-    sd_info.is_mounted = is_mounted();
-    sd_info.is_present = card_present();
-    strncpy(sd_info.mount_path, mount_path, sizeof(sd_info.mount_path) - 1);
-    sd_info.mount_path[sizeof(sd_info.mount_path) - 1] = '\0';
-
-    return ESP_OK;
+        sd_info.capacity_mb  = ((uint64_t)card->csd.capacity * card->csd.sector_size) / (1024 * 1024);
+        sd_info.max_freq_mhz = card->max_freq_khz / 1000;
+        sd_info.is_sdio      = card->is_sdio;
+        sd_info.is_mmc       = card->is_mmc;
+    }
+    else
+    {
+        sd_info.name[0]      = '\0';
+        sd_info.capacity_mb  = 0;
+        sd_info.max_freq_mhz = 0;
+        sd_info.is_sdio      = 0;
+        sd_info.is_mmc       = 0;
+    }
 }
 
 void SDCard::print_card_status()
 {
-    esp_err_t err = get_sd_info();
-    ESP_RETURN_VOID_ON_ERROR(err, TAG, "Failed to get SD card info: %s", esp_err_to_name(err));
+    SDCard::SDInfo sd_info;
+
+    get_sd_info(sd_info);
 
     ESP_LOGI(TAG, "--- SD Card Info ---");
-    ESP_LOGI(TAG, "Name: %s", sd_info.name);
-    ESP_LOGI(TAG, "Type: %s", (sd_info.is_sdio) ? "SDIO" : (sd_info.is_mmc) ? "MMC" : "SDSC/SDHC/SDXC");
-    ESP_LOGI(TAG, "Capacity: %llu MB", sd_info.capacity_mb);
-    ESP_LOGI(TAG, "Used Space: %llu MB", sd_info.used_space_mb);  // Changed to %llu
-    ESP_LOGI(TAG, "Speed: %u MHz", (unsigned int)sd_info.max_freq_mhz);
+    ESP_LOGI(TAG, "Present: %s", sd_info.is_present ? "true" : "false");
+    ESP_LOGI(TAG, "Mounted: %s", sd_info.is_mounted ? "true" : "false");
+    if (sd_info.is_mounted)
+    {
+        ESP_LOGI(TAG, "Name: %s", sd_info.name);
+        ESP_LOGI(TAG, "Type: %s", (sd_info.is_sdio) ? "SDIO" : (sd_info.is_mmc) ? "MMC" : "SDSC/SDHC/SDXC");
+        ESP_LOGI(TAG, "Capacity: %llu MB", sd_info.capacity_mb);
+        ESP_LOGI(TAG, "Used Space: %llu MB", sd_info.used_space_mb);  // Changed to %llu
+        ESP_LOGI(TAG, "Speed: %u MHz", (unsigned int)sd_info.max_freq_mhz);
+    }
 }
 
 /* Filesystem Management */
@@ -324,36 +345,62 @@ esp_err_t SDCard::delete_directory(const char* path)
     return ESP_OK;
 }
 
-esp_err_t SDCard::write_buffer_to_csv(const char* filename, uint8_t* buffer, size_t size)
+esp_err_t SDCard::write_file(const char* filename, const void* data, size_t size, bool append)
 {
-    if (buffer == nullptr || size == 0)
+    if (data == nullptr || size == 0)
         return ESP_ERR_INVALID_ARG;
 
-    FILE* f = fopen(filename, "a");
+    const char* mode = append ? "a" : "w";
+
+    FILE* f = fopen(filename, mode);
     if (f == nullptr)
     {
-        ESP_LOGE(TAG, "Failed to open file for appending: %s", filename);
+        ESP_LOGE(TAG, "Failed to open file %s in mode '%s'", filename, mode);
         return ESP_FAIL;
     }
 
-    size_t written = fwrite(buffer, 1, size, f);
+    size_t written = fwrite(data, 1, size, f);
 
     fflush(f);
-
     if (fsync(fileno(f)) != 0)
     {
-        ESP_LOGE(TAG, "Hardware sync failed!");
+        ESP_LOGE(TAG, "Hardware sync failed for %s!", filename);
     }
 
     fclose(f);
 
     if (written != size)
     {
-        ESP_LOGE(TAG, "Write incomplete! Wrote %zu/%zu bytes", written, size);
+        ESP_LOGE(TAG, "Write incomplete! Wrote %zu/%zu bytes to %s", written, size, filename);
         return ESP_FAIL;
     }
 
-    ESP_LOGI(TAG, "Successfully appended %zu bytes to %s", size, filename);
+    ESP_LOGI(TAG, "Successfully %s %zu bytes to %s", append ? "appended" : "wrote", size, filename);
+    return ESP_OK;
+}
+
+esp_err_t SDCard::read_file(const char* filename, void* buffer, size_t max_size, size_t* bytes_read)
+{
+    if (buffer == nullptr || max_size == 0)
+        return ESP_ERR_INVALID_ARG;
+
+    FILE* f = fopen(filename, "r");
+    if (f == nullptr)
+    {
+        ESP_LOGE(TAG, "Failed to open file for reading: %s", filename);
+        return ESP_FAIL;
+    }
+
+    size_t read_len = fread(buffer, 1, max_size, f);
+
+    fclose(f);
+
+    if (bytes_read != nullptr)
+    {
+        *bytes_read = read_len;
+    }
+
+    ESP_LOGI(TAG, "Successfully read %zu bytes from %s", read_len, filename);
     return ESP_OK;
 }
 

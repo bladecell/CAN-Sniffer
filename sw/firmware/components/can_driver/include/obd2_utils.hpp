@@ -142,6 +142,8 @@ struct PIDData_t
     uint16_t updateInterval_ms;
 };
 
+#define DEFAULT_NUMER_OF_RETRIES 3
+
 struct PollRequest
 {
     uint16_t   pid;
@@ -152,6 +154,7 @@ struct PollRequest
     uint32_t   id;
     uint8_t    mode;
     uint8_t    len;
+    uint8_t    retries_left = DEFAULT_NUMER_OF_RETRIES;
 
     // Min-Heap logic: Sooner wake time = higher priority.
     // If times are equal, lower priority value (0 is highest) wins.

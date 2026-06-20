@@ -1,6 +1,7 @@
 #pragma once
 
 #include "freertos/FreeRTOS.h"
+#include "freertos/idf_additions.h"
 #include "freertos/semphr.h"
 #include "obd2_utils.hpp"
 
@@ -21,6 +22,7 @@ private:
     }
 
 public:
+    TaskHandle_t consumerTask = nullptr;
     PIDPriorityQueue()
     {
         lock = xSemaphoreCreateMutex();
@@ -88,6 +90,10 @@ public:
             i = (i - 1) / 2;
         }
         xSemaphoreGive(lock);
+        if (consumerTask != NULL)
+        {
+            xTaskNotifyGive(consumerTask);  // Wake the sleeping giant
+        }
     }
 
     PollRequest pop()

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 #include "cJSON.h"
 #include "driver/gpio.h"
 #include "driver/sdmmc_host.h"
@@ -44,8 +46,8 @@ public:
     esp_err_t unmount_sdcard();
     esp_err_t format_sdcard();
 
-    esp_err_t get_sd_info();
-    bool      is_mounted();
+    void get_sd_info(SDCard::SDInfo& sd_info);
+    bool is_mounted();
 
     void print_card_status();
 
@@ -61,8 +63,20 @@ public:
     esp_err_t create_directory(const char* path);
     esp_err_t delete_file(const char* path);
     esp_err_t delete_directory(const char* path);
-    esp_err_t write_buffer_to_csv(const char* filename, uint8_t* buffer, size_t size);
+    esp_err_t write_file(const char* filename, const void* data, size_t size, bool append);
+    esp_err_t read_file(const char* filename, void* buffer, size_t max_size, size_t* bytes_read);
     cJSON*    scan_directory(const char* path, int depth);
+
+    typedef std::function<void()> Callback;
+
+    void on_mount(Callback cb)
+    {
+        mount_callback = cb;
+    }
+    void on_unmount(Callback cb)
+    {
+        unmount_callback = cb;
+    }
 
     SDCard();
     ~SDCard();
@@ -87,5 +101,7 @@ private:
     esp_vfs_fat_mount_config_t mount_config = {};
     sdmmc_slot_config_t        slot_config  = {};
     const char*                mount_path   = nullptr;
-    SDCard::SDInfo             sd_info      = {};
+
+    Callback mount_callback;
+    Callback unmount_callback;
 };

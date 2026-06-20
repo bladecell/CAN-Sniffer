@@ -105,14 +105,15 @@ void OBD2DataModel::startPolling()
                     continue;
 
                 PollRequest req;
-                req.pid         = pid;
-                req.interval    = interval;
-                req.nextWake    = now;
-                req.priority    = info.priority();
-                req.isRecurring = true;
-                req.id          = info.id();
-                req.mode        = info.mode();
-                req.len         = info.len();
+                req.pid          = pid;
+                req.interval     = interval;
+                req.nextWake     = now;
+                req.priority     = info.priority();
+                req.isRecurring  = true;
+                req.id           = info.id();
+                req.mode         = info.mode();
+                req.len          = info.len();
+                req.retries_left = DEFAULT_NUMER_OF_RETRIES;
 
                 pollQueue.push(req);
 
@@ -128,14 +129,15 @@ void OBD2DataModel::startPolling()
     for (const uint32_t id : RequestByDataIdentifierIds)
     {
         PollRequest req;
-        req.pid         = 1;
-        req.interval    = 2000;
-        req.nextWake    = now;
-        req.priority    = 1;
-        req.isRecurring = true;
-        req.id          = id;
-        req.mode        = MODE_DIAGNOSTIC_SESSION_CONTROL;
-        req.len         = 2;
+        req.pid          = 1;
+        req.interval     = 2000;
+        req.nextWake     = now;
+        req.priority     = 1;
+        req.isRecurring  = true;
+        req.id           = id;
+        req.mode         = MODE_DIAGNOSTIC_SESSION_CONTROL;
+        req.len          = 2;
+        req.retries_left = DEFAULT_NUMER_OF_RETRIES;
         pollQueue.push(req);
     }
 }

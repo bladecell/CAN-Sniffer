@@ -234,6 +234,21 @@ esp_err_t SUPERVISOR::setup_sd_card()
     config.max_files              = 5;
     config.format_if_mount_failed = true;
 
+    SDCard::getInstance().on_mount(
+        []()
+        {
+            auto& sd = SDCard::getInstance();
+            if (sd.create_directory("/sdcard/config") != ESP_OK)
+            {
+                ESP_LOGE("SD_CALLBACK", "Failed to create /config directory");
+            }
+
+            if (sd.create_directory("/sdcard/logs") != ESP_OK)
+            {
+                ESP_LOGE("SD_CALLBACK", "Failed to create /logs directory");
+            }
+        });
+
     esp_err_t ret = SDCard::getInstance().init(config);
     if (ret != ESP_OK)
     {
@@ -242,6 +257,7 @@ esp_err_t SUPERVISOR::setup_sd_card()
     }
 
     ESP_LOGI(TAG, "SD card initialized and mounted at %s", config.base_path);
+
     return ESP_OK;
 }
 
