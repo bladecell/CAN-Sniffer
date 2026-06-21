@@ -65,7 +65,8 @@ public:
     esp_err_t delete_directory(const char* path);
     esp_err_t write_file(const char* filename, const void* data, size_t size, bool append);
     esp_err_t read_file(const char* filename, void* buffer, size_t max_size, size_t* bytes_read);
-    cJSON*    scan_directory(const char* path, int depth);
+    cJSON*    scan_directory(const char* relative_path, int depth);
+    void      get_absolute_path(const char* relative_path, char* out_buf, size_t out_size);
 
     typedef std::function<void()> Callback;
 

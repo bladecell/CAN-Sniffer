@@ -33,6 +33,7 @@ size_t    m_sdcard_file_read_chunk(FILE* fd, char* chunk, size_t max_len);
 cJSON*    m_sdcard_file_delete_delete(const char* path);
 cJSON*    m_vin_get();
 cJSON*    m_dtc_get(int mode);
+cJSON*    m_dtc_description_get(const char* target_codes[], size_t count);
 cJSON*    m_vin_request();
 cJSON*    m_dtc_request(int mode);
 cJSON*    m_clear_dtc_request();

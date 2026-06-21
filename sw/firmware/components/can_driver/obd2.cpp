@@ -733,17 +733,31 @@ esp_err_t OBD2::parseDTCs(std::vector<CanDriver::CanFrame>& frames, uint8_t mode
         uint8_t frame_type = (frame.data[0] >> 4) & 0x0F;
         switch (frame_type)
         {
-            case 0:
-                dtc_rem = frame.data[2];
-                idx     = 3;
+            case 0:  // Single Frame (SF)
+            {
+                // Lower nibble of Byte 0 is the total payload length
+                uint8_t payload_len = frame.data[0] & 0x0F;
+
+                // Subtract 1 for the '0x43' Service ID byte, then divide by 2 bytes per DTC
+                dtc_rem = (payload_len - 1) / 2;
+                idx     = 2;  // data[0]=PCI, data[1]=0x43, First DTC starts at data[2]!
                 break;
-            case 1:
-                dtc_rem = frame.data[3];
-                idx     = 4;
+            }
+            case 1:  // First Frame (FF) of a multi-frame stream
+            {
+                // 12-bit payload length across Byte 0 and Byte 1
+                uint16_t payload_len = ((frame.data[0] & 0x0F) << 8) | frame.data[1];
+
+                dtc_rem = (payload_len - 1) / 2;
+                idx     = 3;  // data[0..1]=PCI_Len, data[2]=0x43, First DTC starts at data[3]!
                 break;
-            case 2:
+            }
+            case 2:  // Consecutive Frame (CF)
+            {
+                // data[0] is sequence number (0x20-0x2F), payload starts instantly at data[1]
                 idx = 1;
                 break;
+            }
             default:
                 return ESP_ERR_INVALID_RESPONSE;
         }

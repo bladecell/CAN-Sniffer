@@ -29,6 +29,7 @@ struct RouteDef
 #define WS_DAT_STREAM_TASK_PRIORITY (tskIDLE_PRIORITY + 1)
 #define WS_DAT_STREAM_TASK_CORE_ID 1
 #define WS_DAT_STREAM_PERIOD 1000
+#define MAX_DTC_CODES_QUERY 30
 
 static const char* TAG = "WEB_SERVER";
 
@@ -57,7 +58,7 @@ esp_err_t send_json_response(httpd_req_t* req, cJSON* root)
     httpd_resp_set_type(req, "application/json");
     esp_err_t ret = httpd_resp_send(req, json_str, HTTPD_RESP_USE_STRLEN);
 
-    free((void*)json_str);
+    cJSON_free((void*)json_str);
     cJSON_Delete(root);
     return ret;
 }
@@ -88,6 +89,29 @@ esp_err_t get_query_int(httpd_req_t* req, const char* key, int* value)
         return ESP_OK;
     }
     return ESP_ERR_NOT_FOUND;
+}
+
+esp_err_t get_query_list(httpd_req_t* req, const char* key, char* scratch_buf, size_t scratch_len,
+                         const char* out_ptrs[], size_t max_ptrs, size_t* out_count)
+{
+    *out_count = 0;
+
+    if (!get_query_str(req, key, scratch_buf, scratch_len))
+    {
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    char* save_ptr = nullptr;
+    char* token    = strtok_r(scratch_buf, ",", &save_ptr);
+
+    while (token != nullptr && (*out_count) < max_ptrs)
+    {
+        out_ptrs[*out_count] = token;
+        (*out_count)++;
+        token = strtok_r(nullptr, ",", &save_ptr);
+    }
+
+    return (*out_count > 0) ? ESP_OK : ESP_ERR_NOT_FOUND;
 }
 
 esp_err_t get_query_bool(httpd_req_t* req, const char* key, bool* value)
@@ -210,11 +234,28 @@ esp_err_t p_vin_index_handler(httpd_req_t* req, void* arg)
 esp_err_t g_dtc_index_handler(httpd_req_t* req, void* arg)
 {
     int mode = -1;
-    if (get_query_int(req, "mode", &mode) != ESP_OK && (httpd_req_get_url_query_len(req) > 0))
+    if (httpd_req_get_url_query_len(req) == 0)
     {
-        return httpd_resp_send_404(req);
+        return send_json_response(req, m_dtc_get(mode));
     }
-    return send_json_response(req, m_dtc_get(mode));
+
+    if (get_query_int(req, "mode", &mode) == ESP_OK)
+    {
+        cJSON* data = m_dtc_get(mode);
+        return send_json_response(req, data);
+    }
+
+    char        scratch[(MAX_DTC_CODES_QUERY * 6) + 2];
+    const char* codes[MAX_DTC_CODES_QUERY];
+    size_t      count = 0;
+
+    if (get_query_list(req, "codes", scratch, sizeof(scratch), codes, MAX_DTC_CODES_QUERY, &count) == ESP_OK)
+    {
+        cJSON* data = m_dtc_description_get(codes, count);
+        return send_json_response(req, data);
+    }
+
+    return httpd_resp_send_404(req);
 }
 
 esp_err_t p_dtc_index_handler(httpd_req_t* req, void* arg)
@@ -638,7 +679,7 @@ static void register_routes()
 esp_err_t setup_web_server()
 {
     AsyncWebServer::Config server_config;
-    server_config.async_worker_task_num         = 5;
+    server_config.async_worker_task_num         = 4;
     server_config.max_open_sockets              = 7;
     server_config.async_worker_task_priority    = 5;
     server_config.async_worker_stack_size       = 8192;

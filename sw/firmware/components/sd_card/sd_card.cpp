@@ -404,18 +404,21 @@ esp_err_t SDCard::read_file(const char* filename, void* buffer, size_t max_size,
     return ESP_OK;
 }
 
-cJSON* SDCard::scan_directory(const char* path, int depth)
+cJSON* SDCard::scan_directory(const char* relative_path, int depth)
 {
     if (depth > SCAN_DEPTH_LIMIT)
         return NULL;
 
+    char full_path[PATH_MAX];
+    get_absolute_path(relative_path, full_path, sizeof(full_path));
+
     cJSON* root = cJSON_CreateObject();
-    cJSON_AddStringToObject(root, "name", path);
+    cJSON_AddStringToObject(root, "path", (relative_path[0] == '\0') ? "/" : relative_path);
+
     cJSON* children = cJSON_CreateArray();
     cJSON_AddItemToObject(root, "children", children);
 
-    char full_path[PATH_MAX];
-    DIR* dir = opendir(path);
+    DIR* dir = opendir(full_path);
     if (!dir)
         return root;
 
@@ -425,14 +428,16 @@ cJSON* SDCard::scan_directory(const char* path, int depth)
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
             continue;
 
-        int written = snprintf(full_path, sizeof(full_path), "%s/%s", path, entry->d_name);
-        if (written < 0 || written >= (int)sizeof(full_path))
-            continue;
+        char next_rel[PATH_MAX];
+        snprintf(next_rel, sizeof(next_rel), "%s/%s", (relative_path[0] == '\0') ? "" : relative_path, entry->d_name);
+
+        char next_full[PATH_MAX];
+        get_absolute_path(next_rel, next_full, sizeof(next_full));
 
         struct stat st;
-        if (stat(full_path, &st) == 0 && S_ISDIR(st.st_mode))
+        if (stat(next_full, &st) == 0 && S_ISDIR(st.st_mode))
         {
-            cJSON* sub_dir = scan_directory(full_path, depth + 1);
+            cJSON* sub_dir = scan_directory(next_rel, depth + 1);
             if (sub_dir)
                 cJSON_AddItemToArray(children, sub_dir);
         }
@@ -449,7 +454,15 @@ cJSON* SDCard::scan_directory(const char* path, int depth)
     return root;
 }
 
-// Memory Constraints: If your mapping table is massive (megabytes of data), don't store it in RAM. Use a binary index
-// file. You can pre-process your CSV on your PC into a binary format that the ESP32 can seek through using fseek() to
-// jump directly to the correct byte offset for an ID without reading the entire file.
-// pro dtc
+void SDCard::get_absolute_path(const char* relative_path, char* out_buf, size_t out_size)
+{
+    if (relative_path == nullptr || relative_path[0] == '\0' || strcmp(relative_path, "/") == 0)
+    {
+        snprintf(out_buf, out_size, "%s", this->mount_path);
+    }
+    else
+    {
+        const char* p = (relative_path[0] == '/') ? relative_path + 1 : relative_path;
+        snprintf(out_buf, out_size, "%s/%s", this->mount_path, p);
+    }
+}

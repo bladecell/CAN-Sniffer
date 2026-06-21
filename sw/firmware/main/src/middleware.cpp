@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <vector>
 
 #include "cJSON.h"
@@ -16,6 +17,7 @@
 #include "freertos/task.h"
 #include "obd2.hpp"
 #include "sd_card.hpp"
+#include "string"
 #include "supervisor.hpp"
 #include "utilities.h"
 
@@ -253,21 +255,22 @@ cJSON* m_sdcard_file_tree_get(const char* path)
 
     sd.get_sd_info(sd_info);
 
-    if (sd_info.is_mounted)
+    if (!sd_info.is_mounted)
     {
-        char filepath[512];
-        snprintf(filepath, sizeof(filepath), "%s%s", sd_info.mount_path, path);
-        return sd.scan_directory(filepath, 5);
+        cJSON* err_root = cJSON_CreateObject();
+        cJSON_AddStringToObject(err_root, "status", "error");
+        cJSON_AddStringToObject(err_root, "reason", esp_err_to_name(ESP_ERR_NOT_FOUND));
+        return err_root;
     }
-    else
+
+    cJSON* root = sd.scan_directory(path, 5);
+
+    if (root != nullptr)
     {
-        {
-            cJSON* root = cJSON_CreateObject();
-            cJSON_AddStringToObject(root, "status", "error");
-            cJSON_AddStringToObject(root, "reason", esp_err_to_name(ESP_ERR_NOT_FOUND));
-            return root;
-        }
+        cJSON_AddStringToObject(root, "status", "success");
     }
+
+    return root;
 }
 
 esp_err_t m_sdcard_file_open_file(const char* path, const char* mode, FILE*& fd)
@@ -424,6 +427,110 @@ cJSON* m_dtc_get(int mode)
 
     cJSON_AddItemToObject(root, "dtcs", items);
     cJSON_AddNumberToObject(root, "count", global_count);
+
+    return root;
+}
+
+cJSON* m_dtc_description_get(const char* target_codes[], size_t count)
+{
+    cJSON* root = cJSON_CreateObject();
+
+    char dtc_path[] = "/config/dtcs.bin";
+
+    char absolute_path[PATH_MAX];
+
+    SDCard::getInstance().get_absolute_path(dtc_path, absolute_path, sizeof(absolute_path));
+
+    std::unique_ptr<FILE, decltype(&fclose)> file(fopen(absolute_path, "rb"), fclose);
+
+    if (!file)
+    {
+        cJSON_AddStringToObject(root, "status", "error");
+
+        std::string reason =
+            "File " + std::string(dtc_path) + " not found (resolved to " + std::string(absolute_path) + ")";
+
+        cJSON_AddStringToObject(root, "reason", reason.c_str());
+
+        cJSON_AddNumberToObject(root, "dtc_count", 0);
+        return root;
+    }
+
+    fseek(file.get(), 0, SEEK_END);
+    long total_records = ftell(file.get()) / 128;
+
+    if (total_records <= 0)
+    {
+        cJSON_AddStringToObject(root, "status", "error");
+
+        std::string reason = "No records found in " + std::string(dtc_path);
+
+        cJSON_AddStringToObject(root, "reason", reason.c_str());
+        cJSON_AddNumberToObject(root, "dtc_count", 0);
+        return root;
+    }
+
+    cJSON* dtcs_array = cJSON_CreateArray();
+    char   read_code[6];
+    char   desc_buf[128];
+
+    for (size_t i = 0; i < count; i++)
+    {
+        cJSON* item = cJSON_CreateObject();
+        cJSON_AddStringToObject(item, "dtc", target_codes[i]);
+
+        long left = 0, right = total_records - 1;
+        bool found = false;
+
+        while (left <= right)
+        {
+            long mid = left + ((right - left) >> 1);
+
+            fseek(file.get(), mid * 128, SEEK_SET);
+            size_t bytes = fread(read_code, 1, 6, file.get());
+
+            if (bytes == 0 || ferror(file.get()))
+            {
+                cJSON_Delete(dtcs_array);
+                cJSON_AddStringToObject(root, "status", "error");
+
+                std::string reason = "Failed to read file " + std::string(dtc_path);
+
+                cJSON_AddStringToObject(root, "reason", reason.c_str());
+                cJSON_AddNumberToObject(root, "dtc_count", 0);
+                return root;
+            }
+
+            read_code[5] = '\0';
+            int cmp      = strcmp(read_code, target_codes[i]);
+
+            if (cmp == 0)
+            {
+                fread(desc_buf, 1, 122, file.get());
+                desc_buf[122] = '\0';
+
+                cJSON_AddStringToObject(item, "description", desc_buf);
+                found = true;
+                break;
+            }
+
+            if (cmp < 0)
+                left = mid + 1;
+            else
+                right = mid - 1;
+        }
+
+        if (!found)
+        {
+            cJSON_AddStringToObject(item, "description", "Description not found");
+        }
+
+        cJSON_AddItemToArray(dtcs_array, item);
+    }
+
+    cJSON_AddStringToObject(root, "status", "success");
+    cJSON_AddNumberToObject(root, "dtc_count", count);
+    cJSON_AddItemToObject(root, "dtcs", dtcs_array);
 
     return root;
 }
