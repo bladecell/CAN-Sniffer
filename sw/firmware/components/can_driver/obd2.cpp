@@ -45,6 +45,16 @@ OBD2::OBD2()
  */
 OBD2::~OBD2()
 {
+    if (ReceiveTaskHandle)
+    {
+        vTaskDelete(ReceiveTaskHandle);
+        ReceiveTaskHandle = nullptr;
+    }
+    if (PollTaskHandle)
+    {
+        vTaskDelete(PollTaskHandle);
+        PollTaskHandle = nullptr;
+    }
     if (xPidConnectedSemaphore)
     {
         vSemaphoreDelete(xPidConnectedSemaphore);
@@ -257,6 +267,11 @@ void OBD2::req(uint32_t id, uint8_t mode, uint32_t pid, uint8_t len, uint32_t in
     req.len         = len;
 
     pollQueue.push(req);
+
+    if (PollTaskHandle != nullptr)
+    {
+        xTaskNotifyGive(PollTaskHandle);
+    }
 }
 
 esp_err_t OBD2::queryMsg(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len)
@@ -292,7 +307,7 @@ esp_err_t OBD2::queryMsg(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len)
     tx.header.timestamp    = 0;      // Not used for TX
     tx.header.trigger_time = 0;      // Not used for immediate transmission
 
-    tx.length = sizeof(tx.data) / sizeof(uint8_t);
+    tx.length = sizeof(tx.data) / sizeof(uint8_t);  // TODO - needs to be set correctly
 
     esp_err_t ret = canDriver.transmit(tx, 100);
 
@@ -387,7 +402,7 @@ void OBD2::pollTask()
     while (1)
     {
         TickType_t delay = pollQueue.getWait();
-        vTaskDelay(delay);
+        ulTaskNotifyTake(pdTRUE, delay);
 
         // If disconnected or empty, naturally decay the utilization down to 0
         // instead of snapping it instantly to 0.0f.
@@ -436,7 +451,7 @@ void OBD2::pollTask()
         }
 
         // 4. Reschedule recurring tasks
-        if (current.isRecurring)
+        if (current.isRecurring && continuousRunning)
         {
             current.nextWake = xTaskGetTickCount() + pdMS_TO_TICKS(current.interval);
             pollQueue.push(current);
