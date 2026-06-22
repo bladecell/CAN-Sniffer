@@ -127,7 +127,7 @@ public:
         {
             for (int i = 0; i < size; i++)
             {
-                if (heap[i].pid == targetPid)
+                if (heap[i].payload.obd.pid == targetPid)
                 {
                     PollRequest movedItem = heap[size - 1];
                     heap[i]               = movedItem;

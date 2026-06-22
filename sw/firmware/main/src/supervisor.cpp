@@ -113,7 +113,11 @@ void SUPERVISOR::task()
                 {
                     ESP_LOGI(TAG, "CAN bus connected, system RUNNING");
                     eState = State::RUNNING;
-                    OBD2::getInstance().requestVIN();
+                    err    = OBD2::getInstance().requestVIN();
+                    if (err != ESP_OK)
+                    {
+                        ESP_LOGW(TAG, "Failed to request VIN: %s", esp_err_to_name(err));
+                    }
                     err = OBD2::getInstance().requestDTC(MODE_DTCS);
                     if (err == ESP_OK)
                         err = OBD2::getInstance().requestDTC(MODE_PENDING_DTCS);

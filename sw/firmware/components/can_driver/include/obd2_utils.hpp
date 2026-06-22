@@ -146,18 +146,34 @@ struct PIDData_t
 
 struct PollRequest
 {
-    uint16_t   pid;
+    // Priority Fields (Used for Min-Heap)
     TickType_t nextWake;
-    uint32_t   interval;
     uint8_t    priority;
-    bool       isRecurring;
-    uint32_t   id;
-    uint8_t    mode;
-    uint8_t    len;
-    uint8_t    retries_left = DEFAULT_NUMER_OF_RETRIES;
 
-    // Min-Heap logic: Sooner wake time = higher priority.
-    // If times are equal, lower priority value (0 is highest) wins.
+    // Control Fields
+    uint32_t id;
+    uint32_t interval;
+    bool     isRecurring;
+    uint8_t  retries_left = DEFAULT_NUMER_OF_RETRIES;
+    bool     isRaw;
+
+    // Payload Union
+    union
+    {
+        struct
+        {
+            uint8_t  len;
+            uint8_t  mode;
+            uint16_t pid;
+        } obd;
+
+        struct
+        {
+            uint8_t data[8];
+            uint8_t dlc;
+        } raw;
+    } payload;
+
     bool operator<(const PollRequest& other) const
     {
         if (nextWake == other.nextWake)

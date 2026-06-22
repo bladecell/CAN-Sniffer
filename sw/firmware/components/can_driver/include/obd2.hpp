@@ -58,7 +58,10 @@ public:
     esp_err_t requestDTC(uint8_t mode);
     void      requestClearDTCs();
     void      pollRequestStaticPids();
-    esp_err_t queryMsg(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len);
+
+    void req(uint32_t id, uint8_t mode, uint32_t pid, uint8_t len, uint32_t interval, uint8_t priority,
+             bool isRecurring = false);
+    void req(PollRequest& req);
 
     float getPollTaskUtilization() const
     {
@@ -74,14 +77,20 @@ private:
     // PID Definitions and Data Storage
 
     SemaphoreHandle_t xPidConnectedSemaphore = NULL;
+    SemaphoreHandle_t xBusArbitrationMutex   = NULL;
+
+    uint8_t  multiframe_state         = 99;
+    uint32_t last_multiframe_received = 0;
+
+    void multiframe_watchdog();
+
+    esp_err_t queryMsg(PollRequest& req);
 
     // Polling Task
     void pollTask();
 
     static void  pollTaskWrapper(void* param);
     TaskHandle_t PollTaskHandle{nullptr};
-    void         req(uint32_t id, uint8_t mode, uint32_t pid, uint8_t len, uint32_t interval, uint8_t priority,
-                     bool isRecurring = false);
     float        pollTaskUtilization = 0.0f;
 
     // Receiving Task

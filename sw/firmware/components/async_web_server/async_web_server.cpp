@@ -1,5 +1,7 @@
 #include "async_web_server.hpp"
 
+#include <atomic>
+
 #include "esp_check.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -115,6 +117,8 @@ esp_err_t AsyncWebServer::async_handler(httpd_req_t* req)
     }
 }
 
+std::atomic<bool> is_busy{false};
+
 esp_err_t AsyncWebServer::queue_request(httpd_req_t* req)
 {
     RouteContext* ctx = (RouteContext*)req->user_ctx;
@@ -153,7 +157,7 @@ esp_err_t AsyncWebServer::queue_request(httpd_req_t* req)
 
     // Since worker_ready_count > 0 the queue should already have space.
     // But lets wait up to 100ms just to be safe.
-    if (xQueueSend(request_queue, &job, pdMS_TO_TICKS(100)) != pdTRUE)
+    if (xQueueSend(request_queue, &job, 100) != pdTRUE)
     {
         ESP_LOGE(TAG, "worker queue is full");
         httpd_req_async_handler_complete(copy);
@@ -176,24 +180,27 @@ void AsyncWebServer::worker_task()
         {
             if (async_req.handler && async_req.req)
             {
-                // call the handler using the COPY
                 async_req.handler(async_req.req, async_req.arg);
 
-                // mark complete using the COPY
-                // This cleans up the memory allocated by 'begin' and closes/frees the socket usage
-                int64_t end_time    = esp_timer_get_time();
-                int64_t duration_us = end_time - async_req.start_time_us;
-
-                ESP_LOGI(TAG, "%s processed in %.2f ms", async_req.req->uri, duration_us / 1000.0f);
-
-                if (httpd_req_async_handler_complete(async_req.req) != ESP_OK)
+                if (async_req.req->aux != NULL)
                 {
-                    ESP_LOGE(TAG, "failed to complete async req");
+                    int64_t end_time    = esp_timer_get_time();
+                    int64_t duration_us = end_time - async_req.start_time_us;
+
+                    ESP_LOGI(TAG, "%s processed in %.2f ms", async_req.req->uri, duration_us / 1000.0f);
+                    esp_err_t err = httpd_req_async_handler_complete(async_req.req);
+                    if (err != ESP_OK)
+                    {
+                        ESP_LOGE(TAG, "failed to complete async req: %s", esp_err_to_name(err));
+                    }
+                }
+                else
+                {
+                    ESP_LOGW(TAG, "Request already closed by handler, skipping complete.");
                 }
             }
         }
     }
-    vTaskDelete(NULL);
 }
 
 void AsyncWebServer::worker_task_wrapper(void* arg)
@@ -288,45 +295,47 @@ void AsyncWebServer::registerSocketRoute(const char* uri, esp_err_t (*handler)(h
 
 void AsyncWebServer::wsBroadcast(httpd_ws_frame_t* ws_pkt)
 {
-    if (!server_ || !ws_mutex)
-    {
+    if (!server_ || !ws_pkt || !ws_pkt->payload || ws_pkt->len == 0)
         return;
-    }
 
-    if (xSemaphoreTake(ws_mutex, pdMS_TO_TICKS(200)) != pdTRUE)
+    // 1. The 16-slot Rotating Memory Vault (~1.2 KB of permanent SRAM)
+    static struct
     {
-        ESP_LOGW(TAG, "WS Broadcast timeout (busy)");
-        return;
-    }
+        uint8_t          payload[64];
+        httpd_ws_frame_t frame;
+    } vault[16];
 
-    // 1. Prepare a buffer for client FDs
+    static std::atomic<uint8_t> vault_idx{0};
+
+    // 2. Atomically grab the next round-robin slot (100% Dual-Core safe)
+    uint8_t slot = vault_idx.fetch_add(1, std::memory_order_relaxed) % 16;
+    auto&   v    = vault[slot];
+
+    // 3. Snapshot the fragile stack bytes safely into our static vault slot
+    size_t len = (ws_pkt->len > 64) ? 64 : ws_pkt->len;
+    memcpy(v.payload, ws_pkt->payload, len);
+
+    v.frame.type    = ws_pkt->type;
+    v.frame.payload = v.payload;
+    v.frame.len     = len;
+    v.frame.final   = true;
+
+    // 4. Fire the ASYNC sender pointing directly to our un-poppable vault memory!
     static const size_t MAX_CLIENTS = 20;
     int                 client_fds[MAX_CLIENTS];
     size_t              fds = MAX_CLIENTS;
 
-    esp_err_t ret = httpd_get_client_list(server_, &fds, client_fds);
-
-    if (ret != ESP_OK)
+    if (httpd_get_client_list(server_, &fds, client_fds) == ESP_OK)
     {
-        xSemaphoreGive(ws_mutex);
-        return;
-    }
-
-    for (int i = 0; i < fds; i++)
-    {
-        int fd = client_fds[i];
-
-        if (httpd_ws_get_fd_info(server_, fd) == HTTPD_WS_CLIENT_WEBSOCKET)
+        for (size_t i = 0; i < fds; i++)
         {
-            esp_err_t ret = httpd_ws_send_frame_async(server_, fd, ws_pkt);
-            if (ret != ESP_OK)
+            if (httpd_ws_get_fd_info(server_, client_fds[i]) == HTTPD_WS_CLIENT_WEBSOCKET)
             {
-                ESP_LOGW(TAG, "Dropped frame for FD %d: %s", fd, esp_err_to_name(ret));
+                // Notice this correctly takes (Handle, FD, FramePtr) !
+                httpd_ws_send_frame_async(server_, client_fds[i], &v.frame);
             }
         }
     }
-
-    xSemaphoreGive(ws_mutex);
 }
 
 uint32_t AsyncWebServer::getActiveWSClientCount()

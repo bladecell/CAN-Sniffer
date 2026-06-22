@@ -25,7 +25,7 @@ struct RouteDef
     AsyncWebServer::AsyncHandler handler;
 };
 
-#define WS_DAT_STREAM_TASK_STACK_SIZE 2048
+#define WS_DAT_STREAM_TASK_STACK_SIZE 4096
 #define WS_DAT_STREAM_TASK_PRIORITY (tskIDLE_PRIORITY + 1)
 #define WS_DAT_STREAM_TASK_CORE_ID 1
 #define WS_DAT_STREAM_PERIOD 1000

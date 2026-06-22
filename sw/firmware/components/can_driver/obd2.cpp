@@ -22,6 +22,8 @@
 #include "esp_check.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "freertos/idf_additions.h"
+#include "freertos/projdefs.h"
 #include "obd2_data_model.hpp"
 #include "obd2_utils.hpp"
 
@@ -85,6 +87,7 @@ public:
 OBD2::OBD2()
     : continuousRunning(false),
       xPidConnectedSemaphore(xSemaphoreCreateBinary()),
+      xBusArbitrationMutex(xSemaphoreCreateMutex()),
       xBusConnectionSemaphore(xSemaphoreCreateBinary()),
       xRequestNextPIDSemaphore(xSemaphoreCreateBinary())
 {
@@ -110,6 +113,11 @@ OBD2::~OBD2()
     {
         vSemaphoreDelete(xPidConnectedSemaphore);
         xPidConnectedSemaphore = nullptr;
+    }
+    if (xBusArbitrationMutex)
+    {
+        vSemaphoreDelete(xBusArbitrationMutex);
+        xBusArbitrationMutex = nullptr;
     }
     if (xBusConnectionSemaphore)
     {
@@ -309,17 +317,23 @@ esp_err_t OBD2::requestPID(uint16_t pid)
 void OBD2::req(uint32_t id, uint8_t mode, uint32_t pid, uint8_t len, uint32_t interval, uint8_t priority,
                bool isRecurring)
 {
-    PollRequest req;
-    req.pid          = pid;
-    req.interval     = interval;
-    req.nextWake     = xTaskGetTickCount();
-    req.priority     = priority;
-    req.isRecurring  = isRecurring;
-    req.id           = id;
-    req.mode         = mode;
-    req.len          = len;
-    req.retries_left = DEFAULT_NUMER_OF_RETRIES;
+    PollRequest r;
+    r.isRaw            = false;
+    r.payload.obd.mode = mode;
+    r.payload.obd.pid  = pid;
+    r.payload.obd.len  = len;
+    r.interval         = interval;
+    r.nextWake         = xTaskGetTickCount();
+    r.priority         = priority;
+    r.isRecurring      = isRecurring;
+    r.id               = id;
+    r.retries_left     = DEFAULT_NUMER_OF_RETRIES;
 
+    req(r);
+}
+
+void OBD2::req(PollRequest& req)
+{
     pollQueue.push(req);
 
     if (PollTaskHandle != nullptr)
@@ -328,31 +342,50 @@ void OBD2::req(uint32_t id, uint8_t mode, uint32_t pid, uint8_t len, uint32_t in
     }
 }
 
-esp_err_t OBD2::queryMsg(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len)
+esp_err_t OBD2::queryMsg(PollRequest& req)
 {
     if (!canDriver.isBusConnected())
     {
         ESP_LOGE(TAG, "OBD-II interface not connected");
         return ESP_ERR_INVALID_STATE;
     }
-    CanDriver::CanFrame tx = {};
 
-    if (mode == MODE_READ_DATA_BY_IDENTIFIER)
+    if (req.payload.raw.dlc > 8)
     {
-        tx.data[0] = len;
-        tx.data[1] = mode;
-        tx.data[2] = (pid >> 8) & 0xFF;
-        tx.data[3] = pid & 0xFF;
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    CanDriver::CanFrame tx = {};
+    uint8_t             dlc;
+
+    // memset(tx.data, 0x55, sizeof(tx.data));
+
+    if (req.isRaw)
+    {
+        memcpy(tx.data, req.payload.raw.data, req.payload.raw.dlc);
+        dlc = req.payload.raw.dlc;
     }
     else
     {
-        tx.data[0] = len;
-        tx.data[1] = mode;
-        tx.data[2] = (uint8_t)pid;
+        if (req.payload.obd.mode == MODE_READ_DATA_BY_IDENTIFIER)
+        {
+            tx.data[0] = req.payload.obd.len;
+            tx.data[1] = req.payload.obd.mode;
+            tx.data[2] = (req.payload.obd.pid >> 8) & 0xFF;
+            tx.data[3] = req.payload.obd.pid & 0xFF;
+            dlc        = 8;
+        }
+        else
+        {
+            tx.data[0] = req.payload.obd.len;
+            tx.data[1] = req.payload.obd.mode;
+            tx.data[2] = (uint8_t)req.payload.obd.pid;
+            dlc        = 8;
+        }
     }
 
-    tx.header.id           = id;  // OBD-II  request ID
-    tx.header.dlc          = twaifd_len2dlc(sizeof(tx.data) / sizeof(uint8_t));
+    tx.header.id           = req.id;  // OBD-II  request ID
+    tx.header.dlc          = twaifd_len2dlc(dlc);
     tx.header.ide          = false;  // Standard Frame Format (11-bit ID)
     tx.header.rtr          = 0;      // Data frame (not remote frame)
     tx.header.fdf          = 0;      // Classic CAN format
@@ -361,7 +394,7 @@ esp_err_t OBD2::queryMsg(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len)
     tx.header.timestamp    = 0;      // Not used for TX
     tx.header.trigger_time = 0;      // Not used for immediate transmission
 
-    tx.length = sizeof(tx.data) / sizeof(uint8_t);  // TODO - needs to be set correctly
+    tx.length = dlc;
 
     esp_err_t ret = canDriver.transmit(tx, 100);
 
@@ -456,7 +489,7 @@ void OBD2::pollTask()
     while (1)
     {
         TickType_t delay = pollQueue.getWait();
-        ulTaskNotifyTake(pdTRUE, delay);
+        vTaskDelay(delay);
 
         pollTaskUtilization = busTracker.updateAndGet();
 
@@ -470,13 +503,15 @@ void OBD2::pollTask()
         PollRequest current = pollQueue.pop();
 
         // 3. Process based on the Mode stored in the request
-        if (current.mode == MODE_DERIVED_DATA)
+        if (current.payload.obd.mode == MODE_DERIVED_DATA)
         {
-            xQueueSend(derivedPidQueue_, &current.pid, pdMS_TO_TICKS(10));
+            xQueueSend(derivedPidQueue_, &current.payload.obd.pid, pdMS_TO_TICKS(10));
         }
         else
         {
-            esp_err_t err = queryMsg(current.id, current.mode, current.pid, current.len);
+            xSemaphoreTake(xBusArbitrationMutex, portMAX_DELAY);
+
+            esp_err_t err = queryMsg(current);
 
             if (err == ESP_OK)
             {
@@ -490,8 +525,9 @@ void OBD2::pollTask()
                     current.nextWake = xTaskGetTickCount() + pdMS_TO_TICKS(current.interval);
                     pollQueue.push(current);
                 }
-                continue;
             }
+
+            xSemaphoreGive(xBusArbitrationMutex);
         }
 
         // 4. Reschedule recurring tasks
@@ -524,6 +560,7 @@ void OBD2::receiveTask()
         }
 
         uint16_t derivedPid;
+
         while (xQueueReceive(derivedPidQueue_, &derivedPid, 0) == pdTRUE)
         {
             CanDriver::CanFrame f{};
@@ -545,7 +582,7 @@ void OBD2::receiveTask()
 
             if (ret != ESP_OK)
             {
-                ESP_LOGE(TAG, "Failed to parse received frame: %s", esp_err_to_name(ret));
+                ESP_LOGW(TAG, "Failed to parse received frame: %s", esp_err_to_name(ret));
             }
         }
         else if (ret != ESP_ERR_TIMEOUT)
@@ -553,6 +590,8 @@ void OBD2::receiveTask()
             ESP_LOGE(TAG, "CAN receive driver error: %s", esp_err_to_name(ret));
             vTaskDelay(pdMS_TO_TICKS(10));
         }
+
+        multiframe_watchdog();
     }
 }
 
@@ -875,11 +914,24 @@ esp_err_t OBD2::requestVIN()
         return ESP_ERR_INVALID_STATE;
     }
 
-    req(OBD2_FUNCTIONAL_ID, MODE_VEHICLE_INFO, PID_VIN, 2, 0, 0);
+    PollRequest r         = {};
+    r.id                  = OBD2_FUNCTIONAL_ID;
+    r.isRaw               = true;
+    r.payload.raw.data[0] = 0x03;
+    r.payload.raw.data[1] = MODE_VEHICLE_INFO;
+    r.payload.raw.data[2] = PID_VIN;
+    r.payload.raw.dlc     = 8;
+    r.interval            = 0;
+    r.nextWake            = xTaskGetTickCount();
+    r.priority            = 0;
+    r.isRecurring         = false;
+    r.retries_left        = DEFAULT_NUMER_OF_RETRIES;
+
+    req(r);
 
     xSemaphoreTake(vinData.vinReadySemaphore, 0);
 
-    if (xSemaphoreTake(vinData.vinReadySemaphore, pdMS_TO_TICKS(2000)) != pdTRUE)
+    if (xSemaphoreTake(vinData.vinReadySemaphore, pdMS_TO_TICKS(500)) != pdTRUE)
     {
         return ESP_ERR_TIMEOUT;
     }
@@ -918,9 +970,21 @@ esp_err_t OBD2::requestDTC(uint8_t mode)
     while (xSemaphoreTake(*sem, 0) == pdTRUE)
         ;
 
-    req(OBD2_FUNCTIONAL_ID, mode, 0x00, 2, 0, 0);
+    PollRequest r         = {};
+    r.id                  = OBD2_FUNCTIONAL_ID;
+    r.isRaw               = true;
+    r.payload.raw.data[0] = 0x02;
+    r.payload.raw.data[1] = mode;
+    r.payload.raw.dlc     = 8;
+    r.interval            = 0;
+    r.nextWake            = xTaskGetTickCount();
+    r.priority            = 0;
+    r.isRecurring         = false;
+    r.retries_left        = DEFAULT_NUMER_OF_RETRIES;
 
-    if (xSemaphoreTake(*sem, pdMS_TO_TICKS(2000)) != pdTRUE)
+    req(r);
+
+    if (xSemaphoreTake(*sem, pdMS_TO_TICKS(500)) != pdTRUE)
     {
         ESP_LOGW(TAG, "DTC Request %s timed out", OBD2_MODE_TO_STR(mode));
         return ESP_ERR_TIMEOUT;
@@ -931,26 +995,52 @@ esp_err_t OBD2::requestDTC(uint8_t mode)
 
 void OBD2::requestClearDTCs()
 {
-    req(OBD2_FUNCTIONAL_ID, MODE_CLEAR_DTCS, 0x00, 2, 0, 0);
+    PollRequest r         = {};
+    r.id                  = OBD2_FUNCTIONAL_ID;
+    r.isRaw               = true;
+    r.payload.raw.data[0] = 0x02;
+    r.payload.raw.data[1] = MODE_CLEAR_DTCS;
+    r.payload.raw.dlc     = 8;
+    r.interval            = 0;
+    r.nextWake            = xTaskGetTickCount();
+    r.priority            = 0;
+    r.isRecurring         = false;
+    r.retries_left        = DEFAULT_NUMER_OF_RETRIES;
+
+    req(r);
+}
+
+void OBD2::multiframe_watchdog()
+{
+    if (multiframe_state != 99)
+    {
+        if ((xTaskGetTickCount() - last_multiframe_received) > pdMS_TO_TICKS(250))
+        {
+            ESP_LOGE(TAG, "Multiframe session timeout");
+            xSemaphoreGive(xBusArbitrationMutex);
+            multiframe_state = 99;
+        }
+    }
 }
 
 esp_err_t OBD2::captureMultiFrame(const CanDriver::CanFrame& f)
 {
-    static uint8_t                          MULTIDRAME_STATE = 99;
     uint8_t                                 frameType;
     static uint16_t                         totalLength = 0, consecutiveFrameIndex = 0, consecutiveFramesNeeded = 0;
     constexpr uint8_t                       CONSECUTIVE_FRAME_DATA_BYTES = 7, FIRST_FRAME_DATA_BYTES = 6;
     static std::vector<CanDriver::CanFrame> multiFrameBuffer;
     esp_err_t                               ret = ESP_OK;
 
-    switch (MULTIDRAME_STATE)
+    last_multiframe_received = xTaskGetTickCount();
+
+    switch (multiframe_state)
     {
         case 99:  // Idle State
         {
             frameType = (f.data[0] >> 4) & 0x0F;
             if (frameType == 1)
             {
-                MULTIDRAME_STATE = 0;  // Go to First Frame state
+                multiframe_state = 0;  // Go to First Frame state
             }
             else
             {
@@ -971,9 +1061,10 @@ esp_err_t OBD2::captureMultiFrame(const CanDriver::CanFrame& f)
             consecutiveFrameIndex   = 0;
             multiFrameBuffer.clear();
             multiFrameBuffer.push_back(f);
+            xSemaphoreTake(xBusArbitrationMutex, portMAX_DELAY);
             vTaskDelay(pdMS_TO_TICKS(10));  // Wait before sending Flow Control
             sendFlowControlFrame(f.header.id - 8);
-            MULTIDRAME_STATE = 1;  // Go to Consecutive Frame state
+            multiframe_state = 1;  // Go to Consecutive Frame state
             break;
         }
         case 1:  // Consecutive Frames
@@ -983,36 +1074,52 @@ esp_err_t OBD2::captureMultiFrame(const CanDriver::CanFrame& f)
             uint8_t sequence = f.data[0] & 0x0F;
             if (frameType != 2 || sequence != consecutiveFrameIndex)
             {
-                ESP_LOGE(TAG, "Unexpected consecutive frame. Expected seq: %d, got: %d", consecutiveFrameIndex & 0x0F,
+                ESP_LOGW(TAG, "Unexpected consecutive frame. Expected seq: %d, got: %d", consecutiveFrameIndex & 0x0F,
                          sequence);
-                MULTIDRAME_STATE = 99;
+                xSemaphoreGive(xBusArbitrationMutex);
+
+                multiframe_state = 99;
                 return ESP_ERR_INVALID_RESPONSE;
             }
             multiFrameBuffer.push_back(f);
             if (consecutiveFrameIndex >= consecutiveFramesNeeded)
             {
-                MULTIDRAME_STATE = 99;
+                xSemaphoreGive(xBusArbitrationMutex);
+
+                multiframe_state = 99;
                 ret              = parseMultiFrame(multiFrameBuffer);
             }
             break;
         }
         default:
-            MULTIDRAME_STATE = 99;
-            ret              = ESP_ERR_INVALID_STATE;
+            multiframe_state = 99;
+            xSemaphoreGive(xBusArbitrationMutex);
+            ret = ESP_ERR_INVALID_STATE;
             break;
     }
 
     if (ret != ESP_OK)
     {
         ESP_LOGE(TAG, "Failed to parse multi-frame: %s", esp_err_to_name(ret));
-        MULTIDRAME_STATE = 99;
+        multiframe_state = 99;
     }
     return ret;
 }
 
 inline void OBD2::sendFlowControlFrame(uint32_t id)
 {
-    req(id, 0x00, 0x00, 0x30, 0, 0);
+    PollRequest r         = {};
+    r.id                  = id;
+    r.isRaw               = true;
+    r.payload.raw.data[0] = 0x30;
+    r.payload.raw.dlc     = 8;
+    r.interval            = 0;
+    r.nextWake            = xTaskGetTickCount();
+    r.priority            = 0;
+    r.isRecurring         = false;
+    r.retries_left        = DEFAULT_NUMER_OF_RETRIES;
+
+    queryMsg(r);
 }
 
 esp_err_t OBD2::parseMultiFrame(std::vector<CanDriver::CanFrame>& frames)
