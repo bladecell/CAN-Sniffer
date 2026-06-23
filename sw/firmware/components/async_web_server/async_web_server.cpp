@@ -1,5 +1,7 @@
 #include "async_web_server.hpp"
 
+#include <atomic>
+
 #include "esp_check.h"
 #include "esp_log.h"
 #include "esp_timer.h"
