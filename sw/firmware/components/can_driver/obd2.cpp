@@ -335,11 +335,6 @@ void OBD2::req(uint32_t id, uint8_t mode, uint32_t pid, uint8_t len, uint32_t in
 void OBD2::req(PollRequest& req)
 {
     pollQueue.push(req);
-
-    if (PollTaskHandle != nullptr)
-    {
-        xTaskNotifyGive(PollTaskHandle);
-    }
 }
 
 esp_err_t OBD2::queryMsg(PollRequest& req)
