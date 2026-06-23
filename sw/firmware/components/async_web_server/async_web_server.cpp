@@ -1,7 +1,5 @@
 #include "async_web_server.hpp"
 
-#include <atomic>
-
 #include "esp_check.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -111,13 +109,12 @@ esp_err_t AsyncWebServer::async_handler(httpd_req_t* req)
     }
     else
     {
+        ESP_LOGW(TAG, "Server overload, dropping request to %s", req->uri);
         httpd_resp_set_status(req, "503 Busy");
-        httpd_resp_sendstr(req, "<div> no workers available. server busy.</div>");
+        httpd_resp_sendstr(req, "{\"error\": \"Server busy, no background workers available.\"}");
         return ESP_OK;
     }
 }
-
-std::atomic<bool> is_busy{false};
 
 esp_err_t AsyncWebServer::queue_request(httpd_req_t* req)
 {
@@ -129,12 +126,20 @@ esp_err_t AsyncWebServer::queue_request(httpd_req_t* req)
         return ESP_FAIL;
     }
 
-    // must create a copy of the request that we own
+    // Check for available workers BEFORE we shred the request lifecycle!
+    if (xSemaphoreTake(worker_ready_count, 0) != pdTRUE)
+    {
+        // Returning ESP_FAIL here leaves 'req' perfectly safe for async_handler to use.
+        return ESP_FAIL;
+    }
+
+    // We safely decouple the request from the HTTP server
     httpd_req_t* copy = NULL;
     esp_err_t    err  = httpd_req_async_handler_begin(req, &copy);
     if (err != ESP_OK)
     {
-        return err;
+        xSemaphoreGive(worker_ready_count);
+        return ESP_FAIL;
     }
 
     // create the job for the worker
@@ -144,24 +149,20 @@ esp_err_t AsyncWebServer::queue_request(httpd_req_t* req)
     job.arg           = ctx->arg;
     job.start_time_us = esp_timer_get_time();
 
-    int ticks = 0;
-
-    // counting semaphore: if success, we know 1 or
-    // more asyncReqTaskWorkers are available.
-    if (xSemaphoreTake(worker_ready_count, ticks) != pdTRUE)
+    if (xQueueSend(request_queue, &job, 0) != pdTRUE)
     {
-        ESP_LOGE(TAG, "No workers are available");
-        httpd_req_async_handler_complete(copy);  // cleanup
-        return ESP_FAIL;
-    }
+        ESP_LOGE(TAG, "Critical Fault: Queue full despite available worker!");
 
-    // Since worker_ready_count > 0 the queue should already have space.
-    // But lets wait up to 100ms just to be safe.
-    if (xQueueSend(request_queue, &job, 100) != pdTRUE)
-    {
-        ESP_LOGE(TAG, "worker queue is full");
+        // We already detached the request into 'copy'. We CANNOT return ESP_FAIL
+        // because async_handler would try to use the dead 'req' pointer.
+        // Instead, we answer using our valid 'copy', complete it, and return ESP_OK.
+        httpd_resp_set_status(copy, "503 Busy");
+        httpd_resp_sendstr(copy, "{\"error\": \"Server busy, internal queue full.\"}");
         httpd_req_async_handler_complete(copy);
-        return ESP_FAIL;
+
+        xSemaphoreGive(worker_ready_count);
+
+        return ESP_OK;  // Return OK since we sent the 503 status code
     }
 
     return ESP_OK;
