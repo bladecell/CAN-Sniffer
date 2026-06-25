@@ -573,6 +573,8 @@ void pid_stream_callback(uint16_t pid)
                                      .type       = HTTPD_WS_TYPE_BINARY,
                                      .payload    = packet,
                                      .len        = PID_STREAM_PACKET_SIZE};
+
+        // This is now perfectly safe! It will copy the packet and queue it.
         AsyncWebServer::getInstance().wsBroadcast(&ws_frame);
     }
 }
@@ -682,7 +684,7 @@ esp_err_t setup_web_server()
     server_config.async_worker_task_num         = 4;
     server_config.max_open_sockets              = 7;
     server_config.async_worker_task_priority    = 5;
-    server_config.async_worker_stack_size       = 8192;
+    server_config.async_worker_stack_size       = 32768;
     server_config.httpd_config.uri_match_fn     = httpd_uri_match_wildcard;
     server_config.httpd_config.max_uri_handlers = 32;
 

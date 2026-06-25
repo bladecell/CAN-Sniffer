@@ -275,12 +275,11 @@ cJSON* m_sdcard_file_tree_get(const char* path)
 
 esp_err_t m_sdcard_file_open_file(const char* path, const char* mode, FILE*& fd)
 {
-    if (mode == nullptr)
+    if (mode == nullptr || path == nullptr)
         return ESP_ERR_INVALID_ARG;
 
     SDCard::SDInfo sd_info;
     auto&          sd = SDCard::getInstance();
-
     sd.get_sd_info(sd_info);
 
     if (!sd_info.is_mounted)
@@ -294,22 +293,23 @@ esp_err_t m_sdcard_file_open_file(const char* path, const char* mode, FILE*& fd)
         return ESP_FAIL;
     }
 
-    char filepath[512];
+    const size_t buffer_size = PATH_MAX;
+    auto         filepath    = std::make_unique<char[]>(buffer_size);
 
-    if (strlen(sd_info.mount_path) + strlen(path) >= sizeof(filepath))
+    if (strlen(sd_info.mount_path) + strlen(path) >= buffer_size)
     {
         ESP_LOGE("HTTP", "Path is too long to fit in buffer!");
         return ESP_FAIL;
     }
 
-    strlcpy(filepath, sd_info.mount_path, sizeof(filepath));
-    strlcat(filepath, path, sizeof(filepath));
+    strlcpy(filepath.get(), sd_info.mount_path, buffer_size);
+    strlcat(filepath.get(), path, buffer_size);
 
-    fd = fopen(filepath, mode);
+    fd = fopen(filepath.get(), mode);
 
     if (!fd)
     {
-        ESP_LOGE("HTTP", "Failed to open file '%s' in mode '%s'", filepath, mode);
+        ESP_LOGE("HTTP", "Failed to open file '%s' in mode '%s'", filepath.get(), mode);
         return ESP_FAIL;
     }
 
@@ -358,10 +358,11 @@ cJSON* m_sdcard_file_delete_delete(const char* path)
 
     if (sd_info.is_mounted)
     {
-        char filepath[512];
-        snprintf(filepath, sizeof(filepath), "%s%s", sd_info.mount_path, path);
+        auto filepath = std::make_unique<char[]>(PATH_MAX);
 
-        err = sd.delete_file(filepath);
+        snprintf(filepath.get(), PATH_MAX, "%s%s", sd_info.mount_path, path);
+
+        err = sd.delete_file(filepath.get());
     }
 
     if (err == ESP_OK)
@@ -370,10 +371,8 @@ cJSON* m_sdcard_file_delete_delete(const char* path)
     }
     else
     {
-        {
-            cJSON_AddStringToObject(root, "status", "error");
-            cJSON_AddStringToObject(root, "reason", esp_err_to_name(ESP_ERR_NOT_FOUND));
-        }
+        cJSON_AddStringToObject(root, "status", "error");
+        cJSON_AddStringToObject(root, "reason", esp_err_to_name(err));
     }
 
     return root;
@@ -437,18 +436,18 @@ cJSON* m_dtc_description_get(const char* target_codes[], size_t count)
 
     char dtc_path[] = "/config/dtcs.bin";
 
-    char absolute_path[PATH_MAX];
+    auto absolute_path = std::make_unique<char[]>(PATH_MAX);
 
-    SDCard::getInstance().get_absolute_path(dtc_path, absolute_path, sizeof(absolute_path));
+    SDCard::getInstance().get_absolute_path(dtc_path, absolute_path.get(), PATH_MAX);
 
-    std::unique_ptr<FILE, decltype(&fclose)> file(fopen(absolute_path, "rb"), fclose);
+    std::unique_ptr<FILE, decltype(&fclose)> file(fopen(absolute_path.get(), "rb"), fclose);
 
     if (!file)
     {
         cJSON_AddStringToObject(root, "status", "error");
 
         std::string reason =
-            "File " + std::string(dtc_path) + " not found (resolved to " + std::string(absolute_path) + ")";
+            "File " + std::string(dtc_path) + " not found (resolved to " + std::string(absolute_path.get()) + ")";
 
         cJSON_AddStringToObject(root, "reason", reason.c_str());
 

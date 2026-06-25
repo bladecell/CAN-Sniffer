@@ -64,6 +64,13 @@ public:
 
     uint32_t getActiveWSClientCount();
 
+    struct WorkerHandle
+    {
+        TaskHandle_t  task;
+        StaticTask_t* tcb;
+        StackType_t*  stack;
+    };
+
 private:
     AsyncWebServer(const AsyncWebServer&)            = delete;
     AsyncWebServer& operator=(const AsyncWebServer&) = delete;
@@ -76,12 +83,8 @@ private:
     // Async requests are queued here while they wait to
     // be processed by the workers
     QueueHandle_t request_queue;
-    // Track the number of free workers at any given time
-    SemaphoreHandle_t worker_ready_count;
-    // Mutex for WebSocket broadcasts
-    SemaphoreHandle_t ws_mutex;
     // Each worker has its own thread
-    std::vector<TaskHandle_t>  worker_handles;
+    std::vector<WorkerHandle>  worker_handles;
     std::vector<RouteContext*> route_contexts;
 
     esp_err_t   start_workers(uint8_t num_workers, uint32_t stack_size, uint8_t priority, int core_id);

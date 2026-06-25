@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include <cstddef>
+#include <memory>
 
 #include "esp_check.h"
 #include "esp_err.h"
@@ -409,8 +410,16 @@ cJSON* SDCard::scan_directory(const char* relative_path, int depth)
     if (depth > SCAN_DEPTH_LIMIT)
         return NULL;
 
-    char full_path[PATH_MAX];
-    get_absolute_path(relative_path, full_path, sizeof(full_path));
+    struct ScanBuffers
+    {
+        char full_path[PATH_MAX];
+        char next_rel[PATH_MAX];
+        char next_full[PATH_MAX];
+    };
+
+    std::unique_ptr<ScanBuffers> bufs(new ScanBuffers);
+
+    get_absolute_path(relative_path, bufs->full_path, sizeof(bufs->full_path));
 
     cJSON* root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "path", (relative_path[0] == '\0') ? "/" : relative_path);
@@ -418,9 +427,11 @@ cJSON* SDCard::scan_directory(const char* relative_path, int depth)
     cJSON* children = cJSON_CreateArray();
     cJSON_AddItemToObject(root, "children", children);
 
-    DIR* dir = opendir(full_path);
+    DIR* dir = opendir(bufs->full_path);
     if (!dir)
+    {
         return root;
+    }
 
     struct dirent* entry;
     while ((entry = readdir(dir)) != NULL)
@@ -428,16 +439,15 @@ cJSON* SDCard::scan_directory(const char* relative_path, int depth)
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
             continue;
 
-        char next_rel[PATH_MAX];
-        snprintf(next_rel, sizeof(next_rel), "%s/%s", (relative_path[0] == '\0') ? "" : relative_path, entry->d_name);
+        snprintf(bufs->next_rel, sizeof(bufs->next_rel), "%s/%s", (relative_path[0] == '\0') ? "" : relative_path,
+                 entry->d_name);
 
-        char next_full[PATH_MAX];
-        get_absolute_path(next_rel, next_full, sizeof(next_full));
+        get_absolute_path(bufs->next_rel, bufs->next_full, sizeof(bufs->next_full));
 
         struct stat st;
-        if (stat(next_full, &st) == 0 && S_ISDIR(st.st_mode))
+        if (stat(bufs->next_full, &st) == 0 && S_ISDIR(st.st_mode))
         {
-            cJSON* sub_dir = scan_directory(next_rel, depth + 1);
+            cJSON* sub_dir = scan_directory(bufs->next_rel, depth + 1);
             if (sub_dir)
                 cJSON_AddItemToArray(children, sub_dir);
         }
@@ -450,7 +460,9 @@ cJSON* SDCard::scan_directory(const char* relative_path, int depth)
             cJSON_AddItemToArray(children, file);
         }
     }
+
     closedir(dir);
+
     return root;
 }
 
