@@ -5,8 +5,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
-#include <memory>
-#include <set>
 
 #include "esp_err.h"
 #include "esp_log.h"
@@ -85,61 +83,6 @@ esp_err_t OBD2DataModel::removePID(uint16_t pid)
 
             return ESP_OK;
         });
-}
-void OBD2DataModel::startPolling()
-{
-    pollQueue.clear();
-    const TickType_t   now = xTaskGetTickCount();
-    std::set<uint32_t> RequestByDataIdentifierIds;
-
-    withPidMapLock(
-        [&]()
-        {
-            for (const auto& [pid, info] : PID_DEF)
-            {
-                if (!_getDataField(pid, &PIDData_t::isSupported, false))
-                    continue;
-
-                uint32_t interval = info.updateInterval();
-                if (interval == 0)
-                    continue;
-
-                PollRequest req;
-                req.id               = info.id();
-                req.payload.obd.len  = info.len();
-                req.payload.obd.mode = info.mode();
-                req.payload.obd.pid  = pid;
-                req.interval         = interval;
-                req.nextWake         = now;
-                req.priority         = info.priority();
-                req.isRecurring      = true;
-                req.retries_left     = DEFAULT_NUMER_OF_RETRIES;
-
-                pollQueue.push(req);
-
-                if (info.mode() == MODE_READ_DATA_BY_IDENTIFIER)
-                {
-                    RequestByDataIdentifierIds.insert(info.id());
-                }
-            }
-            return ESP_OK;
-        });
-
-    // This part doesn't access the PID map, so it can stay outside the lock
-    for (const uint32_t id : RequestByDataIdentifierIds)
-    {
-        PollRequest req;
-        req.id               = id;
-        req.payload.obd.len  = 2;
-        req.payload.obd.mode = MODE_DIAGNOSTIC_SESSION_CONTROL;
-        req.payload.obd.pid  = 1;
-        req.interval         = 2000;
-        req.nextWake         = now;
-        req.priority         = 1;
-        req.isRecurring      = true;
-        req.retries_left     = DEFAULT_NUMER_OF_RETRIES;
-        pollQueue.push(req);
-    }
 }
 
 esp_err_t OBD2DataModel::updateData(const CanDriver::CanFrame& frame)

@@ -206,6 +206,32 @@ esp_err_t SUPERVISOR::setup_obd()
 {
     auto& obd = OBD2::getInstance();
 
+    obd.connected_subscribe(
+        [](bool connected)
+        {
+            if (!connected)
+                return;
+
+            auto& can = OBD2::getInstance();
+
+            esp_err_t err = can.requestVIN();
+            if (err != ESP_OK)
+            {
+                ESP_LOGW("SUPERVISOR", "VIN request failed: %s", esp_err_to_name(err));
+            }
+
+            err = can.requestDTC(MODE_DTCS);
+            if (err == ESP_OK)
+                err = can.requestDTC(MODE_PENDING_DTCS);
+            if (err == ESP_OK)
+                err = can.requestDTC(MODE_PERMANENT_DTCS);
+
+            if (err != ESP_OK)
+            {
+                ESP_LOGW("SUPERVISOR", "DTC request failed: %s", esp_err_to_name(err));
+            }
+        });
+
     esp_err_t ret = obd.init();
 
     vTaskDelay(pdMS_TO_TICKS(1000));

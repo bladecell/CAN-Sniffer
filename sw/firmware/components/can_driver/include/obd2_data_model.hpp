@@ -166,8 +166,6 @@ public:
     VINData_t                         vinData;
     DTCData_t                         dtcData;
 
-    void startPolling();
-
     PIDPriorityQueue pollQueue;
 
 protected:

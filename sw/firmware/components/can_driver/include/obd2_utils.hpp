@@ -1,7 +1,6 @@
 // obd2_utils.hpp
 #pragma once
 
-#include <array>
 #include <cstdint>
 #include <map>
 #include <string>
@@ -52,19 +51,20 @@ enum OBDMode
 
 enum OBDResponse
 {
-    RESPONSE_CURRENT_DATA            = 0x41,
-    RESPONSE_FREEZE_FRAME            = 0x42,
-    RESPONSE_DTCS                    = 0x43,
-    RESPONSE_CLEAR_DTCS              = 0x44,
-    RESPONSE_TEST_RESULTS_O2         = 0x45,
-    RESPONSE_TEST_RESULTS_OTHER      = 0x46,
-    RESPONSE_PENDING_DTCS            = 0x47,
-    RESPONSE_CONTROL                 = 0x48,
-    RESPONSE_VEHICLE_INFO            = 0x49,
-    RESPONSE_PERMANENT_DTCS          = 0x4A,
-    RESPONSE_READ_DATA_BY_IDENTIFIER = 0x62,
-    RESPONSE_MODE_DERIVED_DATA       = 0x85,
-    RESPONSE_NEGATIVE_RESPONSE_CODE  = 0x7F,
+    RESPONSE_CURRENT_DATA                    = 0x41,
+    RESPONSE_FREEZE_FRAME                    = 0x42,
+    RESPONSE_DTCS                            = 0x43,
+    RESPONSE_CLEAR_DTCS                      = 0x44,
+    RESPONSE_TEST_RESULTS_O2                 = 0x45,
+    RESPONSE_TEST_RESULTS_OTHER              = 0x46,
+    RESPONSE_PENDING_DTCS                    = 0x47,
+    RESPONSE_CONTROL                         = 0x48,
+    RESPONSE_VEHICLE_INFO                    = 0x49,
+    RESPONSE_MODE_DIAGNOSTIC_SESSION_CONTROL = 0x50,
+    RESPONSE_PERMANENT_DTCS                  = 0x4A,
+    RESPONSE_READ_DATA_BY_IDENTIFIER         = 0x62,
+    RESPONSE_MODE_DERIVED_DATA               = 0x85,
+    RESPONSE_NEGATIVE_RESPONSE_CODE          = 0x7F,
 };
 
 typedef enum

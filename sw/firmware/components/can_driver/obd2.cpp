@@ -17,6 +17,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <set>
 
 #include "can_driver.hpp"
 #include "esp_check.h"
@@ -59,7 +60,7 @@ public:
         {
             float elapsed_ms = pdTICKS_TO_MS(elapsed_ticks);
 
-            float max_possible_frames = elapsed_ms / 8.0f;
+            float max_possible_frames = elapsed_ms / (float)MIN_TRANSMIT_PERIOD_MS;
 
             float instant_slice_util = 0.0f;
             if (max_possible_frames > 0.0f)
@@ -148,9 +149,19 @@ esp_err_t OBD2::init()
 
     initDef();
 
-    canDriver.setConnectionChangeCallback(onCanStateChange, this);
-    BaseType_t taskCreated = xTaskCreatePinnedToCore(receiveTaskWrapper, "OBD2_receive_task", 8192, this,
-                                                     tskIDLE_PRIORITY + 2, &ReceiveTaskHandle, CORE_ID_CAN_TASKS);
+    event_queue = xQueueCreate(5, sizeof(bool));
+    BaseType_t taskCreated =
+        xTaskCreatePinnedToCore(callbackWorkerTaskWrapper, "OBD_Connection_callback_task", 4096, this, tskIDLE_PRIORITY,
+                                &callbackWorkerTaskHandle, CORE_ID_CAN_TASKS);
+
+    if (taskCreated != pdPASS)
+    {
+        ESP_LOGE(TAG, "Failed to create callback task");
+        return ESP_FAIL;
+    }
+
+    taskCreated = xTaskCreatePinnedToCore(receiveTaskWrapper, "OBD2_receive_task", 8192, this, tskIDLE_PRIORITY + 2,
+                                          &ReceiveTaskHandle, CORE_ID_CAN_TASKS);
 
     if (taskCreated != pdPASS)
     {
@@ -177,6 +188,8 @@ esp_err_t OBD2::init()
     {
         ESP_LOGW(TAG, "CAN bus not connected, waiting for connection...");
     }
+
+    canDriver.setConnectionChangeCallback(onCanStateChange, this);
 
     ESP_LOGI(TAG, "OBD-II interface initialized");
     return ESP_OK;
@@ -424,12 +437,14 @@ void OBD2::handleCanConnected()
         ESP_LOGI(TAG, "Retrieving supported PIDs...");
         requestSuppPids();
     }
+    runOBDIIConnectedCallbacks(true);
 }
 
 void OBD2::handleCanDisconnected()
 {
     ESP_LOGW(TAG, "CAN bus disconnected event received");
     pidsInitialized = false;
+    runOBDIIConnectedCallbacks(false);
 }
 
 bool OBD2::isContinuousRunning() const
@@ -455,8 +470,44 @@ void OBD2::stopContinuousMode()
     pollQueue.clearRecurring();
 }
 
+void OBD2::startPolling()
+{
+    // pollQueue.clear();
+    std::set<uint32_t> RequestByDataIdentifierIds;
+
+    withPidMapLock(
+        [&]()
+        {
+            for (const auto& [pid, info] : PID_DEF)
+            {
+                if (!_getDataField(pid, &PIDData_t::isSupported, false))
+                    continue;
+
+                uint32_t interval = info.updateInterval();
+                if (interval == 0)
+                    continue;
+
+                req(info.id(), info.mode(), pid, info.len(), interval, info.priority(), true);
+
+                if (info.mode() == MODE_READ_DATA_BY_IDENTIFIER)
+                {
+                    RequestByDataIdentifierIds.insert(info.id());
+                }
+            }
+            return ESP_OK;
+        });
+
+    // This part doesn't access the PID map, so it can stay outside the lock
+    for (const uint32_t id : RequestByDataIdentifierIds)
+    {
+        requestDefaultExtendedDiagnosticSession(id, true);
+    }
+}
+
 void OBD2::pollRequestStaticPids()
 {
+    std::set<uint32_t> RequestByDataIdentifierIds;
+
     withPidMapLock(
         [&]()
         {
@@ -466,9 +517,19 @@ void OBD2::pollRequestStaticPids()
                 {
                     req(def.id(), def.mode(), pid, def.len(), def.updateInterval(), def.priority(), false);
                 }
+
+                if (def.mode() == MODE_READ_DATA_BY_IDENTIFIER)
+                {
+                    RequestByDataIdentifierIds.insert(def.id());
+                }
             }
             return ESP_OK;
         });
+
+    for (const uint32_t id : RequestByDataIdentifierIds)
+    {
+        requestDefaultExtendedDiagnosticSession(id, true);
+    }
 }
 
 void OBD2::pollTaskWrapper(void* param)
@@ -534,7 +595,6 @@ void OBD2::pollTask()
         }
 
         taskYIELD();
-        ;
     }
 }
 
@@ -637,6 +697,9 @@ esp_err_t OBD2::parseRecFrame(const CanDriver::CanFrame& f)
             ret                                    = parseDTCs(frame, mode);
             break;
         }
+        case RESPONSE_MODE_DIAGNOSTIC_SESSION_CONTROL:
+            parseRMDSC(f);
+            break;
         case RESPONSE_READ_DATA_BY_IDENTIFIER:
             ret = parseRDBI(f);
             break;
@@ -678,6 +741,17 @@ esp_err_t OBD2::parseCurrentData(const CanDriver::CanFrame& f)
     runPidUpdateCallbacks(pid);
 
     return ret;
+}
+
+esp_err_t OBD2::parseRMDSC(const CanDriver::CanFrame& f)
+{
+    if (f.data[2] != 0x01)
+    {
+        ESP_LOGW(TAG, "Failed to request Default Extended Diagnostic session for ID 0x%03X", f.header.id);
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+
+    return ESP_OK;
 }
 
 esp_err_t OBD2::parseRDBI(const CanDriver::CanFrame& f)
@@ -899,6 +973,23 @@ esp_err_t OBD2::parseClearDTCsAck(const CanDriver::CanFrame& f)
     }
     clearDTC(MODE_DTCS);
     return ESP_OK;
+}
+
+void OBD2::requestDefaultExtendedDiagnosticSession(uint32_t id, bool isRecurring)
+{
+    PollRequest r         = {};
+    r.id                  = id;
+    r.isRaw               = true;
+    r.payload.raw.data[0] = 0x02;
+    r.payload.raw.data[1] = MODE_DIAGNOSTIC_SESSION_CONTROL;
+    r.payload.raw.data[2] = 0x01;
+    r.payload.raw.dlc     = 8;
+    r.interval            = isRecurring ? 2000 : 0;
+    r.nextWake            = 0;
+    r.priority            = 0;
+    r.isRecurring         = isRecurring;
+    r.retries_left        = DEFAULT_NUMER_OF_RETRIES;
+    req(r);
 }
 
 esp_err_t OBD2::requestVIN()
@@ -1221,4 +1312,37 @@ esp_err_t OBD2::parseVINMultiFrame(std::vector<CanDriver::CanFrame>& frames)
     xSemaphoreGive(vinData.mtx_);
 
     return ret;
+}
+
+void OBD2::connected_subscribe(OBDIIConnectedCallback cb)
+{
+    connected_subscribers_.push_back(cb);
+}
+
+void OBD2::runOBDIIConnectedCallbacks(bool connected)
+{
+    xQueueSend(event_queue, &connected, 0);
+}
+
+void OBD2::callbackWorkerTaskWrapper(void* param)
+{
+    OBD2* obd2 = static_cast<OBD2*>(param);
+    obd2->callbackWorkerTask();
+}
+
+void OBD2::callbackWorkerTask()
+{
+    bool is_connected;
+
+    while (true)
+    {
+        // Thread goes to sleep here for 0% CPU usage until a message arrives in the queue
+        if (xQueueReceive(event_queue, &is_connected, portMAX_DELAY) == pdTRUE)
+        {
+            for (const auto& cb : connected_subscribers_)
+            {
+                cb(is_connected);
+            }
+        }
+    }
 }

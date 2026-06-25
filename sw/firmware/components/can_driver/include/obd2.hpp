@@ -12,6 +12,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -57,7 +58,9 @@ public:
     esp_err_t requestVIN();
     esp_err_t requestDTC(uint8_t mode);
     void      requestClearDTCs();
+    void      startPolling();
     void      pollRequestStaticPids();
+    void      requestDefaultExtendedDiagnosticSession(uint32_t id, bool isRecurring = false);
 
     void req(uint32_t id, uint8_t mode, uint32_t pid, uint8_t len, uint32_t interval, uint8_t priority,
              bool isRecurring = false);
@@ -67,6 +70,9 @@ public:
     {
         return pollTaskUtilization;
     }
+
+    using OBDIIConnectedCallback = std::function<void(bool connected)>;
+    void connected_subscribe(OBDIIConnectedCallback cb);
 
 private:
     OBD2(const OBD2&)                 = delete;
@@ -122,12 +128,30 @@ private:
     esp_err_t   parseVINMultiFrame(std::vector<CanDriver::CanFrame>& frames);
     esp_err_t   parseRDBI(const CanDriver::CanFrame& f);
     esp_err_t   parseDerivedData(const CanDriver::CanFrame& f);
+    esp_err_t   parseRMDSC(const CanDriver::CanFrame& f);
     inline void sendFlowControlFrame(uint32_t id);
 
     supportedPIDsGroup_t supportedPIDsGroup = {};
 
     // Derived PIDs queue
     QueueHandle_t derivedPidQueue_ = nullptr;
+
+    // OBDII Connected Callback
+    std::vector<OBDIIConnectedCallback> connected_subscribers_;
+
+    void runOBDIIConnectedCallbacks(bool connected);
+
+    struct CallbackTaskArgs
+    {
+        OBD2* instance;
+        bool  connected;
+    };
+
+    void         callbackWorkerTask();
+    static void  callbackWorkerTaskWrapper(void* param);
+    TaskHandle_t callbackWorkerTaskHandle{nullptr};
+
+    QueueHandle_t event_queue = nullptr;
 };
 
 // Get rid of OBD UTILS type definitions and include them in obd2 or obd2datamodel

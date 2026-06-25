@@ -413,21 +413,30 @@ esp_err_t CanDriver::flushRxQueue()
 esp_err_t CanDriver::pingBus()
 {
     if (nodeHdl == NULL)
+
     {
         return ESP_FAIL;
     }
 
     twai_frame_t tx = {};
-
-    tx.header.id  = 0x7FF;
-    tx.header.dlc = 0;  // No data bytes
-    tx.header.rtr = 1;  // 1 = Remote Transmission Request (Ping)
-    tx.header.ide = 0;  // Standard frame format
-
+    // 1. Use the universal OBD ID
+    tx.header.id  = 0x7DF;
+    tx.header.rtr = 0;
+    tx.header.dlc = 8;
+    tx.header.ide = 0;  // 11-bit standard ID
     tx.header.fdf = 0;
     tx.header.brs = 0;
 
-    return twai_node_transmit(nodeHdl, &tx, 0);
+    uint8_t buff[8] = {0};
+
+    buff[0] = 0x02;  // Valid length byte
+    buff[1] = 0x01;  // Service 01
+    buff[2] = 0x00;  // PID 00
+
+    tx.buffer     = buff;
+    tx.buffer_len = sizeof(buff);
+
+    return twai_node_transmit(nodeHdl, &tx, pdMS_TO_TICKS(10));
 }
 
 void CanDriver::healthCheckTaskWrapper(void* param)
