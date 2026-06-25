@@ -20,6 +20,12 @@ AsyncWebServer::~AsyncWebServer()
 
 esp_err_t AsyncWebServer::start(Config config)
 {
+    running_ = true;
+
+    shutdown_sem_ = xSemaphoreCreateCounting(config.async_worker_task_num, 0);
+    if (!shutdown_sem_)
+        return ESP_FAIL;
+
     worker_handles.reserve(config.async_worker_task_num);
     start_workers(config.async_worker_task_num, config.async_worker_stack_size, config.async_worker_task_priority,
                   config.worker_core_id);
@@ -29,9 +35,7 @@ esp_err_t AsyncWebServer::start(Config config)
     config.httpd_config.stack_size       = 8192;
 
     ESP_RETURN_ON_ERROR(httpd_start(&server_, &config.httpd_config), TAG, "Failed to start server");
-
     ESP_LOGI(TAG, "Server started successfully.");
-
     return ESP_OK;
 }
 
@@ -39,27 +43,40 @@ esp_err_t AsyncWebServer::stop()
 {
     if (server_)
     {
-        ESP_LOGI(TAG, "Stopping server...");
-        esp_err_t err = httpd_stop(server_);
-        server_       = NULL;
-        return err;
+        httpd_stop(server_);
+        server_ = NULL;
     }
 
-    for (TaskHandle_t worker_handle : worker_handles)
+    running_ = false;
+
+    if (request_queue)
     {
-        if (worker_handle != nullptr)
-        {
-            vTaskDelete(worker_handle);
-        }
+        AsyncRequest poison = {};
+        for (size_t i = 0; i < worker_handles.size(); i++)
+            xQueueSend(request_queue, &poison, pdMS_TO_TICKS(100));
     }
+
+    if (shutdown_sem_)
+    {
+        for (size_t i = 0; i < worker_handles.size(); i++)
+            xSemaphoreTake(shutdown_sem_, pdMS_TO_TICKS(500));
+    }
+
+    for (TaskHandle_t h : worker_handles)
+        if (h)
+            vTaskDelete(h);
     worker_handles.clear();
 
+    if (shutdown_sem_)
+    {
+        vSemaphoreDelete(shutdown_sem_);
+        shutdown_sem_ = NULL;
+    }
     if (worker_ready_count)
     {
         vSemaphoreDelete(worker_ready_count);
         worker_ready_count = NULL;
     }
-
     if (request_queue)
     {
         vQueueDelete(request_queue);
@@ -67,9 +84,7 @@ esp_err_t AsyncWebServer::stop()
     }
 
     for (RouteContext* ctx : route_contexts)
-    {
         delete ctx;
-    }
     route_contexts.clear();
 
     return ESP_OK;
@@ -179,28 +194,33 @@ void AsyncWebServer::worker_task()
     {
         xSemaphoreGive(worker_ready_count);
 
-        if (xQueueReceive(request_queue, &async_req, portMAX_DELAY))
+        if (xQueueReceive(request_queue, &async_req, portMAX_DELAY) != pdTRUE)
+            continue;
+
+        if (!running_ || (!async_req.handler && !async_req.req))
         {
-            if (async_req.handler && async_req.req)
+            xSemaphoreGive(shutdown_sem_);
+            vTaskDelete(NULL);
+            return;
+        }
+
+        if (async_req.handler && async_req.req)
+        {
+            async_req.handler(async_req.req, async_req.arg);
+
+            bool already_closed = (async_req.req->aux == NULL);
+            if (!already_closed)
             {
-                async_req.handler(async_req.req, async_req.arg);
+                int64_t duration_us = esp_timer_get_time() - async_req.start_time_us;
+                ESP_LOGI(TAG, "%s processed in %.2f ms", async_req.req->uri, duration_us / 1000.0f);
 
-                if (async_req.req->aux != NULL)
-                {
-                    int64_t end_time    = esp_timer_get_time();
-                    int64_t duration_us = end_time - async_req.start_time_us;
-
-                    ESP_LOGI(TAG, "%s processed in %.2f ms", async_req.req->uri, duration_us / 1000.0f);
-                    esp_err_t err = httpd_req_async_handler_complete(async_req.req);
-                    if (err != ESP_OK)
-                    {
-                        ESP_LOGE(TAG, "failed to complete async req: %s", esp_err_to_name(err));
-                    }
-                }
-                else
-                {
-                    ESP_LOGW(TAG, "Request already closed by handler, skipping complete.");
-                }
+                esp_err_t err = httpd_req_async_handler_complete(async_req.req);
+                if (err != ESP_OK)
+                    ESP_LOGE(TAG, "failed to complete async req: %s", esp_err_to_name(err));
+            }
+            else
+            {
+                ESP_LOGW(TAG, "Request already closed by handler, skipping complete.");
             }
         }
     }
@@ -301,29 +321,32 @@ void AsyncWebServer::wsBroadcast(httpd_ws_frame_t* ws_pkt)
     if (!server_ || !ws_pkt || !ws_pkt->payload || ws_pkt->len == 0)
         return;
 
-    // 1. The 16-slot Rotating Memory Vault (~1.2 KB of permanent SRAM)
     static struct
     {
         uint8_t          payload[64];
         httpd_ws_frame_t frame;
     } vault[16];
 
-    static std::atomic<uint8_t> vault_idx{0};
+    static uint8_t vault_idx = 0;
 
-    // 2. Atomically grab the next round-robin slot (100% Dual-Core safe)
-    uint8_t slot = vault_idx.fetch_add(1, std::memory_order_relaxed) % 16;
+    // Protect the slot grab + memcpy together — atomic fetch_add alone
+    // doesn't prevent two tasks from racing into the same slot's memcpy
+    if (xSemaphoreTake(ws_mutex, pdMS_TO_TICKS(10)) != pdTRUE)
+        return;
+
+    uint8_t slot = vault_idx++ % 16;
     auto&   v    = vault[slot];
 
-    // 3. Snapshot the fragile stack bytes safely into our static vault slot
     size_t len = (ws_pkt->len > 64) ? 64 : ws_pkt->len;
     memcpy(v.payload, ws_pkt->payload, len);
-
     v.frame.type    = ws_pkt->type;
     v.frame.payload = v.payload;
     v.frame.len     = len;
     v.frame.final   = true;
 
-    // 4. Fire the ASYNC sender pointing directly to our un-poppable vault memory!
+    xSemaphoreGive(ws_mutex);
+
+    // Send outside the mutex — httpd_ws_send_frame_async is thread-safe
     static const size_t MAX_CLIENTS = 20;
     int                 client_fds[MAX_CLIENTS];
     size_t              fds = MAX_CLIENTS;
@@ -333,10 +356,7 @@ void AsyncWebServer::wsBroadcast(httpd_ws_frame_t* ws_pkt)
         for (size_t i = 0; i < fds; i++)
         {
             if (httpd_ws_get_fd_info(server_, client_fds[i]) == HTTPD_WS_CLIENT_WEBSOCKET)
-            {
-                // Notice this correctly takes (Handle, FD, FramePtr) !
                 httpd_ws_send_frame_async(server_, client_fds[i], &v.frame);
-            }
         }
     }
 }

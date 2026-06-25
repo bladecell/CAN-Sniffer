@@ -5,9 +5,9 @@
 
 #include "esp_http_server.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 
 #define MAX_WS_CLIENTS CONFIG_LWIP_MAX_LISTENING_TCP
 
@@ -69,6 +69,9 @@ private:
     AsyncWebServer& operator=(const AsyncWebServer&) = delete;
 
     httpd_handle_t server_;
+
+    volatile bool     running_      = false;
+    SemaphoreHandle_t shutdown_sem_ = NULL;
 
     // Async requests are queued here while they wait to
     // be processed by the workers
