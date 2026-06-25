@@ -9,6 +9,7 @@ export class DashboardStore {
   items = $state<DashboardItem[]>([]);
   isInitialized = $state(false);
   activeMenuId = $state<string | null>(null);
+  isEditMode = $state(false); // <-- FIXED: Strictly declared as reactive state
 
   constructor() {
     this.load();

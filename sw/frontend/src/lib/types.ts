@@ -3,7 +3,6 @@
 /**
  * CORE DASHBOARD TYPES
  */
-
 export type CardType = "pid" | "battery" | "dtcs" | "overview";
 export type PidDisplayMode = "card" | "chart" | "gauge" | "bar";
 export type SpecialDisplayMode = "default" | "compact" | "detailed";
@@ -21,24 +20,28 @@ export interface PidGridItem extends BaseGridItem {
   displayMode: PidDisplayMode;
 }
 
-export interface SpecialGridItem extends BaseGridItem {
-  cardType: "battery" | "dtcs";
+export interface BatteryGridItem extends BaseGridItem {
+  cardType: "battery";
+  displayMode: SpecialDisplayMode;
+}
+
+export interface DtcGridItem extends BaseGridItem {
+  cardType: "dtcs";
   displayMode: SpecialDisplayMode;
 }
 
 export interface OverviewGridItem extends BaseGridItem {
   cardType: "overview";
   displayMode: SpecialDisplayMode;
-  pids: number[]; // Array of exactly 3 PIDs
-  color: string;  // Hex color string
+  pids: [number, number, number]; // Strictly typed 3-element tuple
+  color: string;                  // Hex color string
 }
 
-export type DashboardItem = PidGridItem | SpecialGridItem | OverviewGridItem;
+export type DashboardItem = PidGridItem | BatteryGridItem | DtcGridItem | OverviewGridItem;
 
 /**
  * DATA STRUCTURES
  */
-
 export interface DtcModeData {
   mode: number;
   dtc_count: number;
@@ -72,7 +75,7 @@ export interface PidDefinition {
   description: string;
   unit: string;
   icon: string;
-  color: number;
+  color: number; // Decimal color representation
   minValue?: number;
   maxValue?: number;
   updateIntervalMs?: number;
@@ -87,7 +90,6 @@ export interface Obd2Status {
 /**
  * MODULE CONSTRAINTS AND CONFIGURATIONS
  */
-
 export interface Dimension {
   w: number;
   h: number;
@@ -98,46 +100,60 @@ export interface Bounds {
   max: Dimension;
 }
 
-export type ModuleConfigs = {
-  pid: Record<PidDisplayMode, Bounds>;
-  battery: Bounds;
-  dtcs: Bounds;
-  overview: Bounds;
-};
-
-export const MODULE_CONFIGS: ModuleConfigs = {
+// Using 'satisfies' preserves explicit literal structures without losing type verification
+export const MODULE_CONFIGS = {
   pid: {
     card: { min: { w: 10, h: 7 }, max: { w: 20, h: 12 } },
     chart: { min: { w: 15, h: 12 }, max: { w: 60, h: 30 } },
     gauge: { min: { w: 12, h: 12 }, max: { w: 24, h: 24 } },
     bar: { min: { w: 10, h: 8 }, max: { w: 20, h: 15 } }
   },
-  battery: {
-    min: { w: 10, h: 7 },
-    max: { w: 18, h: 12 }
-  },
-  dtcs: {
-    min: { w: 14, h: 8 },
-    max: { w: 30, h: 20 }
-  },
-  overview: {
-    min: { w: 17, h: 11 },
-    max: { w: 60, h: 20 }
-  }
-};
+  battery: { min: { w: 10, h: 7 }, max: { w: 18, h: 12 } },
+  dtcs: { min: { w: 14, h: 8 }, max: { w: 30, h: 20 } },
+  overview: { min: { w: 17, h: 11 }, max: { w: 60, h: 20 } }
+} satisfies Record<string, Bounds | Record<string, Bounds>>;
+
+export type ModuleConfigs = typeof MODULE_CONFIGS;
 
 /**
  * HELPER FUNCTIONS
  */
-
 export function getModuleBounds(item: DashboardItem): Bounds {
-  const DEFAULT_BOUNDS = MODULE_CONFIGS.pid.card;
+  const DEFAULT_BOUNDS: Bounds = MODULE_CONFIGS.pid.card;
   
   if (!item) return DEFAULT_BOUNDS;
 
   if (item.cardType === "pid") {
-    return MODULE_CONFIGS.pid[item.displayMode] || DEFAULT_BOUNDS;
+    return MODULE_CONFIGS.pid[item.displayMode] ?? DEFAULT_BOUNDS;
   }
   
-  return (MODULE_CONFIGS as any)[item.cardType] || DEFAULT_BOUNDS;
+  // Safe runtime lookup without 'any' typecasting
+  if (item.cardType in MODULE_CONFIGS) {
+    const staticConfig = MODULE_CONFIGS[item.cardType as keyof Omit<ModuleConfigs, "pid">];
+    return staticConfig ?? DEFAULT_BOUNDS;
+  }
+
+  return DEFAULT_BOUNDS;
+}
+
+/**
+ * TABLE CONSTRAINTS
+ */
+export type ColumnType = "text" | "number" | "code" | "badge";
+
+export interface Column {
+  label: string;
+  key: string;
+  type: ColumnType;
+  unit?: string;
+  width?: string;
+}
+
+export interface DTCFaultProps {
+  code: string;
+  description: string;
+  mode: 3 | 7 | 10 | number | string; // Keeps specific diagnostic modes explicitly listed
+  priority?: string;
+  status?: string;
+  [key: string]: unknown; // Prefer 'unknown' over 'any' for safer dynamic index signature checking
 }

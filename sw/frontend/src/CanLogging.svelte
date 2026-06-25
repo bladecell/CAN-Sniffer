@@ -3,7 +3,7 @@
   import { canStore } from "./lib/canStore.svelte";
   import { untrack, onDestroy, onMount } from "svelte";
   import OverviewCard from "$lib/components/OverviewCard.svelte";
-  import DTCCard from "./lib/components/DTCCard.svelte";
+  import DTCFault from "./lib/components/DTCFault.svelte";
 
   function createCardFromPID(pidData) {
     return {
@@ -79,10 +79,24 @@
       previousTimestamp1 = t;
     });
   });
+
+  let activeFaults = [
+    {
+      code: "P0420",
+      description: "Catalyst efficiency below threshold (Bank 1)",
+      mode: 3,
+    },
+  ];
 </script>
 
 <div class="pid-container">
-  <DTCCard />
+  {#each activeFaults as fault}
+    <DTCFault
+      code={fault.code}
+      description={fault.description}
+      mode={fault.mode}
+    />
+  {/each}
 </div>
 
 <style>
@@ -91,7 +105,7 @@
     gap: 1rem;
     flex-wrap: wrap;
     max-width: 500px;
-    width: 500px;
-    height: 300px;
+    width: 400px;
+    height: 200px;
   }
 </style>

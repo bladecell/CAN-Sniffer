@@ -5,7 +5,7 @@
   import Settings from "./Settings.svelte";
   import Diagnostics from "./Diagnostics.svelte";
   import CanLogging from "./CanLogging.svelte";
-  import { canStore } from "$lib/canStore.svelte";
+  import { canStore } from "$lib/canStore.svelte.ts";
   import { onMount } from "svelte";
   import ToastContainer from "./lib/components/ToastContainer.svelte";
 
@@ -58,8 +58,6 @@
 
 <ToastContainer />
 
-<!-- TODO: long press and swiping on mobile fix -->
-
 <style>
   .main-content {
     margin-top: 100px;
@@ -95,6 +93,11 @@
   :global(html) {
     /* Reserve scrollbar space always to prevent shift */
     scrollbar-gutter: stable;
+  }
+
+  :global(body.no-scroll) {
+    overflow: hidden;
+    touch-action: none;
   }
 
   ::view-transition-old(root),
