@@ -912,7 +912,7 @@ esp_err_t OBD2::requestVIN()
     PollRequest r         = {};
     r.id                  = OBD2_FUNCTIONAL_ID;
     r.isRaw               = true;
-    r.payload.raw.data[0] = 0x03;
+    r.payload.raw.data[0] = 0x02;
     r.payload.raw.data[1] = MODE_VEHICLE_INFO;
     r.payload.raw.data[2] = PID_VIN;
     r.payload.raw.dlc     = 8;
@@ -968,7 +968,7 @@ esp_err_t OBD2::requestDTC(uint8_t mode)
     PollRequest r         = {};
     r.id                  = OBD2_FUNCTIONAL_ID;
     r.isRaw               = true;
-    r.payload.raw.data[0] = 0x02;
+    r.payload.raw.data[0] = 0x01;
     r.payload.raw.data[1] = mode;
     r.payload.raw.dlc     = 8;
     r.interval            = 0;
