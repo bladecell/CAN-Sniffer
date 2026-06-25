@@ -262,19 +262,6 @@
   </div>
 {/if}
 
-{#if dashboardStore.isEditMode}
-  <div class="layout-hud-wrapper" transition:fade={{ duration: 150 }}>
-    <div class="hud-pill">
-      <span class="live-dot"></span>
-      <span>CANVAS UNLOCKED</span>
-      <button
-        class="hud-lock-btn"
-        onclick={() => (dashboardStore.isEditMode = false)}>Done Editing</button
-      >
-    </div>
-  </div>
-{/if}
-
 <PIDSettingsModal
   isOpen={isModalOpen}
   item={modalTargetItem}
@@ -404,47 +391,6 @@
   .layout-action {
     color: var(--pico-primary) !important;
     font-weight: 700;
-  }
-
-  /* --- PICO FLOATING EDIT BANNER --- */
-  .layout-hud-wrapper {
-    position: fixed;
-    bottom: 24px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 99999;
-  }
-  .hud-pill {
-    background: var(--pico-card-background);
-    border: 1px solid var(--pico-primary);
-    box-shadow: var(--pico-card-box-shadow);
-    border-radius: 50px;
-    padding: 6px 8px 6px 16px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    color: var(--pico-color);
-    font-family: var(--pico-font-family-monospace);
-    font-size: 0.8rem;
-  }
-  .live-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: var(--pico-primary);
-    animation: pulse-glow 1.5s infinite alternate;
-  }
-  .hud-lock-btn {
-    background: var(--pico-primary);
-    color: var(--pico-primary-inverse, #000);
-    border: none;
-    padding: 4px 16px;
-    border-radius: 30px;
-    font-family: var(--pico-font-family);
-    font-weight: 700;
-    font-size: 0.75rem;
-    cursor: pointer;
-    text-transform: uppercase;
   }
 
   :global(#dnd-action-dragged-el) {

@@ -35,10 +35,6 @@
   const isMenuOpen = $derived(dashboardStore.activeMenuId === item.id);
   const isEditing = $derived(dashboardStore.isEditMode);
 
-  function triggerHaptic(ms: number | number[] = 25) {
-    if ("vibrate" in navigator) navigator.vibrate(ms);
-  }
-
   function openMenu(x: number, y: number) {
     const MENU_W = 200,
       MENU_H = 220;
@@ -47,7 +43,6 @@
       y: Math.min(Math.max(10, y), window.innerHeight - MENU_H - 10),
     };
     dashboardStore.activeMenuId = item.id;
-    triggerHaptic(30);
   }
 
   // --- SAFE PC RIGHT-CLICK ---
@@ -126,7 +121,6 @@
   function dispatchDrag(e: PointerEvent) {
     if (!e.isPrimary) return;
     e.stopPropagation();
-    triggerHaptic(20);
     onRequestDrag(); // Tells parent DND zone: "Unfreeze this item now"
   }
 
@@ -134,7 +128,6 @@
     if (!e.isPrimary) return;
     e.stopPropagation();
     e.preventDefault();
-    triggerHaptic([20, 30]);
     resizeStart(e);
   }
 </script>
@@ -210,7 +203,6 @@
       <button
         class="delete-action"
         onclick={() => {
-          triggerHaptic([30, 40]);
           onDelete(item.id);
           dashboardStore.activeMenuId = null;
         }}>Remove Module</button
@@ -219,25 +211,47 @@
   {/if}
 
   {#if isEditing}
-    <div class="edit-blueprint-overlay" transition:fade={{ duration: 100 }}>
-      <div class="drag-handle-bar" onpointerdown={dispatchDrag}>
-        <div class="pips"></div>
-        <span>{item.cardType}</span>
-        <div class="pips"></div>
+    <div
+      class="edit-blueprint-overlay"
+      transition:fade={{ duration: 100 }}
+      onpointerdown={dispatchDrag}
+    >
+      <span class="watermark-badge">{item.cardType}</span>
+
+      <div class="action-pill" onpointerdown={(e) => e.stopPropagation()}>
+        <button class="pill-btn edit" onclick={() => onOpenSettings(item)}>
+          <svg
+            viewBox="0 0 24 24"
+            width="16"
+            height="16"
+            stroke="currentColor"
+            stroke-width="2"
+            fill="none"
+            ><path d="M12 20h9" /><path
+              d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"
+            /></svg
+          >
+          Edit
+        </button>
+        <div class="pill-divider"></div>
+        <button class="pill-btn delete" onclick={() => onDelete(item.id)}>
+          <svg
+            viewBox="0 0 24 24"
+            width="18"
+            height="18"
+            stroke="currentColor"
+            stroke-width="2"
+            fill="none"
+            ><path d="M3 6h18" /><path
+              d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+            /></svg
+          >
+        </button>
       </div>
 
-      <div class="blueprint-body" onpointerdown={(e) => e.stopPropagation()}>
-        <div class="quick-btn-tray">
-          <button class="pico-micro-btn" onclick={() => onOpenSettings(item)}
-            >Edit</button
-          >
-          <button class="pico-micro-btn del" onclick={() => onDelete(item.id)}
-            >Delete</button
-          >
-        </div>
+      <div class="resize-touch-target" use:resizeTouch>
+        <div class="resize-visual"></div>
       </div>
-
-      <button class="grid-item-resizer" use:resizeTouch></button>
     </div>
   {/if}
 </div>
@@ -278,10 +292,6 @@
       var(--pico-card-background) 60%,
       transparent
     );
-  }
-
-  .grid-item-resizer {
-    touch-action: none; /* tells browser: don't scroll from this element */
   }
 
   /* --- PICO MENU --- */
@@ -331,115 +341,150 @@
     color: var(--pico-del-color, #ef4444) !important;
   }
 
-  /* --- BLUEPRINT OVERLAY --- */
+  /* --- CREATIVE BLUEPRINT OVERLAY --- */
   .edit-blueprint-overlay {
     position: absolute;
     inset: 0;
     z-index: 999;
-    background: color-mix(
+    /* Engineering Blueprint Grid Effect */
+    background-color: color-mix(
       in srgb,
-      var(--pico-card-background, #1a202b) 88%,
+      var(--pico-card-background, #1a202b) 85%,
       transparent
     );
-    backdrop-filter: blur(3px);
-    -webkit-backdrop-filter: blur(3px);
-    display: flex;
-    flex-direction: column;
+    background-image: linear-gradient(
+        color-mix(in srgb, var(--pico-primary) 12%, transparent) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        90deg,
+        color-mix(in srgb, var(--pico-primary) 12%, transparent) 1px,
+        transparent 1px
+      );
+    background-size: 20px 20px;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
     border: 2px dashed var(--pico-primary);
     border-radius: inherit;
-    touch-action: none;
-  }
-
-  .drag-handle-bar {
-    height: 25%;
-    min-height: 34px;
-    background: color-mix(in srgb, var(--pico-primary) 15%, transparent);
-    border-bottom: 1px solid
-      color-mix(in srgb, var(--pico-primary) 30%, transparent);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 14px;
-    cursor: grab;
-    touch-action: none !important;
-  }
-  .drag-handle-bar:active {
-    cursor: grabbing;
-    background: color-mix(in srgb, var(--pico-primary) 25%, transparent);
-  }
-
-  .blueprint-body {
-    flex-grow: 1;
     display: flex;
     align-items: center;
     justify-content: center;
-    touch-action: none; /* was pan-y — kills scroll competition */
+
+    /* Entire card becomes the grab target */
+    cursor: grab;
+    touch-action: none;
+  }
+  .edit-blueprint-overlay:active {
+    cursor: grabbing;
+    background-color: color-mix(
+      in srgb,
+      var(--pico-card-background, #1a202b) 75%,
+      transparent
+    );
   }
 
-  .grid-item-resizer {
+  .watermark-badge {
     position: absolute;
-    bottom: 0;
-    right: 0;
-    width: 36px;
-    height: 36px;
-    background: var(--pico-primary);
+    top: 10px;
+    left: 14px;
+    font-family: var(--pico-font-family-monospace);
+    font-size: 0.8rem;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    color: var(--pico-primary);
+    text-transform: uppercase;
+    opacity: 0.8;
+  }
+
+  /* --- FLOATING ACTION PILL --- */
+  .action-pill {
+    display: flex;
+    align-items: center;
+    background: var(--pico-card-background);
+    border: 1px solid var(--pico-primary);
+    border-radius: 50px;
+    padding: 4px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    /* Restore pointer events so buttons are clickable */
+    pointer-events: auto;
+    cursor: default;
+  }
+
+  .pill-divider {
+    width: 1px;
+    height: 20px;
+    background: var(--pico-muted-border-color);
+    margin: 0 4px;
+  }
+
+  .pill-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-family: var(--pico-font-family);
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--pico-color);
+    background: transparent;
     border: none;
-    border-radius: 6px 0 6px 0;
+    padding: 8px 16px;
+    border-radius: 40px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .pill-btn.delete {
+    padding: 8px 12px;
+    color: var(--pico-muted-color);
+  }
+
+  .pill-btn:hover {
+    background: color-mix(in srgb, var(--pico-primary) 15%, transparent);
+    color: var(--pico-primary);
+  }
+  .pill-btn.delete:hover {
+    background: color-mix(in srgb, orangered 15%, transparent);
+    color: orangered;
+  }
+  .pill-btn:active {
+    transform: scale(0.95);
+  }
+
+  /* --- INVISIBLE FAT-FINGER RESIZER --- */
+  .resize-touch-target {
+    position: absolute;
+    bottom: -6px;
+    right: -6px;
+    width: 48px; /* Massive 48x48px hit area for sloppy mobile thumbs */
+    height: 48px;
     cursor: se-resize;
-    touch-action: none; /* critical */
+    touch-action: none;
     -webkit-user-select: none;
     user-select: none;
     z-index: 10;
   }
 
-  .pips {
-    width: 22px;
-    height: 3px;
-    border-top: 1px solid var(--pico-primary);
-    border-bottom: 1px solid var(--pico-primary);
-    opacity: 0.4;
-  }
-  .drag-handle-bar span {
-    font-family: var(--pico-font-family-monospace);
-    font-size: 0.75rem;
-    font-weight: 800;
-    color: var(--pico-primary);
-    text-transform: uppercase;
-  }
-
-  .blueprint-body {
-    flex-grow: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    touch-action: none; /* was pan-y — must be none so DND owns the touch stream */
+  /* --- SLEEK VISUAL CHEVRON --- */
+  .resize-visual {
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    width: 12px;
+    height: 12px;
+    border-right: 3px solid var(--pico-primary);
+    border-bottom: 3px solid var(--pico-primary);
+    border-radius: 2px;
+    opacity: 0.8;
+    transition:
+      transform 0.1s ease,
+      opacity 0.1s ease;
   }
 
-  .quick-btn-tray {
-    display: flex;
-    gap: 10px;
-  }
-  .pico-micro-btn {
-    font-family: var(--pico-font-family);
-    font-size: 0.8rem;
-    font-weight: 700;
-    padding: 6px 14px;
-    border-radius: var(--pico-border-radius);
-    background: var(--pico-card-background);
-    border: 1px solid var(--pico-border-color);
-    color: var(--pico-color);
-    cursor: pointer;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  }
-  .pico-micro-btn:active {
-    transform: scale(0.95);
-  }
-  .pico-micro-btn:hover {
-    border-color: var(--pico-primary);
-    color: var(--pico-primary);
-  }
-  .pico-micro-btn.del:hover {
-    border-color: orangered;
-    color: orangered;
+  .resize-touch-target:active .resize-visual {
+    opacity: 1;
+    transform: scale(1.2) translate(-2px, -2px);
+    border-color: #fff;
+    box-shadow: 2px 2px 8px
+      color-mix(in srgb, var(--pico-primary) 50%, transparent);
   }
 </style>
