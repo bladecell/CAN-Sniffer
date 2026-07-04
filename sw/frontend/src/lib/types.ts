@@ -42,10 +42,22 @@ export type DashboardItem = PidGridItem | BatteryGridItem | DtcGridItem | Overvi
 /**
  * DATA STRUCTURES
  */
+
+export interface DtcData {
+  confirmed: DtcModeData;
+  pending: DtcModeData;
+}
+
 export interface DtcModeData {
   mode: number;
   dtc_count: number;
-  dtc: string[];
+  dtc: singleDtc[];
+}
+
+export interface singleDtc {
+  dtc: string;
+  description: string;
+  mode: number;
 }
 
 export interface PidValue {

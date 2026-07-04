@@ -426,6 +426,7 @@ cJSON* m_dtc_get(int mode)
 
     cJSON_AddItemToObject(root, "dtcs", items);
     cJSON_AddNumberToObject(root, "count", global_count);
+    cJSON_AddStringToObject(root, "status", "success");
 
     return root;
 }
@@ -560,8 +561,8 @@ cJSON* m_dtc_request(int mode)
         err = OBD2::getInstance().requestDTC(MODE_DTCS);
         if (err == ESP_OK)
             err = OBD2::getInstance().requestDTC(MODE_PENDING_DTCS);
-        if (err == ESP_OK)
-            err = OBD2::getInstance().requestDTC(MODE_PERMANENT_DTCS);
+        // if (err == ESP_OK)
+        //     err = OBD2::getInstance().requestDTC(MODE_PERMANENT_DTCS);
     }
     else
     {

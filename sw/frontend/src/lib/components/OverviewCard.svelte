@@ -1,7 +1,7 @@
 <script lang="ts">
   import { canStore } from "$lib/canStore.svelte";
   import { usePidData } from "$lib/pidHelpers.svelte.ts";
-  import type { OverviewGridItem } from "$lib/types";
+  import type { OverviewGridItem, DtcModeData } from "$lib/types";
 
   interface Props {
     item: OverviewGridItem;
@@ -39,7 +39,11 @@
   </div>
 {/snippet}
 
-<article class="dashboard-card overview-card" style="--module-accent: {item.color}" {...rest}>
+<article
+  class="dashboard-card overview-card"
+  style="--module-accent: {item.color}"
+  {...rest}
+>
   <header class="dashboard-card-header">
     <div class="dashboard-card-titles">
       <div class="dashboard-card-label">System Overview</div>
@@ -70,7 +74,9 @@
       <div class="stat-item">
         <span class="dashboard-card-label">Diagnostics</span>
         <div class="dashboard-card-value-group">
-          <span class="dashboard-card-number" class:error={dtcCount > 0}>{dtcCount}</span>
+          <span class="dashboard-card-number" class:error={dtcCount > 0}
+            >{dtcCount}</span
+          >
           <span class="dashboard-card-unit">DTCs</span>
         </div>
       </div>

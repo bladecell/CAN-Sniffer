@@ -67,6 +67,7 @@
     margin-left: 0;
     margin-right: 0;
     overflow-x: clip;
+    padding-bottom: 200px !important;
   }
 
   :global(:root) {

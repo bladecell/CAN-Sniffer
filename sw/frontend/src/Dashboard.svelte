@@ -300,7 +300,7 @@
     width: 100%;
     min-height: 500px;
     padding: var(--grid-padding);
-    padding-bottom: 200px !important;
+    /* padding-bottom: 200px !important; */
     outline: none !important;
     justify-content: center;
   }

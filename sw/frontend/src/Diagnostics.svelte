@@ -1,61 +1,157 @@
 <script lang="ts">
-  import DataTable from "./lib/components/DataTable.svelte";
-  import type { Column } from "$lib/types";
+  import type { DtcModeData, DTCFaultProps, singleDtc } from "$lib/types";
+  import { canStore } from "./lib/canStore.svelte";
+  import DTCFault from "./lib/components/DTCFault.svelte";
 
-  const columns: Column[] = [
-    { label: "Module", key: "name", type: "text", width: "200px" },
-    { label: "Age", key: "age", type: "number", width: "60px" },
-    {
-      label: "Voltage",
-      key: "voltage",
-      type: "number",
-      unit: "V",
-      width: "90px",
-    },
-    { label: "DTC", key: "dtc", type: "code", width: "100px" },
-    { label: "Status", key: "status", type: "badge", width: "100px" },
-  ];
+  const confirmedCodes = $derived(
+    canStore?.dtc?.confirmed || {},
+  ) as DtcModeData;
 
-  const testData = [
-    {
-      name: "Engine Control",
-      age: 12,
-      voltage: 12.4,
-      dtc: "P0300",
-      status: "Active",
-    },
-    {
-      name: "Body Module",
-      age: 4,
-      voltage: 12.1,
-      dtc: "B0260",
-      status: "Idle",
-    },
-    {
-      name: "Transmission",
-      age: 22,
-      voltage: 12.6,
-      dtc: "P0700",
-      status: "Warning",
-    },
-    { name: "ABS Unit", age: 8, voltage: 12.3, dtc: "C0234", status: "Active" },
-    {
-      name: "Airbag Module",
-      age: 45,
-      voltage: 12.5,
-      dtc: "B1001",
-      status: "Idle",
-    },
-  ];
+  const pendingCodes = $derived(canStore?.dtc?.pending || {}) as DtcModeData;
+
+  const activeFaults = $derived.by((): DTCFaultProps[] => {
+    const confirmed = confirmedCodes.dtc.map((code: singleDtc) => ({
+      code: code.dtc,
+      description: code.description || "No description provided",
+      mode: 3,
+    }));
+
+    const pending = pendingCodes.dtc.map((code: singleDtc) => ({
+      code: code.dtc,
+      description: code.description || "No description provided",
+      mode: 7,
+    }));
+
+    return [...confirmed, ...pending];
+  });
+
+  const status = $derived.by((): "healthy" | "warn" | "malfunction" => {
+    if (confirmedCodes.dtc_count > 0) return "malfunction";
+    if (pendingCodes.dtc_count > 0) return "warn";
+    return "healthy";
+  });
+
+  const statusColor = $derived(
+    status === "healthy"
+      ? "var(--normal-color)"
+      : status === "warn"
+        ? "var(--warning-color)"
+        : "var(--error-color)",
+  );
+
+  const statusDescription = $derived(
+    status === "healthy"
+      ? "POWERTRAIN SYSTEMS HEALTHY"
+      : status === "warn"
+        ? `${pendingCodes.dtc_count} PENDING FAULT${pendingCodes.dtc_count > 1 ? "S" : ""}`
+        : `${confirmedCodes.dtc_count} ACTIVE FAULT${confirmedCodes.dtc_count > 1 ? "S" : ""}`,
+  );
 </script>
 
-<div class="data-grid-container overflow-auto">
-  <DataTable {columns} data={testData} />
+<div class="dashboard-card dtc-header" style="--module-accent: {statusColor};">
+  <div class="dtc-header-title-row">
+    <h2>Diagnostic Trouble Codes</h2>
+    <p class="status-subtitle">{statusDescription}</p>
+  </div>
+
+  <div class="dtc-header-actions">
+    <button type="button" class="btn" onclick={() => canStore.requestDTC()}>
+      Request DTCs
+    </button>
+    <button type="button" class="btn" onclick={canStore.clearDTCs}>
+      Clear DTCs
+    </button>
+  </div>
+</div>
+
+<div class="dtc-container">
+  {#each activeFaults as fault}
+    <DTCFault
+      code={fault.code}
+      description={fault.description}
+      mode={fault.mode}
+    />
+  {/each}
 </div>
 
 <style>
-  .data-grid-container {
-    padding: 0;
+  .dtc-header {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1.5rem; /* Space between text row and buttons */
+    width: 100%;
+    height: 150px;
+    padding: 1.5rem; /* Adjust to match your card padding */
+    margin-bottom: 2rem;
+    box-sizing: border-box;
+  }
+
+  .dtc-header-title-row {
+    display: flex;
+    align-items: baseline;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+  }
+
+  .dtc-header-title-row h2 {
     margin: 0;
+    font-size: 1.5rem;
+  }
+
+  .status-subtitle {
+    margin: 0;
+    color: var(--module-accent, #a1a1aa);
+    text-transform: uppercase;
+    font-size: 0.85rem;
+    letter-spacing: 0.05em;
+  }
+
+  .dtc-header-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    width: 100%;
+  }
+
+  .dtc-header-actions .btn {
+    width: 100%;
+  }
+
+  @media (max-width: 500px) {
+    .dtc-header-actions {
+      grid-template-columns: 1fr;
+    }
+    .dtc-header {
+      height: 250px;
+      padding: 1rem;
+    }
+  }
+
+  .dtc-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    gap: 1rem;
+    width: 100%;
+  }
+
+  .btn {
+    border: var(--pico-border-width) solid var(--pico-form-element-border-color);
+    background-color: rgb(
+      from var(--pico-form-element-background-color) r g b / 0.6
+    );
+    height: 40px;
+    margin: 0;
+  }
+  .btn:focus,
+  .btn:active,
+  .btn:hover {
+    border: var(--pico-border-width) solid var(--pico-form-element-color);
+    outline: none !important;
+    box-shadow: none !important;
+  }
+  .btn:active {
+    background-color: rgba(255, 255, 255, 0.1) !important;
+    transition: background-color 0s !important;
   }
 </style>

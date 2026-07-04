@@ -12,21 +12,19 @@
 
   // --- RELIABLE NESTED EXTRACTION RIG ---
   const confirmedCodes = $derived(
-    (canStore.dtc as DtcModeData[])?.find((d) => d.mode === 3)?.dtc || [],
-  );
+    canStore?.dtc?.confirmed || {},
+  ) as DtcModeData;
 
-  const pendingCodes = $derived(
-    (canStore.dtc as DtcModeData[])?.find((d) => d.mode === 7)?.dtc || [],
-  );
+  const pendingCodes = $derived(canStore?.dtc?.pending || {}) as DtcModeData;
 
   const permanentCodes = $derived(
-    (canStore.dtc as DtcModeData[])?.find((d) => d.mode === 10)?.dtc || [],
-  );
+    canStore?.dtc?.permanent || {},
+  ) as DtcModeData;
 
   // --- SEVERITY, ICONS & STATUS RUNES ---
   const status = $derived.by((): "healthy" | "warn" | "malfunction" => {
-    if (confirmedCodes.length > 0) return "malfunction";
-    if (pendingCodes.length > 0) return "warn";
+    if (confirmedCodes.dtc_count > 0) return "malfunction";
+    if (pendingCodes.dtc_count > 0) return "warn";
     return "healthy";
   });
 
@@ -42,8 +40,8 @@
     status === "healthy"
       ? "POWERTRAIN SYSTEMS HEALTHY"
       : status === "warn"
-        ? `${pendingCodes.length} PENDING FAULT${pendingCodes.length > 1 ? "S" : ""}`
-        : `${confirmedCodes.length} ACTIVE FAULT${confirmedCodes.length > 1 ? "S" : ""}`,
+        ? `${pendingCodes.dtc_count} PENDING FAULT${pendingCodes.dtc_count > 1 ? "S" : ""}`
+        : `${confirmedCodes.dtc_count} ACTIVE FAULT${confirmedCodes.dtc_count > 1 ? "S" : ""}`,
   );
 </script>
 
@@ -65,7 +63,7 @@
   </header>
 
   <div class="dashboard-card-body dtc-content-body">
-    {#if confirmedCodes.length === 0 && permanentCodes.length === 0 && pendingCodes.length === 0}
+    {#if confirmedCodes.dtc_count === 0 && permanentCodes.dtc_count === 0 && pendingCodes.dtc_count === 0}
       <div class="empty-log-state">
         <span>No diagnostic trouble codes logged in ECU memory bank.</span>
       </div>
@@ -73,29 +71,29 @@
       <div class="codes-list-container">
         <div
           class="code-column"
-          class:empty-column={confirmedCodes.length === 0}
+          class:empty-column={confirmedCodes.dtc_count === 0}
         >
           <div class="group-header error-text">
             <Icon name="alert-circle" size={14} />
-            {confirmedCodes.length} Confirmed
+            {confirmedCodes.dtc_count} Confirmed
           </div>
           <div class="column-viewport">
             <div
               class="chips-flex"
-              class:marquee-active={confirmedCodes.length > 3}
-              style="--item-count: {confirmedCodes.length};"
+              class:marquee-active={confirmedCodes.dtc_count > 3}
+              style="--item-count: {confirmedCodes.dtc_count};"
             >
-              {#each confirmedCodes as code}
-                <span class="dtc-chip confirmed-chip">{code}</span>
+              {#each confirmedCodes.dtc as code}
+                <span class="dtc-chip confirmed-chip">{code.dtc}</span>
               {:else}
                 <span class="column-placeholder">—</span>
               {/each}
 
-              {#if confirmedCodes.length > 3}
-                {#each confirmedCodes as code}
+              {#if confirmedCodes.dtc_count > 3}
+                {#each confirmedCodes.dtc as code}
                   <span
                     class="dtc-chip confirmed-chip duplicate-tag"
-                    aria-hidden="true">{code}</span
+                    aria-hidden="true">{code.dtc}</span
                   >
                 {/each}
               {/if}
@@ -103,7 +101,7 @@
           </div>
         </div>
 
-        <div
+        <!-- <div
           class="code-column"
           class:empty-column={permanentCodes.length === 0}
         >
@@ -133,30 +131,33 @@
               {/if}
             </div>
           </div>
-        </div>
+        </div> -->
 
-        <div class="code-column" class:empty-column={pendingCodes.length === 0}>
+        <div
+          class="code-column"
+          class:empty-column={pendingCodes.dtc_count === 0}
+        >
           <div class="group-header warn-text">
             <Icon name="clock" size={14} />
-            {pendingCodes.length} Pending
+            {pendingCodes.dtc_count} Pending
           </div>
           <div class="column-viewport">
             <div
               class="chips-flex"
-              class:marquee-active={pendingCodes.length > 3}
-              style="--item-count: {pendingCodes.length};"
+              class:marquee-active={pendingCodes.dtc_count > 3}
+              style="--item-count: {pendingCodes.dtc_count};"
             >
-              {#each pendingCodes as code}
-                <span class="dtc-chip pending-chip">{code}</span>
+              {#each pendingCodes.dtc as code}
+                <span class="dtc-chip pending-chip">{code.dtc}</span>
               {:else}
                 <span class="column-placeholder">—</span>
               {/each}
 
-              {#if pendingCodes.length > 3}
-                {#each pendingCodes as code}
+              {#if pendingCodes.dtc_count > 3}
+                {#each pendingCodes.dtc as code}
                   <span
                     class="dtc-chip pending-chip duplicate-tag"
-                    aria-hidden="true">{code}</span
+                    aria-hidden="true">{code.dtc}</span
                   >
                 {/each}
               {/if}
@@ -176,7 +177,9 @@
   }
 
   .dtc-card {
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    transition:
+      transform 0.2s ease,
+      box-shadow 0.2s ease;
   }
 
   .status-warn {
@@ -201,7 +204,7 @@
 
   .codes-list-container {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-columns: 1fr 1fr;
     gap: 12px;
     width: 100%;
     height: 100%;
@@ -224,8 +227,11 @@
   }
 
   .group-header {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr 4fr;
     align-items: center;
+    align-self: flex-start;
+    width: 100%;
     gap: 6px;
     font-size: 0.62rem;
     font-weight: 700;

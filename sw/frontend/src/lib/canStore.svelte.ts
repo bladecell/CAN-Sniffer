@@ -1,16 +1,28 @@
 // src/lib/canStore.svelte.ts
-import { SvelteMap } from 'svelte/reactivity';
-import { alertStore } from './alertStore.svelte';
-import type { PidValue, WsCanStatus, PidDefinition, Obd2Status, DtcModeData } from './types';
+import { SvelteMap } from "svelte/reactivity";
+import { alertStore } from "./alertStore.svelte";
+import type {
+    PidValue,
+    WsCanStatus,
+    PidDefinition,
+    Obd2Status,
+    DtcData,
+    DtcModeData,
+    singleDtc,
+} from "./types";
 
 export const COMMANDS = {
-    START_LOG: 0xA0,
-    STOP_LOG: 0xA1,
-    PING_REQUEST: 0xA2,
-    PING_RESPONSE: 0xA3
+    START_LOG: 0xa0,
+    STOP_LOG: 0xa1,
+    PING_REQUEST: 0xa2,
+    PING_RESPONSE: 0xa3,
 };
 
-export type MessageListener = (update: { pid: number; value: number; timestamp: number }) => void;
+export type MessageListener = (update: {
+    pid: number;
+    value: number;
+    timestamp: number;
+}) => void;
 
 export class CanStore {
     connected = $state(false);
@@ -20,7 +32,7 @@ export class CanStore {
     socket: WebSocket | null = null;
     pollInterval: any = null;
 
-    intentionalDisconnect = false; 
+    intentionalDisconnect = false;
     reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 
     // Heartbeat timers
@@ -38,7 +50,7 @@ export class CanStore {
         }
 
         const host = window.location.host;
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
         const wsUrl = `${protocol}//${host}/ws`;
 
         console.log(`Connecting to ${wsUrl}...`);
@@ -81,16 +93,16 @@ export class CanStore {
         this.pingInterval = setInterval(() => {
             if (this.socket && this.socket.readyState === WebSocket.OPEN) {
                 const pingCommand = new Uint8Array([COMMANDS.PING_REQUEST]);
-                this.socket.send(pingCommand); 
-                
+                this.socket.send(pingCommand);
+
                 this.pongTimeout = setTimeout(() => {
                     console.warn("Heartbeat missed! ESP32 appears offline.");
                     // alertStore.add("Connection lost to device", "warning");
-                    
+
                     if (this.socket) {
-                        this.socket.onclose = null; 
-                        
-                        this.socket.close(); 
+                        this.socket.onclose = null;
+
+                        this.socket.close();
                     }
 
                     this.handleConnectionDrop();
@@ -104,7 +116,7 @@ export class CanStore {
         this.isStreaming = false;
         this.socket = null;
         this.wsCanStatus.state = "Not Connected";
-        
+
         this.stopHeartbeat();
 
         if (!this.intentionalDisconnect) {
@@ -127,10 +139,9 @@ export class CanStore {
         this.pongTimeout = null;
     }
 
-
     disconnect() {
         console.log("WebSocket disconnecting manually.");
-        
+
         this.intentionalDisconnect = true;
 
         if (this.reconnectTimeout) {
@@ -151,7 +162,7 @@ export class CanStore {
         }
 
         if (this.canStatus) {
-            this.canStatus = { ...this.canStatus, state: 'disconnected' };
+            this.canStatus = { ...this.canStatus, state: "disconnected" };
         }
     }
 
@@ -200,7 +211,7 @@ export class CanStore {
                 this.handlePong();
                 break;
             default:
-                break
+                break;
         }
     }
 
@@ -210,7 +221,11 @@ export class CanStore {
         return () => this.listeners.delete(callback);
     }
 
-    wsCanStatus = $state<WsCanStatus>({ state: "Not Connected", utilization: 0, battery_voltage: 0 });
+    wsCanStatus = $state<WsCanStatus>({
+        state: "Not Connected",
+        utilization: 0,
+        battery_voltage: 0,
+    });
     battery_below_12v_alerted = $state(false);
 
     parseCanStatusPacket(view: DataView) {
@@ -223,7 +238,12 @@ export class CanStore {
         const stateIdx = view.getUint8(2);
         const utilization = view.getFloat32(3, true);
         const battery_voltage = view.getFloat32(7, true);
-        const can_bus_state_name = ["Not Initialized", "Off", "Not Connected", "Connected"];
+        const can_bus_state_name = [
+            "Not Initialized",
+            "Off",
+            "Not Connected",
+            "Connected",
+        ];
 
         this.wsCanStatus = {
             state: can_bus_state_name[stateIdx] || "Unknown",
@@ -245,7 +265,11 @@ export class CanStore {
             alertStore.add("CAN Bus Utilization is above 90%", "warning");
         }
 
-        if (battery_voltage < 11.8 && battery_voltage > 1 && !this.battery_below_12v_alerted) {
+        if (
+            battery_voltage < 11.8 &&
+            battery_voltage > 1 &&
+            !this.battery_below_12v_alerted
+        ) {
             alertStore.add("Car battery voltage is below 12V", "warning");
             this.battery_below_12v_alerted = true;
         } else if (battery_voltage >= 12 && this.battery_below_12v_alerted) {
@@ -275,7 +299,7 @@ export class CanStore {
                 rate: rate,
                 valid: isValid,
                 supported: isSupported,
-                history: []
+                history: [],
             };
         } else {
             existing.history.push({
@@ -299,13 +323,13 @@ export class CanStore {
             timestamp: time,
             rate: rate,
             valid: isValid,
-            supported: isSupported
+            supported: isSupported,
         });
 
         const update = {
             pid: fullPid,
             value: Number(value.toFixed(2)),
-            timestamp: time
+            timestamp: time,
         };
 
         for (const listener of this.listeners) {
@@ -349,7 +373,6 @@ export class CanStore {
 
             const result = await response.json();
             this.canStatus = result;
-
         } catch (e) {
             console.error("Failed to load CAN status", e);
         }
@@ -371,7 +394,7 @@ export class CanStore {
     async setContinuousPolling(running: boolean) {
         try {
             await fetch(`/api/v1/req/pid_poll?running=${running}`, {
-                method: "POST"
+                method: "POST",
             });
 
             this.getObd2Status();
@@ -396,7 +419,7 @@ export class CanStore {
     async requestVin() {
         try {
             const response = await fetch("/api/v1/req/vin", {
-                method: "POST"
+                method: "POST",
             });
 
             const result = await response.json();
@@ -409,15 +432,75 @@ export class CanStore {
         }
     }
 
-    dtc = $state<DtcModeData[]>([]);
+    dtc = $state<DtcData>({
+        confirmed: { mode: 3, dtc_count: 0, dtc: [] },
+        pending: { mode: 7, dtc_count: 0, dtc: [] },
+    });
     totalDTCs = $state(0);
 
     async getDTC() {
         try {
             const response = await fetch("/api/v1/dtc");
             const result = await response.json();
-            this.dtc = result.dtcs;
-            this.totalDTCs = result.dtcs.reduce((sum: number, mode: DtcModeData) => sum + mode.dtc_count, 0);
+            const rawDtcs = result.dtcs || [];
+
+            const uniqueCodes = new Set<string>();
+            for (const group of rawDtcs) {
+                if (Array.isArray(group.dtc)) {
+                    group.dtc.forEach((code: string) => uniqueCodes.add(code));
+                }
+            }
+
+            let descriptionsMap: Record<string, string> = {};
+            const codesArray = Array.from(uniqueCodes);
+            const CHUNK_SIZE = 15;
+
+            for (let i = 0; i < codesArray.length; i += CHUNK_SIZE) {
+                const chunk = codesArray.slice(i, i + CHUNK_SIZE);
+                const codesParam = chunk.join(",");
+
+                try {
+                    const descResponse = await fetch(`/api/v1/dtc?codes=${codesParam}`);
+                    if (!descResponse.ok) throw new Error(`HTTP Error: ${descResponse.status}`);
+
+                    const descResult = await descResponse.json();
+
+                    if (descResult.status === 'success' && Array.isArray(descResult.dtcs)) {
+                        for (const item of descResult.dtcs) {
+                            descriptionsMap[item.dtc] = item.description;
+                        }
+                    }
+                } catch (chunkErr) {
+                    // If one chunk fails, log it but don't break the whole app
+                    console.error(`Failed to fetch descriptions for chunk ${codesParam}:`, chunkErr);
+                }
+            }
+
+            for (const group of rawDtcs) {
+                if (Array.isArray(group.dtc)) {
+                    const mappedDtcs = group.dtc.map((code: string) => ({
+                        dtc: code,
+                        description: descriptionsMap[code] || "Description not available",
+                        mode: group.mode,
+                    }));
+
+                    if (group.mode === 3) {
+                        this.dtc.confirmed = {
+                            mode: group.mode,
+                            dtc_count: group.dtc_count,
+                            dtc: mappedDtcs,
+                        };
+                    } else if (group.mode === 7) {
+                        this.dtc.pending = {
+                            mode: group.mode,
+                            dtc_count: group.dtc_count,
+                            dtc: mappedDtcs,
+                        };
+                    }
+                }
+            }
+
+            this.totalDTCs = this.dtc.confirmed.dtc_count;
         } catch (e) {
             console.error("Failed to load DTC", e);
         }
@@ -425,9 +508,10 @@ export class CanStore {
 
     async requestDTC(mode = -1) {
         try {
-            const request_url = mode === -1 ? "/api/v1/req/dtc" : `/api/v1/req/dtc?mode=${mode}`;
+            const request_url =
+                mode === -1 ? "/api/v1/req/dtc" : `/api/v1/req/dtc?mode=${mode}`;
             const response = await fetch(request_url, {
-                method: "POST"
+                method: "POST",
             });
 
             const result = await response.json();
@@ -437,6 +521,30 @@ export class CanStore {
             }
         } catch (e) {
             console.error("Failed to request DTC", e);
+        }
+    }
+
+    isClearing = $state(false);
+
+    clearDTCs = async () => {
+        this.isClearing = true;
+
+        try {
+            const response = await fetch("/api/v1/req/clear_dtc", {
+                method: "POST",
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP Error: ${response.status}`);
+            }
+
+            await this.requestDTC();
+
+        } catch (e) {
+            console.error("Failed to clear DTCs:", e);
+            alertStore.add("Failed to clear DTCs.", "error");
+        } finally {
+            this.isClearing = false;
         }
     }
 }
