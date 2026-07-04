@@ -13,7 +13,6 @@
 
 #include <sys/types.h>
 
-#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -182,7 +181,7 @@ esp_err_t OBD2::init()
     if (canDriver.isBusConnected())
     {
         ESP_LOGI(TAG, "CAN bus already connected, getting supported PIDs");
-        requestSuppPids();
+        handleCanConnected();
     }
     else
     {
@@ -437,6 +436,9 @@ void OBD2::handleCanConnected()
         ESP_LOGI(TAG, "Retrieving supported PIDs...");
         requestSuppPids();
     }
+
+    xSemaphoreTake(xPidConnectedSemaphore, pdMS_TO_TICKS(5000));
+
     runOBDIIConnectedCallbacks(true);
 }
 
@@ -1346,3 +1348,5 @@ void OBD2::callbackWorkerTask()
         }
     }
 }
+
+// TODO: Group requests for pid to one message

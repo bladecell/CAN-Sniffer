@@ -53,13 +53,13 @@ extern "C" void app_main(void)
     OBD2::getInstance().addPID(0x714, MODE_READ_DATA_BY_IDENTIFIER, 0x2203, 3, "Odometer", KM, "Total distance",
                                "((A * 256) + B) * 10 ", 0.0f, 999999.0f, 1, UPDATE_SLOW, 0x3498db, "gauge");
 
-    // 5. Fuel Level: A
-    OBD2::getInstance().addPID(0x714, MODE_READ_DATA_BY_IDENTIFIER, 0x2206, 3, "Fuel Amount", LITER,
-                               "Fuel Tank Level (Liters)", "A", 0.0f, 50.0f, 2, UPDATE_SLOW, 0x2ecc71, "droplet");
-
-    // 6. Cabin Temperature: ((A * 256) + B) * 0.1
+    // 5. Cabin Temperature: ((A * 256) + B) * 0.1
     OBD2::getInstance().addPID(0x746, 0x22, 0x2613, 3, "Interior Temp", DEGREES_CELCIUS, "Cabin Temperature",
                                "((A*256)+B)*0.1", -40.0f, 85.0f, 2, UPDATE_MEDIUM, 0x3498db, "thermometer");
+
+    // 6. Fuel Level: A
+    OBD2::getInstance().addPID(0x714, MODE_READ_DATA_BY_IDENTIFIER, 0x2206, 3, "Fuel Amount", LITER,
+                               "Fuel Tank Level (Liters)", "A", 0.0f, 50.0f, 2, UPDATE_SLOW, 0x2ecc71, "droplet");
 
     // Derived: Engine Load * RPM proxy (arbitrary test formula)
     OBD2::getInstance().addPID(OBD2_FUNCTIONAL_ID, MODE_DERIVED_DATA, PID_DERIVED_TEST_1, 0, "Load x RPM", RPM,

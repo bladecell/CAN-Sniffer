@@ -5,7 +5,9 @@ import type { PidValue, WsCanStatus, PidDefinition, Obd2Status, DtcModeData } fr
 
 export const COMMANDS = {
     START_LOG: 0xA0,
-    STOP_LOG: 0xA1
+    STOP_LOG: 0xA1,
+    PING_REQUEST: 0xA2,
+    PING_RESPONSE: 0xA3
 };
 
 export type MessageListener = (update: { pid: number; value: number; timestamp: number }) => void;
@@ -18,8 +20,22 @@ export class CanStore {
     socket: WebSocket | null = null;
     pollInterval: any = null;
 
+    intentionalDisconnect = false; 
+    reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    // Heartbeat timers
+    pingInterval: ReturnType<typeof setInterval> | null = null;
+    pongTimeout: ReturnType<typeof setTimeout> | null = null;
+
     connect() {
         if (this.socket) return;
+
+        this.intentionalDisconnect = false;
+
+        if (this.reconnectTimeout) {
+            clearTimeout(this.reconnectTimeout);
+            this.reconnectTimeout = null;
+        }
 
         const host = window.location.host;
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -35,30 +51,95 @@ export class CanStore {
             alertStore.add("WebSocket Connected", "success");
             this.connected = true;
 
-            // 1. Load static/status definitions
+            this.startHeartbeat();
+
             this.loadDefinitions();
             this.getObd2Status();
 
-            // 2. Fetch last known data immediately from ESP32 storage
             this.getVin();
             this.getDTC();
         };
 
         this.socket.onclose = () => {
-            console.log("WebSocket Disconnected");
-            alertStore.add("WebSocket Disconnected", "error");
-            this.connected = false;
-            this.isStreaming = false;
-            this.socket = null;
-            setTimeout(() => this.connect(), 2000);
+            console.log("WebSocket Disconnected cleanly.");
+            this.handleConnectionDrop();
         };
 
         this.socket.onmessage = (event) => {
+            // Check if the message is an ArrayBuffer (binary data)
+            if (event.data instanceof ArrayBuffer) {
+                const buffer = new Uint8Array(event.data);
+            }
+
             this.handleMessage(event.data);
         };
     }
 
+    // --- HEARTBEAT LOGIC ---
+
+    startHeartbeat() {
+        this.pingInterval = setInterval(() => {
+            if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+                const pingCommand = new Uint8Array([COMMANDS.PING_REQUEST]);
+                this.socket.send(pingCommand); 
+                
+                this.pongTimeout = setTimeout(() => {
+                    console.warn("Heartbeat missed! ESP32 appears offline.");
+                    // alertStore.add("Connection lost to device", "warning");
+                    
+                    if (this.socket) {
+                        this.socket.onclose = null; 
+                        
+                        this.socket.close(); 
+                    }
+
+                    this.handleConnectionDrop();
+                }, 1000);
+            }
+        }, 2000);
+    }
+
+    handleConnectionDrop() {
+        this.connected = false;
+        this.isStreaming = false;
+        this.socket = null;
+        this.wsCanStatus.state = "Not Connected";
+        
+        this.stopHeartbeat();
+
+        if (!this.intentionalDisconnect) {
+            alertStore.add("WebSocket Disconnected, reconnecting...", "error");
+            this.reconnectTimeout = setTimeout(() => this.connect(), 2000);
+        }
+    }
+
+    handlePong() {
+        if (this.pongTimeout) {
+            clearTimeout(this.pongTimeout);
+            this.pongTimeout = null;
+        }
+    }
+
+    stopHeartbeat() {
+        if (this.pingInterval) clearInterval(this.pingInterval);
+        if (this.pongTimeout) clearTimeout(this.pongTimeout);
+        this.pingInterval = null;
+        this.pongTimeout = null;
+    }
+
+
     disconnect() {
+        console.log("WebSocket disconnecting manually.");
+        
+        this.intentionalDisconnect = true;
+
+        if (this.reconnectTimeout) {
+            clearTimeout(this.reconnectTimeout);
+            this.reconnectTimeout = null;
+        }
+
+        this.stopHeartbeat();
+
         if (this.socket) {
             this.socket.close(1000, "User disconnected");
             this.socket = null;
@@ -72,8 +153,6 @@ export class CanStore {
         if (this.canStatus) {
             this.canStatus = { ...this.canStatus, state: 'disconnected' };
         }
-
-        console.log("WebSocket disconnected manually.");
     }
 
     startLogging() {
@@ -117,6 +196,9 @@ export class CanStore {
             case 0x03:
                 this.parseCanStatusPacket(view);
                 break;
+            case COMMANDS.PING_RESPONSE:
+                this.handlePong();
+                break;
             default:
                 break
         }
@@ -129,6 +211,7 @@ export class CanStore {
     }
 
     wsCanStatus = $state<WsCanStatus>({ state: "Not Connected", utilization: 0, battery_voltage: 0 });
+    battery_below_12v_alerted = $state(false);
 
     parseCanStatusPacket(view: DataView) {
         const previousState = this.wsCanStatus?.state;
@@ -162,8 +245,11 @@ export class CanStore {
             alertStore.add("CAN Bus Utilization is above 90%", "warning");
         }
 
-        if (battery_voltage < 11.8 && battery_voltage > 1) {
+        if (battery_voltage < 11.8 && battery_voltage > 1 && !this.battery_below_12v_alerted) {
             alertStore.add("Car battery voltage is below 12V", "warning");
+            this.battery_below_12v_alerted = true;
+        } else if (battery_voltage >= 12 && this.battery_below_12v_alerted) {
+            this.battery_below_12v_alerted = false;
         }
     }
 

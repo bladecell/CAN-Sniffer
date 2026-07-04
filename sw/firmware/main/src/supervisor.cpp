@@ -76,7 +76,6 @@ void SUPERVISOR::taskWrapper(void* param)
 
 void SUPERVISOR::task()
 {
-    esp_err_t err;
     while (1)
     {
         switch (eState)
@@ -113,20 +112,6 @@ void SUPERVISOR::task()
                 {
                     ESP_LOGI(TAG, "CAN bus connected, system RUNNING");
                     eState = State::RUNNING;
-                    err    = OBD2::getInstance().requestVIN();
-                    if (err != ESP_OK)
-                    {
-                        ESP_LOGW(TAG, "Failed to request VIN: %s", esp_err_to_name(err));
-                    }
-                    err = OBD2::getInstance().requestDTC(MODE_DTCS);
-                    if (err == ESP_OK)
-                        err = OBD2::getInstance().requestDTC(MODE_PENDING_DTCS);
-                    if (err == ESP_OK)
-                        err = OBD2::getInstance().requestDTC(MODE_PERMANENT_DTCS);
-                    if (err != ESP_OK)
-                    {
-                        ESP_LOGW(TAG, "Failed to request DTCs: %s", esp_err_to_name(err));
-                    }
                 }
                 else
                 {
@@ -206,6 +191,7 @@ esp_err_t SUPERVISOR::setup_obd()
 {
     auto& obd = OBD2::getInstance();
 
+    // VIN and DTC on connect
     obd.connected_subscribe(
         [](bool connected)
         {
@@ -223,12 +209,25 @@ esp_err_t SUPERVISOR::setup_obd()
             err = can.requestDTC(MODE_DTCS);
             if (err == ESP_OK)
                 err = can.requestDTC(MODE_PENDING_DTCS);
-            if (err == ESP_OK)
-                err = can.requestDTC(MODE_PERMANENT_DTCS);
+            // if (err == ESP_OK)
+            //     err = can.requestDTC(MODE_PERMANENT_DTCS);
+
+            ESP_LOGI("SUPERVISOR", "DTC request sent, waiting for response...");
 
             if (err != ESP_OK)
             {
                 ESP_LOGW("SUPERVISOR", "DTC request failed: %s", esp_err_to_name(err));
+            }
+        });
+
+    // Supervisor state on disconnect
+    obd.connected_subscribe(
+        [](bool connected)
+        {
+            if (!connected)
+            {
+                ESP_LOGI("SUPERVISOR", "OBD disconnected.");
+                SUPERVISOR::getInstance().eState = State::NOT_CONNECTED;
             }
         });
 

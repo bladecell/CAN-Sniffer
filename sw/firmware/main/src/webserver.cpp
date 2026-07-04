@@ -494,6 +494,17 @@ esp_err_t d_file_delete_handler(httpd_req_t* req, void* arg)
 // 3. WEBSOCKETS & LIVE STREAMING
 // ============================================================================
 
+void ws_send_byte(uint8_t byte)
+{
+    static uint8_t packet[1];
+    packet[0] = byte;
+
+    httpd_ws_frame_t ws_frame = {
+        .final = true, .fragmented = false, .type = HTTPD_WS_TYPE_BINARY, .payload = packet, .len = 1};
+
+    AsyncWebServer::getInstance().wsBroadcast(&ws_frame);
+}
+
 esp_err_t ws_socket_handler(httpd_req_t* req)
 {
     int sockfd = httpd_req_to_sockfd(req);
@@ -550,6 +561,13 @@ esp_err_t ws_socket_handler(httpd_req_t* req)
                     case WS_STOP_PID_STREAM:
                         b_pid_stream_enabled = false;
                         break;
+                    case WS_PING_REQUEST_STREAM:
+                        ESP_LOGD(TAG, "WS Ping received");
+                        ws_send_byte(WS_PING_RESPONSE_STREAM);
+                        break;
+                    default:
+                        ESP_LOGW(TAG, "WS Unknown command: 0x%02X", buf[0]);
+                        break;
                 }
             }
         }
@@ -574,7 +592,6 @@ void pid_stream_callback(uint16_t pid)
                                      .payload    = packet,
                                      .len        = PID_STREAM_PACKET_SIZE};
 
-        // This is now perfectly safe! It will copy the packet and queue it.
         AsyncWebServer::getInstance().wsBroadcast(&ws_frame);
     }
 }
