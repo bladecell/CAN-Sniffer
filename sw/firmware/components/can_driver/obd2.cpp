@@ -329,17 +329,25 @@ esp_err_t OBD2::requestPID(uint16_t pid)
 void OBD2::req(uint32_t id, uint8_t mode, uint32_t pid, uint8_t len, uint32_t interval, uint8_t priority,
                bool isRecurring)
 {
+    static uint32_t staggerOffsetMs = 0;  // Offset so we don't send all requests at the same time
+
     PollRequest r;
     r.isRaw            = false;
     r.payload.obd.mode = mode;
     r.payload.obd.pid  = pid;
     r.payload.obd.len  = len;
     r.interval         = interval;
-    r.nextWake         = xTaskGetTickCount();
     r.priority         = priority;
     r.isRecurring      = isRecurring;
     r.id               = id;
     r.retries_left     = DEFAULT_NUMER_OF_RETRIES;
+
+    uint32_t maxDelay     = (interval > 0 && interval < 15) ? interval : 15;
+    uint32_t initialDelay = staggerOffsetMs % maxDelay;
+
+    r.nextWake = xTaskGetTickCount() + pdMS_TO_TICKS(initialDelay);
+
+    staggerOffsetMs += 7;
 
     req(r);
 }
