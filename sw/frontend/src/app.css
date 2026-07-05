@@ -375,7 +375,7 @@ body:has(.scroll) {
     in srgb,
     var(--module-accent, #10b981) 40%,
     var(--pico-muted-border-color)
-  ) !important;
+  )
 }
 
 .dashboard-card.disabled {

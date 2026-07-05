@@ -87,6 +87,15 @@
     box-sizing: border-box;
   }
 
+  .dashboard-card.dtc-header {
+    border: none !important;
+  }
+
+  .dashboard-card.dtc-header:hover {
+    box-shadow: none;
+    border-color: var(--pico-muted-border-color) !important;
+  }
+
   .dtc-header-title-row {
     display: flex;
     align-items: baseline;
@@ -112,6 +121,7 @@
     grid-template-columns: 1fr 1fr;
     gap: 1rem;
     width: 100%;
+    max-width: 400px;
   }
 
   .dtc-header-actions .btn {
