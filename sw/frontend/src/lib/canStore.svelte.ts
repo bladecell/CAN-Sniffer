@@ -242,14 +242,13 @@ export class CanStore {
         const utilization = view.getFloat32(3, true);
         const battery_voltage = view.getFloat32(7, true);
         const can_bus_state_name = [
-            "Not Initialized",
-            "Off",
-            "Not Connected",
-            "Connected",
+            "CAN Not Initialized",
+            "CAN Off",
+            "CAN Not Connected",
+            "CAN Connected",
         ];
 
         this.wsCanStatus = {
-            canConnected: stateIdx === 3,
             state: can_bus_state_name[stateIdx] || "Unknown",
             utilization: Math.round(utilization * 100),
             battery_voltage: battery_voltage,

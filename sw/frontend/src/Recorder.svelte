@@ -39,7 +39,7 @@
       <ToggleSwitch
         label="Auto Record"
         subLabel="Start recording when car is started"
-        disabled={!canStore.wsCanStatus?.canConnected}
+        disabled={canStore.wsCanStatus?.state != "CAN Connected"}
       />
     </div>
 
@@ -51,7 +51,7 @@
         onchange={(newState: boolean) => {
           canStore.setContinuousPolling(newState);
         }}
-        disabled={!canStore.wsCanStatus?.canConnected}
+        disabled={canStore.wsCanStatus?.state != "CAN Connected"}
       />
     </div>
   </div>

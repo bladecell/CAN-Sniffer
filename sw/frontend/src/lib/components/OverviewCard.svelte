@@ -14,8 +14,12 @@
   const battery = $derived(
     canStore.wsCanStatus?.battery_voltage.toFixed(1) || "0.0",
   );
-  const isOnline = $derived(canStore.wsCanStatus?.canConnected || false);
-  const state = $derived(canStore.wsCanStatus?.state || "Disconnected");
+  const isOnline = $derived(canStore.wsCanStatus?.state === "CAN Connected");
+  const state = $derived(
+    canStore.connected
+      ? canStore.wsCanStatus?.state || "Disconnected"
+      : "Device not connected",
+  );
   const utilization = $derived(canStore.wsCanStatus?.utilization ?? 0);
   const dtcCount = $derived(canStore.totalDTCs ?? 0);
 

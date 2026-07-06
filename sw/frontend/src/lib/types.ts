@@ -78,7 +78,6 @@ export interface PidValue {
 }
 
 export interface WsCanStatus {
-  canConnected: boolean;
   state: string;
   utilization: number;
   battery_voltage: number;
