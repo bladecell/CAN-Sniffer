@@ -3,7 +3,8 @@
 /**
  * CORE DASHBOARD TYPES
  */
-export type CardType = "pid" | "battery" | "dtcs" | "overview";
+export type CardType = "pid" | "battery" | "dtcs" | "overview" | "control";
+export type ControlType = "record" | "log" | "request_static_data";
 export type PidDisplayMode = "card" | "chart" | "gauge" | "bar";
 export type SpecialDisplayMode = "default" | "compact" | "detailed";
 
@@ -37,7 +38,14 @@ export interface OverviewGridItem extends BaseGridItem {
   color: string;                  // Hex color string
 }
 
-export type DashboardItem = PidGridItem | BatteryGridItem | DtcGridItem | OverviewGridItem;
+export interface ControlsGridItem extends BaseGridItem {
+  cardType: "control";
+  displayMode: SpecialDisplayMode;
+  control_elements: ControlType[];
+  color: string;
+}
+
+export type DashboardItem = PidGridItem | BatteryGridItem | DtcGridItem | OverviewGridItem | ControlsGridItem;
 
 /**
  * DATA STRUCTURES
@@ -70,6 +78,7 @@ export interface PidValue {
 }
 
 export interface WsCanStatus {
+  canConnected: boolean;
   state: string;
   utilization: number;
   battery_voltage: number;
@@ -132,13 +141,13 @@ export type ModuleConfigs = typeof MODULE_CONFIGS;
  */
 export function getModuleBounds(item: DashboardItem): Bounds {
   const DEFAULT_BOUNDS: Bounds = MODULE_CONFIGS.pid.card;
-  
+
   if (!item) return DEFAULT_BOUNDS;
 
   if (item.cardType === "pid") {
     return MODULE_CONFIGS.pid[item.displayMode] ?? DEFAULT_BOUNDS;
   }
-  
+
   // Safe runtime lookup without 'any' typecasting
   if (item.cardType in MODULE_CONFIGS) {
     const staticConfig = MODULE_CONFIGS[item.cardType as keyof Omit<ModuleConfigs, "pid">];
@@ -146,6 +155,16 @@ export function getModuleBounds(item: DashboardItem): Bounds {
   }
 
   return DEFAULT_BOUNDS;
+}
+
+
+export interface DTCFaultProps {
+  code: string;
+  description: string;
+  mode: 3 | 7 | 10 | number | string; // Keeps specific diagnostic modes explicitly listed
+  priority?: string;
+  status?: string;
+  [key: string]: unknown; // Prefer 'unknown' over 'any' for safer dynamic index signature checking
 }
 
 /**
@@ -161,11 +180,8 @@ export interface Column {
   width?: string;
 }
 
-export interface DTCFaultProps {
-  code: string;
-  description: string;
-  mode: 3 | 7 | 10 | number | string; // Keeps specific diagnostic modes explicitly listed
-  priority?: string;
-  status?: string;
-  [key: string]: unknown; // Prefer 'unknown' over 'any' for safer dynamic index signature checking
+export interface DataTableProps {
+  columns: Column[];
+  data: any[];
+  selectedRowIndex?: number;
 }

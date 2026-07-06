@@ -2,7 +2,7 @@
   import DashboardCardWrapper from "$lib/components/DashboardCardWrapper.svelte";
   import { canStore } from "./lib/canStore.svelte";
   import { untrack, onDestroy, onMount } from "svelte";
-  import OverviewCard from "$lib/components/OverviewCard.svelte";
+  import ControlsCard from "$lib/components/ControlsCard.svelte";
   import DTCFault from "./lib/components/DTCFault.svelte";
 
   function createCardFromPID(pidData) {
@@ -136,20 +136,19 @@
       status: "Idle",
     },
   ];
+
+  let activeIndex = $state(-1);
+  $effect(() => {
+    console.log("Active index changed to:", activeIndex);
+  });
 </script>
 
 <div class="pid-container">
-  {#each activeFaults as fault}
-    <DTCFault
-      code={fault.code}
-      description={fault.description}
-      mode={fault.mode}
-    />
-  {/each}
+  <ControlsCard />
 </div>
 
 <div class="data-grid-container overflow-auto">
-  <DataTable {columns} data={testData} />
+  <DataTable {columns} data={testData} bind:selectedRowIndex={activeIndex} />
 </div>
 
 <style>

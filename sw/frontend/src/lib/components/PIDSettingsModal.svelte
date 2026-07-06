@@ -309,6 +309,7 @@
     justify-content: center;
     z-index: 12000;
     padding: 16px;
+    border-radius: 12px;
   }
   .pico-orange-glass-modal {
     backdrop-filter: var(
@@ -329,7 +330,7 @@
     margin: 0;
     padding: 0;
     box-shadow: var(--pico-box-shadow) !important;
-    border-radius: var(--pico-border-radius);
+    border-radius: 12px;
     overflow: hidden;
   }
   .modal-header-hull {

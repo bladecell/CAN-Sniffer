@@ -222,10 +222,13 @@ export class CanStore {
     }
 
     wsCanStatus = $state<WsCanStatus>({
+        canConnected: false,
         state: "Not Connected",
         utilization: 0,
         battery_voltage: 0,
     });
+
+
     battery_below_12v_alerted = $state(false);
 
     parseCanStatusPacket(view: DataView) {
@@ -246,6 +249,7 @@ export class CanStore {
         ];
 
         this.wsCanStatus = {
+            canConnected: stateIdx === 3,
             state: can_bus_state_name[stateIdx] || "Unknown",
             utilization: Math.round(utilization * 100),
             battery_voltage: battery_voltage,
@@ -547,6 +551,8 @@ export class CanStore {
             this.isClearing = false;
         }
     }
+
+    isRecording = $state(false);
 }
 
 export const canStore = new CanStore();

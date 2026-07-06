@@ -344,12 +344,7 @@ body:has(.scroll) {
 
 .item-default {
   border-radius: 12px !important;
-  
-  /* This forces the sharp corners to act as a clipping mask for the article */
   overflow: hidden !important; 
-  
-  /* Because overflow:hidden will hide the article's drop shadow, 
-     we apply the Pico shadow directly to the wrapper instead */
   box-shadow: var(--pico-card-box-shadow) !important;
 }
 

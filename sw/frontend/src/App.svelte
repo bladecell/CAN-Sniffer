@@ -1,9 +1,10 @@
 <script>
   import Navigation from "./Navigation.svelte";
   import Dashboard from "./Dashboard.svelte";
-  import Telemetry from "./Telemetry.svelte";
+  import Recorder from "./Recorder.svelte";
   import Settings from "./Settings.svelte";
   import Diagnostics from "./Diagnostics.svelte";
+  import Telemetry from "./Telemetry.svelte";
   import CanLogging from "./CanLogging.svelte";
   import { canStore } from "$lib/canStore.svelte.ts";
   import { onMount } from "svelte";
@@ -45,14 +46,16 @@
 <main class="main-content">
   {#if activeTab === "dashboard"}
     <Dashboard />
-  {:else if activeTab === "telemetry"}
-    <Telemetry />
+  {:else if activeTab === "recorder"}
+    <Recorder />
   {:else if activeTab === "settings"}
     <Settings />
   {:else if activeTab === "diagnostics"}
     <Diagnostics />
   {:else if activeTab === "can-logging"}
     <CanLogging />
+  {:else if activeTab === "telemetry"}
+    <Telemetry />
   {/if}
 </main>
 

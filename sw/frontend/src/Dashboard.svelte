@@ -242,8 +242,8 @@
       }}
     >
       {canStore.obd2Status?.continuous_running
-        ? "Stop Polling"
-        : "Start Polling"}
+        ? "Stop Logging"
+        : "Start Logging"}
     </button>
     <button
       class="add-action"

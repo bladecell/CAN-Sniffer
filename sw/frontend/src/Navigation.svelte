@@ -6,8 +6,9 @@
 
   const tabs = [
     { id: "dashboard", icon: "gauge", label: "Dashboard" },
-    { id: "telemetry", icon: "chart", label: "Telemetry" },
+    { id: "recorder", icon: "route", label: "Recorder" },
     { id: "diagnostics", icon: "engine", label: "Diagnostics" },
+    { id: "telemetry", icon: "chart", label: "Telemetry" },
     { id: "can-logging", icon: "timeline-arrow", label: "CAN Logging" },
     { id: "settings", icon: "gear", label: "Settings" },
   ];
@@ -211,37 +212,62 @@
   @media (max-width: 991px) {
     .nav-wrapper {
       bottom: 20px;
+      padding: 0 10px; /* Gives a safe zone on the extreme edges of tiny screens */
+      box-sizing: border-box;
     }
+
+    .pill-nav {
+      padding: 0px 6px; /* Reduced padding on the left/right of the pill */
+      width: 100%;
+      max-width: 450px; /* Keeps it looking nice on medium tablets, but shrinks on phones */
+      box-sizing: border-box;
+    }
+
+    ul {
+      height: 70px; /* Slightly shorter to maintain nice proportions */
+      gap: 2px; /* Tiny gap to save space */
+      width: 100%;
+    }
+
+    li {
+      flex: 1; /* THE MAGIC FIX: Forces all 6 list items to share the width equally */
+      display: flex;
+    }
+
+    button {
+      height: 100%;
+      width: 100%; /* Stretches to fill the flexible li */
+      min-height: auto;
+      padding: 0; /* Remove padding to maximize touch area */
+    }
+
+    .icon {
+      /* Shrink the icon wrapper slightly so it fits inside the compressed button */
+      width: 40px;
+      height: 40px;
+    }
+
     .label {
       display: none;
     }
 
-    button {
-      height: 56px;
-      width: 64px;
-      min-height: auto;
+    /* --- EDIT MODE ADJUSTMENTS --- */
+    .edit-mode-hud {
+      height: 70px; /* Match the new UL height */
+      width: 100%;
+      gap: 8px; /* Tighter spacing */
     }
 
-    ul {
-      height: 80px;
-    }
-    .pill-nav {
-      padding: 0px 10px;
-    }
-
-    /* Prevents the Edit 'Done' button from inheriting the 64x56 square shape on mobile */
     .edit-mode-hud .hud-lock-btn {
       width: auto;
       height: auto;
       display: block;
-    }
-
-    .edit-mode-hud {
-      height: 80px; /* Matches the ul height to prevent the navbar from shrinking */
+      padding: 8px 12px;
     }
 
     .edit-mode-hud .label-text {
-      font-size: 0.75rem; /* Scales text slightly down to ensure it fits next to the button */
+      font-size: 0.7rem;
+      white-space: nowrap; /* Prevents text from awkwardly stacking */
     }
   }
 </style>

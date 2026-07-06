@@ -2,6 +2,7 @@
   import type { DtcModeData, DTCFaultProps, singleDtc } from "$lib/types";
   import { canStore } from "./lib/canStore.svelte";
   import DTCFault from "./lib/components/DTCFault.svelte";
+  import Icon from "$lib/Icon.svelte";
 
   const confirmedCodes = $derived(
     canStore?.dtc?.confirmed || {},
@@ -55,11 +56,17 @@
   </div>
 
   <div class="dtc-header-actions">
-    <button type="button" class="btn" onclick={() => canStore.requestDTC()}>
-      Request DTCs
+    <button
+      type="button"
+      class="btn btn-scan"
+      onclick={() => canStore.requestDTC()}
+    >
+      <Icon name="magnifying-glass" size={16} />
+      Scan Vehicle
     </button>
-    <button type="button" class="btn" onclick={canStore.clearDTCs}>
-      Clear DTCs
+    <button type="button" class="btn btn-clear" onclick={canStore.clearDTCs}>
+      <Icon name="trash" size={16} />
+      Clear Codes
     </button>
   </div>
 </div>
@@ -146,14 +153,45 @@
   }
 
   .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
     border: var(--pico-border-width) solid var(--pico-form-element-border-color);
     background-color: rgb(
       from var(--pico-form-element-background-color) r g b / 0.6
     );
     height: 40px;
     margin: 0;
+    padding: 0 1rem;
   }
-  .btn:focus,
+
+  .btn :global(svg) {
+    margin: 0 !important;
+  }
+
+  .btn:hover {
+    background-color: rgba(var(--color), 0.2);
+  }
+
+  .btn:active {
+    transform: scale(0.98);
+  }
+
+  .btn-scan {
+    --color: 57, 241, 166;
+    background-color: rgba(var(--color), 0.1);
+    border: none;
+    color: rgb(var(--color));
+  }
+
+  .btn-clear {
+    --color: 231, 75, 26;
+    background-color: rgba(var(--color), 0.1);
+    border: none;
+    color: rgb(var(--color));
+  }
+  /* .btn:focus,
   .btn:active,
   .btn:hover {
     border: var(--pico-border-width) solid var(--pico-form-element-color);
@@ -163,5 +201,5 @@
   .btn:active {
     background-color: rgba(255, 255, 255, 0.1) !important;
     transition: background-color 0s !important;
-  }
+  } */
 </style>
