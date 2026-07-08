@@ -222,7 +222,6 @@ export class CanStore {
     }
 
     wsCanStatus = $state<WsCanStatus>({
-        canConnected: false,
         state: "Not Connected",
         utilization: 0,
         battery_voltage: 0,
@@ -286,52 +285,50 @@ export class CanStore {
             console.warn("Invalid PID %d packet length", view.getUint32(2, true));
             return;
         }
+
         const fullPid = view.getUint32(2, true);
-        const value = view.getFloat32(6, true);
+
+        // Calculate this once for better performance
+        const rawValue = view.getFloat32(6, true);
+        const value = Number(rawValue.toFixed(2));
+
         const time = view.getUint32(10, true);
         const rate = view.getUint32(14, true);
         const isValid = view.getUint8(18) !== 0;
         const isSupported = view.getUint8(19) !== 0;
 
-        let existing = this.pids.get(fullPid);
+        const existing = this.pids.get(fullPid);
 
-        if (!existing) {
-            existing = {
-                value: value,
-                timestamp: time,
-                rate: rate,
-                valid: isValid,
-                supported: isSupported,
-                history: [],
-            };
-        } else {
-            existing.history.push({
-                value: value,
-                timestamp: time,
-            });
+        // 1. Manage the history array properly so Svelte tracks it
+        // If you plan to chart this data later, the array reference MUST change!
+        let newHistory = existing ? [...existing.history] : [];
+        newHistory.push({ value: value, lastUpdated: time });
 
-            if (existing.history.length > 1000) {
-                existing.history.shift();
-            }
-            existing.value = Number(value.toFixed(2));
-            existing.timestamp = time;
-            existing.rate = rate;
-            existing.valid = isValid;
-            existing.supported = isSupported;
+        if (newHistory.length > 1000) {
+            newHistory.shift();
         }
 
-        this.pids.set(fullPid, {
-            ...existing,
-            value: Number(value.toFixed(2)),
-            timestamp: time,
+        // 2. Create the completely new object using consistent property names!
+        const newData = {
+            value: value,
+            lastUpdated: time,
             rate: rate,
-            valid: isValid,
-            supported: isSupported,
-        });
+            isValid: isValid,         // Matches usePidData perfectly
+            isSupported: isSupported, // Matches usePidData perfectly
+            history: newHistory
+        };
 
+        // 3. Trigger the SvelteMap update
+        this.pids.set(fullPid, newData);
+
+        // 4. (Optional) If you used the "Tick Sledgehammer" fix for the universal table, 
+        // uncomment the line below to force the parent array to rebuild!
+        // this.updateTick++;
+
+        // 5. Fire your traditional listeners
         const update = {
             pid: fullPid,
-            value: Number(value.toFixed(2)),
+            value: value,
             timestamp: time,
         };
 

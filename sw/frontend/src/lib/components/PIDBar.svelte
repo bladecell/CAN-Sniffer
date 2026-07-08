@@ -34,7 +34,7 @@
 
 <article
   class="dashboard-card pid-bar-card"
-  class:disabled={!metric.supported}
+  class:disabled={!metric.isSupported}
   style="--module-accent: {metric.color};"
   {...rest}
 >

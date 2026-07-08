@@ -1,7 +1,7 @@
 <script lang="ts">
   import { canStore } from "./lib/canStore.svelte";
   import { untrack, onDestroy, onMount } from "svelte";
-  import type { DataTableProps } from "$lib/types";
+  import type { DataTableProps, PidValue, PidDefinition } from "$lib/types";
   import DataTable from "./lib/components/DataTable.svelte";
   import type { Column } from "$lib/types";
 
@@ -10,55 +10,78 @@
     console.log("Active index changed to:", activeIndex);
   });
 
+  let piddef = $derived(canStore.pidDefinitions);
+  let pidData = $derived(canStore.pids);
+
   const columns: Column[] = [
-    { label: "Module", key: "name", type: "text", width: "200px" },
-    { label: "Age", key: "age", type: "number", width: "60px" },
     {
-      label: "Voltage",
-      key: "voltage",
-      type: "number",
-      unit: "V",
-      width: "90px",
+      label: "Name",
+      key: "name",
+      type: "text",
+      width: "10%",
+      tooltipKey: "moduleDescription",
     },
-    { label: "DTC", key: "dtc", type: "code", width: "100px" },
-    { label: "Status", key: "status", type: "badge", width: "100px" },
+    { label: "PID", key: "pid", type: "code", width: "10%" },
+    {
+      label: "Value",
+      key: "value",
+      type: "number",
+      unitKey: "metricUnit",
+      width: "10%",
+    },
+    {
+      label: "Update Interval",
+      key: "updateInterval",
+      type: "number",
+      unit: "ms",
+      width: "10%",
+    },
+    {
+      label: "Supported",
+      key: "supported",
+      type: "badge",
+      width: "10%",
+      colorKey: "badgeColor",
+    },
   ];
 
-  const testData: DataTableProps[] = [
-    {
-      name: "Engine Control",
-      age: 12,
-      voltage: 12.4,
-      dtc: "P0300",
-      status: "Active",
-    },
-    {
-      name: "Body Module",
-      age: 4,
-      voltage: 12.1,
-      dtc: "B0260",
-      status: "Idle",
-    },
-    {
-      name: "Transmission",
-      age: 22,
-      voltage: 12.6,
-      dtc: "P0700",
-      status: "Warning",
-    },
-    { name: "ABS Unit", age: 8, voltage: 12.3, dtc: "C0234", status: "Active" },
-    {
-      name: "Airbag Module",
-      age: 45,
-      voltage: 12.5,
-      dtc: "B1001",
-      status: "Idle",
-    },
-  ];
+  let tableData = $derived(
+    (piddef || []).map((def) => {
+      // Instantly grab the live data for this specific row from the Map
+      // Wrapping def.pid in Number() just in case the array stores it as a string ("0x01")
+      const data = pidData?.get(Number(def.pid));
+
+      const formattedPid =
+        "0x" + Number(def.pid).toString(16).toUpperCase().padStart(2, "0");
+
+      return {
+        // --- 1. Static Data (From the Array) ---
+        name: def.name, // Matches key: "name"
+        moduleDescription: def.description, // Matches tooltipKey
+        pid: formattedPid, // Matches key: "pid"
+        metricUnit: def.unit, // Matches unitKey
+        supported: data?.isSupported ? "Yes" : "No", // Matches key: "supported"
+
+        // --- 2. Live Data (From the SvelteMap) ---
+        value: data?.value || "N/A", // Matches key: "value"
+        updateInterval: def.update_interval_ms, // Matches key: "updateInterval"
+        badgeColor: data?.isSupported
+          ? "var(--normal-color)"
+          : "var(--error-color)",
+      };
+    }),
+  );
+
+  $effect(() => {
+    if (canStore.connected) canStore.startLogging();
+  });
+  onDestroy(() => {
+    canStore.stopLogging();
+  });
 </script>
 
 <div class="data-grid-container overflow-auto">
-  <DataTable {columns} data={testData} bind:selectedRowIndex={activeIndex} />
+  <DataTable {columns} data={tableData} bind:selectedRowIndex={activeIndex} />
 </div>
 
 <style>

@@ -15,7 +15,7 @@
 
   // Compute status state purely dependent on our helper values
   const status = $derived.by((): string => {
-    if (!metric.supported) return "#6b7280";
+    if (!metric.isSupported) return "#6b7280";
     if (!metric.isValid) return "#ef4444";
 
     const pct =
@@ -28,7 +28,7 @@
 
 <article
   class="dashboard-card pid-card"
-  class:disabled={!metric.supported}
+  class:disabled={!metric.isSupported}
   style="--module-accent: {metric.color};"
   {...rest}
 >

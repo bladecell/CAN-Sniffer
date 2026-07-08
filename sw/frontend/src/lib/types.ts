@@ -69,12 +69,13 @@ export interface singleDtc {
 }
 
 export interface PidValue {
+  is?: number;
   value: number;
-  timestamp: number;
+  lastUpdated: number;
   rate: number;
-  valid: boolean;
-  supported: boolean;
-  history: { value: number; timestamp: number }[];
+  isValid: boolean;
+  isSupported: boolean;
+  history: { value: number; lastUpdated: number }[];
 }
 
 export interface WsCanStatus {
@@ -91,15 +92,34 @@ export interface Alert {
 
 export interface PidDefinition {
   pid: number;
+  id: number;
   name: string;
   description: string;
   unit: string;
   icon: string;
   color: number; // Decimal color representation
-  minValue?: number;
-  maxValue?: number;
-  updateIntervalMs?: number;
-  supported?: boolean;
+  minValue: number;
+  maxValue: number;
+  update_interval_ms: number;
+  formula: string;
+}
+
+export interface PidDataMetrics {
+  label: string;
+  id: string;
+  description: string;
+  unit: string;
+  icon: string;
+  color: string;
+  min: number;
+  max: number;
+  updateInterval: number;
+  formula: string;
+
+  currentValue: number;
+  isValid: boolean;
+  isSupported: boolean;
+  displayValue: string;
 }
 
 export interface Obd2Status {
@@ -177,6 +197,10 @@ export interface Column {
   type: ColumnType;
   unit?: string;
   width?: string;
+  unitKey?: string;
+  showTooltip?: boolean;
+  tooltipKey?: string;
+  colorKey?: string;
 }
 
 export interface DataTableProps {

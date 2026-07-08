@@ -49,7 +49,7 @@
 
 <article
   class="dashboard-card pid-gauge-card"
-  class:disabled={!metric.supported}
+  class:disabled={!metric.isSupported}
   style="--module-accent: {metric.color};"
   {...rest}
 >
@@ -71,51 +71,53 @@
       viewBox="{VB_X} {VB_Y} {VB_W} {VB_H}"
       preserveAspectRatio="xMidYMid meet"
     >
-    <!-- Track -->
-    <path
-      d={trackD}
-      fill="none"
-      stroke="var(--pico-muted-border-color)"
-      stroke-width={STROKE}
-      stroke-linecap="round"
-    />
-    <!-- Progress -->
-    <path
-      d={trackD}
-      fill="none"
-      stroke={metric.color}
-      stroke-width={STROKE}
-      stroke-linecap="round"
-      stroke-dasharray="{progress} {arcLen + 100}"
-      class="progress-path"
-    />
-    <!-- Value -->
-    <text
-      x={TX}
-      y={TY_val}
-      text-anchor="middle"
-      dominant-baseline="central"
-      class="gauge-value"
-    >
-      {metric.displayValue}
-    </text>
-    <!-- Unit -->
-    <text
-      x={TX}
-      y={TY_unit}
-      text-anchor="middle"
-      dominant-baseline="central"
-      class="gauge-unit"
-    >
-      {metric.unit}
-    </text>
-  </svg>
+      <!-- Track -->
+      <path
+        d={trackD}
+        fill="none"
+        stroke="var(--pico-muted-border-color)"
+        stroke-width={STROKE}
+        stroke-linecap="round"
+      />
+      <!-- Progress -->
+      <path
+        d={trackD}
+        fill="none"
+        stroke={metric.color}
+        stroke-width={STROKE}
+        stroke-linecap="round"
+        stroke-dasharray="{progress} {arcLen + 100}"
+        class="progress-path"
+      />
+      <!-- Value -->
+      <text
+        x={TX}
+        y={TY_val}
+        text-anchor="middle"
+        dominant-baseline="central"
+        class="gauge-value"
+      >
+        {metric.displayValue}
+      </text>
+      <!-- Unit -->
+      <text
+        x={TX}
+        y={TY_unit}
+        text-anchor="middle"
+        dominant-baseline="central"
+        class="gauge-unit"
+      >
+        {metric.unit}
+      </text>
+    </svg>
   </div>
 </article>
 
 <style>
   .pid-gauge-card {
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    transition:
+      transform 0.2s ease,
+      box-shadow 0.2s ease;
   }
 
   .gauge-svg {

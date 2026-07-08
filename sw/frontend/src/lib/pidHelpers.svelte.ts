@@ -1,28 +1,10 @@
 import { canStore } from "$lib/canStore.svelte";
-
-// Type definitions matching your canStore structure
-export interface PidDefinition {
-    pid: number | string;
-    name: string;
-    description?: string;
-    unit?: string;
-    icon?: string;
-    color: number | string;
-    minValue?: number;
-    maxValue?: number;
-}
-
-export interface PidRuntimeData {
-    value: number;
-    valid: boolean;
-    supported: boolean;
-}
-
+import { PidDataMetrics } from "$lib/types";
 /**
  * Reactive selector that extracts both static configurations and runtime 
  * stream data for a given PID from the global canStore.
  */
-export function usePidData(getPid: () => number | string) {
+export function usePidData(getPid: () => number | string): PidDataMetrics {
   // Invoke getPid() inside the derived macro so it registers as a dependency
   const definition = $derived(
     canStore.pidDefinitions?.find((c: any) => c.pid === getPid())
@@ -41,17 +23,20 @@ export function usePidData(getPid: () => number | string) {
 
   return {
     get label() { return definition?.name ?? "Metric"; },
+    get id() { return definition?.id ?? ""; },
     get description() { return definition?.description ?? ""; },
     get unit() { return definition?.unit ?? "%"; },
     get icon() { return definition?.icon ?? "gear"; },
     get color() { return formattedColor(); },
     get min() { return definition?.minValue ?? 0; },
     get max() { return definition?.maxValue ?? 100; },
-    
+    get updateInterval() { return definition?.update_interval_ms ?? 1000; },
+    get formula() { return definition?.formula ?? "NaN"; },
+
     // Live data channels
     get currentValue() { return runtime?.value ?? 0; },
-    get isValid() { return runtime?.valid ?? false; },
-    get supported() { return runtime?.supported ?? false; },
-    get displayValue() { return runtime?.supported ? runtime.value.toFixed(1) : "···"; }
+    get isValid() { return runtime?.isValid ?? false; },
+    get isSupported() { return runtime?.isSupported ?? false; },
+    get displayValue() { return runtime?.isSupported ? runtime.value.toFixed(1) : "···"; }
   };
 }
