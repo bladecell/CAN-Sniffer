@@ -1,5 +1,12 @@
-@import '@picocss/pico/css/pico.orange.min.css';
+@import "tailwindcss";
+@plugin "daisyui";
+
 @import '@fontsource/atkinson-hyperlegible';
+
+@theme {
+  --font-sans: 'Atkinson Hyperlegible', sans-serif;
+  --text-base: 1.05rem;
+}
 
 :root {
 	--pico-font-family: 'Atkinson Hyperlegible', sans-serif;

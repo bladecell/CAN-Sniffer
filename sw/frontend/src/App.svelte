@@ -43,7 +43,7 @@
 
 <Navigation bind:activeTab />
 
-<main class="main-content">
+<main class="mt-[100px] w-screen max-w-[100vw] overflow-x-clip px-[clamp(1rem,4vw,2rem)] pb-[200px]">
   {#if activeTab === "dashboard"}
     <Dashboard />
   {:else if activeTab === "recorder"}
@@ -62,17 +62,6 @@
 <ToastContainer />
 
 <style>
-  .main-content {
-    margin-top: 100px;
-    padding: clamp(1rem, 4vw, 2rem);
-    width: 100vw;
-    max-width: 100vw;
-    margin-left: 0;
-    margin-right: 0;
-    overflow-x: clip;
-    padding-bottom: 200px !important;
-  }
-
   :global(:root) {
     --shadow-s: "inset 0 1px 2px #ffffff30, 0 1px 2px #00000030, 0 1px 2px #00000015";
     --shadow-m: "inset 0 1px 2px #ffffff50, 0 2px 4px #00000030, 0 2px 3px #00000015";

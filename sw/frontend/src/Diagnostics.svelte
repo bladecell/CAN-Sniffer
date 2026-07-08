@@ -49,29 +49,38 @@
   );
 </script>
 
-<div class="dashboard-card dtc-header" style="--module-accent: {statusColor};">
-  <div class="dtc-header-title-row">
-    <h2>Diagnostic Trouble Codes</h2>
-    <p class="status-subtitle">{statusDescription}</p>
-  </div>
+<div class="card bg-base-200/50 backdrop-blur-md border border-base-300 mb-8 overflow-hidden shadow-sm hover:border-base-content/20 transition-colors" style="--module-accent: {statusColor};">
+  <div class="card-body flex flex-col md:flex-row justify-between items-start md:items-center gap-6 p-4 md:p-6 relative">
+    <!-- Optional: Adding a subtle colored left border hint based on status -->
+    <div class="absolute left-0 top-0 bottom-0 w-1" style="background-color: var(--module-accent)"></div>
+    
+    <div class="flex flex-col md:flex-row items-baseline gap-2 md:gap-6 w-full">
+      <h2 class="text-2xl font-bold m-0">Diagnostic Trouble Codes</h2>
+      <p class="text-xs md:text-sm font-bold uppercase tracking-wider m-0" style="color: var(--module-accent)">{statusDescription}</p>
+    </div>
 
-  <div class="dtc-header-actions">
-    <button
-      type="button"
-      class="btn btn-scan"
-      onclick={() => canStore.requestDTC()}
-    >
-      <Icon name="magnifying-glass" size={16} />
-      Scan Vehicle
-    </button>
-    <button type="button" class="btn btn-clear" onclick={canStore.clearDTCs}>
-      <Icon name="trash" size={16} />
-      Clear Codes
-    </button>
+    <div class="flex flex-col sm:flex-row w-full md:w-auto gap-3 min-w-fit">
+      <button
+        type="button"
+        class="btn btn-outline btn-success flex-1 sm:flex-none gap-2 hover:bg-success/20 hover:text-success hover:border-success/50"
+        onclick={() => canStore.requestDTC()}
+      >
+        <Icon name="magnifying-glass" size={16} />
+        Scan Vehicle
+      </button>
+      <button 
+        type="button" 
+        class="btn btn-outline btn-error flex-1 sm:flex-none gap-2 hover:bg-error/20 hover:text-error hover:border-error/50" 
+        onclick={canStore.clearDTCs}
+      >
+        <Icon name="trash" size={16} />
+        Clear Codes
+      </button>
+    </div>
   </div>
 </div>
 
-<div class="dtc-container">
+<div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 w-full">
   {#each activeFaults as fault}
     <DTCFault
       code={fault.code}
@@ -80,126 +89,3 @@
     />
   {/each}
 </div>
-
-<style>
-  .dtc-header {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 1.5rem; /* Space between text row and buttons */
-    width: 100%;
-    height: 150px;
-    padding: 1.5rem; /* Adjust to match your card padding */
-    margin-bottom: 2rem;
-    box-sizing: border-box;
-  }
-
-  .dashboard-card.dtc-header {
-    border: none !important;
-  }
-
-  .dashboard-card.dtc-header:hover {
-    box-shadow: none;
-    border-color: var(--pico-muted-border-color) !important;
-  }
-
-  .dtc-header-title-row {
-    display: flex;
-    align-items: baseline;
-    gap: 1.5rem;
-    flex-wrap: wrap;
-  }
-
-  .dtc-header-title-row h2 {
-    margin: 0;
-    font-size: 1.5rem;
-  }
-
-  .status-subtitle {
-    margin: 0;
-    color: var(--module-accent, #a1a1aa);
-    text-transform: uppercase;
-    font-size: 0.85rem;
-    letter-spacing: 0.05em;
-  }
-
-  .dtc-header-actions {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
-    width: 100%;
-    max-width: 400px;
-  }
-
-  .dtc-header-actions .btn {
-    width: 100%;
-  }
-
-  @media (max-width: 500px) {
-    .dtc-header-actions {
-      grid-template-columns: 1fr;
-    }
-    .dtc-header {
-      height: 250px;
-      padding: 1rem;
-    }
-  }
-
-  .dtc-container {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-    gap: 1rem;
-    width: 100%;
-  }
-
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    border: var(--pico-border-width) solid var(--pico-form-element-border-color);
-    background-color: rgb(
-      from var(--pico-form-element-background-color) r g b / 0.6
-    );
-    height: 40px;
-    margin: 0;
-    padding: 0 1rem;
-  }
-
-  .btn :global(svg) {
-    margin: 0 !important;
-  }
-
-  .btn:hover {
-    background-color: rgba(var(--color), 0.2);
-  }
-
-  .btn:active {
-    transform: scale(0.98);
-  }
-
-  .btn-scan {
-    --color: 57, 241, 166;
-    background-color: rgba(var(--color), 0.1);
-    border: none;
-    color: rgb(var(--color));
-  }
-
-  .btn-clear {
-    --color: 231, 75, 26;
-    background-color: rgba(var(--color), 0.1);
-    border: none;
-    color: rgb(var(--color));
-  }
-  /* .btn:focus,
-  .btn:active,
-  .btn:hover {
-    border: var(--pico-border-width) solid var(--pico-form-element-color);
-    outline: none !important;
-    box-shadow: none !important;
-  }
-  .btn:active {
-    background-color: rgba(255, 255, 255, 0.1) !important;
-    transition: background-color 0s !important;
-  } */
-</style>

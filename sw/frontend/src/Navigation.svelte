@@ -14,27 +14,40 @@
   ];
 </script>
 
-<div class="nav-wrapper">
-  <nav class="pill-nav" class:is-editing={dashboardStore.isEditMode}>
+<div
+  class="fixed left-0 right-0 z-50 flex justify-center pointer-events-none top-5 max-lg:top-auto max-lg:bottom-5 max-lg:px-2.5"
+>
+  <nav
+    class="pointer-events-auto px-5 max-lg:px-1.5 py-0 max-lg:h-30 rounded-[26px] bg-base-200/60 backdrop-blur-md border border-base-content/10 shadow-xl transition-all duration-300 w-auto max-lg:w-full max-lg:max-w-[450px] {dashboardStore.isEditMode
+      ? 'border-primary shadow-primary/15'
+      : ''}"
+  >
     {#if dashboardStore.isEditMode}
-      <!-- EDIT MODE OVERRIDE -->
-      <div class="edit-mode-hud">
-        <span class="live-dot"></span>
-        <span class="label-text">CANVAS UNLOCKED</span>
+      <div
+        class="flex items-center justify-center gap-3 py-2.5 h-full font-mono text-sm font-bold tracking-wider text-base-content"
+      >
+        <span
+          class="w-2.5 h-2.5 rounded-full bg-primary animate-pulse shadow-[0_0_8px_rgba(var(--p),1)]"
+        ></span>
+        <span class="max-lg:text-[0.7rem] whitespace-nowrap"
+          >CANVAS UNLOCKED</span
+        >
         <button
-          class="hud-lock-btn"
+          class="btn btn-primary btn-sm rounded-full font-extrabold text-[0.75rem] uppercase tracking-normal"
           onclick={() => (dashboardStore.isEditMode = false)}
         >
           Done Editing
         </button>
       </div>
     {:else}
-      <!-- STANDARD NAVIGATION -->
-      <ul>
+      <ul class="flex gap-2 max-lg:gap-0.5 h-full w-full m-0 p-0 list-none">
         {#each tabs as tab}
-          <li>
+          <li class="m-0 p-0 h-full max-lg:flex-1 flex">
             <button
-              class:active={activeTab === tab.id}
+              class="rounded-[26px] h-full w-full flex flex-col items-center justify-center transition-all duration-200 cursor-pointer outline-none border-none select-none lg:btn lg:btn-ghost lg:h-auto lg:py-5 lg:px-4 lg:min-h-0 {activeTab ===
+              tab.id
+                ? 'text-primary bg-white/5'
+                : 'bg-transparent'}"
               onclick={() => {
                 if (!document.startViewTransition) {
                   activeTab = tab.id;
@@ -46,10 +59,12 @@
                 });
               }}
             >
-              <div class="icon">
-                <Icon class="icon" name={tab.icon} size={26} />
+              <div
+                class="hidden max-lg:flex items-center justify-center h-12 w-12"
+              >
+                <Icon name={tab.icon} size={26} />
               </div>
-              <span class="label">{tab.label}</span>
+              <span class="max-lg:hidden text-sm font-medium">{tab.label}</span>
             </button>
           </li>
         {/each}
@@ -57,217 +72,3 @@
     {/if}
   </nav>
 </div>
-
-<style>
-  .nav-wrapper {
-    position: fixed;
-    left: 0;
-    right: 0;
-    display: flex;
-    justify-content: center;
-    z-index: 1000;
-    pointer-events: none;
-  }
-
-  .pill-nav {
-    pointer-events: auto;
-    background: var(--backdrop-filter-background) !important;
-    border: 1px solid var(--pico-muted-border-color);
-    border-radius: 26px;
-    padding: 0px 20px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-    backdrop-filter: var(--backdrop-filter);
-    -webkit-backdrop-filter: var(--backdrop-filter);
-    transition:
-      border-color 0.3s ease,
-      box-shadow 0.3s ease;
-  }
-
-  /* When editing, the entire nav bar glows orange/primary */
-  .pill-nav.is-editing {
-    border-color: var(--pico-primary);
-    box-shadow: 0 10px 30px
-      color-mix(in srgb, var(--pico-primary) 15%, transparent);
-  }
-
-  ul {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: flex;
-    gap: 8px;
-  }
-
-  li {
-    margin: 0;
-  }
-
-  button {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-items: center;
-    gap: 4px;
-    padding: 8px 16px;
-    border: none;
-    border-radius: 26px;
-    color: var(--pico-secondary);
-    background: transparent;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    outline: none;
-    box-shadow: none;
-  }
-
-  button:hover {
-    background: rgba(255, 255, 255, 0.05);
-  }
-
-  button.active {
-    color: var(--pico-primary);
-    border: none;
-    outline: none;
-    box-shadow: none;
-  }
-
-  .icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 48px;
-    width: 48px;
-  }
-
-  /* --- NEW: EDIT MODE HUD STYLES --- */
-  .edit-mode-hud {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-    padding: 10px 0;
-    color: var(--pico-color);
-    font-family: var(--pico-font-family-monospace);
-    font-size: 0.85rem;
-    font-weight: 700;
-  }
-
-  .live-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: var(--pico-primary);
-    animation: pulse-glow 1.5s infinite alternate;
-  }
-
-  .hud-lock-btn {
-    background: var(--pico-primary);
-    color: var(--pico-primary-inverse, #1a1a1a);
-    border: none;
-    padding: 8px 18px;
-    border-radius: 20px;
-    font-family: var(--pico-font-family);
-    font-weight: 800;
-    font-size: 0.75rem;
-    cursor: pointer;
-    text-transform: uppercase;
-    transition: transform 0.15s ease;
-    display: block; /* Overrides the flex-column of normal nav buttons */
-  }
-
-  .hud-lock-btn:active {
-    transform: scale(0.95);
-  }
-  .hud-lock-btn:hover {
-    background: var(--pico-primary);
-    color: var(--pico-primary-inverse, #1a1a1a);
-  }
-
-  @keyframes pulse-glow {
-    0% {
-      opacity: 1;
-      box-shadow: 0 0 1px var(--pico-primary);
-    }
-    50% {
-      opacity: 0.85;
-      box-shadow: 0 0 6px var(--pico-primary);
-    }
-    100% {
-      opacity: 1;
-      box-shadow: 0 0 8px var(--pico-primary);
-    }
-  }
-
-  @media (min-width: 992px) {
-    .nav-wrapper {
-      top: 20px;
-    }
-    .icon {
-      display: none;
-    }
-    button {
-      display: block;
-    }
-  }
-
-  @media (max-width: 991px) {
-    .nav-wrapper {
-      bottom: 20px;
-      padding: 0 10px; /* Gives a safe zone on the extreme edges of tiny screens */
-      box-sizing: border-box;
-    }
-
-    .pill-nav {
-      padding: 0px 6px; /* Reduced padding on the left/right of the pill */
-      width: 100%;
-      max-width: 450px; /* Keeps it looking nice on medium tablets, but shrinks on phones */
-      box-sizing: border-box;
-    }
-
-    ul {
-      height: 70px; /* Slightly shorter to maintain nice proportions */
-      gap: 2px; /* Tiny gap to save space */
-      width: 100%;
-    }
-
-    li {
-      flex: 1; /* THE MAGIC FIX: Forces all 6 list items to share the width equally */
-      display: flex;
-    }
-
-    button {
-      height: 100%;
-      width: 100%; /* Stretches to fill the flexible li */
-      min-height: auto;
-      padding: 0; /* Remove padding to maximize touch area */
-    }
-
-    .icon {
-      /* Shrink the icon wrapper slightly so it fits inside the compressed button */
-      width: 40px;
-      height: 40px;
-    }
-
-    .label {
-      display: none;
-    }
-
-    /* --- EDIT MODE ADJUSTMENTS --- */
-    .edit-mode-hud {
-      height: 70px; /* Match the new UL height */
-      width: 100%;
-      gap: 8px; /* Tighter spacing */
-    }
-
-    .edit-mode-hud .hud-lock-btn {
-      width: auto;
-      height: auto;
-      display: block;
-      padding: 8px 12px;
-    }
-
-    .edit-mode-hud .label-text {
-      font-size: 0.7rem;
-      white-space: nowrap; /* Prevents text from awkwardly stacking */
-    }
-  }
-</style>

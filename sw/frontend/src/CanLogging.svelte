@@ -143,26 +143,10 @@
   });
 </script>
 
-<div class="pid-container">
+<div class="flex flex-wrap gap-4 w-[400px] max-w-[500px] h-[200px] mb-8">
   <ControlsCard />
 </div>
 
-<div class="data-grid-container overflow-auto">
+<div class="p-0 m-0 overflow-auto w-full">
   <DataTable {columns} data={testData} bind:selectedRowIndex={activeIndex} />
 </div>
-
-<style>
-  .pid-container {
-    display: flex;
-    gap: 1rem;
-    flex-wrap: wrap;
-    max-width: 500px;
-    width: 400px;
-    height: 200px;
-  }
-
-  .data-grid-container {
-    padding: 0;
-    margin: 0;
-  }
-</style>

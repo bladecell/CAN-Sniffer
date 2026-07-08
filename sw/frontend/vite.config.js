@@ -1,17 +1,19 @@
 import { defineConfig } from 'vite'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
+import tailwindcss from '@tailwindcss/vite'
 import { viteSingleFile } from "vite-plugin-singlefile"
 import path from 'path';
 
 export default defineConfig({
 	plugins: [
+		tailwindcss(), // <-- 2. Add it to the plugins array
 		svelte(),
 		viteSingleFile(),
 	],
 	build: {
 		reportCompressedSize: false,
 		cssCodeSplit: false,
-		assetsInlineLimit: 100000000, // This will inline the favicon automatically
+		assetsInlineLimit: 100000000,
 	},
 	resolve: {
 		alias: {
@@ -20,7 +22,6 @@ export default defineConfig({
 	},
 	server: {
 		host: true,
-
 		proxy: {
 			'/api': {
 				target: 'http://can-sniffer.local',

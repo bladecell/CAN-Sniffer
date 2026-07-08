@@ -80,13 +80,6 @@
   });
 </script>
 
-<div class="data-grid-container overflow-auto">
+<div class="p-0 m-0 overflow-auto w-full">
   <DataTable {columns} data={tableData} bind:selectedRowIndex={activeIndex} />
 </div>
-
-<style>
-  .data-grid-container {
-    padding: 0;
-    margin: 0;
-  }
-</style>
