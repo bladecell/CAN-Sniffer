@@ -37,7 +37,7 @@ static const char* TAG = "WEB_SERVER";
 static TaskHandle_t      xWSDataStreamTaskHandle = nullptr;
 static SemaphoreHandle_t WSDataStreamSemaphore   = nullptr;
 static std::atomic<bool> wsStreamingEnabled{false};
-static bool              b_pid_stream_enabled = false;
+static std::atomic<bool> b_pid_stream_enabled{false};
 
 namespace
 {
@@ -46,7 +46,33 @@ namespace
 // 1. HTTP & PARSING UTILITIES
 // ============================================================================
 
-esp_err_t send_json_response(httpd_req_t* req, cJSON* root)
+static void url_decode_inplace(char* s)
+{
+    char* read  = s;
+    char* write = s;
+
+    while (*read)
+    {
+        if (*read == '%' && isxdigit((unsigned char)read[1]) && isxdigit((unsigned char)read[2]))
+        {
+            char hex[3] = {read[1], read[2], '\0'};
+            *write++    = (char)strtol(hex, NULL, 16);
+            read += 3;
+        }
+        else if (*read == '+')
+        {
+            *write++ = ' ';
+            read++;
+        }
+        else
+        {
+            *write++ = *read++;
+        }
+    }
+    *write = '\0';
+}
+
+static esp_err_t send_json_response(httpd_req_t* req, cJSON* root)
 {
     const char* json_str = cJSON_PrintUnformatted(root);
     if (json_str == NULL)
@@ -64,7 +90,7 @@ esp_err_t send_json_response(httpd_req_t* req, cJSON* root)
     return ret;
 }
 
-bool get_query_str(httpd_req_t* req, const char* key, char* out_val, size_t val_len)
+static bool get_query_str(httpd_req_t* req, const char* key, char* out_val, size_t val_len)
 {
     size_t len = httpd_req_get_url_query_len(req) + 1;
     if (len <= 1)
@@ -81,7 +107,7 @@ bool get_query_str(httpd_req_t* req, const char* key, char* out_val, size_t val_
     return (err == ESP_OK);
 }
 
-esp_err_t get_query_int(httpd_req_t* req, const char* key, int* value)
+static esp_err_t get_query_int(httpd_req_t* req, const char* key, int* value)
 {
     char val[32];
     if (get_query_str(req, key, val, sizeof(val)))
@@ -92,8 +118,8 @@ esp_err_t get_query_int(httpd_req_t* req, const char* key, int* value)
     return ESP_ERR_NOT_FOUND;
 }
 
-esp_err_t get_query_list(httpd_req_t* req, const char* key, char* scratch_buf, size_t scratch_len,
-                         const char* out_ptrs[], size_t max_ptrs, size_t* out_count)
+static esp_err_t get_query_list(httpd_req_t* req, const char* key, char* scratch_buf, size_t scratch_len,
+                                const char* out_ptrs[], size_t max_ptrs, size_t* out_count)
 {
     *out_count = 0;
 
@@ -115,7 +141,7 @@ esp_err_t get_query_list(httpd_req_t* req, const char* key, char* scratch_buf, s
     return (*out_count > 0) ? ESP_OK : ESP_ERR_NOT_FOUND;
 }
 
-esp_err_t get_query_bool(httpd_req_t* req, const char* key, bool* value)
+static esp_err_t get_query_bool(httpd_req_t* req, const char* key, bool* value)
 {
     char val[16];
     if (get_query_str(req, key, val, sizeof(val)))
@@ -315,7 +341,9 @@ esp_err_t p_pid_def_index_handler(httpd_req_t* req, void* arg)
     if (root == nullptr)
         return ESP_OK;  // response already sent
 
-    return send_json_response(req, m_pid_def_post(root));
+    cJSON* resp = m_pid_def_post(root);
+    cJSON_Delete(root);
+    return send_json_response(req, resp);
 }
 
 esp_err_t d_pid_def_index_handler(httpd_req_t* req, void* arg)
@@ -349,7 +377,7 @@ esp_err_t p_pid_poll_data_index_handler(httpd_req_t* req, void* arg)
     bool running = false;
     if (get_query_bool(req, "running", &running) != ESP_OK)
     {
-        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Invalid query parameter");
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid query parameter");
     }
 
     m_pid_poll_set_running(running);
@@ -387,8 +415,11 @@ esp_err_t g_sd_card_info_handler(httpd_req_t* req, void* arg)
 
 esp_err_t g_sd_card_file_tree_handler(httpd_req_t* req, void* arg)
 {
-    const char* api_route     = "/api/v1/sd_card/tree";
-    const char* relative_path = req->uri + strlen(api_route);
+    const char* api_route = "/api/v1/sd_card/tree";
+    char        path_buf[CONFIG_HTTPD_MAX_URI_LEN + 1];
+    strlcpy(path_buf, req->uri + strlen(api_route), sizeof(path_buf));
+    url_decode_inplace(path_buf);
+    const char* relative_path = path_buf;
 
     return send_json_response(req, m_sdcard_file_tree_get(relative_path));
 }
@@ -400,7 +431,10 @@ esp_err_t g_sd_card_file_read_handler(httpd_req_t* req, void* arg)
     bool download = false;
     get_query_bool(req, "download", &download);
 
-    const char* relative_path = req->uri + strlen(api_route);
+    char path_buf[CONFIG_HTTPD_MAX_URI_LEN + 1];
+    strlcpy(path_buf, req->uri + strlen(api_route), sizeof(path_buf));
+    url_decode_inplace(path_buf);
+    const char* relative_path = path_buf;
 
     char clean_path[256];
     strlcpy(clean_path, relative_path, sizeof(clean_path));
@@ -456,8 +490,11 @@ esp_err_t g_sd_card_file_read_handler(httpd_req_t* req, void* arg)
 
 esp_err_t p_file_upload_handler(httpd_req_t* req, void* arg)
 {
-    const char* api_route     = "/api/v1/sd_card/file";
-    const char* relative_path = req->uri + strlen(api_route);
+    const char* api_route = "/api/v1/sd_card/file";
+    char        path_buf[CONFIG_HTTPD_MAX_URI_LEN + 1];
+    strlcpy(path_buf, req->uri + strlen(api_route), sizeof(path_buf));
+    url_decode_inplace(path_buf);
+    const char* relative_path = path_buf;
 
     FILE*     fd  = nullptr;
     esp_err_t err = SDCard::getInstance().open_file(relative_path, "w", fd);
@@ -505,8 +542,11 @@ esp_err_t p_file_upload_handler(httpd_req_t* req, void* arg)
 
 esp_err_t d_file_delete_handler(httpd_req_t* req, void* arg)
 {
-    const char* api_route     = "/api/v1/sd_card/file";  // FIX: mapped to /file
-    const char* relative_path = req->uri + strlen(api_route);
+    const char* api_route = "/api/v1/sd_card/file";  // FIX: mapped to /file
+    char        path_buf[CONFIG_HTTPD_MAX_URI_LEN + 1];
+    strlcpy(path_buf, req->uri + strlen(api_route), sizeof(path_buf));
+    url_decode_inplace(path_buf);
+    const char* relative_path = path_buf;
 
     return send_json_response(req, m_sdcard_file_delete_delete(relative_path));
 }
@@ -550,7 +590,7 @@ esp_err_t ws_socket_handler(httpd_req_t* req)
         ESP_LOGI(TAG, "WS Client #%d Closed", sockfd);
         if (AsyncWebServer::getInstance().getActiveWSClientCount() <= 1)
         {
-            b_pid_stream_enabled = false;
+            b_pid_stream_enabled.store(false);
             wsStreamingEnabled.store(false);
         }
         return httpd_ws_send_frame(req, &ws_pkt);
@@ -577,10 +617,10 @@ esp_err_t ws_socket_handler(httpd_req_t* req)
                 switch (buf[0])
                 {
                     case WS_START_PID_STREAM:
-                        b_pid_stream_enabled = true;
+                        b_pid_stream_enabled.store(true);
                         break;
                     case WS_STOP_PID_STREAM:
-                        b_pid_stream_enabled = false;
+                        b_pid_stream_enabled.store(false);
                         break;
                     case WS_PING_REQUEST_STREAM:
                         ESP_LOGD(TAG, "WS Ping received");
@@ -599,7 +639,7 @@ esp_err_t ws_socket_handler(httpd_req_t* req)
 
 void pid_stream_callback(uint16_t pid)
 {
-    if (!b_pid_stream_enabled)
+    if (!b_pid_stream_enabled.load())
         return;
 
     static uint8_t packet[PID_STREAM_PACKET_SIZE];

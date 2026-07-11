@@ -34,6 +34,11 @@ CanDriver::~CanDriver()
         vQueueDelete(rxQueue);
         rxQueue = nullptr;
     }
+    if (txQueue != nullptr)
+    {
+        vQueueDelete(txQueue);
+        txQueue = nullptr;
+    }
 }
 
 void CanDriver::setDebugMode(bool enable)
@@ -480,6 +485,7 @@ void CanDriver::healthCheckTask()
                     {
                         ESP_LOGI(TAG, "CAN bus connected");
                         canState.store(STATE::CONNECTED);
+                        xSemaphoreGive(canConnectedSemaphore);
                         connectionChangeCb(true);
                         successfulPingsCount = 0;
                     }
@@ -492,7 +498,6 @@ void CanDriver::healthCheckTask()
             }
             case STATE::CONNECTED:
             {
-                xSemaphoreGive(canConnectedSemaphore);
                 ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
                 if (consecutiveAckErrors.load() > 3)
                 {

@@ -352,7 +352,7 @@ void AsyncWebServer::wsBroadcast(httpd_ws_frame_t* ws_pkt)
                 if (err != ESP_OK)
                 {
                     ESP_LOGE(TAG, "Failed to queue WS work");
-                    free(ctx);  // Prevent memory leak if queueing fails
+                    heap_caps_free(ctx);  // Prevent memory leak if queueing fails
                 }
             }
         }

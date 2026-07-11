@@ -653,13 +653,6 @@ cJSON* m_pid_def_post(cJSON* data)
 
     cJSON_ArrayForEach(item, data)
     {
-        cJSON* pid         = cJSON_GetObjectItem(item, "pid");
-        int    current_pid = -1;
-        if (cJSON_IsNumber(pid))
-        {
-            current_pid = pid->valueint;
-        }
-
         if (!cJSON_IsObject(item))
         {
             cJSON* fail_obj = cJSON_CreateObject();
@@ -669,6 +662,14 @@ cJSON* m_pid_def_post(cJSON* data)
 
             error_count++;
             continue;
+        }
+
+        cJSON* pid         = cJSON_GetObjectItem(item, "pid");
+        int    current_pid = -1;
+
+        if (cJSON_IsNumber(pid))
+        {
+            current_pid = pid->valueint;
         }
 
         cJSON* id       = cJSON_GetObjectItem(item, "id");
