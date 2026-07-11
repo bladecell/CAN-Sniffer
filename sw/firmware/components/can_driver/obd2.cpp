@@ -208,6 +208,12 @@ void OBD2::requestSuppPids()
         }
     }
 
+    supportedPIDsGroup.numberOfSupportedPIDs = 0;
+    for (const auto& group : supportedPIDsGroup.pidGroup)
+    {
+        supportedPIDsGroup.numberOfSupportedPIDs += __builtin_popcount(group);
+    }
+
     pidsInitialized = true;
     xSemaphoreGive(xPidConnectedSemaphore);
 }
@@ -954,7 +960,6 @@ esp_err_t OBD2::parseSupportedPIDs(const CanDriver::CanFrame& f)
                 if (supportedPIDs & (1UL << (31 - i)))
                 {
                     uint16_t supportedPID = pidGroup + 1 + i;
-                    supportedPIDsGroup.numberOfSupportedPIDs++;
 
                     if (!_pidExists(supportedPID))
                         continue;

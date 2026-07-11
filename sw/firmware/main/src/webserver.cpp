@@ -7,6 +7,7 @@
 
 #include "async_web_server.hpp"
 #include "cJSON.h"
+#include "esp_err.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -132,34 +133,34 @@ cJSON* get_validated_json_payload(httpd_req_t* req, size_t max_size)
     if (total_len <= 0)
     {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Content-Length required");
-        return NULL;
+        return nullptr;
     }
 
     if (total_len > max_size)
     {
         httpd_resp_send_err(req, HTTPD_413_CONTENT_TOO_LARGE, "JSON too large");
-        return NULL;
+        return nullptr;
     }
 
     char* buf = (char*)malloc(total_len + 1);
-    if (buf == NULL)
+    if (buf == nullptr)
     {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Server OOM");
-        return NULL;
+        return nullptr;
     }
 
     int ret = httpd_req_recv(req, buf, total_len);
     if (ret <= 0)
     {
         free(buf);
-        return NULL;
+        return nullptr;
     }
     buf[ret] = '\0';
 
     cJSON* root = cJSON_Parse(buf);
     free(buf);
 
-    if (root == NULL)
+    if (root == nullptr)
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
 
     return root;
@@ -291,10 +292,10 @@ esp_err_t g_pid_def_index_handler(httpd_req_t* req, void* arg)
 esp_err_t p_pid_def_index_handler(httpd_req_t* req, void* arg)
 {
     cJSON* root = get_validated_json_payload(req, 1024);
-    if (root == NULL)
-        return ESP_FAIL;
+    if (root == nullptr)
+        return ESP_OK;  // response already sent
 
-    return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Not Implemented");
+    return send_json_response(req, m_pid_def_post(root));
 }
 
 esp_err_t d_pid_def_index_handler(httpd_req_t* req, void* arg)

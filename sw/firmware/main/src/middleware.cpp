@@ -28,7 +28,7 @@ cJSON* single_pid_def_get(uint16_t pid)
 
     if (OBD2::getInstance().getDef(pid, def) != ESP_OK)
     {
-        return cJSON_CreateObject();
+        return nullptr;
     }
 
     cJSON* item = cJSON_CreateObject();
@@ -56,7 +56,7 @@ cJSON* single_pid_data_get(uint16_t pid)
 
     if (OBD2::getInstance().getData(pid, data) != ESP_OK)
     {
-        return cJSON_CreateObject();
+        return nullptr;
     }
 
     cJSON* item = cJSON_CreateObject();
@@ -81,7 +81,7 @@ cJSON* m_pid_def_get(int filter_id)
     if (filter_id >= 0)
     {
         cJSON* item = single_pid_def_get((uint16_t)filter_id);
-        if (item)
+        if (item != nullptr)
         {
             cJSON_AddItemToArray(data_array, item);
             count++;
@@ -93,7 +93,7 @@ cJSON* m_pid_def_get(int filter_id)
         for (const auto& pid : pids)
         {
             cJSON* item = single_pid_def_get(pid);
-            if (item)
+            if (item != nullptr)
             {
                 cJSON_AddItemToArray(data_array, item);
                 count++;
@@ -116,7 +116,7 @@ cJSON* m_pid_data_get(int filter_id)
     if (filter_id >= 0)
     {
         cJSON* item = single_pid_data_get((uint16_t)filter_id);
-        if (item)
+        if (item != nullptr)
         {
             cJSON_AddItemToArray(data_array, item);
             count++;
@@ -128,7 +128,7 @@ cJSON* m_pid_data_get(int filter_id)
         for (const auto& pid : pids)
         {
             cJSON* item = single_pid_data_get(pid);
-            if (item)
+            if (item != nullptr)
             {
                 cJSON_AddItemToArray(data_array, item);
                 count++;
@@ -690,5 +690,178 @@ esp_err_t can_status_packet_get(uint8_t* out_packet)
 
 cJSON* m_pid_def_delete(int filter_id)
 {
-    return cJSON_CreateObject();
+    cJSON*    root = cJSON_CreateObject();
+    esp_err_t err  = OBD2::getInstance().removePID(filter_id);
+
+    if (err == ESP_OK)
+    {
+        cJSON_AddStringToObject(root, "status", "success");
+    }
+    else
+    {
+        cJSON_AddStringToObject(root, "status", "error");
+        cJSON_AddStringToObject(root, "reason", esp_err_to_name(err));
+    }
+
+    return root;
+}
+
+cJSON* m_pid_def_post(cJSON* data)
+{
+    if (data == nullptr || !cJSON_IsArray(data))
+    {
+        cJSON* error_resp = cJSON_CreateObject();
+        cJSON_AddStringToObject(error_resp, "status", "error");
+        cJSON_AddStringToObject(error_resp, "reason", "Payload must be a JSON array");
+        return error_resp;
+    }
+
+    int success_count = 0;
+    int error_count   = 0;
+
+    cJSON* added_array  = cJSON_CreateArray();
+    cJSON* failed_array = cJSON_CreateArray();
+
+    cJSON* item = nullptr;
+
+    cJSON_ArrayForEach(item, data)
+    {
+        cJSON* pid         = cJSON_GetObjectItem(item, "pid");
+        int    current_pid = -1;
+        if (cJSON_IsNumber(pid))
+        {
+            current_pid = pid->valueint;
+        }
+
+        if (!cJSON_IsObject(item))
+        {
+            cJSON* fail_obj = cJSON_CreateObject();
+            cJSON_AddNullToObject(fail_obj, "pid");
+            cJSON_AddStringToObject(fail_obj, "error", esp_err_to_name(ESP_ERR_INVALID_ARG));
+            cJSON_AddItemToArray(failed_array, fail_obj);
+
+            error_count++;
+            continue;
+        }
+
+        cJSON* id       = cJSON_GetObjectItem(item, "id");
+        cJSON* mode     = cJSON_GetObjectItem(item, "mode");
+        cJSON* name     = cJSON_GetObjectItem(item, "name");
+        cJSON* formula  = cJSON_GetObjectItem(item, "formula");
+        cJSON* interval = cJSON_GetObjectItem(item, "interval");
+
+        if (!cJSON_IsNumber(id) || !cJSON_IsNumber(mode) || !cJSON_IsNumber(pid) || !cJSON_IsString(name) ||
+            !cJSON_IsString(formula) || !cJSON_IsNumber(interval))
+        {
+            cJSON* fail_obj = cJSON_CreateObject();
+            if (current_pid >= 0)
+            {
+                cJSON_AddNumberToObject(fail_obj, "pid", current_pid);
+            }
+            else
+            {
+                cJSON_AddNullToObject(fail_obj, "pid");
+            }
+            cJSON_AddStringToObject(fail_obj, "error", esp_err_to_name(ESP_ERR_INVALID_ARG));
+            cJSON_AddItemToArray(failed_array, fail_obj);
+
+            error_count++;
+            continue;
+        }
+
+        uint16_t parsed_pid = static_cast<uint16_t>(current_pid);
+
+        cJSON* len      = cJSON_GetObjectItem(item, "len");
+        cJSON* unit     = cJSON_GetObjectItem(item, "unit");
+        cJSON* desc     = cJSON_GetObjectItem(item, "desc");
+        cJSON* minV     = cJSON_GetObjectItem(item, "minV");
+        cJSON* maxV     = cJSON_GetObjectItem(item, "maxV");
+        cJSON* priority = cJSON_GetObjectItem(item, "priority");
+        cJSON* color    = cJSON_GetObjectItem(item, "color");
+        cJSON* icon     = cJSON_GetObjectItem(item, "icon");
+
+        uint8_t parsed_len = (parsed_pid > 0xFF) ? 3 : 2;
+
+        std::string parsed_unit     = "";
+        std::string parsed_desc     = "";
+        float       parsed_minV     = 0.0f;
+        float       parsed_maxV     = 0.0f;
+        uint8_t     parsed_priority = 0;
+        uint32_t    parsed_color    = 0x4EB31B;
+        std::string parsed_icon     = "";
+
+        if (cJSON_IsNumber(len))
+        {
+            parsed_len = static_cast<uint8_t>(len->valueint);
+        }
+        if (cJSON_IsString(unit))
+        {
+            parsed_unit = std::string(unit->valuestring);
+        }
+        if (cJSON_IsString(desc))
+        {
+            parsed_desc = std::string(desc->valuestring);
+        }
+        if (cJSON_IsNumber(minV))
+        {
+            parsed_minV = static_cast<float>(minV->valuedouble);
+        }
+        if (cJSON_IsNumber(maxV))
+        {
+            parsed_maxV = static_cast<float>(maxV->valuedouble);
+        }
+        if (cJSON_IsNumber(priority))
+        {
+            parsed_priority = static_cast<uint8_t>(priority->valueint);
+        }
+        if (cJSON_IsNumber(color))
+        {
+            parsed_color = static_cast<uint32_t>(color->valuedouble);
+        }
+        if (cJSON_IsString(icon))
+        {
+            parsed_icon = std::string(icon->valuestring);
+        }
+
+        esp_err_t err = OBD2::getInstance().addPID(
+            static_cast<uint32_t>(id->valuedouble), static_cast<uint8_t>(mode->valueint), parsed_pid, parsed_len,
+            std::string(name->valuestring), parsed_unit, parsed_desc, std::string(formula->valuestring), parsed_minV,
+            parsed_maxV, parsed_priority, static_cast<uint16_t>(interval->valueint), parsed_color, parsed_icon);
+
+        if (err == ESP_OK)
+        {
+            cJSON_AddItemToArray(added_array, cJSON_CreateNumber(parsed_pid));
+            success_count++;
+        }
+        else
+        {
+            cJSON* fail_obj = cJSON_CreateObject();
+            cJSON_AddNumberToObject(fail_obj, "pid", parsed_pid);
+            cJSON_AddStringToObject(fail_obj, "error", esp_err_to_name(err));
+            cJSON_AddItemToArray(failed_array, fail_obj);
+            error_count++;
+        }
+    }
+
+    cJSON* root = cJSON_CreateObject();
+
+    cJSON_AddItemToObject(root, "added", added_array);
+    cJSON_AddItemToObject(root, "failed", failed_array);
+
+    if (error_count > 0 && success_count == 0)
+    {
+        cJSON_AddStringToObject(root, "status", "error");
+        cJSON_AddStringToObject(root, "reason", "All items failed validation or hardware addition.");
+    }
+    else if (error_count > 0)
+    {
+        cJSON_AddStringToObject(root, "status", "partial_success");
+        cJSON_AddStringToObject(root, "reason", "Some items were added, but others encountered errors.");
+    }
+    else
+    {
+        cJSON_AddStringToObject(root, "status", "success");
+    }
+
+    return root;
 }

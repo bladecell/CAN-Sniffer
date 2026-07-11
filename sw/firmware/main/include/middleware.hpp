@@ -20,6 +20,7 @@ struct PIDData_t;
 cJSON*    m_pid_def_get(int filter_id);
 cJSON*    m_pid_data_get(int filter_id);
 cJSON*    m_pid_def_delete(int filter_id);
+cJSON*    m_pid_def_post(cJSON* data);
 void      m_pid_poll_set_running(bool running);
 cJSON*    m_can_bus_get();
 cJSON*    m_obdii_get();
