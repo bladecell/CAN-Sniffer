@@ -42,6 +42,7 @@ cJSON* single_pid_def_get(uint16_t pid)
     cJSON_AddStringToObject(item, "description", def.description.c_str());
     cJSON_AddNumberToObject(item, "minValue", def.minValue);
     cJSON_AddNumberToObject(item, "maxValue", def.maxValue);
+    cJSON_AddNumberToObject(item, "priority", def.priority);
     cJSON_AddNumberToObject(item, "update_interval_ms", def.updateInterval_ms);
     cJSON_AddNumberToObject(item, "color", def.color);
     cJSON_AddStringToObject(item, "icon", def.icon.c_str());
@@ -271,80 +272,6 @@ cJSON* m_sdcard_file_tree_get(const char* path)
     }
 
     return root;
-}
-
-esp_err_t m_sdcard_file_open_file(const char* path, const char* mode, FILE*& fd)
-{
-    if (mode == nullptr || path == nullptr)
-        return ESP_ERR_INVALID_ARG;
-
-    SDCard::SDInfo sd_info;
-    auto&          sd = SDCard::getInstance();
-    sd.get_sd_info(sd_info);
-
-    if (!sd_info.is_mounted)
-    {
-        ESP_LOGE("SD", "SD Card not mounted");
-        return ESP_FAIL;
-    }
-
-    if (strstr(path, "..") || strlen(path) <= 1)
-    {
-        return ESP_FAIL;
-    }
-
-    const size_t buffer_size = PATH_MAX;
-    auto         filepath    = std::make_unique<char[]>(buffer_size);
-
-    if (strlen(sd_info.mount_path) + strlen(path) >= buffer_size)
-    {
-        ESP_LOGE("HTTP", "Path is too long to fit in buffer!");
-        return ESP_FAIL;
-    }
-
-    strlcpy(filepath.get(), sd_info.mount_path, buffer_size);
-    strlcat(filepath.get(), path, buffer_size);
-
-    fd = fopen(filepath.get(), mode);
-
-    if (!fd)
-    {
-        ESP_LOGE("HTTP", "Failed to open file '%s' in mode '%s'", filepath.get(), mode);
-        return ESP_FAIL;
-    }
-
-    return ESP_OK;
-}
-
-esp_err_t m_sdcard_file_close_file(FILE* fd)
-{
-    if (fd != nullptr)
-    {
-        fclose(fd);
-        return ESP_OK;
-    }
-    return ESP_FAIL;
-}
-
-esp_err_t m_sdcard_file_write_chunk(FILE* fd, const char* chunk, size_t len)
-{
-    if (fd == nullptr)
-        return ESP_FAIL;
-
-    if (fwrite(chunk, 1, len, fd) != len)
-    {
-        return ESP_FAIL;
-    }
-
-    return ESP_OK;
-}
-
-size_t m_sdcard_file_read_chunk(FILE* fd, char* chunk, size_t max_len)
-{
-    if (fd == nullptr)
-        return 0;
-
-    return fread(chunk, 1, max_len, fd);
 }
 
 cJSON* m_sdcard_file_delete_delete(const char* path)

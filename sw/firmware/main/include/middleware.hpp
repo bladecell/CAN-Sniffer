@@ -17,28 +17,24 @@ struct PIDData_t;
 #define CAN_STATUS_PACKET_SIZE 12
 
 // Middlewares
-cJSON*    m_pid_def_get(int filter_id);
-cJSON*    m_pid_data_get(int filter_id);
-cJSON*    m_pid_def_delete(int filter_id);
-cJSON*    m_pid_def_post(cJSON* data);
-void      m_pid_poll_set_running(bool running);
-cJSON*    m_can_bus_get();
-cJSON*    m_obdii_get();
-cJSON*    m_system_get();
-cJSON*    m_sdcard_info_get();
-cJSON*    m_sdcard_file_tree_get(const char* path);
-esp_err_t m_sdcard_file_open_file(const char* path, const char* mode, FILE*& fd);
-esp_err_t m_sdcard_file_close_file(FILE* fd);
-esp_err_t m_sdcard_file_write_chunk(FILE* fd, const char* chunk, size_t len);
-size_t    m_sdcard_file_read_chunk(FILE* fd, char* chunk, size_t max_len);
-cJSON*    m_sdcard_file_delete_delete(const char* path);
-cJSON*    m_vin_get();
-cJSON*    m_dtc_get(int mode);
-cJSON*    m_dtc_description_get(const char* target_codes[], size_t count);
-cJSON*    m_vin_request();
-cJSON*    m_dtc_request(int mode);
-cJSON*    m_clear_dtc_request();
-cJSON*    m_static_pid_request();
+cJSON* m_pid_def_get(int filter_id);
+cJSON* m_pid_data_get(int filter_id);
+cJSON* m_pid_def_delete(int filter_id);
+cJSON* m_pid_def_post(cJSON* data);
+void   m_pid_poll_set_running(bool running);
+cJSON* m_can_bus_get();
+cJSON* m_obdii_get();
+cJSON* m_system_get();
+cJSON* m_sdcard_info_get();
+cJSON* m_sdcard_file_tree_get(const char* path);
+cJSON* m_sdcard_file_delete_delete(const char* path);
+cJSON* m_vin_get();
+cJSON* m_dtc_get(int mode);
+cJSON* m_dtc_description_get(const char* target_codes[], size_t count);
+cJSON* m_vin_request();
+cJSON* m_dtc_request(int mode);
+cJSON* m_clear_dtc_request();
+cJSON* m_static_pid_request();
 
 cJSON* m_pid_def_set(cJSON* payload);
 cJSON* m_settings_wifi_get();

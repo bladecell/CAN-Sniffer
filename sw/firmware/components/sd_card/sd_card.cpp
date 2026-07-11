@@ -4,7 +4,6 @@
 #include <errno.h>
 #include <limits.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <unistd.h>
 
 #include <cstddef>
@@ -346,17 +345,17 @@ esp_err_t SDCard::delete_directory(const char* path)
     return ESP_OK;
 }
 
-esp_err_t SDCard::write_file(const char* filename, const void* data, size_t size, bool append)
+esp_err_t SDCard::write_file(const char* path, const void* data, size_t size, bool append)
 {
     if (data == nullptr || size == 0)
         return ESP_ERR_INVALID_ARG;
 
     const char* mode = append ? "a" : "w";
 
-    FILE* f = fopen(filename, mode);
+    FILE* f = fopen(path, mode);
     if (f == nullptr)
     {
-        ESP_LOGE(TAG, "Failed to open file %s in mode '%s'", filename, mode);
+        ESP_LOGE(TAG, "Failed to open file %s in mode '%s'", path, mode);
         return ESP_FAIL;
     }
 
@@ -365,30 +364,30 @@ esp_err_t SDCard::write_file(const char* filename, const void* data, size_t size
     fflush(f);
     if (fsync(fileno(f)) != 0)
     {
-        ESP_LOGE(TAG, "Hardware sync failed for %s!", filename);
+        ESP_LOGE(TAG, "Hardware sync failed for %s!", path);
     }
 
     fclose(f);
 
     if (written != size)
     {
-        ESP_LOGE(TAG, "Write incomplete! Wrote %zu/%zu bytes to %s", written, size, filename);
+        ESP_LOGE(TAG, "Write incomplete! Wrote %zu/%zu bytes to %s", written, size, path);
         return ESP_FAIL;
     }
 
-    ESP_LOGI(TAG, "Successfully %s %zu bytes to %s", append ? "appended" : "wrote", size, filename);
+    ESP_LOGI(TAG, "Successfully %s %zu bytes to %s", append ? "appended" : "wrote", size, path);
     return ESP_OK;
 }
 
-esp_err_t SDCard::read_file(const char* filename, void* buffer, size_t max_size, size_t* bytes_read)
+esp_err_t SDCard::read_file(const char* path, void* buffer, size_t max_size, size_t* bytes_read)
 {
     if (buffer == nullptr || max_size == 0)
         return ESP_ERR_INVALID_ARG;
 
-    FILE* f = fopen(filename, "r");
+    FILE* f = fopen(path, "r");
     if (f == nullptr)
     {
-        ESP_LOGE(TAG, "Failed to open file for reading: %s", filename);
+        ESP_LOGE(TAG, "Failed to open file for reading: %s", path);
         return ESP_FAIL;
     }
 
@@ -401,7 +400,7 @@ esp_err_t SDCard::read_file(const char* filename, void* buffer, size_t max_size,
         *bytes_read = read_len;
     }
 
-    ESP_LOGI(TAG, "Successfully read %zu bytes from %s", read_len, filename);
+    ESP_LOGI(TAG, "Successfully read %zu bytes from %s", read_len, path);
     return ESP_OK;
 }
 
@@ -477,4 +476,96 @@ void SDCard::get_absolute_path(const char* relative_path, char* out_buf, size_t 
         const char* p = (relative_path[0] == '/') ? relative_path + 1 : relative_path;
         snprintf(out_buf, out_size, "%s/%s", this->mount_path, p);
     }
+}
+
+esp_err_t SDCard::open_file(const char* path, const char* mode, FILE*& fd)
+{
+    if (mode == nullptr || path == nullptr)
+        return ESP_ERR_INVALID_ARG;
+
+    if (!is_mounted())
+    {
+        ESP_LOGE(TAG, "SD Card not mounted");
+        return ESP_FAIL;
+    }
+
+    if (strstr(path, "..") || strlen(path) <= 1)
+    {
+        return ESP_FAIL;
+    }
+
+    const size_t buffer_size = PATH_MAX;
+    auto         filepath    = std::make_unique<char[]>(buffer_size);
+
+    if (strlen(mount_path) + strlen(path) >= buffer_size)
+    {
+        ESP_LOGE(TAG, "Path is too long to fit in buffer!");
+        return ESP_ERR_NO_MEM;
+    }
+
+    strlcpy(filepath.get(), mount_path, buffer_size);
+    strlcat(filepath.get(), path, buffer_size);
+
+    fd = fopen(filepath.get(), mode);
+
+    if (!fd)
+    {
+        ESP_LOGE(TAG, "Failed to open file '%s' in mode '%s'", filepath.get(), mode);
+        return ESP_FAIL;
+    }
+
+    return ESP_OK;
+}
+
+esp_err_t SDCard::close_file(FILE* fd)
+{
+    if (fd != nullptr)
+    {
+        fclose(fd);
+        return ESP_OK;
+    }
+    return ESP_FAIL;
+}
+
+esp_err_t SDCard::file_write_chunk(FILE* fd, const char* chunk, size_t len)
+{
+    if (fd == nullptr)
+        return ESP_FAIL;
+
+    if (fwrite(chunk, 1, len, fd) != len)
+    {
+        return ESP_FAIL;
+    }
+
+    return ESP_OK;
+}
+
+size_t SDCard::file_read_chunk(FILE* fd, char* chunk, size_t max_len)
+{
+    if (fd == nullptr)
+        return 0;
+
+    return fread(chunk, 1, max_len, fd);
+}
+
+esp_err_t SDCard::get_file_stat(const char* path, struct stat* st)
+{
+    if (path == nullptr || st == nullptr)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (stat(path, st) != 0)
+    {
+        if (errno == ENOENT)
+        {
+            ESP_LOGD(TAG, "File does not exist: %s", path);
+            return ESP_ERR_NOT_FOUND;
+        }
+
+        ESP_LOGE(TAG, "Failed to stat file %s (errno: %d)", path, errno);
+        return ESP_FAIL;
+    }
+
+    return ESP_OK;
 }
