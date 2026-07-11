@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/idf_additions.h"
 #include "freertos/semphr.h"
@@ -54,8 +56,8 @@ public:
     {
         if (xSemaphoreTake(lock, portMAX_DELAY))
         {
-            int         newSize = 0;
-            PollRequest tempHeap[NUMBER_OF_ITEMS];
+            int  newSize  = 0;
+            auto tempHeap = std::make_unique<PollRequest[]>(NUMBER_OF_ITEMS);
 
             // Keep only the non-recurring (Static/One-Shot) items
             for (int i = 0; i < size; i++)
