@@ -16,7 +16,7 @@
 #include "http_parser.h"
 #include "middleware.hpp"
 #include "obd2.hpp"
-#include "web_assets.h"
+#include "sd_card.hpp"
 #include "wifi.hpp"
 
 struct RouteDef
@@ -194,11 +194,31 @@ static void set_content_type_from_file(httpd_req_t* req, const char* filepath)
 
 esp_err_t index_handler(httpd_req_t* req, void* arg)
 {
-    httpd_resp_set_type(req, "text/html");
-    if (INDEX_HTML_IS_GZ)
-        httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
+    FILE* f = fopen("/www/index.html.gz", "rb");
+    if (f == nullptr)
+    {
+        ESP_LOGE("Web", "Failed to open /www/index.html.gz");
 
-    return httpd_resp_send(req, (const char*)INDEX_HTML, INDEX_HTML_LEN);
+        return httpd_resp_send_404(req);
+    }
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
+
+    char   chunk[1024];
+    size_t chunksize = 0;
+
+    while ((chunksize = fread(chunk, 1, sizeof(chunk), f)) > 0)
+    {
+        if (httpd_resp_send_chunk(req, chunk, chunksize) != ESP_OK)
+        {
+            fclose(f);
+            return ESP_FAIL;
+        }
+    }
+
+    fclose(f);
+
+    return httpd_resp_send_chunk(req, nullptr, 0);
 }
 
 esp_err_t g_system_index_handler(httpd_req_t* req, void* arg)
@@ -392,7 +412,7 @@ esp_err_t g_sd_card_file_read_handler(httpd_req_t* req, void* arg)
         return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Invalid path");
 
     FILE*     fd  = nullptr;
-    esp_err_t err = m_sdcard_file_open_file(clean_path, "r", fd);
+    esp_err_t err = SDCard::getInstance().open_file(clean_path, "r", fd);
 
     if (err != ESP_OK || !fd)
     {
@@ -419,17 +439,17 @@ esp_err_t g_sd_card_file_read_handler(httpd_req_t* req, void* arg)
     char   chunk[1024];
     size_t read_bytes;
 
-    while ((read_bytes = m_sdcard_file_read_chunk(fd, chunk, sizeof(chunk))) > 0)
+    while ((read_bytes = SDCard::getInstance().file_read_chunk(fd, chunk, sizeof(chunk))) > 0)
     {
         if (httpd_resp_send_chunk(req, chunk, read_bytes) != ESP_OK)
         {
-            m_sdcard_file_close_file(fd);
+            SDCard::getInstance().close_file(fd);
             return ESP_FAIL;
         }
     }
 
     httpd_resp_send_chunk(req, NULL, 0);
-    m_sdcard_file_close_file(fd);
+    SDCard::getInstance().close_file(fd);
 
     return ESP_OK;
 }
@@ -440,7 +460,7 @@ esp_err_t p_file_upload_handler(httpd_req_t* req, void* arg)
     const char* relative_path = req->uri + strlen(api_route);
 
     FILE*     fd  = nullptr;
-    esp_err_t err = m_sdcard_file_open_file(relative_path, "w", fd);
+    esp_err_t err = SDCard::getInstance().open_file(relative_path, "w", fd);
 
     if (err != ESP_OK || !fd)
     {
@@ -459,14 +479,14 @@ esp_err_t p_file_upload_handler(httpd_req_t* req, void* arg)
             if (received == HTTPD_SOCK_ERR_TIMEOUT)
                 continue;
 
-            m_sdcard_file_close_file(fd);
+            SDCard::getInstance().close_file(fd);
             m_sdcard_file_delete_delete(relative_path);
             return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Upload timeout");
         }
 
-        if (m_sdcard_file_write_chunk(fd, chunk, received) != ESP_OK)
+        if (SDCard::getInstance().file_write_chunk(fd, chunk, received) != ESP_OK)
         {
-            m_sdcard_file_close_file(fd);
+            SDCard::getInstance().close_file(fd);
             m_sdcard_file_delete_delete(relative_path);
             ESP_LOGE(TAG, "Disk write failed!");
             return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Write error");
@@ -475,7 +495,7 @@ esp_err_t p_file_upload_handler(httpd_req_t* req, void* arg)
         remaining -= received;
     }
 
-    m_sdcard_file_close_file(fd);
+    SDCard::getInstance().close_file(fd);
 
     cJSON* root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "status", "success");
@@ -699,10 +719,10 @@ static void register_routes()
 esp_err_t setup_web_server()
 {
     AsyncWebServer::Config server_config;
-    server_config.async_worker_task_num         = 4;
+    server_config.async_worker_task_num         = 6;
     server_config.max_open_sockets              = 7;
     server_config.async_worker_task_priority    = 5;
-    server_config.async_worker_stack_size       = 32768;
+    server_config.async_worker_stack_size       = 8192;
     server_config.httpd_config.uri_match_fn     = httpd_uri_match_wildcard;
     server_config.httpd_config.max_uri_handlers = 32;
 

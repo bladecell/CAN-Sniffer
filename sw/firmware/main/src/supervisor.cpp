@@ -2,9 +2,12 @@
 
 #include "supervisor.hpp"
 
+#include <cstring>
+
 #include "battery.hpp"
 #include "can_driver.hpp"
 #include "esp_err.h"
+#include "esp_littlefs.h"
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_system.h"
@@ -23,8 +26,6 @@ static const char* TAG = "SUPERVISOR";
 
 SUPERVISOR::SUPERVISOR()
 {
-    // initialization code
-    setup_functions[5] = setup_web_server;
 }
 SUPERVISOR::~SUPERVISOR()
 {
@@ -137,6 +138,51 @@ void SUPERVISOR::task()
 }
 
 // ----- component setup functions --------------------------------------------------------------
+
+esp_err_t SUPERVISOR::setup_flash_filesystem()
+{
+    // 1. Mount WWW Partition (Read-Only)
+    esp_vfs_littlefs_conf_t www_conf = {.base_path              = "/www",
+                                        .partition_label        = "www",
+                                        .partition              = nullptr,
+                                        .format_if_mount_failed = false,
+                                        .read_only              = true,
+                                        .dont_mount             = false,
+                                        .grow_on_mount          = false};
+
+    esp_err_t err = esp_vfs_littlefs_register(&www_conf);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE("FS", "Failed to mount WWW partition. Did you flash it?");
+        return err;
+    }
+    ESP_LOGI("FS", "WWW partition mounted successfully at /www");
+
+    // 2. Mount Storage Partition (Read/Write)
+    esp_vfs_littlefs_conf_t storage_conf = {.base_path              = "/storage",
+                                            .partition_label        = "storage",
+                                            .partition              = nullptr,
+                                            .format_if_mount_failed = true,
+                                            .read_only              = false,
+                                            .dont_mount             = false,
+                                            .grow_on_mount          = true};
+
+    err = esp_vfs_littlefs_register(&storage_conf);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE("FS", "Failed to mount Storage partition");
+        return err;
+    }
+    ESP_LOGI("FS", "Storage partition mounted successfully at /storage");
+
+    return ESP_OK;
+}
+
+esp_err_t SUPERVISOR::setup_webserver()
+{
+    return setup_web_server();
+}
+
 esp_err_t SUPERVISOR::setup_wifi()
 {
     // Configure
@@ -198,19 +244,19 @@ esp_err_t SUPERVISOR::setup_obd()
             if (!connected)
                 return;
 
-            auto& can = OBD2::getInstance();
+            auto& obd2 = OBD2::getInstance();
 
-            esp_err_t err = can.requestVIN();
+            esp_err_t err = obd2.requestVIN();
             if (err != ESP_OK)
             {
                 ESP_LOGW("SUPERVISOR", "VIN request failed: %s", esp_err_to_name(err));
             }
 
-            err = can.requestDTC(MODE_DTCS);
+            err = obd2.requestDTC(MODE_DTCS);
             if (err == ESP_OK)
-                err = can.requestDTC(MODE_PENDING_DTCS);
+                err = obd2.requestDTC(MODE_PENDING_DTCS);
             // if (err == ESP_OK)
-            //     err = can.requestDTC(MODE_PERMANENT_DTCS);
+            //     err = obd2.requestDTC(MODE_PERMANENT_DTCS);
 
             ESP_LOGI("SUPERVISOR", "DTC request sent, waiting for response...");
 
@@ -354,4 +400,208 @@ void SUPERVISOR::restart_system()
 float SUPERVISOR::get_battery_voltage() const
 {
     return battery_read();
+}
+
+esp_err_t SUPERVISOR::save_pid_def_to_json(const char* path)
+{
+    cJSON* rootArray = cJSON_CreateArray();
+
+    auto& obd2 = OBD2::getInstance();
+
+    std::vector<uint16_t> pid_keys = obd2.getPIDs();
+
+    for (const auto& pid : pid_keys)
+    {
+        PIDDefinitionData def  = {};
+        cJSON*            item = cJSON_CreateObject();
+
+        obd2.getDef(pid, def);
+
+        cJSON_AddNumberToObject(item, "id", def.id);
+        cJSON_AddNumberToObject(item, "mode", def.mode);
+        cJSON_AddNumberToObject(item, "pid", def.pid);
+        cJSON_AddNumberToObject(item, "len", def.len);
+        cJSON_AddStringToObject(item, "name", def.name.c_str());
+        cJSON_AddStringToObject(item, "unit", def.unit.c_str());
+        cJSON_AddStringToObject(item, "desc", def.description.c_str());
+        cJSON_AddStringToObject(item, "formula", def.formula.c_str());
+        cJSON_AddNumberToObject(item, "minV", def.minValue);
+        cJSON_AddNumberToObject(item, "maxV", def.maxValue);
+        cJSON_AddNumberToObject(item, "priority", def.priority);
+        cJSON_AddNumberToObject(item, "interval", def.updateInterval_ms);
+        cJSON_AddNumberToObject(item, "color", def.color);
+        cJSON_AddStringToObject(item, "icon", def.icon.c_str());
+
+        cJSON_AddItemToArray(rootArray, item);
+    }
+
+    char* jsonString = cJSON_PrintUnformatted(rootArray);
+    cJSON_Delete(rootArray);
+
+    if (jsonString == nullptr)
+    {
+        return ESP_ERR_NO_MEM;
+    }
+
+    // Write to the SD card
+    esp_err_t ret = SDCard::getInstance().write_file(path, jsonString, strlen(jsonString), false);
+
+    free(jsonString);
+
+    return ret;
+}
+
+esp_err_t SUPERVISOR::load_pid_def_from_json(const char* path)
+{
+    struct stat st;
+    esp_err_t   err = SDCard::getInstance().get_file_stat(path, &st);
+
+    if (err == ESP_ERR_NOT_FOUND)
+    {
+        ESP_LOGW(TAG, "JSON file not found (expected on first boot): %s", path);
+        return ESP_OK;
+    }
+    else if (err != ESP_OK)
+    {
+        return err;
+    }
+
+    size_t file_size = st.st_size;
+    if (file_size == 0)
+    {
+        ESP_LOGW(TAG, "JSON file is empty: %s", path);
+        return ESP_OK;
+    }
+
+    char* buffer = (char*)heap_caps_malloc(file_size + 1, MALLOC_CAP_SPIRAM);
+    if (buffer == nullptr)
+    {
+        // Fallback to internal memory if SPIRAM routing fails
+        buffer = (char*)malloc(file_size + 1);
+        if (buffer == nullptr)
+        {
+            ESP_LOGE(TAG, "Failed to allocate %zu bytes for JSON file", file_size + 1);
+            return ESP_ERR_NO_MEM;
+        }
+    }
+
+    size_t bytes_read = 0;
+    err               = SDCard::getInstance().read_file(path, buffer, file_size, &bytes_read);
+
+    if (err != ESP_OK)
+    {
+        free(buffer);
+        return err;
+    }
+
+    buffer[bytes_read] = '\0';
+
+    cJSON* rootArray = cJSON_Parse(buffer);
+
+    free(buffer);
+
+    if (rootArray == nullptr || !cJSON_IsArray(rootArray))
+    {
+        ESP_LOGE(TAG, "Failed to parse JSON, or root is not an array");
+        cJSON_Delete(rootArray);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    auto&     obd2        = OBD2::getInstance();
+    cJSON*    item        = nullptr;
+    esp_err_t add_pid_err = ESP_OK;
+
+    cJSON_ArrayForEach(item, rootArray)
+    {
+        if (!cJSON_IsObject(item))
+            continue;
+
+        cJSON* id       = cJSON_GetObjectItem(item, "id");
+        cJSON* mode     = cJSON_GetObjectItem(item, "mode");
+        cJSON* pid      = cJSON_GetObjectItem(item, "pid");
+        cJSON* name     = cJSON_GetObjectItem(item, "name");
+        cJSON* formula  = cJSON_GetObjectItem(item, "formula");
+        cJSON* interval = cJSON_GetObjectItem(item, "interval");
+
+        if (!cJSON_IsNumber(id) || !cJSON_IsNumber(mode) || !cJSON_IsNumber(pid) || !cJSON_IsString(name) ||
+            !cJSON_IsString(formula) || !cJSON_IsNumber(interval))
+        {
+            ESP_LOGW(TAG, "Skipping malformed PID entry in JSON");
+            continue;
+        }
+
+        uint16_t parsed_pid = static_cast<uint16_t>(pid->valueint);
+
+        cJSON* len      = cJSON_GetObjectItem(item, "len");
+        cJSON* unit     = cJSON_GetObjectItem(item, "unit");
+        cJSON* desc     = cJSON_GetObjectItem(item, "desc");
+        cJSON* minV     = cJSON_GetObjectItem(item, "minV");
+        cJSON* maxV     = cJSON_GetObjectItem(item, "maxV");
+        cJSON* priority = cJSON_GetObjectItem(item, "priority");
+        cJSON* color    = cJSON_GetObjectItem(item, "color");
+        cJSON* icon     = cJSON_GetObjectItem(item, "icon");
+
+        uint8_t     parsed_len      = (parsed_pid > 0xFF) ? 3 : 2;
+        std::string parsed_unit     = "";
+        std::string parsed_desc     = "";
+        float       parsed_minV     = 0.0f;
+        float       parsed_maxV     = 0.0f;
+        uint8_t     parsed_priority = 0;
+        uint32_t    parsed_color    = 0x4EB31B;
+        std::string parsed_icon     = "";
+
+        if (cJSON_IsNumber(len))
+        {
+            parsed_len = static_cast<uint8_t>(len->valueint);
+        }
+        if (cJSON_IsString(unit))
+        {
+            parsed_unit = std::string(unit->valuestring);
+        }
+        if (cJSON_IsString(desc))
+        {
+            parsed_desc = std::string(desc->valuestring);
+        }
+        if (cJSON_IsNumber(minV))
+        {
+            parsed_minV = static_cast<float>(minV->valuedouble);
+        }
+        if (cJSON_IsNumber(maxV))
+        {
+            parsed_maxV = static_cast<float>(maxV->valuedouble);
+        }
+        if (cJSON_IsNumber(priority))
+        {
+            parsed_priority = static_cast<uint8_t>(priority->valueint);
+        }
+        if (cJSON_IsNumber(color))
+        {
+            parsed_color = static_cast<uint32_t>(color->valuedouble);
+        }
+        if (cJSON_IsString(icon))
+        {
+            parsed_icon = std::string(icon->valuestring);
+        }
+
+        esp_err_t ret = obd2.addPID(static_cast<uint32_t>(id->valuedouble), static_cast<uint8_t>(mode->valueint),
+                                    parsed_pid, parsed_len, std::string(name->valuestring), parsed_unit, parsed_desc,
+                                    std::string(formula->valuestring), parsed_minV, parsed_maxV, parsed_priority,
+                                    static_cast<uint16_t>(interval->valueint), parsed_color, parsed_icon);
+        if (ret != ESP_OK)
+        {
+            add_pid_err = ret;
+        }
+    }
+
+    cJSON_Delete(rootArray);
+
+    if (add_pid_err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Loaded PID definitions from %s with errors: %s", path, esp_err_to_name(add_pid_err));
+    }
+    else
+    {
+        ESP_LOGI(TAG, "Successfully loaded PID definitions from %s", path);
+    }
+    return add_pid_err;
 }

@@ -45,6 +45,9 @@ public:
         return eState;
     }
 
+    esp_err_t save_pid_def_to_json(const char* path);
+    esp_err_t load_pid_def_from_json(const char* path);
+
 private:
     SUPERVISOR(const SUPERVISOR&)            = delete;
     SUPERVISOR& operator=(const SUPERVISOR&) = delete;
@@ -55,14 +58,21 @@ private:
     SUPERVISOR::State eState = State::UNINITIALIZED;
 
     // component initializers
+    static esp_err_t setup_flash_filesystem();
     static esp_err_t setup_wifi();
     static esp_err_t setup_can();
     static esp_err_t setup_obd();
     static esp_err_t setup_battery();
     static esp_err_t setup_sd_card();
+    static esp_err_t setup_webserver();
 
-    esp_err_t (*setup_functions[6])() = {
-        SUPERVISOR::setup_sd_card, SUPERVISOR::setup_battery, SUPERVISOR::setup_can,
-        SUPERVISOR::setup_obd,     SUPERVISOR::setup_wifi,    nullptr,
+    esp_err_t (*setup_functions[7])() = {
+        SUPERVISOR::setup_flash_filesystem,
+        SUPERVISOR::setup_sd_card,
+        SUPERVISOR::setup_battery,
+        SUPERVISOR::setup_can,
+        SUPERVISOR::setup_obd,
+        SUPERVISOR::setup_wifi,
+        SUPERVISOR::setup_webserver,
     };
 };
