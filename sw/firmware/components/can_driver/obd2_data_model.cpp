@@ -207,6 +207,7 @@ esp_err_t OBD2DataModel::getDef(uint16_t pid, PIDDefinitionData& outDef) const
                 outDef.formula           = internalPtr->formula_;
                 outDef.minValue          = internalPtr->minValue_;
                 outDef.maxValue          = internalPtr->maxValue_;
+                outDef.priority          = internalPtr->priority_;
                 outDef.updateInterval_ms = internalPtr->updateInterval_ms_;
                 outDef.color             = internalPtr->color_;
                 outDef.icon              = internalPtr->icon_;

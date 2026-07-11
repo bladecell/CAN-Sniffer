@@ -25,6 +25,7 @@ struct PIDDefinitionData
     float       maxValue;
     uint16_t    updateInterval_ms;
     uint32_t    color;
+    uint8_t     priority;
     std::string icon;
 };
 
