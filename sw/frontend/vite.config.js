@@ -1,12 +1,18 @@
 import { defineConfig } from 'vite'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 import { viteSingleFile } from "vite-plugin-singlefile"
+import viteCompression from 'vite-plugin-compression';
 import path from 'path';
 
 export default defineConfig({
 	plugins: [
 		svelte(),
 		viteSingleFile(),
+		viteCompression({
+			algorithm: 'gzip',
+			ext: '.gz',
+			deleteOriginFile: true
+		})
 	],
 	build: {
 		reportCompressedSize: false,
