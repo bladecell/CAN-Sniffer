@@ -10,4 +10,12 @@ idf_component_register(
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+add_custom_target(build_svelte_frontend
+    COMMAND bun run build
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../../frontend"
+    COMMENT "Building Svelte frontend with Bun..."
+)
+
 littlefs_create_partition_image(www "../../frontend/dist" FLASH_IN_PROJECT)
+
+add_dependencies(littlefs_www_bin build_svelte_frontend)
