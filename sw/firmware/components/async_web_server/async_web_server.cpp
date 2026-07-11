@@ -242,14 +242,19 @@ esp_err_t AsyncWebServer::start_workers(uint8_t num_workers, uint32_t stack_size
     // start worker tasks
     for (int i = 0; i < num_workers; i++)
     {
-        StaticTask_t* task_buf = (StaticTask_t*)heap_caps_malloc(sizeof(StaticTask_t), MALLOC_CAP_INTERNAL);
-        StackType_t*  stack    = (StackType_t*)heap_caps_malloc(stack_size * sizeof(StackType_t), MALLOC_CAP_SPIRAM);
+        StaticTask_t* task_buf =
+            (StaticTask_t*)heap_caps_malloc(sizeof(StaticTask_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+
+        StackType_t* stack =
+            (StackType_t*)heap_caps_malloc(stack_size * sizeof(StackType_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
 
         if (!task_buf || !stack)
         {
-            heap_caps_free(task_buf);
-            heap_caps_free(stack);
-            ESP_LOGE(TAG, "Failed to allocate memory for worker %d", i);
+            if (task_buf)
+                heap_caps_free(task_buf);
+            if (stack)
+                heap_caps_free(stack);
+            ESP_LOGE(TAG, "Failed to allocate memory for worker %d. Stack size too large?", i);
             continue;
         }
 
