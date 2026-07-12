@@ -37,6 +37,7 @@ cJSON* single_pid_def_get(uint16_t pid)
     cJSON_AddNumberToObject(item, "pid", def.pid);
     cJSON_AddNumberToObject(item, "mode", def.mode);
     cJSON_AddNumberToObject(item, "id", def.id);
+    cJSON_AddNumberToObject(item, "length", def.len);
     cJSON_AddStringToObject(item, "name", def.name.c_str());
     cJSON_AddStringToObject(item, "unit", def.unit.c_str());
     cJSON_AddStringToObject(item, "description", def.description.c_str());
@@ -219,7 +220,7 @@ cJSON* m_system_get()
 
     cJSON_AddNumberToObject(root, "app_version", APP_VERSION_MAJOR + APP_VERION_MINOR * 0.1);
     cJSON_AddNumberToObject(root, "uptime_s", SUPERVISOR::getInstance().get_uptime_seconds());
-    cJSON_AddStringToObject(root, "pid_initialized", SUPERVISOR::getInstance().get_restart_reason().c_str());
+    cJSON_AddStringToObject(root, "restart_reason", SUPERVISOR::getInstance().get_restart_reason().c_str());
     cJSON_AddStringToObject(root, "mac", SUPERVISOR::getInstance().get_MAC_address().c_str());
     cJSON_AddNumberToObject(root, "state", static_cast<uint32_t>(SUPERVISOR::getInstance().get_state()));
     cJSON_AddNumberToObject(root, "battery_voltage", SUPERVISOR::getInstance().get_battery_voltage());
