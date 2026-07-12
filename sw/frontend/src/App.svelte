@@ -64,7 +64,7 @@
 <style>
   .main-content {
     margin-top: 100px;
-    padding: clamp(1rem, 4vw, 2rem);
+    padding: clamp(0.75rem, 3vw, 1.5rem);
     width: 100vw;
     max-width: 100vw;
     margin-left: 0;

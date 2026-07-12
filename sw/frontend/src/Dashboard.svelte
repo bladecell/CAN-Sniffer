@@ -43,8 +43,8 @@
 
   const gridConstants = $derived(
     containerWidth > 768
-      ? { gap: 16, padding: 12, cellW: 20, cellH: 10 }
-      : { gap: 12, padding: 12, cellW: 20, cellH: 10 },
+      ? { gap: 16, padding: 0, cellW: 20, cellH: 10 }
+      : { gap: 12, padding: 0, cellW: 20, cellH: 10 },
   );
 
   const dynamicCols = $derived(

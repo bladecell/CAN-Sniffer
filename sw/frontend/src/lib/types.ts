@@ -1,5 +1,5 @@
 // src/lib/types.ts
-
+import { SvelteMap } from "svelte/reactivity";
 /**
  * CORE DASHBOARD TYPES
  */
@@ -91,17 +91,20 @@ export interface Alert {
 }
 
 export interface PidDefinition {
-  pid: number;
   id: number;
+  mode: number;
+  pid: number;
+  len: number;
   name: string;
-  description: string;
   unit: string;
-  icon: string;
-  color: number; // Decimal color representation
+  description: string;
+  formula: string;
   minValue: number;
   maxValue: number;
   update_interval_ms: number;
-  formula: string;
+  color: number; // Decimal color representation
+  priority: number;
+  icon: string;
 }
 
 export interface PidDataMetrics {
@@ -124,9 +127,17 @@ export interface PidDataMetrics {
 
 export interface Obd2Status {
   continuous_running: boolean;
-  last_request_time: number;
+  pid_initialized: boolean;
+  pid_def_count: number;
+  pid_data_count: number;
+  poll_task_utilization: number;
+  supported_pids: SupportedPids;
 }
 
+export interface SupportedPids {
+  count: number;
+  groups: SvelteMap<number, boolean>;
+}
 /**
  * MODULE CONSTRAINTS AND CONFIGURATIONS
  */

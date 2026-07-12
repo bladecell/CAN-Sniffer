@@ -385,7 +385,37 @@ export class CanStore {
             const response = await fetch("/api/v1/obd2");
             const result = await response.json();
 
-            this.obd2Status = result;
+            const supportedGroupsMap = new SvelteMap<number, boolean>();
+
+            if (result.supported_pids && Array.isArray(result.supported_pids.groups)) {
+                result.supported_pids.groups.forEach((mask: number, groupIndex: number) => {
+                    const pidBase = groupIndex * 32;
+
+                    for (let i = 0; i < 32; i++) {
+                        const bitPosition = 31 - i;
+
+                        const isSupported = ((mask >>> bitPosition) & 1) === 1;
+
+                        const pidNumber = pidBase + i + 1;
+
+                        supportedGroupsMap.set(pidNumber, isSupported);
+                    }
+                });
+            }
+
+            // 3. Assemble the strongly-typed object and assign it to state
+            this.obd2Status = {
+                continuous_running: result.continuous_running,
+                pid_initialized: result.pid_initialized,
+                pid_def_count: result.pid_def_count,
+                pid_data_count: result.pid_data_count,
+                poll_task_utilization: result.poll_task_utilization,
+                supported_pids: {
+                    count: result.supported_pids.count,
+                    groups: supportedGroupsMap
+                }
+            };
+
         } catch (e) {
             console.error("Failed to load OBD2 status", e);
         }
