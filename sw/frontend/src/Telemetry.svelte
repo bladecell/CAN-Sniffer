@@ -18,13 +18,19 @@
     })),
   );
 
+  let lastPidDef = $state<any[] | null>(null);
+
   $effect(() => {
-    if (local_piddef.length === 0 && piddef && piddef.length > 0) {
-      local_piddef = piddef.map((def) => ({
-        ...def,
-        loaded: true,
-        selected: false,
-      }));
+    if (piddef && piddef !== lastPidDef) {
+      lastPidDef = piddef;
+      local_piddef = piddef.map((def) => {
+        const existing = local_piddef.find((l) => l.pid === def.pid);
+        return {
+          ...def,
+          loaded: existing ? existing.loaded : true,
+          selected: existing ? existing.selected : false,
+        };
+      });
     }
   });
 
@@ -33,40 +39,42 @@
       label: "Select",
       key: "selected",
       type: "checkbox",
-      width: "80px", // Fixed: Just wide enough for the checkbox + padding
+      width_px: 70, // Fixed: Just wide enough for the checkbox +padg
     },
     {
       label: "Name",
       key: "name",
       type: "text",
-      // width removed: Acts as a flex/spring column!
+      width_px: 160,
       tooltipKey: "moduleDescription",
     },
     {
       label: "PID",
       key: "pid",
       type: "code",
-      width: "80px", // Fixed: Hex codes (e.g., 0x2203) are always short
+      width_px: 120,
     },
     {
       label: "Mode",
       key: "mode",
-      type: "text",
-      width: "80px", // Fixed: Modes are usually short numbers (e.g., 01, 22)
+      type: "number",
+      formatKey: "modeDisplayFormat",
       hidden: true,
+      tooltipKey: "modeDescription",
+      width_px: 70,
     },
     {
       label: "Length",
       key: "len",
       type: "number",
-      width: "80px",
+      width_px: 70,
       hidden: true,
     },
     {
       label: "Formula",
       key: "formula",
       type: "code",
-      // width removed: Formulas can be very long, let it flex alongside 'Name'!
+      width_px: 500,
       hidden: true,
     },
     {
@@ -74,13 +82,13 @@
       key: "value",
       type: "number",
       unitKey: "metricUnit",
-      width: "100px", // Fixed pixel width to prevent subpixel rounding overflow
+      width_px: 140, // Fixed pixel width to prevent subpixel roundingoverw
     },
     {
       label: "Min Value",
       key: "min_val",
       type: "number",
-      width: "100px",
+      width_px: 140,
       unitKey: "metricUnit",
       hidden: true,
     },
@@ -88,7 +96,7 @@
       label: "Max Value",
       key: "max_val",
       type: "number",
-      width: "100px",
+      width_px: 140,
       unitKey: "metricUnit",
       hidden: true,
     },
@@ -97,27 +105,27 @@
       key: "updateInterval",
       type: "number",
       unit: "ms",
-      width: "120px",
+      width_px: 120,
     },
     {
       label: "Priority",
       key: "priority",
       type: "number",
-      width: "90px",
+      width_px: 80,
       hidden: true,
     },
     {
       label: "Supported",
       key: "supported",
       type: "badge",
-      width: "120px",
+      width_px: 100,
       colorKey: "badgeColor",
     },
     {
       label: "Loaded",
       key: "loaded",
       type: "toggle",
-      width: "80px",
+      width_px: 80,
     },
   ];
 
@@ -140,12 +148,24 @@
         supported: isSupported ? "Yes" : "No",
         formula: def.formula,
         priority: def.priority,
-        mode: getModeLabel(def.mode),
+        mode: def.mode,
+        modeDisplayFormat: "hex",
+        modeDescription: getModeLabel(def.mode),
         min_val: def.minValue,
         max_val: def.maxValue,
         len: def.length,
-        selected: def.selected,
-        loaded: def.loaded,
+        get selected() {
+          return def.selected;
+        },
+        set selected(val) {
+          def.selected = val;
+        },
+        get loaded() {
+          return def.loaded;
+        },
+        set loaded(val) {
+          def.loaded = val;
+        },
 
         value: data?.value || "N/A",
         updateInterval: def.update_interval_ms,

@@ -161,6 +161,30 @@
     }
     hiddenColumns = newSet;
   }
+
+  // Dynamically calculate the minimum width the table needs
+  let minTableWidth = $derived(
+    activeColumns.reduce((sum, col) => {
+      if (col.width_px) {
+        return sum + parseInt(col.width_px, 10);
+      }
+      // Give auto-scaling columns a sensible minimum so they don't squish to nothing
+      return sum + 150;
+    }, 0),
+  );
+
+  function formatNumber(value: any, format?: string) {
+    if (value == null || value === "N/A" || value === "") return value;
+    const num = Number(value);
+    if (isNaN(num)) return value;
+
+    if (format === "hex") {
+      return "0x" + num.toString(16).toUpperCase();
+    } else if (format === "bin") {
+      return "0b" + num.toString(2);
+    }
+    return value;
+  }
 </script>
 
 <!-- Global click listener for closing menus -->
@@ -330,13 +354,22 @@
 
   <!-- TABLE -->
   <div class="data-grid-container">
-    <table>
+    <table style="min-width: calc({minTableWidth}px * var(--table-scale, 1));">
+      <colgroup>
+        {#each activeColumns as col}
+          <col
+            style="width: {(col.type === 'checkbox' || col.type === 'toggle') &&
+            col.width_px
+              ? `calc(${col.width_px}px * var(--control-col-scale, 1))`
+              : col.width_px ? `${col.width_px}px` : 'auto'};"
+          />
+        {/each}
+      </colgroup>
       <thead>
         <tr>
           {#each activeColumns as col}
             <th
               scope="col"
-              style="width: {col.width || 'auto'};"
               class="sortable-header"
               onclick={() => handleSort(col.key)}
             >
@@ -363,7 +396,7 @@
               aria-selected={selectedRowIndex === rowIndex}
             >
               {#each activeColumns as col, colIndex}
-                <td style="width: {col.width || 'auto'}">
+                <td>
                   {#if col.type === "code"}
                     <span class="type-code">{row[col.key]}</span>
                   {:else if col.type === "checkbox"}
@@ -391,24 +424,46 @@
                       {row[col.key]}
                     </span>
                   {:else if col.type === "number"}
-                    {row[col.key]}
-                    {#if col.unitKey && row[col.unitKey]}
-                      <small style="opacity: 0.6; margin-left: 4px;"
-                        >{row[col.unitKey]}</small
+                    {#if col.tooltipKey && row[col.tooltipKey]}
+                      <span
+                        data-tooltip={row[col.tooltipKey]}
+                        data-placement={colIndex < activeColumns.length / 2 ? "right" : "left"}
+                        class="tooltip-text"
                       >
-                    {:else if col.unit}
-                      <small style="opacity: 0.6; margin-left: 4px;"
-                        >{col.unit}</small
+                        {formatNumber(row[col.key], col.formatKey ? row[col.formatKey] : undefined)}
+                        {#if col.unitKey && row[col.unitKey]}
+                          <small style="opacity: 0.6; margin-left: 4px;">{row[col.unitKey]}</small>
+                        {:else if col.unit}
+                          <small style="opacity: 0.6; margin-left: 4px;">{col.unit}</small>
+                        {/if}
+                      </span>
+                    {:else if col.showTooltip}
+                      <span
+                        data-tooltip={row[col.key]}
+                        data-placement={colIndex < activeColumns.length / 2 ? "right" : "left"}
+                        class="tooltip-text"
                       >
+                        {formatNumber(row[col.key], col.formatKey ? row[col.formatKey] : undefined)}
+                        {#if col.unitKey && row[col.unitKey]}
+                          <small style="opacity: 0.6; margin-left: 4px;">{row[col.unitKey]}</small>
+                        {:else if col.unit}
+                          <small style="opacity: 0.6; margin-left: 4px;">{col.unit}</small>
+                        {/if}
+                      </span>
+                    {:else}
+                      {formatNumber(row[col.key], col.formatKey ? row[col.formatKey] : undefined)}
+                      {#if col.unitKey && row[col.unitKey]}
+                        <small style="opacity: 0.6; margin-left: 4px;">{row[col.unitKey]}</small>
+                      {:else if col.unit}
+                        <small style="opacity: 0.6; margin-left: 4px;">{col.unit}</small>
+                      {/if}
                     {/if}
                   {:else if col.tooltipKey && row[col.tooltipKey]}
                     <span
                       data-tooltip={row[col.tooltipKey]}
-                      data-placement={colIndex === 0
+                      data-placement={colIndex < activeColumns.length / 2
                         ? "right"
-                        : colIndex === activeColumns.length - 1
-                          ? "left"
-                          : "bottom"}
+                        : "left"}
                       class="tooltip-text"
                     >
                       {row[col.key]}
@@ -416,11 +471,9 @@
                   {:else if col.showTooltip}
                     <span
                       data-tooltip={row[col.key]}
-                      data-placement={colIndex === 0
+                      data-placement={colIndex < activeColumns.length / 2
                         ? "right"
-                        : colIndex === activeColumns.length - 1
-                          ? "left"
-                          : "bottom"}
+                        : "left"}
                       class="tooltip-text"
                     >
                       {row[col.key]}
@@ -455,6 +508,13 @@
     position: relative;
     max-width: 100%;
     min-width: 0;
+  }
+
+  .control-wrapper {
+    transform: scale(var(--control-scale, 1));
+    transform-origin: left center;
+    display: inline-flex;
+    align-items: center;
   }
 
   /* --- TOOLBAR & BUTTONS --- */
@@ -701,14 +761,31 @@
 
   /* --- TABLE STYLES --- */
   .data-grid-container {
-    padding: 0;
-    margin: 0;
-    width: 100%;
-    box-sizing: border-box; /* Prevents padding/borders from causing overflow */
-    overflow-x: auto; /* 'auto' means ONLY show when content spills over */
+    overflow-x: auto;
     overflow-y: hidden;
     max-width: 100%;
     min-width: 0;
+    --table-scale: 1;
+    --control-col-scale: 1;
+    --control-scale: 1;
+    /* This prevents the table from adding a scrollbar if it's 100% wide */
+    display: block;
+  }
+
+  @media (max-width: 768px) {
+    .data-grid-container {
+      --table-scale: 0.85; /* Squish columns slightly on tablets */
+      --control-col-scale: 0.75;
+      --control-scale: 0.85;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .data-grid-container {
+      --table-scale: 0.7; /* Squish columns more on mobile */
+      --control-col-scale: 0.6;
+      --control-scale: 0.7;
+    }
   }
 
   table {
@@ -812,26 +889,21 @@
   }
 
   .type-code {
-    /* Define your main color here so we can reuse it easily! */
-    --code-color: 255, 158, 100; /* Amber/Orange */
-
+    --code-color: 255, 158, 100;
     font-family: var(--pico-font-family-monospace, monospace);
-
-    /* Background is the exact same color as the text, but only 10% visible */
     background: rgba(var(--code-color), 0.1);
-
-    /* Solid text color */
     color: rgb(var(--code-color));
 
-    /* Border is the same color, 25% visible */
-    border: 1px solid rgba(var(--code-color), 0.25);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
 
+    display: inline-block;
+    vertical-align: middle;
     padding: 0.2rem 0.5rem;
     border-radius: 4px;
-    word-break: break-all;
-    white-space: normal;
-    display: inline-block;
-    max-width: 100%;
+    border: none;
   }
 
   .badge {

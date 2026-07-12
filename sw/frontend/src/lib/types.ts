@@ -208,12 +208,13 @@ export interface Column {
   key: string;
   type: ColumnType;
   unit?: string;
-  width?: string;
+  width_px?: number;
   unitKey?: string;
   showTooltip?: boolean;
   tooltipKey?: string;
   colorKey?: string;
   hidden?: boolean;
+  formatKey?: string;
 }
 
 export interface DataTableProps {

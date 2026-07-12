@@ -20,9 +20,9 @@
     --primary: #84da89;
 
     /* Master Dimensions (Change these to scale the whole switch) */
-    --toggle-width: 52px;
-    --toggle-height: 28px;
-    --toggle-padding: 3px;
+    --toggle-width: 3.25em;
+    --toggle-height: 1.75em;
+    --toggle-padding: 0.1875em;
 
     /* Automatic Math (Do not touch) */
     --knob-size: calc(var(--toggle-height) - (var(--toggle-padding) * 2));
