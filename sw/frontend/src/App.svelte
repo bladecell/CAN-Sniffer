@@ -87,7 +87,7 @@
     --backdrop-filter: blur(10px) saturate(1.2);
     --backdrop-filter-background: oklch(1 0 0 / 0.01);
 
-    --normal-color: #10b981;
+    --normal-color: hsl(160, 84%, 39%);
     --warning-color: #f59e0b;
     --error-color: #ef4444;
 

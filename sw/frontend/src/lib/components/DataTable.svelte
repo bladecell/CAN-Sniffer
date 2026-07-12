@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { DataTableProps } from "$lib/types";
+  import Switch from "$lib/components/Switch.svelte";
 
   let {
     columns,
@@ -16,7 +17,9 @@
   let sortDirection = $state<"asc" | "desc">("asc");
 
   // --- VIEW (COLUMN VISIBILITY) STATE ---
-  let hiddenColumns = $state<Set<string>>(new Set());
+  let hiddenColumns = $state<Set<string>>(
+    new Set(columns.filter((c) => c.hidden).map((c) => c.key)),
+  );
 
   let activeColumns = $derived(
     columns.filter((c) => !hiddenColumns.has(c.key)),
@@ -277,7 +280,7 @@
       <div class="popover-container">
         <button
           class="toolbar-btn"
-          class:active={activePopover === "view"}
+          class:active={activePopover === "view" || hiddenColumns.size > 0}
           onclick={() => togglePopover("view")}
         >
           <svg
@@ -292,6 +295,9 @@
             /></svg
           >
           View
+          {#if hiddenColumns.size > 0}
+            <span class="badge-count">{hiddenColumns.size}</span>
+          {/if}
         </button>
 
         {#if activePopover === "view"}
@@ -323,7 +329,7 @@
   </div>
 
   <!-- TABLE -->
-  <div class="data-grid-container overflow-auto">
+  <div class="data-grid-container">
     <table>
       <thead>
         <tr>
@@ -360,6 +366,21 @@
                 <td style="width: {col.width || 'auto'}">
                   {#if col.type === "code"}
                     <span class="type-code">{row[col.key]}</span>
+                  {:else if col.type === "checkbox"}
+                    <div class="control-wrapper">
+                      <input
+                        type="checkbox"
+                        bind:checked={row[col.key]}
+                        onclick={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                  {:else if col.type === "toggle"}
+                    <div class="control-wrapper">
+                      <Switch
+                        bind:checked={row[col.key]}
+                        onclick={(e) => e.stopPropagation()}
+                      />
+                    </div>
                   {:else if col.type === "badge"}
                     <span
                       class="badge"
@@ -432,6 +453,8 @@
     flex-direction: column;
     gap: 0;
     position: relative;
+    max-width: 100%;
+    min-width: 0;
   }
 
   /* --- TOOLBAR & BUTTONS --- */
@@ -680,14 +703,28 @@
   .data-grid-container {
     padding: 0;
     margin: 0;
+    width: 100%;
+    box-sizing: border-box; /* Prevents padding/borders from causing overflow */
+    overflow-x: auto; /* 'auto' means ONLY show when content spills over */
+    overflow-y: hidden;
+    max-width: 100%;
+    min-width: 0;
   }
 
   table {
+    box-sizing: border-box;
     font-size: 0.85rem;
     width: 100%;
     table-layout: fixed;
-    border-collapse: collapse;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin: 0;
     background: transparent !important;
+  }
+
+  th,
+  td {
+    box-sizing: border-box;
   }
 
   th {
@@ -737,6 +774,9 @@
   td {
     padding: 0.75rem !important;
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    word-break: break-word;
+    overflow-wrap: break-word;
+    vertical-align: middle;
   }
 
   tbody tr {
@@ -772,12 +812,26 @@
   }
 
   .type-code {
-    font-family: monospace;
-    background: rgba(0, 0, 0, 0.3);
+    /* Define your main color here so we can reuse it easily! */
+    --code-color: 255, 158, 100; /* Amber/Orange */
+
+    font-family: var(--pico-font-family-monospace, monospace);
+
+    /* Background is the exact same color as the text, but only 10% visible */
+    background: rgba(var(--code-color), 0.1);
+
+    /* Solid text color */
+    color: rgb(var(--code-color));
+
+    /* Border is the same color, 25% visible */
+    border: 1px solid rgba(var(--code-color), 0.25);
+
     padding: 0.2rem 0.5rem;
     border-radius: 4px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    color: var(--pico-primary);
+    word-break: break-all;
+    white-space: normal;
+    display: inline-block;
+    max-width: 100%;
   }
 
   .badge {
@@ -790,9 +844,26 @@
     color: var(--badge-color);
   }
 
+  td input[type="checkbox"]:focus {
+    outline: none !important;
+    box-shadow: none !important;
+  }
+
   table {
     --pico-tooltip-background-color: var(--backdrop-filter-background);
     --pico-tooltip-color: #ffffff;
+  }
+
+  .control-wrapper {
+    display: flex;
+    align-items: center;
+    /* Optional: justify-content: center; if you want it horizontally centered too */
+    height: 100%;
+  }
+
+  /* Reaches inside the wrapper and destroys any framework margins causing the offset */
+  .control-wrapper :global(*) {
+    margin: 0 !important;
   }
 
   :global(td [data-tooltip]::before) {

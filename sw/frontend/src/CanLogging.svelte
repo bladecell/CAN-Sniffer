@@ -103,6 +103,7 @@
     },
     { label: "DTC", key: "dtc", type: "code", width: "100px" },
     { label: "Status", key: "status", type: "badge", width: "100px" },
+    { key: "isActive", label: "Active Tab", type: "checkbox" },
   ];
 
   const testData = [

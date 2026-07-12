@@ -1,52 +1,128 @@
 <script lang="ts">
   import { canStore } from "./lib/canStore.svelte";
-  import { untrack, onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import type { DataTableProps, PidValue, PidDefinition } from "$lib/types";
   import DataTable from "./lib/components/DataTable.svelte";
   import type { Column } from "$lib/types";
+  import { getModeLabel } from "$lib/pidHelpers.svelte.ts";
 
   let activeIndex = $state(-1);
-  $effect(() => {
-    console.log("Active index changed to:", activeIndex);
-  });
 
   let piddef = $derived(canStore.pidDefinitions);
   let pidData = $derived(canStore.pids);
+  let local_piddef = $state<any[]>(
+    (piddef || []).map((def) => ({
+      ...def,
+      loaded: true,
+      selected: false,
+    })),
+  );
+
+  $effect(() => {
+    if (local_piddef.length === 0 && piddef && piddef.length > 0) {
+      local_piddef = piddef.map((def) => ({
+        ...def,
+        loaded: true,
+        selected: false,
+      }));
+    }
+  });
 
   const columns: Column[] = [
+    {
+      label: "Select",
+      key: "selected",
+      type: "checkbox",
+      width: "80px", // Fixed: Just wide enough for the checkbox + padding
+    },
     {
       label: "Name",
       key: "name",
       type: "text",
-      width: "10%",
+      // width removed: Acts as a flex/spring column!
       tooltipKey: "moduleDescription",
     },
-    { label: "PID", key: "pid", type: "code", width: "10%" },
+    {
+      label: "PID",
+      key: "pid",
+      type: "code",
+      width: "80px", // Fixed: Hex codes (e.g., 0x2203) are always short
+    },
+    {
+      label: "Mode",
+      key: "mode",
+      type: "text",
+      width: "80px", // Fixed: Modes are usually short numbers (e.g., 01, 22)
+      hidden: true,
+    },
+    {
+      label: "Length",
+      key: "len",
+      type: "number",
+      width: "80px",
+      hidden: true,
+    },
+    {
+      label: "Formula",
+      key: "formula",
+      type: "code",
+      // width removed: Formulas can be very long, let it flex alongside 'Name'!
+      hidden: true,
+    },
     {
       label: "Value",
       key: "value",
       type: "number",
       unitKey: "metricUnit",
-      width: "10%",
+      width: "100px", // Fixed pixel width to prevent subpixel rounding overflow
+    },
+    {
+      label: "Min Value",
+      key: "min_val",
+      type: "number",
+      width: "100px",
+      unitKey: "metricUnit",
+      hidden: true,
+    },
+    {
+      label: "Max Value",
+      key: "max_val",
+      type: "number",
+      width: "100px",
+      unitKey: "metricUnit",
+      hidden: true,
     },
     {
       label: "Update Interval",
       key: "updateInterval",
       type: "number",
       unit: "ms",
-      width: "10%",
+      width: "120px",
+    },
+    {
+      label: "Priority",
+      key: "priority",
+      type: "number",
+      width: "90px",
+      hidden: true,
     },
     {
       label: "Supported",
       key: "supported",
       type: "badge",
-      width: "10%",
+      width: "120px",
       colorKey: "badgeColor",
+    },
+    {
+      label: "Loaded",
+      key: "loaded",
+      type: "toggle",
+      width: "80px",
     },
   ];
 
   let tableData = $derived(
-    (piddef || []).map((def) => {
+    (local_piddef || []).map((def) => {
       const data = pidData?.get(Number(def.pid));
 
       const formattedPid =
@@ -62,6 +138,14 @@
         pid: formattedPid,
         metricUnit: def.unit,
         supported: isSupported ? "Yes" : "No",
+        formula: def.formula,
+        priority: def.priority,
+        mode: getModeLabel(def.mode),
+        min_val: def.minValue,
+        max_val: def.maxValue,
+        len: def.length,
+        selected: def.selected,
+        loaded: def.loaded,
 
         value: data?.value || "N/A",
         updateInterval: def.update_interval_ms,
@@ -71,25 +155,29 @@
   );
 
   $effect(() => {
+    console.log("Active index changed to:", activeIndex);
+  });
+
+  $effect(() => {
     if (canStore.connected) canStore.startLogging();
   });
   onDestroy(() => {
     canStore.stopLogging();
   });
 
-  let activeTab = $state("html");
+  let activeTab = $state("info");
 </script>
 
 <div class="segmented-control-wrapper">
   <fieldset class="segmented-control">
-    <label class="segment" class:active={activeTab === "html"}>
+    <label class="segment" class:active={activeTab === "info"}>
       <input
         type="radio"
         name="framework"
-        value="html"
+        value="info"
         bind:group={activeTab}
       />
-      HTML
+      Info
     </label>
 
     <label class="segment" class:active={activeTab === "react"}>
@@ -109,11 +197,24 @@
   </fieldset>
 
   <div class="tab-content">
-    {#if activeTab === "html"}
-      <article class="panel fade-in">
-        <h4>HTML Content</h4>
-        <p>This is the raw, semantic DOM rendering layer.</p>
-      </article>
+    {#if activeTab === "info"}
+      <div
+        class="dashboard-card header-container"
+        style="--module-accent: #01AAFF;"
+      >
+        <div class="header-title-row">
+          <div class="status-subtitle">
+            <span class="label">Loaded PIDs:</span>
+            <span class="value">{canStore.obd2Status?.pid_def_count}</span>
+          </div>
+          <div class="status-subtitle">
+            <span class="label">Supported PIDs:</span>
+            <span class="value"
+              >{canStore.obd2Status?.supported_pids.count}</span
+            >
+          </div>
+        </div>
+      </div>
     {:else if activeTab === "react"}
       <article class="panel fade-in">
         <h4>React Content</h4>
@@ -128,14 +229,51 @@
   </div>
 </div>
 
-<div class="data-grid-container overflow-auto">
-  <DataTable {columns} data={tableData} bind:selectedRowIndex={activeIndex} />
-</div>
+<DataTable {columns} data={tableData} bind:selectedRowIndex={activeIndex} />
 
 <style>
-  .data-grid-container {
-    padding: 0;
-    margin: 0;
+  .header-container {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1.5rem;
+    width: 100%;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+    box-sizing: border-box;
+  }
+
+  .dashboard-card.header-container {
+    border: none !important;
+  }
+
+  .dashboard-card.header-container:hover {
+    box-shadow: none;
+    border-color: var(--pico-muted-border-color) !important;
+  }
+
+  .header-title-row {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    column-gap: 0.75rem; /* Space between label and value */
+    row-gap: 0.25rem; /* Space between the two rows */
+    align-items: start;
+  }
+
+  /* 2. Visually strip away the wrappers so children join the master grid */
+  .status-subtitle {
+    display: contents;
+  }
+
+  /* 3. Style the text as normal */
+  .status-subtitle .label {
+    color: var(--pico-muted-color);
+    font-weight: 500;
+  }
+
+  .status-subtitle .value {
+    color: var(--pico-color);
+    text-align: left;
   }
 
   .segmented-control-wrapper {

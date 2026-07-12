@@ -114,10 +114,11 @@ export interface PidDataMetrics {
   unit: string;
   icon: string;
   color: string;
-  min: number;
-  max: number;
+  minValue: number;
+  maxValue: number;
   updateInterval: number;
   formula: string;
+  length: number;
 
   currentValue: number;
   isValid: boolean;
@@ -200,7 +201,7 @@ export interface DTCFaultProps {
 /**
  * TABLE CONSTRAINTS
  */
-export type ColumnType = "text" | "number" | "code" | "badge";
+export type ColumnType = "string" | "number" | "code" | "badge" | "checkbox" | "toggle";
 
 export interface Column {
   label: string;
@@ -212,6 +213,7 @@ export interface Column {
   showTooltip?: boolean;
   tooltipKey?: string;
   colorKey?: string;
+  hidden?: boolean;
 }
 
 export interface DataTableProps {
