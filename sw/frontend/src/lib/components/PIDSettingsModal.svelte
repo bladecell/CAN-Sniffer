@@ -152,7 +152,7 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <article
       onclick={(e) => e.stopPropagation()}
-      class="pico-orange-glass-modal"
+      class="pico-orange-glass-modal blur-background"
     >
       <header class="modal-header-hull">
         <h5 class="modal-title-heading">
@@ -312,25 +312,10 @@
     border-radius: 12px;
   }
   .pico-orange-glass-modal {
-    backdrop-filter: var(
-      --backdrop-filter,
-      blur(10px) saturate(1.2)
-    ) !important;
-    -webkit-backdrop-filter: var(
-      --backdrop-filter,
-      blur(10px) saturate(1.2)
-    ) !important;
-    background-color: var(
-      --backdrop-filter-background,
-      oklch(1 0 0 / 0.01)
-    ) !important;
-    border: var(--pico-border-width) solid var(--pico-form-element-border-color);
     max-width: 500px;
     width: 100%;
     margin: 0;
     padding: 0;
-    box-shadow: var(--pico-box-shadow) !important;
-    border-radius: 12px;
     overflow: hidden;
   }
   .modal-header-hull {

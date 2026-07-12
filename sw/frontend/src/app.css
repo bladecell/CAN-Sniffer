@@ -482,3 +482,21 @@ body:has(.scroll) {
     box-shadow: 0 0 8px var(--status-color, #10b981);
   }
 }
+
+.blur-background {
+	backdrop-filter: var(
+      --backdrop-filter,
+      blur(10px) saturate(1.2)
+    ) !important;
+    -webkit-backdrop-filter: var(
+      --backdrop-filter,
+      blur(10px) saturate(1.2)
+    ) !important;
+    background-color: var(
+      --backdrop-filter-background,
+      oklch(1 0 0 / 0.01)
+    ) !important;
+    border: var(--pico-border-width) solid var(--pico-form-element-border-color);
+	box-shadow: var(--pico-box-shadow) !important;
+	border-radius: 12px;
+}

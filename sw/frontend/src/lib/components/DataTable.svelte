@@ -206,7 +206,7 @@
         </button>
 
         {#if activePopover === "filter"}
-          <div class="popover-menu filter-menu">
+          <div class="popover-menu filter-menu blur-background">
             <div class="popover-header">Filter by</div>
 
             <div class="filter-rules">
@@ -295,7 +295,7 @@
         </button>
 
         {#if activePopover === "view"}
-          <div class="popover-menu view-menu">
+          <div class="popover-menu view-menu blur-background">
             <div class="column-list">
               {#each columns as col}
                 <button
@@ -491,21 +491,6 @@
   }
 
   .popover-menu {
-    backdrop-filter: var(
-      --backdrop-filter,
-      blur(10px) saturate(1.2)
-    ) !important;
-    -webkit-backdrop-filter: var(
-      --backdrop-filter,
-      blur(10px) saturate(1.2)
-    ) !important;
-    background-color: var(
-      --backdrop-filter-background,
-      oklch(1 0 0 / 0.01)
-    ) !important;
-    border: var(--pico-border-width) solid var(--pico-form-element-border-color);
-    box-shadow: var(--pico-box-shadow) !important;
-    border-radius: 12px;
     position: absolute;
     top: calc(100% + 0.5rem);
     left: 0;

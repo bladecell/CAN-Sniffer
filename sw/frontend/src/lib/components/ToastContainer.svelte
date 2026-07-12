@@ -9,7 +9,7 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <div
-      class="toast"
+      class="toast blur-background"
       class:success={alert.type === "success"}
       class:error={alert.type === "error"}
       class:info={alert.type === "info"}
@@ -40,23 +40,50 @@
     min-width: 250px;
     max-width: 350px;
     padding: 0.75rem 1.25rem;
-    border-radius: 6px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    background: var(--pico-card-background-color);
-    color: var(--pico-color);
-    border-left: 5px solid var(--pico-primary);
+    --color: #ffffff;
+    background-color: color-mix(
+      in srgb,
+      var(--color) 1%,
+      transparent
+    ) !important;
+    border: none;
+    color: var(--color);
     cursor: pointer;
     font-size: 0.9rem;
   }
 
   /* TYPE VARIANTS using Pico colors */
   .success {
-    border-color: var(--pico-ins-color);
+    --color: var(--pico-ins-color);
+    background-color: color-mix(
+      in srgb,
+      var(--color) 10%,
+      transparent
+    ) !important;
   }
   .error {
-    border-color: var(--pico-del-color);
+    --color: var(--pico-del-color);
+    background-color: color-mix(
+      in srgb,
+      var(--color) 10%,
+      transparent
+    ) !important;
   }
   .info {
-    border-color: var(--pico-primary);
+    --color: var(--pico-primary);
+    background-color: color-mix(
+      in srgb,
+      var(--color) 10%,
+      transparent
+    ) !important;
+  }
+
+  @media (max-width: 768px) {
+    .toast-container {
+      position: fixed;
+      top: 1.5rem;
+      right: 1.5rem;
+    }
   }
 </style>
