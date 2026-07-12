@@ -5,7 +5,7 @@ let alerts = $state<Alert[]>([]);
 export const alertStore = {
     get alerts() { return alerts },
 
-    add(message: string, type: Alert["type"] = "info", duration = 3000) {
+    add(message: string, type: Alert["type"] = "info", duration = 5000) {
         // FIX: Use Date.now() instead of crypto.randomUUID() for local HTTP support
         const id = Date.now() + Math.random();
         const newAlert: Alert = { id, message, type };
