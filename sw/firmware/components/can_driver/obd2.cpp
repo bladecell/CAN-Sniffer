@@ -301,10 +301,6 @@ esp_err_t OBD2::addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std
             req(id, mode, pid, len, interval, priority, true);
         }
     }
-    else
-    {
-        return ESP_ERR_INVALID_ARG;
-    }
 
     return ESP_OK;
 }
@@ -529,7 +525,7 @@ void OBD2::pollRequestStaticPids()
         {
             for (const auto& [pid, def] : PID_DEF)
             {
-                if (def.updateInterval() == UPDATE_STATIC)
+                if (def.updateInterval() == UPDATE_DISABLED)
                 {
                     req(def.id(), def.mode(), pid, def.len(), def.updateInterval(), def.priority(), false);
                 }

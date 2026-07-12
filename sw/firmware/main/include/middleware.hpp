@@ -25,6 +25,7 @@ void   m_pid_poll_set_running(bool running);
 cJSON* m_can_bus_get();
 cJSON* m_obdii_get();
 cJSON* m_system_get();
+cJSON* m_system_copy_file(cJSON* payload);
 cJSON* m_sdcard_info_get();
 cJSON* m_sdcard_file_tree_get(const char* path);
 cJSON* m_sdcard_file_delete_delete(const char* path);
@@ -37,6 +38,7 @@ cJSON* m_clear_dtc_request();
 cJSON* m_static_pid_request();
 
 cJSON* m_pid_def_set(cJSON* payload);
+cJSON* m_pid_def_save();
 cJSON* m_settings_wifi_get();
 cJSON* m_settings_can_get();
 cJSON* m_settings_wifi_set(cJSON* payload);

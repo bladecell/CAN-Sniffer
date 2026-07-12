@@ -103,10 +103,10 @@ const char LITER[]              = "L";
 
 typedef enum
 {
-    UPDATE_STATIC = 9999,
-    UPDATE_FAST   = 256,
-    UPDATE_MEDIUM = 1024,
-    UPDATE_SLOW   = 4096,
+    UPDATE_DISABLED = 0,
+    UPDATE_FAST     = 256,
+    UPDATE_MEDIUM   = 1024,
+    UPDATE_SLOW     = 4096,
 } UpdateRate;
 
 struct supportedPIDsGroup_t

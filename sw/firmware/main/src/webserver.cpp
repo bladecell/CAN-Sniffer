@@ -257,6 +257,17 @@ esp_err_t p_system_reboot_index_handler(httpd_req_t* req, void* arg)
     return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Not Implemented");
 }
 
+esp_err_t p_system_copy_file_index_handler(httpd_req_t* req, void* arg)
+{
+    cJSON* root = get_validated_json_payload(req, 2048);
+    if (root == nullptr)
+        return ESP_OK;
+
+    cJSON* resp = m_system_copy_file(root);
+    cJSON_Delete(root);
+    return send_json_response(req, resp);
+}
+
 esp_err_t g_can_bus_index_handler(httpd_req_t* req, void* arg)
 {
     return send_json_response(req, m_can_bus_get());
@@ -337,13 +348,19 @@ esp_err_t g_pid_def_index_handler(httpd_req_t* req, void* arg)
 
 esp_err_t p_pid_def_index_handler(httpd_req_t* req, void* arg)
 {
-    cJSON* root = get_validated_json_payload(req, 1024);
+    cJSON* root = get_validated_json_payload(req, 2048);
     if (root == nullptr)
         return ESP_OK;  // response already sent
 
     cJSON* resp = m_pid_def_post(root);
     cJSON_Delete(root);
     return send_json_response(req, resp);
+}
+
+esp_err_t p_pid_def_save_index_handler(httpd_req_t* req, void* arg)
+{
+    httpd_resp_set_status(req, "200 OK");
+    return send_json_response(req, m_clear_dtc_request());
 }
 
 esp_err_t d_pid_def_index_handler(httpd_req_t* req, void* arg)
@@ -707,7 +724,8 @@ const RouteDef api_routes[] = {{"/", HTTP_GET, index_handler},
                                {"/api/v1/pid_def/*", HTTP_GET, g_pid_def_index_handler},
                                {"/api/v1/pid_def/*", HTTP_DELETE, d_pid_def_index_handler},
                                {"/api/v1/pid_def", HTTP_GET, g_pid_def_index_handler},
-                               {"/api/v1/pid_def", HTTP_POST, p_pid_def_index_handler},
+                               {"/api/v1/pid_def/", HTTP_POST, p_pid_def_index_handler},
+                               {"/api/v1/pid_def/save/", HTTP_POST, p_pid_def_save_index_handler},
 
                                {"/api/v1/can_bus", HTTP_GET, g_can_bus_index_handler},
                                {"/api/v1/obd2", HTTP_GET, g_obdii_index_handler},
@@ -725,6 +743,7 @@ const RouteDef api_routes[] = {{"/", HTTP_GET, index_handler},
 
                                {"/api/v1/system", HTTP_GET, g_system_index_handler},
                                {"/api/v1/system/reboot", HTTP_POST, p_system_reboot_index_handler},
+                               {"/api/v1/system/copy_file", HTTP_POST, p_system_copy_file_index_handler},
 
                                {"/api/v1/sd_card/info", HTTP_GET, g_sd_card_info_handler},
                                {"/api/v1/sd_card/tree", HTTP_GET, g_sd_card_file_tree_handler},

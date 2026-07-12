@@ -9,6 +9,8 @@
 
 #define SUPERVISOR_TASK_STACK_SIZE 4096
 #define SUPERVISOR_TASK_CORE_ID 1
+#define PID_DEF_DB_PATH "/storage/pid_def.json"
+#define DTC_DESC_DB_PATH "/storage/dtcs.bin"
 
 class SUPERVISOR
 {
@@ -47,6 +49,7 @@ public:
 
     esp_err_t save_pid_def_to_json(const char* path);
     esp_err_t load_pid_def_from_json(const char* path);
+    esp_err_t copy_file(const char* src_path, const char* dest_path);
 
 private:
     SUPERVISOR(const SUPERVISOR&)            = delete;

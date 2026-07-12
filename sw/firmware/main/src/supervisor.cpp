@@ -283,7 +283,15 @@ esp_err_t SUPERVISOR::setup_obd()
 
     if (ret != ESP_OK)
     {
-        ESP_LOGE(TAG, "Failed to initialize OBD2 interface");
+        ESP_LOGE(TAG, "Failed to initialize OBD2 interface: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ret = SUPERVISOR::getInstance().load_pid_def_from_json(PID_DEF_DB_PATH);
+
+    if (ret != ESP_OK && ret != ESP_ERR_NOT_FOUND)
+    {
+        ESP_LOGE(TAG, "Failed to initialize OBD2 interface: %s", esp_err_to_name(ret));
         return ret;
     }
 
@@ -404,11 +412,9 @@ float SUPERVISOR::get_battery_voltage() const
 
 esp_err_t SUPERVISOR::save_pid_def_to_json(const char* path)
 {
-    cJSON* rootArray = cJSON_CreateArray();
-
-    auto& obd2 = OBD2::getInstance();
-
-    std::vector<uint16_t> pid_keys = obd2.getPIDs();
+    cJSON*                rootArray = cJSON_CreateArray();
+    auto&                 obd2      = OBD2::getInstance();
+    std::vector<uint16_t> pid_keys  = obd2.getPIDs();
 
     for (const auto& pid : pid_keys)
     {
@@ -443,27 +449,37 @@ esp_err_t SUPERVISOR::save_pid_def_to_json(const char* path)
         return ESP_ERR_NO_MEM;
     }
 
-    // Write to the SD card
-    esp_err_t ret = SDCard::getInstance().write_file(path, jsonString, strlen(jsonString), false);
+    FILE* f = fopen(path, "w");
+    if (f == nullptr)
+    {
+        ESP_LOGE(TAG, "Failed to open file for writing: %s", path);
+        free(jsonString);
+        return ESP_FAIL;
+    }
+
+    size_t len     = strlen(jsonString);
+    size_t written = fwrite(jsonString, 1, len, f);
+    fclose(f);
 
     free(jsonString);
 
-    return ret;
+    if (written != len)
+    {
+        ESP_LOGE(TAG, "Failed to write complete JSON to %s", path);
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "Successfully saved PID definitions to %s", path);
+    return ESP_OK;
 }
 
 esp_err_t SUPERVISOR::load_pid_def_from_json(const char* path)
 {
     struct stat st;
-    esp_err_t   err = SDCard::getInstance().get_file_stat(path, &st);
-
-    if (err == ESP_ERR_NOT_FOUND)
+    if (stat(path, &st) != 0)
     {
-        ESP_LOGW(TAG, "JSON file not found (expected on first boot): %s", path);
-        return ESP_OK;
-    }
-    else if (err != ESP_OK)
-    {
-        return err;
+        ESP_LOGW(TAG, "JSON file not found (expected on first boot or missing): %s", path);
+        return ESP_ERR_NOT_FOUND;
     }
 
     size_t file_size = st.st_size;
@@ -476,7 +492,6 @@ esp_err_t SUPERVISOR::load_pid_def_from_json(const char* path)
     char* buffer = (char*)heap_caps_malloc(file_size + 1, MALLOC_CAP_SPIRAM);
     if (buffer == nullptr)
     {
-        // Fallback to internal memory if SPIRAM routing fails
         buffer = (char*)malloc(file_size + 1);
         if (buffer == nullptr)
         {
@@ -485,19 +500,27 @@ esp_err_t SUPERVISOR::load_pid_def_from_json(const char* path)
         }
     }
 
-    size_t bytes_read = 0;
-    err               = SDCard::getInstance().read_file(path, buffer, file_size, &bytes_read);
-
-    if (err != ESP_OK)
+    FILE* f = fopen(path, "r");
+    if (f == nullptr)
     {
+        ESP_LOGE(TAG, "Failed to open file for reading: %s", path);
         free(buffer);
-        return err;
+        return ESP_FAIL;
+    }
+
+    size_t bytes_read = fread(buffer, 1, file_size, f);
+    fclose(f);
+
+    if (bytes_read == 0 && file_size > 0)
+    {
+        ESP_LOGE(TAG, "Failed to read data from %s", path);
+        free(buffer);
+        return ESP_FAIL;
     }
 
     buffer[bytes_read] = '\0';
 
     cJSON* rootArray = cJSON_Parse(buffer);
-
     free(buffer);
 
     if (rootArray == nullptr || !cJSON_IsArray(rootArray))
@@ -510,6 +533,18 @@ esp_err_t SUPERVISOR::load_pid_def_from_json(const char* path)
     auto&     obd2        = OBD2::getInstance();
     cJSON*    item        = nullptr;
     esp_err_t add_pid_err = ESP_OK;
+
+    std::vector<uint16_t> pid_keys = obd2.getPIDs();
+
+    for (const auto& pid : pid_keys)
+    {
+        esp_err_t ret = obd2.removePID(pid);
+        if (ret != ESP_OK)
+        {
+            ESP_LOGE(TAG, "Failed to remove PID: %u - %s", pid, esp_err_to_name(ret));
+            return ret;
+        }
+    }
 
     cJSON_ArrayForEach(item, rootArray)
     {
@@ -604,4 +639,62 @@ esp_err_t SUPERVISOR::load_pid_def_from_json(const char* path)
         ESP_LOGI(TAG, "Successfully loaded PID definitions from %s", path);
     }
     return add_pid_err;
+}
+
+esp_err_t SUPERVISOR::copy_file(const char* src_path, const char* dest_path)
+{
+    if (src_path == nullptr || dest_path == nullptr)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    FILE* f_src = fopen(src_path, "rb");
+    if (f_src == nullptr)
+    {
+        ESP_LOGE("FileOps", "Failed to open source file: %s", src_path);
+        return ESP_FAIL;
+    }
+
+    FILE* f_dest = fopen(dest_path, "wb");
+    if (f_dest == nullptr)
+    {
+        ESP_LOGE("FileOps", "Failed to open destination file: %s", dest_path);
+        fclose(f_src);
+        return ESP_FAIL;
+    }
+
+    const size_t chunk_size = 2048;
+    char*        buffer     = (char*)malloc(chunk_size);
+    if (buffer == nullptr)
+    {
+        ESP_LOGE("FileOps", "Failed to allocate memory for file copy buffer");
+        fclose(f_src);
+        fclose(f_dest);
+        return ESP_ERR_NO_MEM;
+    }
+
+    size_t    bytes_read = 0;
+    esp_err_t ret        = ESP_OK;
+
+    while ((bytes_read = fread(buffer, 1, chunk_size, f_src)) > 0)
+    {
+        size_t bytes_written = fwrite(buffer, 1, bytes_read, f_dest);
+        if (bytes_written != bytes_read)
+        {
+            ESP_LOGE("FileOps", "Write error to %s (Disk full?)", dest_path);
+            ret = ESP_FAIL;
+            break;
+        }
+    }
+
+    free(buffer);
+    fclose(f_src);
+    fclose(f_dest);
+
+    if (ret == ESP_OK)
+    {
+        ESP_LOGI("FileOps", "Successfully copied %s to %s", src_path, dest_path);
+    }
+
+    return ret;
 }

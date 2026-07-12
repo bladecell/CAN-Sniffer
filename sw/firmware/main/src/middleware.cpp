@@ -362,20 +362,14 @@ cJSON* m_dtc_description_get(const char* target_codes[], size_t count)
 {
     cJSON* root = cJSON_CreateObject();
 
-    char dtc_path[] = "/config/dtcs.bin";
-
-    auto absolute_path = std::make_unique<char[]>(PATH_MAX);
-
-    SDCard::getInstance().get_absolute_path(dtc_path, absolute_path.get(), PATH_MAX);
-
-    std::unique_ptr<FILE, decltype(&fclose)> file(fopen(absolute_path.get(), "rb"), fclose);
+    std::unique_ptr<FILE, decltype(&fclose)> file(fopen(DTC_DESC_DB_PATH, "rb"), fclose);
 
     if (!file)
     {
         cJSON_AddStringToObject(root, "status", "error");
 
         std::string reason =
-            "File " + std::string(dtc_path) + " not found (resolved to " + std::string(absolute_path.get()) + ")";
+            "File " + std::string(DTC_DESC_DB_PATH) + " not found (resolved to " + DTC_DESC_DB_PATH + ")";
 
         cJSON_AddStringToObject(root, "reason", reason.c_str());
 
@@ -390,7 +384,7 @@ cJSON* m_dtc_description_get(const char* target_codes[], size_t count)
     {
         cJSON_AddStringToObject(root, "status", "error");
 
-        std::string reason = "No records found in " + std::string(dtc_path);
+        std::string reason = "No records found in " + std::string(DTC_DESC_DB_PATH);
 
         cJSON_AddStringToObject(root, "reason", reason.c_str());
         cJSON_AddNumberToObject(root, "dtc_count", 0);
@@ -421,7 +415,7 @@ cJSON* m_dtc_description_get(const char* target_codes[], size_t count)
                 cJSON_Delete(dtcs_array);
                 cJSON_AddStringToObject(root, "status", "error");
 
-                std::string reason = "Failed to read file " + std::string(dtc_path);
+                std::string reason = "Failed to read file " + std::string(DTC_DESC_DB_PATH);
 
                 cJSON_AddStringToObject(root, "reason", reason.c_str());
                 cJSON_AddNumberToObject(root, "dtc_count", 0);
@@ -789,6 +783,66 @@ cJSON* m_pid_def_post(cJSON* data)
     else
     {
         cJSON_AddStringToObject(root, "status", "success");
+    }
+
+    return root;
+}
+
+cJSON* m_pid_def_save()
+{
+    esp_err_t ret = SUPERVISOR::getInstance().save_pid_def_to_json(PID_DEF_DB_PATH);
+
+    cJSON* root = cJSON_CreateObject();
+
+    if (ret == ESP_OK)
+    {
+        cJSON_AddStringToObject(root, "status", "success");
+    }
+    else
+    {
+        cJSON_AddStringToObject(root, "status", "error");
+        cJSON_AddStringToObject(root, "reason", esp_err_to_name(ret));
+    }
+
+    return root;
+}
+
+cJSON* m_system_copy_file(cJSON* payload)
+{
+    if (payload == nullptr || !cJSON_IsObject(payload))
+    {
+        cJSON* error_resp = cJSON_CreateObject();
+        cJSON_AddStringToObject(error_resp, "status", "error");
+        cJSON_AddStringToObject(error_resp, "reason", "Payload must be a JSON object");
+        return error_resp;
+    }
+
+    cJSON* src_node  = cJSON_GetObjectItem(payload, "source_path");
+    cJSON* dest_node = cJSON_GetObjectItem(payload, "destination_path");
+
+    if (!cJSON_IsString(src_node) || !cJSON_IsString(dest_node))
+    {
+        cJSON* error_resp = cJSON_CreateObject();
+        cJSON_AddStringToObject(error_resp, "status", "error");
+        cJSON_AddStringToObject(error_resp, "reason", "Missing or invalid 'source_path' or 'destination_path'");
+        return error_resp;
+    }
+
+    const char* src_path  = src_node->valuestring;
+    const char* dest_path = dest_node->valuestring;
+
+    esp_err_t err = SUPERVISOR::getInstance().copy_file(src_path, dest_path);
+
+    cJSON* root = cJSON_CreateObject();
+
+    if (err == ESP_OK)
+    {
+        cJSON_AddStringToObject(root, "status", "success");
+    }
+    else
+    {
+        cJSON_AddStringToObject(root, "status", "error");
+        cJSON_AddStringToObject(root, "reason", esp_err_to_name(err));
     }
 
     return root;

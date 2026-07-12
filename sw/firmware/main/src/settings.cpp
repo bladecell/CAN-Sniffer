@@ -109,6 +109,7 @@ esp_err_t Settings::setCanConfig(const CanDriver::Config& config)
 
     // WARNING: If you change the struct layout in code later, you must wipe NVS or handle versions.
     err = nvs_set_blob(handle, "can_cfg", &config, sizeof(CanDriver::Config));
+    // TODO save pid_def and dbc_desc path
 
     if (err == ESP_OK)
     {
