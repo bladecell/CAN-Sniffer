@@ -117,10 +117,3 @@
 >
   <path d={icon.path} fill="currentColor" />
 </svg>
-
-<style>
-  svg {
-    display: block;
-    margin: 0 auto;
-  }
-</style>

@@ -1,6 +1,63 @@
 export class TelemetryStore {
   local_piddef = $state<any[]>([]);
   lastPidDef = $state<any[] | null>(null);
+
+  // --- FORM STATE ---
+  pidInput = $state("");
+  nameInput = $state("");
+  descInput = $state("");
+  unitInput = $state("");
+  minInput = $state<number | undefined>(undefined);
+  maxInput = $state<number | undefined>(undefined);
+  modeInput = $state("");
+  lengthInput = $state<number | undefined>(undefined);
+  lastValidPidForLength = $state<string>("");
+  idInput = $state("");
+  lastValidModeForId = $state<string>("");
+  formulaInput = $state("");
+  priorityInput = $state<number | undefined>(5);
+  colorInput = $state("#01AAFF");
+  updateIntervalInput = $state<number | undefined>(512);
+  iconInput = $state("");
+
+  colorUint32 = $derived(parseInt(this.colorInput.replace("#", ""), 16));
+
+  validationErrors = $derived.by(() => {
+    let errors: string[] = [];
+    if (this.pidInput && !isValidHex(this.pidInput)) errors.push("PID must be a valid hex format (e.g., 0x0C).");
+    if (this.nameInput && !isValidName(this.nameInput)) errors.push("Name can only contain letters, numbers, and basic symbols.");
+    if (this.descInput && !isValidDescription(this.descInput)) errors.push("Description contains invalid characters.");
+    if (this.minInput !== undefined && this.maxInput !== undefined && this.minInput > this.maxInput) errors.push("Minimum value cannot be greater than maximum value.");
+    if (this.pidInput && this.modeInput && !isModeValidForPid(this.pidInput, this.modeInput)) errors.push("Mode is invalid for this PID (PIDs 0x00-0xFF require 'Current Data').");
+    if (this.formulaInput && !isValidFormula(this.modeInput, this.formulaInput)) {
+      if (this.modeInput === "0x45") errors.push("Formula syntax invalid: Derived mode only allows getPID, getPIDRaw, getBit, bitMask, hex values, and math.");
+      else errors.push("Formula syntax invalid: Standard modes only allow A, B, C, D, a, b, c, d, numbers, and basic math.");
+    }
+    if (this.lengthInput !== undefined && this.pidInput && !isLengthValidForPid(this.pidInput, this.lengthInput)) errors.push("Length is invalid (PIDs <= 0xFF require 2 bytes, others require 3 bytes).");
+    if (this.idInput && this.modeInput && !isIdValidForMode(this.modeInput, this.idInput)) errors.push("CAN ID is invalid for the selected mode (Current/Derived require 0x7DF, Read By Identifier requires 0x700-0x7FF).");
+    if (this.priorityInput !== undefined && (this.priorityInput < 1 || this.priorityInput > 255)) errors.push("Priority must be between 1 and 255.");
+    if (this.updateIntervalInput !== undefined && this.updateIntervalInput !== 0 && (this.updateIntervalInput < 16 || this.updateIntervalInput > 4294967295)) errors.push("Update Interval must be at least 16ms (or 0 to disable).");
+    return errors;
+  });
+
+  clearForm() {
+    this.pidInput = "";
+    this.nameInput = "";
+    this.descInput = "";
+    this.unitInput = "";
+    this.minInput = undefined;
+    this.maxInput = undefined;
+    this.modeInput = "";
+    this.formulaInput = "";
+    this.lengthInput = undefined;
+    this.idInput = "";
+    this.priorityInput = 5;
+    this.updateIntervalInput = 512;
+    this.colorInput = "#01AAFF";
+    this.iconInput = "";
+    this.lastValidPidForLength = "";
+    this.lastValidModeForId = "";
+  }
 }
 
 export const telemetryStore = new TelemetryStore();
