@@ -361,7 +361,9 @@
             style="width: {(col.type === 'checkbox' || col.type === 'toggle') &&
             col.width_px
               ? `calc(${col.width_px}px * var(--control-col-scale, 1))`
-              : col.width_px ? `${col.width_px}px` : 'auto'};"
+              : col.width_px
+                ? `${col.width_px}px`
+                : 'auto'};"
           />
         {/each}
       </colgroup>
@@ -427,35 +429,60 @@
                     {#if col.tooltipKey && row[col.tooltipKey]}
                       <span
                         data-tooltip={row[col.tooltipKey]}
-                        data-placement={colIndex < activeColumns.length / 2 ? "right" : "left"}
+                        data-placement={colIndex < activeColumns.length / 2
+                          ? "right"
+                          : "left"}
                         class="tooltip-text"
                       >
-                        {formatNumber(row[col.key], col.formatKey ? row[col.formatKey] : undefined)}
+                        {formatNumber(
+                          row[col.key],
+                          col.formatKey ? row[col.formatKey] : undefined,
+                        )}
                         {#if col.unitKey && row[col.unitKey]}
-                          <small style="opacity: 0.6; margin-left: 4px;">{row[col.unitKey]}</small>
+                          <small style="opacity: 0.6; margin-left: 4px;"
+                            >{row[col.unitKey]}</small
+                          >
                         {:else if col.unit}
-                          <small style="opacity: 0.6; margin-left: 4px;">{col.unit}</small>
+                          <small style="opacity: 0.6; margin-left: 4px;"
+                            >{col.unit}</small
+                          >
                         {/if}
                       </span>
                     {:else if col.showTooltip}
                       <span
                         data-tooltip={row[col.key]}
-                        data-placement={colIndex < activeColumns.length / 2 ? "right" : "left"}
+                        data-placement={colIndex < activeColumns.length / 2
+                          ? "right"
+                          : "left"}
                         class="tooltip-text"
                       >
-                        {formatNumber(row[col.key], col.formatKey ? row[col.formatKey] : undefined)}
+                        {formatNumber(
+                          row[col.key],
+                          col.formatKey ? row[col.formatKey] : undefined,
+                        )}
                         {#if col.unitKey && row[col.unitKey]}
-                          <small style="opacity: 0.6; margin-left: 4px;">{row[col.unitKey]}</small>
+                          <small style="opacity: 0.6; margin-left: 4px;"
+                            >{row[col.unitKey]}</small
+                          >
                         {:else if col.unit}
-                          <small style="opacity: 0.6; margin-left: 4px;">{col.unit}</small>
+                          <small style="opacity: 0.6; margin-left: 4px;"
+                            >{col.unit}</small
+                          >
                         {/if}
                       </span>
                     {:else}
-                      {formatNumber(row[col.key], col.formatKey ? row[col.formatKey] : undefined)}
+                      {formatNumber(
+                        row[col.key],
+                        col.formatKey ? row[col.formatKey] : undefined,
+                      )}
                       {#if col.unitKey && row[col.unitKey]}
-                        <small style="opacity: 0.6; margin-left: 4px;">{row[col.unitKey]}</small>
+                        <small style="opacity: 0.6; margin-left: 4px;"
+                          >{row[col.unitKey]}</small
+                        >
                       {:else if col.unit}
-                        <small style="opacity: 0.6; margin-left: 4px;">{col.unit}</small>
+                        <small style="opacity: 0.6; margin-left: 4px;"
+                          >{col.unit}</small
+                        >
                       {/if}
                     {/if}
                   {:else if col.tooltipKey && row[col.tooltipKey]}
