@@ -345,7 +345,7 @@
     {:else if activeTab === "editor"}
       <div
         class="dashboard-card header-container"
-        style="--module-accent: #01AAFF;"
+        style="--module-accent: {colorInput};"
       >
         <div class="title-row">
           <div class="header-title-row">
@@ -353,202 +353,108 @@
             <p class="status-subtitle">{selectedRow?.pid}</p>
           </div>
         </div>
-        <div class="pid-editor-form">
-          <input
-            name="PID"
-            placeholder="PID (e.g., 0x01)"
-            aria-label="pid"
-            aria-describedby="pid-helper"
-            autocomplete="off"
-            bind:value={pidInput}
-            aria-invalid={!isValidHex(pidInput)}
-          />
-          <small id="pid-helper"> On-board diagnostics Parameter ID </small>
-          <input
-            name="Name"
-            placeholder="Name"
-            aria-label="name"
-            aria-describedby="name-helper"
-            autocomplete="off"
-            bind:value={nameInput}
-            aria-invalid={!isValidName(nameInput)}
-          />
-          <small id="name-helper"> Name of the parameter </small>
-          <input
-            name="Description"
-            placeholder="Description (optional)"
-            aria-label="description"
-            aria-describedby="desc-helper"
-            autocomplete="off"
-            bind:value={descInput}
-            aria-invalid={descInput.length > 0
-              ? !isValidDescription(descInput)
-              : undefined}
-          />
-          <small id="desc-helper">
-            Detailed description of the parameter
-          </small>
-
-          <select
-            bind:value={unitInput}
-            name="Unit"
-            aria-label="unit"
-            aria-describedby="unit-helper"
-          >
-            <option value="" disabled selected>Select a unit...</option>
-            {#each units as unit}
-              <option value={unit}>{unit}</option>
-            {/each}
-          </select>
-          <small id="unit-helper"> Unit of measurement </small>
-
-          <div class="grid" style="margin-top: 1rem;">
+        <div class="editor-wrapper">
+          
+          <!-- Row 1: ID, MODE, PID, LENGTH -->
+          <div class="grid">
             <div>
-              <input
-                type="number"
-                name="MinValue"
-                placeholder="Min Value"
-                aria-label="Min value"
-                bind:value={minInput}
-                aria-invalid={minInput !== undefined &&
-                maxInput !== undefined &&
-                minInput > maxInput
-                  ? "true"
-                  : undefined}
-              />
+              <input name="CAN ID" placeholder="CAN ID (e.g., 0x7DF)" aria-label="can id" aria-describedby="id-helper" autocomplete="off" bind:value={idInput} aria-invalid={!isIdValidForMode(modeInput, idInput)} />
+              <small id="id-helper"> ECU CAN Identifier </small>
+            </div>
+            <div>
+              <select bind:value={modeInput} name="Mode" aria-label="mode" aria-describedby="mode-helper" aria-invalid={!isModeValidForPid(pidInput, modeInput)}>
+                <option value="" disabled selected>Select a mode...</option>
+                {#each modes as mode}
+                  <option value={mode.value}>{mode.label}</option>
+                {/each}
+              </select>
+              <small id="mode-helper"> OBD2 Service Mode </small>
+            </div>
+            <div>
+              <input name="PID" placeholder="PID (e.g., 0x0C)" aria-label="pid" aria-describedby="pid-helper" autocomplete="off" bind:value={pidInput} aria-invalid={!isValidHex(pidInput)} />
+              <small id="pid-helper"> Parameter ID </small>
+            </div>
+            <div>
+              <input type="number" name="Length" placeholder="Length (bytes)" aria-label="length" aria-describedby="length-helper" bind:value={lengthInput} aria-invalid={!isLengthValidForPid(pidInput, lengthInput)} />
+              <small id="length-helper"> Expected response bytes </small>
+            </div>
+          </div>
+
+          <!-- Row 2: NAME, DESCRIPTION -->
+          <div class="grid margin-top">
+            <div>
+              <input name="Name" placeholder="Name" aria-label="name" aria-describedby="name-helper" autocomplete="off" bind:value={nameInput} aria-invalid={!isValidName(nameInput)} />
+              <small id="name-helper"> Name of the parameter </small>
+            </div>
+            <div>
+              <input name="Description" placeholder="Description (optional)" aria-label="description" aria-describedby="desc-helper" autocomplete="off" bind:value={descInput} aria-invalid={descInput.length > 0 ? !isValidDescription(descInput) : undefined} />
+              <small id="desc-helper"> Detailed description </small>
+            </div>
+          </div>
+
+          <!-- Row 3: UNIT, MIN, MAX -->
+          <div class="grid margin-top">
+            <div>
+              <select bind:value={unitInput} name="Unit" aria-label="unit" aria-describedby="unit-helper" aria-invalid={unitInput ? false : undefined}>
+                <option value="" disabled selected>Select a unit...</option>
+                {#each units as unit}
+                  <option value={unit}>{unit}</option>
+                {/each}
+              </select>
+              <small id="unit-helper"> Unit of measurement </small>
+            </div>
+            <div>
+              <input type="number" name="MinValue" placeholder="Min Value" aria-label="Min value" bind:value={minInput} aria-invalid={minInput !== undefined && maxInput !== undefined && minInput > maxInput ? "true" : undefined} />
               <small>Minimum expected value</small>
             </div>
             <div>
-              <input
-                type="number"
-                name="MaxValue"
-                placeholder="Max Value"
-                aria-label="Max value"
-                bind:value={maxInput}
-                aria-invalid={minInput !== undefined &&
-                maxInput !== undefined &&
-                minInput > maxInput
-                  ? "true"
-                  : undefined}
-              />
+              <input type="number" name="MaxValue" placeholder="Max Value" aria-label="Max value" bind:value={maxInput} aria-invalid={minInput !== undefined && maxInput !== undefined && minInput > maxInput ? "true" : undefined} />
               <small>Maximum expected value</small>
             </div>
           </div>
 
-          <select
-            bind:value={modeInput}
-            name="Mode"
-            aria-label="mode"
-            aria-describedby="mode-helper"
-            aria-invalid={!isModeValidForPid(pidInput, modeInput)}
-            style="margin-top: 1rem;"
-          >
-            <option value="" disabled selected>Select a mode...</option>
-            {#each modes as mode}
-              <option value={mode.value}>{mode.label}</option>
-            {/each}
-          </select>
-          <small id="mode-helper"> OBD2 Service Mode </small>
-
-          <input
-            name="Formula"
-            placeholder="Formula (e.g., A * 100 / 255)"
-            aria-label="formula"
-            aria-describedby="formula-helper"
-            autocomplete="off"
-            bind:value={formulaInput}
-            aria-invalid={!isValidFormula(modeInput, formulaInput)}
-            style="margin-top: 1rem;"
-          />
-          <small id="formula-helper"> Expression to compute the final value </small>
-
-          <input
-            type="number"
-            name="Length"
-            placeholder="Length (bytes)"
-            aria-label="length"
-            aria-describedby="length-helper"
-            bind:value={lengthInput}
-            aria-invalid={!isLengthValidForPid(pidInput, lengthInput)}
-            style="margin-top: 1rem;"
-          />
-          <small id="length-helper"> Length of the expected response in bytes </small>
-
-          <input
-            name="CAN ID"
-            placeholder="CAN ID (e.g., 0x7DF)"
-            aria-label="can id"
-            aria-describedby="id-helper"
-            autocomplete="off"
-            bind:value={idInput}
-            aria-invalid={!isIdValidForMode(modeInput, idInput)}
-            style="margin-top: 1rem;"
-          />
-          <small id="id-helper"> ECU CAN Identifier </small>
-
-          <input
-            type="number"
-            name="Priority"
-            placeholder="Priority (1-255)"
-            aria-label="priority"
-            aria-describedby="priority-helper"
-            min="1"
-            max="255"
-            bind:value={priorityInput}
-            aria-invalid={priorityInput !== undefined && (priorityInput < 1 || priorityInput > 255) ? "true" : undefined}
-            style="margin-top: 1rem;"
-          />
-          <small id="priority-helper"> Polling priority </small>
-
-          <input
-            type="color"
-            name="Color"
-            aria-label="color"
-            aria-describedby="color-helper"
-            bind:value={colorInput}
-            style="margin-top: 1rem; height: 3rem; padding: 0.25rem;"
-          />
-          <small id="color-helper"> Display color ({colorInput.toUpperCase()}) </small>
-
-          <input
-            type="number"
-            name="Update Interval"
-            placeholder="Update Interval (ms)"
-            aria-label="update interval"
-            aria-describedby="interval-helper"
-            min="0"
-            max="4294967295"
-            bind:value={updateIntervalInput}
-            aria-invalid={updateIntervalInput !== undefined && updateIntervalInput !== 0 && (updateIntervalInput < 16 || updateIntervalInput > 4294967295) ? "true" : undefined}
-            style="margin-top: 1rem;"
-          />
-          <small id="interval-helper">
-            {updateIntervalInput === 0 ? "Polling Disabled" : "Update interval in milliseconds"}
-          </small>
-
-          <div style="margin-top: 1rem; display: flex; align-items: flex-start; gap: 1rem;">
-            <div style="flex-grow: 1;">
-              <select 
-                bind:value={iconInput} 
-                name="Icon"
-                aria-label="icon"
-                aria-describedby="icon-helper"
-                aria-invalid={iconInput ? false : undefined}
-              >
-                <option value="" disabled selected>Select an icon...</option>
-                {#each icons as iconName}
-                  <option value={iconName}>
-                    {iconName.split("-").map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(" ")}
-                  </option>
-                {/each}
-              </select>
-              <small id="icon-helper"> Display icon </small>
+          <!-- Row 4: FORMULA -->
+          <div class="grid margin-top">
+            <div>
+              <input name="Formula" placeholder="Formula (e.g., A * 100 / 255)" aria-label="formula" aria-describedby="formula-helper" autocomplete="off" bind:value={formulaInput} aria-invalid={!isValidFormula(modeInput, formulaInput)} />
+              <small id="formula-helper"> Expression to compute the final value </small>
             </div>
-            {#if iconInput}
-              <div style="width: calc(1rem * var(--pico-line-height) + var(--pico-form-element-spacing-vertical) * 2 + var(--pico-border-width) * 2); height: calc(1rem * var(--pico-line-height) + var(--pico-form-element-spacing-vertical) * 2 + var(--pico-border-width) * 2); display: flex; align-items: center; justify-content: center; background: var(--pico-form-element-background-color); border: var(--pico-border-width) solid var(--pico-form-element-border-color); border-radius: var(--pico-border-radius); color: {colorInput};">
-                <Icon name={iconInput} size={24} />
+          </div>
+
+          <!-- Row 5: PRIORITY, INTERVAL, COLOR, ICON -->
+          <div class="grid margin-top">
+            <div>
+              <input type="number" name="Priority" placeholder="Priority (1-255)" aria-label="priority" aria-describedby="priority-helper" min="1" max="255" bind:value={priorityInput} aria-invalid={priorityInput !== undefined && (priorityInput < 1 || priorityInput > 255) ? "true" : undefined} />
+              <small id="priority-helper"> Polling priority </small>
+            </div>
+            <div>
+              <input type="number" name="Update Interval" placeholder="Interval (ms)" aria-label="update interval" aria-describedby="interval-helper" min="0" max="4294967295" bind:value={updateIntervalInput} aria-invalid={updateIntervalInput !== undefined && updateIntervalInput !== 0 && (updateIntervalInput < 16 || updateIntervalInput > 4294967295) ? "true" : undefined} />
+              <small id="interval-helper">{updateIntervalInput === 0 ? "Polling Disabled" : "Interval in ms"}</small>
+            </div>
+            <div>
+              <input class="color-picker" type="color" name="Color" aria-label="color" aria-describedby="color-helper" bind:value={colorInput} />
+              <small id="color-helper"> Color ({colorInput.toUpperCase()}) </small>
+            </div>
+            <div>
+              <div class="icon-selector-wrapper">
+                <div class="icon-select-container">
+                  <select bind:value={iconInput} name="Icon" aria-label="icon" aria-describedby="icon-helper" aria-invalid={iconInput ? false : undefined}>
+                    <option value="" disabled selected>Select an icon...</option>
+                    {#each icons as iconName}
+                      <option value={iconName}>
+                        {iconName.split("-").map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(" ")}
+                      </option>
+                    {/each}
+                  </select>
+                  <small id="icon-helper"> Display icon </small>
+                </div>
+                {#if iconInput}
+                  <div class="icon-preview-box" style="color: {colorInput};">
+                    <Icon name={iconInput} size={24} />
+                  </div>
+                {/if}
               </div>
-            {/if}
+            </div>
           </div>
 
         </div>
@@ -702,5 +608,51 @@
       opacity: 1;
       transform: translateY(0);
     }
+  }
+
+  .editor-wrapper {
+    width: 100%;
+    padding-top: 0.5rem;
+    /* Remove default PicoCSS orange focus outline, but preserve red validation outlines */
+    --pico-form-element-focus-color: transparent;
+    --pico-form-element-active-border-color: var(--pico-form-element-border-color);
+    
+    /* Condense the inputs for a sleeker, tighter design */
+    --pico-form-element-spacing-vertical: 0.4rem;
+    --pico-form-element-spacing-horizontal: 0.75rem;
+    --pico-spacing: 0.25rem;
+  }
+
+  .margin-top {
+    margin-top: 0.5rem;
+  }
+
+  .color-picker {
+    height: calc(1rem * var(--pico-line-height) + var(--pico-form-element-spacing-vertical) * 2 + var(--pico-border-width) * 2);
+    padding: 0.25rem;
+    width: 100%;
+  }
+
+  .icon-selector-wrapper {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    width: 100%;
+  }
+
+  .icon-select-container {
+    flex-grow: 1;
+  }
+
+  .icon-preview-box {
+    width: calc(1rem * var(--pico-line-height) + var(--pico-form-element-spacing-vertical) * 2 + var(--pico-border-width) * 2);
+    height: calc(1rem * var(--pico-line-height) + var(--pico-form-element-spacing-vertical) * 2 + var(--pico-border-width) * 2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--pico-form-element-background-color);
+    border: var(--pico-border-width) solid var(--pico-form-element-border-color);
+    border-radius: var(--pico-border-radius);
+    flex-shrink: 0;
   }
 </style>
