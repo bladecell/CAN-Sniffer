@@ -93,12 +93,12 @@ export function isValidName(input: string): boolean {
 export function isValidDescription(input: string): boolean {
   if (!input) return true;
   if (input.length > 256) return false;
-  return /^[0-9A-Za-z\-_.,\/*+ ]+$/.test(input);
+  return /^[0-9A-Za-z\-\(\)_.,\/*+ ]+$/.test(input);
 }
 
 export function isModeValidForPid(pidInput: string, modeInput: string): boolean {
   if (!modeInput) return false; // Mode is strictly required
-  
+
   // If PID hasn't been validly entered yet, just assume mode is fine for now
   if (!isValidHex(pidInput)) return true;
 
@@ -163,13 +163,13 @@ export function isValidFormula(modeInput: string, formula: string): boolean {
   } else if (modeInput === "0x45") {
     // Derived Data: Uses specific functions, commas, hex strings, numbers, and basic math
     const allowedFunctions = ["getPIDRaw", "getPID", "getBit", "bitMask"];
-    
+
     let temp = formula;
     // Strip out the allowed functions
     for (const func of allowedFunctions) {
       temp = temp.split(func).join("");
     }
-    
+
     // Completely strip out full hex values (e.g. 0x0C, 0x1A) so their inner A-F letters don't bleed out
     temp = temp.replace(/0x[0-9a-fA-F]+/gi, "");
 
