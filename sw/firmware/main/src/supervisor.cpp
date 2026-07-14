@@ -11,9 +11,9 @@
 #include "esp_littlefs.h"
 #include "esp_log.h"
 #include "esp_mac.h"
+#include "esp_sleep.h"
 #include "esp_system.h"
 #include "esp_timer.h"
-#include "esp_sleep.h"
 #include "led_status.hpp"
 #include "obd2.hpp"
 #include "sd_card.hpp"
@@ -79,6 +79,7 @@ void SUPERVISOR::taskWrapper(void* param)
 
 void SUPERVISOR::task()
 {
+    uint32_t inactive_timer = 0;
     while (1)
     {
         switch (eState)
@@ -88,6 +89,15 @@ void SUPERVISOR::task()
                 break;
             case State::STARTING:
             {
+                esp_pm_config_esp32s3_t pm_config = {
+                    .max_freq_mhz = 240, .min_freq_mhz = 40, .light_sleep_enable = true};
+                esp_pm_configure(&pm_config);
+
+                esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "no_sleep", &pm_lock_);
+                if (pm_lock_)
+                {
+                    esp_pm_lock_acquire(pm_lock_);
+                }
                 bool success = true;
                 for (size_t i = 0; i < sizeof(setup_functions) / sizeof(setup_functions[0]); i++)
                 {
@@ -114,31 +124,51 @@ void SUPERVISOR::task()
                 if (CanDriver::getInstance().isBusConnected())
                 {
                     ESP_LOGI(TAG, "CAN bus connected, system RUNNING");
-                    eState = State::RUNNING;
+                    inactive_timer = 0;
+                    eState         = State::RUNNING;
                 }
                 else
                 {
                     ESP_LOGW(TAG, "Waiting for CAN bus connection...");
+                    // float voltage = get_battery_voltage();
+                    float voltage = 12.f;  // for bench test
+                    if (voltage > 13.2f)
+                    {
+                        ESP_LOGI(TAG, "Alternator is running (%.2fV). Staying awake.", voltage);
+                        inactive_timer = 0;
+                    }
+                    else
+                    {
+                        inactive_timer++;
+                        if (inactive_timer >= SLEEP_TRANSITION_TIMER_S)
+                        {
+                            ESP_LOGI(TAG, "CAN disconnected for %ds (Voltage %.2fV), transitioning to SLEEP",
+                                     SLEEP_TRANSITION_TIMER_S, voltage);
+                            inactive_timer = 0;
+                            eState         = State::STOPPING;
+                        }
+                    }
                 }
                 break;
             case State::RUNNING:
+                if (!CanDriver::getInstance().isBusConnected())
+                {
+                    ESP_LOGW(TAG, "CAN bus disconnected, system NOT_CONNECTED");
+                    eState = State::NOT_CONNECTED;
+                }
                 // monitor voltage, bus connection, etc, separate function probably
                 break;
             case State::STOPPING:
             {
                 ESP_LOGI(TAG, "Shutting down modules for sleep...");
 
-                // 1. Deinitialize highest-level apps
+                // Deinit components
                 AsyncWebServer::getInstance().stop();
                 OBD2::getInstance().deinit();
-
-                // 2. Shut down Wi-Fi (now leak-free!)
                 WIFI::getInstance().deinit();
-
-                // 3. Finally, tear down the CAN Driver
                 CanDriver::getInstance().deinit();
 
-                // 4. Put SN65HVD233 transceiver into Standby Mode (Listen-only, low power)
+                // 4. Put CAN transceiver into Standby Mode
                 gpio_set_level(CAN_RS_GPIO, 1);
 
                 eState = State::SLEEPING;
@@ -146,27 +176,48 @@ void SUPERVISOR::task()
             }
             case State::SLEEPING:
             {
-                // 1. Configure wakeup timer (e.g., 5 seconds)
-                esp_sleep_enable_timer_wakeup(5000000);
+                // float    voltage       = get_battery_voltage();
+                float    voltage       = 12.f;      // for bench test
+                uint64_t sleep_time_us = 10000000;  // 10 seconds normal sleep
 
+                if (voltage < 12.0f)
+                {
+                    sleep_time_us = 60000000;  // 60 seconds battery low sleep
+                    ESP_LOGW(TAG, "Battery low (%.2fV)! Sleeping aggressively...", voltage);
+                }
+                else
+                {
+                    ESP_LOGI(TAG, "Battery OK (%.2fV). Normal sleep...", voltage);
+                }
                 ESP_LOGI(TAG, "Entering Light Sleep...");
-                esp_light_sleep_start();
 
-                // --- WE WAKE UP HERE ---
-                ESP_LOGI(TAG, "Woke up. Checking bus activity...");
+                // Release the lock to allow Automatic Light Sleep
+                if (pm_lock_)
+                    esp_pm_lock_release(pm_lock_);
 
-                // 2. Wake up transceiver (RS pin LOW = High Speed mode)
+                // 1. Configure wakeup timer
+                esp_sleep_enable_timer_wakeup(sleep_time_us);
+
+                // 2. Just delay the task! FreeRTOS will seamlessly enter Light Sleep
+                vTaskDelay(pdMS_TO_TICKS(sleep_time_us / 1000));
+
+#ifdef CONFIG_PM_ENABLE
+                // Re-acquire the lock to prevent sleep during operation
+                if (pm_lock_)
+                    esp_pm_lock_acquire(pm_lock_);
+#endif
+
+                ESP_LOGI(TAG, "Woke up. Target sleep duration achieved.");
+                ESP_LOGI(TAG, "Checking bus activity...");
+
                 gpio_set_level(CAN_RS_GPIO, 0);
 
-                // 3. Initialize ONLY the CanDriver (with your config)
                 setup_can();
 
-                // 4. Run the fast, active ping
                 if (CanDriver::getInstance().quickCheckBus())
                 {
                     ESP_LOGI(TAG, "Bus is ALIVE! Starting full system...");
 
-                    // Bus is alive! Start everything else back up
                     setup_obd();
                     setup_wifi();
                     setup_webserver();
@@ -177,7 +228,6 @@ void SUPERVISOR::task()
                 {
                     ESP_LOGI(TAG, "Bus is dead. Going back to sleep.");
 
-                    // 5. Clean up the CanDriver queues/tasks and go back to standby
                     CanDriver::getInstance().deinit();
                     gpio_set_level(CAN_RS_GPIO, 1);
                 }

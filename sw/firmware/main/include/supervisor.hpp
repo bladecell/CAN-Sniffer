@@ -4,6 +4,7 @@
 #include <string>
 
 #include "esp_err.h"
+#include "esp_pm.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -11,6 +12,7 @@
 #define SUPERVISOR_TASK_CORE_ID 1
 #define PID_DEF_DB_PATH "/storage/pid_def.json"
 #define DTC_DESC_DB_PATH "/storage/dtcs.bin"
+#define SLEEP_TRANSITION_TIMER_S 60
 
 class SUPERVISOR
 {
@@ -56,10 +58,11 @@ private:
     SUPERVISOR(const SUPERVISOR&)            = delete;
     SUPERVISOR& operator=(const SUPERVISOR&) = delete;
 
-    void              task();
-    static void       taskWrapper(void* param);
-    TaskHandle_t      xTaskHandle;
-    SUPERVISOR::State eState = State::UNINITIALIZED;
+    void                 task();
+    static void          taskWrapper(void* param);
+    TaskHandle_t         xTaskHandle;
+    SUPERVISOR::State    eState   = State::UNINITIALIZED;
+    esp_pm_lock_handle_t pm_lock_ = nullptr;
 
     // component initializers
     static esp_err_t setup_flash_filesystem();

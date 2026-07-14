@@ -251,7 +251,7 @@ esp_err_t WIFI::stop()
 
 void WIFI::deinit()
 {
-    if (getState() == State::RUNNING)
+    if (getState() != State::UNINITIALIZED && getState() != State::INITIALIZED)
         stop();
 
     if (getState() != State::UNINITIALIZED)
