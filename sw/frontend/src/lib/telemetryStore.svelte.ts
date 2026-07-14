@@ -33,7 +33,7 @@ export class TelemetryStore {
       if (this.modeInput === "0x45") errors.push("Formula syntax invalid: Derived mode only allows getPID, getPIDRaw, getBit, bitMask, hex values, and math.");
       else errors.push("Formula syntax invalid: Standard modes only allow A, B, C, D, a, b, c, d, numbers, and basic math.");
     }
-    if (this.lengthInput !== undefined && this.pidInput && !isLengthValidForPid(this.pidInput, this.lengthInput)) errors.push("Length is invalid (PIDs <= 0xFF require 2 bytes, others require 3 bytes).");
+    if (this.lengthInput !== undefined && this.pidInput && !isLengthValidForPid(this.pidInput, this.lengthInput, this.modeInput)) errors.push("Length is invalid (PIDs <= 0xFF require 2 bytes, others require 3 bytes).");
     if (this.idInput && this.modeInput && !isIdValidForMode(this.modeInput, this.idInput)) errors.push("CAN ID is invalid for the selected mode (Current/Derived require 0x7DF, Read By Identifier requires 0x700-0x7FF).");
     if (this.priorityInput !== undefined && (this.priorityInput < 1 || this.priorityInput > 255)) errors.push("Priority must be between 1 and 255.");
     if (this.updateIntervalInput !== undefined && this.updateIntervalInput !== 0 && (this.updateIntervalInput < 16 || this.updateIntervalInput > 4294967295)) errors.push("Update Interval must be at least 16ms (or 0 to disable).");
@@ -87,7 +87,7 @@ export function isValidHex(input: string): boolean {
 export function isValidName(input: string): boolean {
   if (!input) return false;
   if (input.length > 128) return false;
-  return /^[0-9A-Za-z\-_.,\/*+ ]+$/.test(input);
+  return /^[0-9A-Za-z\-\(\)_.,\/*+ ]+$/.test(input);
 }
 
 export function isValidDescription(input: string): boolean {
@@ -114,7 +114,8 @@ export function isModeValidForPid(pidInput: string, modeInput: string): boolean 
   }
 }
 
-export function isLengthValidForPid(pidInput: string, lengthInput: number | undefined): boolean {
+export function isLengthValidForPid(pidInput: string, lengthInput: number | undefined, modeInput?: string): boolean {
+  if (modeInput === "0x45") return true; // Derived data doesn't use length
   if (lengthInput === undefined) return false;
   if (!isValidHex(pidInput)) return true;
 

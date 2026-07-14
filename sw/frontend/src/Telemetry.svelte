@@ -209,16 +209,13 @@
   });
 
   $effect(() => {
-    if (
-      telemetryStore.modeInput &&
-      telemetryStore.modeInput !== telemetryStore.lastValidModeForId
-    ) {
+    if (telemetryStore.modeInput && telemetryStore.modeInput !== telemetryStore.lastValidModeForId) {
       telemetryStore.lastValidModeForId = telemetryStore.modeInput;
-      if (
-        telemetryStore.modeInput === "0x01" ||
-        telemetryStore.modeInput === "0x45"
-      ) {
+      if (telemetryStore.modeInput === "0x01" || telemetryStore.modeInput === "0x45") {
         telemetryStore.idInput = "0x7DF";
+      }
+      if (telemetryStore.modeInput === "0x45") {
+        telemetryStore.lengthInput = 0;
       }
     }
   });
@@ -478,12 +475,12 @@
                 aria-label="length"
                 aria-describedby="length-helper"
                 bind:value={telemetryStore.lengthInput}
-                aria-invalid={!isLengthValidForPid(
-                  telemetryStore.pidInput,
-                  telemetryStore.lengthInput,
-                )}
+                aria-invalid={!isLengthValidForPid(telemetryStore.pidInput, telemetryStore.lengthInput, telemetryStore.modeInput)}
+                disabled={telemetryStore.modeInput === "0x45"}
               />
-              <small id="length-helper"> Expected response bytes </small>
+              <small id="length-helper">
+                {telemetryStore.modeInput === "0x45" ? "Not used in Derived Data" : "Expected response bytes"}
+              </small>
             </div>
           </div>
 
@@ -525,7 +522,6 @@
                 name="Unit"
                 aria-label="unit"
                 aria-describedby="unit-helper"
-                aria-invalid={telemetryStore.unitInput ? false : undefined}
               >
                 <option value="" disabled selected>Select a unit...</option>
                 {#each units as unit}
