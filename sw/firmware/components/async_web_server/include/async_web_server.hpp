@@ -25,6 +25,7 @@ public:
         uint8_t        async_worker_task_priority = 5;
         uint32_t       async_worker_stack_size    = 8192;
         int            worker_core_id             = tskNO_AFFINITY;
+        uint32_t       max_requests_per_sec       = 50;
     };
 
     static AsyncWebServer& getInstance()
@@ -90,4 +91,8 @@ private:
     esp_err_t   start_workers(uint8_t num_workers, uint32_t stack_size, uint8_t priority, int core_id);
     void        worker_task();
     static void worker_task_wrapper(void* arg);
+
+    uint32_t max_requests_per_sec_  = 50;
+    uint32_t req_count_this_window_ = 0;
+    int64_t  window_start_us_       = 0;
 };

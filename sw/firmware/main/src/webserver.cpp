@@ -780,6 +780,7 @@ esp_err_t setup_web_server()
     AsyncWebServer::Config server_config;
     server_config.async_worker_task_num         = 6;
     server_config.max_open_sockets              = 7;
+    server_config.max_requests_per_sec          = 50;
     server_config.async_worker_task_priority    = 5;
     server_config.async_worker_stack_size       = 8192;
     server_config.httpd_config.uri_match_fn     = httpd_uri_match_wildcard;

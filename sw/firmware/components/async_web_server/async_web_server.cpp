@@ -55,6 +55,8 @@ esp_err_t AsyncWebServer::start(Config config)
     config.httpd_config.lru_purge_enable = false;
     config.httpd_config.stack_size       = 8192;
 
+    max_requests_per_sec_ = config.max_requests_per_sec;
+
     ESP_RETURN_ON_ERROR(httpd_start(&server_, &config.httpd_config), TAG, "Failed to start server");
     ESP_LOGI(TAG, "Server started successfully.");
     return ESP_OK;
@@ -159,6 +161,23 @@ esp_err_t AsyncWebServer::queue_request(httpd_req_t* req)
     // 1. Detach the request first
     if (httpd_req_async_handler_begin(req, &copy) != ESP_OK)
         return ESP_FAIL;
+
+    int64_t now = esp_timer_get_time();
+    if (now - window_start_us_ >= 1000000)
+    {
+        window_start_us_       = now;
+        req_count_this_window_ = 0;
+    }
+    req_count_this_window_++;
+
+    if (req_count_this_window_ > max_requests_per_sec_)
+    {
+        ESP_LOGW(TAG, "Rate limit exceeded, uri=%s", copy->uri);
+        httpd_resp_set_status(copy, "429 Too Many Requests");
+        httpd_resp_sendstr(copy, "{\"error\":\"Rate limit exceeded.\"}");
+        httpd_req_async_handler_complete(copy);
+        return ESP_OK;
+    }
 
     RouteContext* ctx = (RouteContext*)req->user_ctx;
 
