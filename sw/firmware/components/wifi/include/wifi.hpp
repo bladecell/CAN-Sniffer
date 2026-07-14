@@ -158,6 +158,7 @@ private:
     // Event handlers
     esp_event_handler_instance_t m_wifi_event_handler;
     esp_event_handler_instance_t m_ip_event_handler;
+    esp_event_handler_instance_t m_internal_event_handler;
 
     // Callbacks
     std::vector<ClientConnectCallback>    m_connect_callbacks;

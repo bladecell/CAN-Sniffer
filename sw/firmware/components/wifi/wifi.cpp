@@ -50,6 +50,7 @@ WIFI::WIFI()
       m_netif_sta(nullptr),
       m_wifi_event_handler(nullptr),
       m_ip_event_handler(nullptr),
+      m_internal_event_handler(nullptr),
       m_mutex(xSemaphoreCreateMutex()),
       m_retry_count(0)
 {
@@ -125,7 +126,7 @@ esp_err_t WIFI::init(const Config& config)
     ERROR_CHECK(ret, "Failed to register IP event handlers", goto err);
 
     ret =
-        esp_event_handler_instance_register(WIFI_INTERNAL_EVENT, ESP_EVENT_ANY_ID, &internal_event_handler, this, NULL);
+        esp_event_handler_instance_register(WIFI_INTERNAL_EVENT, ESP_EVENT_ANY_ID, &internal_event_handler, this, &m_internal_event_handler);
 
     ERROR_CHECK(ret, "Failed to register internal event handlers", goto err);
 
@@ -262,6 +263,10 @@ void WIFI::deinit()
         if (m_ip_event_handler)
         {
             esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, m_ip_event_handler);
+        }
+        if (m_internal_event_handler)
+        {
+            esp_event_handler_instance_unregister(WIFI_INTERNAL_EVENT, ESP_EVENT_ANY_ID, m_internal_event_handler);
         }
 
         esp_wifi_deinit();

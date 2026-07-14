@@ -4,6 +4,7 @@
 
 #include <cstring>
 
+#include "async_web_server.hpp"
 #include "battery.hpp"
 #include "can_driver.hpp"
 #include "esp_err.h"
@@ -12,6 +13,7 @@
 #include "esp_mac.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "esp_sleep.h"
 #include "led_status.hpp"
 #include "obd2.hpp"
 #include "sd_card.hpp"
@@ -123,8 +125,64 @@ void SUPERVISOR::task()
                 // monitor voltage, bus connection, etc, separate function probably
                 break;
             case State::STOPPING:
-                // gracefull shutdown
+            {
+                ESP_LOGI(TAG, "Shutting down modules for sleep...");
+
+                // 1. Deinitialize highest-level apps
+                AsyncWebServer::getInstance().stop();
+                OBD2::getInstance().deinit();
+
+                // 2. Shut down Wi-Fi (now leak-free!)
+                WIFI::getInstance().deinit();
+
+                // 3. Finally, tear down the CAN Driver
+                CanDriver::getInstance().deinit();
+
+                // 4. Put SN65HVD233 transceiver into Standby Mode (Listen-only, low power)
+                gpio_set_level(CAN_RS_GPIO, 1);
+
+                eState = State::SLEEPING;
                 break;
+            }
+            case State::SLEEPING:
+            {
+                // 1. Configure wakeup timer (e.g., 5 seconds)
+                esp_sleep_enable_timer_wakeup(5000000);
+
+                ESP_LOGI(TAG, "Entering Light Sleep...");
+                esp_light_sleep_start();
+
+                // --- WE WAKE UP HERE ---
+                ESP_LOGI(TAG, "Woke up. Checking bus activity...");
+
+                // 2. Wake up transceiver (RS pin LOW = High Speed mode)
+                gpio_set_level(CAN_RS_GPIO, 0);
+
+                // 3. Initialize ONLY the CanDriver (with your config)
+                setup_can();
+
+                // 4. Run the fast, active ping
+                if (CanDriver::getInstance().quickCheckBus())
+                {
+                    ESP_LOGI(TAG, "Bus is ALIVE! Starting full system...");
+
+                    // Bus is alive! Start everything else back up
+                    setup_obd();
+                    setup_wifi();
+                    setup_webserver();
+
+                    eState = State::NOT_CONNECTED;
+                }
+                else
+                {
+                    ESP_LOGI(TAG, "Bus is dead. Going back to sleep.");
+
+                    // 5. Clean up the CanDriver queues/tasks and go back to standby
+                    CanDriver::getInstance().deinit();
+                    gpio_set_level(CAN_RS_GPIO, 1);
+                }
+                break;
+            }
             case State::ERROR:
                 // handle error, maybe try to restart components or just log and wait for manual intervention
                 break;
@@ -221,7 +279,6 @@ esp_err_t SUPERVISOR::setup_can()
     esp_err_t ret = CanDriver::getInstance().init(config);
     CanDriver::getInstance().setRxCallback(LedStatus::staticBlink, nullptr);
 
-    vTaskDelay(pdMS_TO_TICKS(1000));
     if (ret != ESP_OK || !CanDriver::getInstance().isInitialized())
     {
         ESP_LOGE(TAG, "Failed to initialize CAN driver");

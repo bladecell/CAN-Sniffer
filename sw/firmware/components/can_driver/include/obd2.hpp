@@ -41,6 +41,7 @@ public:
     }
 
     esp_err_t init();
+    void      deinit();
 
     bool isPidInit() const;
 

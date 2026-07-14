@@ -112,6 +112,8 @@ public:
         return nodeConfig;
     }
 
+    bool quickCheckBus();
+
     Config getConfig() const
     {
         return m_config;

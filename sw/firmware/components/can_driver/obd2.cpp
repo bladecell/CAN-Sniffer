@@ -86,10 +86,10 @@ public:
  */
 OBD2::OBD2()
     : continuousRunning(false),
-      xPidConnectedSemaphore(xSemaphoreCreateBinary()),
-      xBusArbitrationMutex(xSemaphoreCreateMutex()),
-      xBusConnectionSemaphore(xSemaphoreCreateBinary()),
-      xRequestNextPIDSemaphore(xSemaphoreCreateBinary())
+      xPidConnectedSemaphore(nullptr),
+      xBusArbitrationMutex(nullptr),
+      xBusConnectionSemaphore(nullptr),
+      xRequestNextPIDSemaphore(nullptr)
 {
 }
 
@@ -99,6 +99,14 @@ OBD2::OBD2()
  */
 OBD2::~OBD2()
 {
+    deinit();
+}
+
+void OBD2::deinit()
+{
+    stopContinuousMode();
+    canDriver.setConnectionChangeCallback(nullptr, nullptr);
+
     if (ReceiveTaskHandle)
     {
         vTaskDelete(ReceiveTaskHandle);
@@ -108,6 +116,11 @@ OBD2::~OBD2()
     {
         vTaskDelete(PollTaskHandle);
         PollTaskHandle = nullptr;
+    }
+    if (callbackWorkerTaskHandle)
+    {
+        vTaskDelete(callbackWorkerTaskHandle);
+        callbackWorkerTaskHandle = nullptr;
     }
     if (xPidConnectedSemaphore)
     {
@@ -129,6 +142,18 @@ OBD2::~OBD2()
         vSemaphoreDelete(xRequestNextPIDSemaphore);
         xRequestNextPIDSemaphore = nullptr;
     }
+    if (derivedPidQueue_)
+    {
+        vQueueDelete(derivedPidQueue_);
+        derivedPidQueue_ = nullptr;
+    }
+    if (event_queue)
+    {
+        vQueueDelete(event_queue);
+        event_queue = nullptr;
+    }
+
+    pidsInitialized = false;
 }
 
 /**
@@ -144,11 +169,25 @@ esp_err_t OBD2::init()
         return ESP_FAIL;
     }
 
-    derivedPidQueue_ = xQueueCreate(10, sizeof(uint16_t));
+    if (xPidConnectedSemaphore == nullptr)
+    {
+        xPidConnectedSemaphore = xSemaphoreCreateBinary();
+        xBusArbitrationMutex = xSemaphoreCreateMutex();
+        xBusConnectionSemaphore = xSemaphoreCreateBinary();
+        xRequestNextPIDSemaphore = xSemaphoreCreateBinary();
+    }
+
+    if (derivedPidQueue_ == nullptr)
+    {
+        derivedPidQueue_ = xQueueCreate(10, sizeof(uint16_t));
+    }
 
     initDef();
 
-    event_queue = xQueueCreate(5, sizeof(bool));
+    if (event_queue == nullptr)
+    {
+        event_queue = xQueueCreate(5, sizeof(bool));
+    }
     BaseType_t taskCreated =
         xTaskCreatePinnedToCore(callbackWorkerTaskWrapper, "OBD_Connection_callback_task", 4096, this, tskIDLE_PRIORITY,
                                 &callbackWorkerTaskHandle, CORE_ID_CAN_TASKS);

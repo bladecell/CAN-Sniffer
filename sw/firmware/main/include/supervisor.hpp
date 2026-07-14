@@ -22,6 +22,7 @@ public:
         NOT_CONNECTED,
         RUNNING,
         STOPPING,
+        SLEEPING,
         ERROR,
     };
 

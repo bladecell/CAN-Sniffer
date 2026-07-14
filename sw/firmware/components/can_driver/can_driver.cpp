@@ -28,17 +28,6 @@ CanDriver::CanDriver()
 CanDriver::~CanDriver()
 {
     (void)deinit();
-
-    if (rxQueue != nullptr)
-    {
-        vQueueDelete(rxQueue);
-        rxQueue = nullptr;
-    }
-    if (txQueue != nullptr)
-    {
-        vQueueDelete(txQueue);
-        txQueue = nullptr;
-    }
 }
 
 void CanDriver::setDebugMode(bool enable)
@@ -174,12 +163,36 @@ esp_err_t CanDriver::deinit()
         return ESP_OK;
     }
 
-    if (healthCheckTaskHandle)
+    if (healthCheckTaskHandle != nullptr)
     {
-        xTaskNotifyGive(healthCheckTaskHandle);
         vTaskDelete(healthCheckTaskHandle);
         healthCheckTaskHandle = nullptr;
     }
+
+    if (txTaskHandle != nullptr)
+    {
+        vTaskDelete(txTaskHandle);
+        txTaskHandle = nullptr;
+    }
+
+    if (rxQueue != nullptr)
+    {
+        vQueueDelete(rxQueue);
+        rxQueue = nullptr;
+    }
+
+    if (txQueue != nullptr)
+    {
+        vQueueDelete(txQueue);
+        txQueue = nullptr;
+    }
+
+    if (canConnectedSemaphore != nullptr)
+    {
+        vSemaphoreDelete(canConnectedSemaphore);
+        canConnectedSemaphore = nullptr;
+    }
+
     twai_node_disable(nodeHdl);
     esp_err_t ret = twai_node_delete(nodeHdl);
     if (ret != ESP_OK)
@@ -188,7 +201,6 @@ esp_err_t CanDriver::deinit()
         return ret;
     }
 
-    flushRxQueue();
     stop_sim_task();
     canState.store(STATE::NOT_INITIALIZED);
     return ESP_OK;
@@ -413,6 +425,32 @@ esp_err_t CanDriver::flushRxQueue()
 
     xQueueReset(rxQueue);
     return ESP_OK;
+}
+
+bool CanDriver::quickCheckBus()
+{
+    if (!isInitialized())
+    {
+        return false;
+    }
+
+    consecutiveAckErrors.store(0);
+    consecutiveStuffErrors.store(0);
+
+    esp_err_t ret = pingBus();
+    if (ret != ESP_OK)
+    {
+        return false;
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(50));
+
+    if (consecutiveAckErrors.load() == 0 && consecutiveStuffErrors.load() == 0)
+    {
+        return true;
+    }
+
+    return false;
 }
 
 esp_err_t CanDriver::pingBus()
