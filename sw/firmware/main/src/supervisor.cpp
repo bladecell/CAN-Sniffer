@@ -89,8 +89,7 @@ void SUPERVISOR::task()
                 break;
             case State::STARTING:
             {
-                esp_pm_config_esp32s3_t pm_config = {
-                    .max_freq_mhz = 240, .min_freq_mhz = 40, .light_sleep_enable = true};
+                esp_pm_config_t pm_config = {.max_freq_mhz = 240, .min_freq_mhz = 40, .light_sleep_enable = true};
                 esp_pm_configure(&pm_config);
 
                 esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "no_sleep", &pm_lock_);

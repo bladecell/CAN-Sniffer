@@ -1,7 +1,7 @@
 // utilities.h
 #pragma once
 
-#define DEBUG_MODE 0
+#define DEBUG_MODE 1
 #define APP_VERSION_MAJOR 0
 #define APP_VERION_MINOR 4
 
