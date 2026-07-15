@@ -28,6 +28,7 @@ public:
         int         slot;
         int         max_files;
         bool        format_if_mount_failed;
+        bool        enable_usb_msc;
     };
 
     struct SDInfo
@@ -112,4 +113,6 @@ private:
 
     Callback mount_callback;
     Callback unmount_callback;
+
+    bool enable_usb_msc = false;
 };

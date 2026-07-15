@@ -421,7 +421,12 @@ esp_err_t SUPERVISOR::setup_sd_card()
     config.base_path              = MOUNT_POINT;
     config.slot                   = SDMMC_HOST_SLOT_1;
     config.max_files              = 5;
-    config.format_if_mount_failed = true;
+    config.format_if_mount_failed = false;
+#ifdef ENABLE_USB_DRIVE
+    config.enable_usb_msc = true;
+#else
+    config.enable_usb_msc = false;
+#endif
 
     SDCard::getInstance().on_mount(
         []()

@@ -13,6 +13,9 @@
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_vfs_fat.h"
+#include "tinyusb.h"
+#include "tinyusb_default_config.h"
+#include "tinyusb_msc.h"
 
 static const char* TAG = "SD_CARD";
 
@@ -43,6 +46,7 @@ SDCard::~SDCard()
 esp_err_t SDCard::init(const SDCard::Config& config)
 {
     mount_path = config.base_path;
+    enable_usb_msc = config.enable_usb_msc;
 
     // Mount Settings
     mount_config.format_if_mount_failed   = config.format_if_mount_failed;
@@ -132,6 +136,31 @@ esp_err_t SDCard::mount_sdcard()
     {
         card = nullptr;
         return ret;
+    }
+
+    if (enable_usb_msc) {
+        ESP_LOGI(TAG, "Initializing USB Mass Storage...");
+        tinyusb_config_t tusb_cfg = TINYUSB_DEFAULT_CONFIG();
+        esp_err_t err = tinyusb_driver_install(&tusb_cfg);
+        if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+            ESP_LOGE(TAG, "Failed to install tinyusb driver: %s", esp_err_to_name(err));
+        } else {
+            tinyusb_msc_storage_config_t msc_cfg = {};
+            msc_cfg.medium.card = card;
+            msc_cfg.fat_fs.base_path = const_cast<char*>(mount_path);
+            msc_cfg.fat_fs.config = mount_config;
+            msc_cfg.fat_fs.do_not_format = !mount_config.format_if_mount_failed;
+            msc_cfg.fat_fs.format_flags = 0;
+            msc_cfg.mount_point = TINYUSB_MSC_STORAGE_MOUNT_USB;
+
+            tinyusb_msc_storage_handle_t msc_handle;
+            err = tinyusb_msc_new_storage_sdmmc(&msc_cfg, &msc_handle);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to init msc storage: %s", esp_err_to_name(err));
+            } else {
+                ESP_LOGI(TAG, "USB MSC Initialized successfully!");
+            }
+        }
     }
 
     mount_callback();
