@@ -73,6 +73,12 @@
     padding-bottom: 200px !important;
   }
 
+  @media (max-width: 991px) {
+    .main-content {
+      margin-top: 1rem; /* Remove the huge 100px gap since the nav bar is at the bottom on mobile */
+    }
+  }
+
   :global(:root) {
     --shadow-s: "inset 0 1px 2px #ffffff30, 0 1px 2px #00000030, 0 1px 2px #00000015";
     --shadow-m: "inset 0 1px 2px #ffffff50, 0 2px 4px #00000030, 0 2px 3px #00000015";

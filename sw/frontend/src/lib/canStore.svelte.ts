@@ -256,8 +256,8 @@ export class CanStore {
         const currentState = this.wsCanStatus?.state;
 
         if (previousState !== currentState) {
-            if (currentState === "Connected") {
-                alertStore.add("CAN Bus Connected", "success");
+            if (currentState === "CAN Connected") {
+                alertStore.add("CAN Bus " + currentState, "success");
             } else {
                 alertStore.add("CAN Bus " + currentState, "error");
             }
