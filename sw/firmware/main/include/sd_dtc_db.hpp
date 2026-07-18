@@ -85,5 +85,7 @@ public:
     {
         if (file)
             fclose(file);
+        if (lock)
+            vSemaphoreDelete(lock);
     }
 };

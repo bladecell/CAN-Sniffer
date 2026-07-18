@@ -162,7 +162,7 @@ void SUPERVISOR::task()
                 ESP_LOGI(TAG, "Shutting down modules for sleep...");
 
                 // Deinit components
-                AsyncWebServer::getInstance().stop();
+                stop_web_server();
                 OBD2::getInstance().deinit();
                 WIFI::getInstance().deinit();
                 CanDriver::getInstance().deinit();
@@ -227,6 +227,7 @@ void SUPERVISOR::task()
                 {
                     ESP_LOGI(TAG, "Bus is dead. Going back to sleep.");
 
+                    stop_web_server();
                     CanDriver::getInstance().deinit();
                     gpio_set_level(CAN_RS_GPIO, 1);
                 }

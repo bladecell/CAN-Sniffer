@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 
+void stop_web_server();
 #include "esp_err.h"
 
 // Forward declarations

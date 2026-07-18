@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <cstring>
 #include <set>
+#include <map>
 
 #include "can_driver.hpp"
 #include "esp_check.h"
@@ -153,6 +154,45 @@ void OBD2::deinit()
         event_queue = nullptr;
     }
 
+    if (dtcData.confirmedReadySemaphore)
+    {
+        vSemaphoreDelete(dtcData.confirmedReadySemaphore);
+        dtcData.confirmedReadySemaphore = nullptr;
+    }
+    if (dtcData.pendingReadySemaphore)
+    {
+        vSemaphoreDelete(dtcData.pendingReadySemaphore);
+        dtcData.pendingReadySemaphore = nullptr;
+    }
+    if (dtcData.permanentReadySemaphore)
+    {
+        vSemaphoreDelete(dtcData.permanentReadySemaphore);
+        dtcData.permanentReadySemaphore = nullptr;
+    }
+    if (dtcData.clearReadySemaphore)
+    {
+        vSemaphoreDelete(dtcData.clearReadySemaphore);
+        dtcData.clearReadySemaphore = nullptr;
+    }
+    if (dtcData.mtx_)
+    {
+        vSemaphoreDelete(dtcData.mtx_);
+        dtcData.mtx_ = nullptr;
+    }
+    if (vinData.vinReadySemaphore)
+    {
+        vSemaphoreDelete(vinData.vinReadySemaphore);
+        vinData.vinReadySemaphore = nullptr;
+    }
+    if (vinData.mtx_)
+    {
+        vSemaphoreDelete(vinData.mtx_);
+        vinData.mtx_ = nullptr;
+    }
+
+    connected_subscribers_.clear();
+    subscribers_.clear();
+
     pidsInitialized = false;
 }
 
@@ -175,6 +215,15 @@ esp_err_t OBD2::init()
         xBusArbitrationMutex = xSemaphoreCreateMutex();
         xBusConnectionSemaphore = xSemaphoreCreateBinary();
         xRequestNextPIDSemaphore = xSemaphoreCreateBinary();
+        
+        dtcData.confirmedReadySemaphore = xSemaphoreCreateBinary();
+        dtcData.pendingReadySemaphore = xSemaphoreCreateBinary();
+        dtcData.permanentReadySemaphore = xSemaphoreCreateBinary();
+        dtcData.clearReadySemaphore = xSemaphoreCreateBinary();
+        dtcData.mtx_ = xSemaphoreCreateMutex();
+        
+        vinData.vinReadySemaphore = xSemaphoreCreateBinary();
+        vinData.mtx_ = xSemaphoreCreateMutex();
     }
 
     if (derivedPidQueue_ == nullptr)
@@ -592,6 +641,7 @@ void OBD2::pollTaskWrapper(void* param)
 void OBD2::pollTask()
 {
     CanLoadTracker busTracker;
+    std::map<uint32_t, TickType_t> last_tx_time_per_ecu;
 
     while (1)
     {
@@ -609,6 +659,19 @@ void OBD2::pollTask()
         // 2. Take the most urgent appointment
         PollRequest current = pollQueue.pop();
 
+        TickType_t now = xTaskGetTickCount();
+        if (last_tx_time_per_ecu.count(current.id) > 0)
+        {
+            TickType_t time_since_last = now - last_tx_time_per_ecu[current.id];
+            if (time_since_last < pdMS_TO_TICKS(30))
+            {
+                // ECU is still busy! Delay this specific request and put it back in the queue
+                current.nextWake = last_tx_time_per_ecu[current.id] + pdMS_TO_TICKS(30);
+                pollQueue.push(current);
+                continue; // Immediately grab the next available request
+            }
+        }
+
         // 3. Process based on the Mode stored in the request
         if (current.payload.obd.mode == MODE_DERIVED_DATA)
         {
@@ -623,6 +686,7 @@ void OBD2::pollTask()
             if (err == ESP_OK)
             {
                 busTracker.recordTx();
+                last_tx_time_per_ecu[current.id] = xTaskGetTickCount();
             }
             else if (err == ESP_ERR_TIMEOUT || err == ESP_FAIL)
             {
@@ -1022,6 +1086,10 @@ esp_err_t OBD2::parseClearDTCsAck(const CanDriver::CanFrame& f)
         return ESP_ERR_INVALID_RESPONSE;
     }
     clearDTC(MODE_DTCS);
+    if (dtcData.clearReadySemaphore != NULL)
+    {
+        xSemaphoreGive(dtcData.clearReadySemaphore);
+    }
     return ESP_OK;
 }
 
@@ -1129,8 +1197,18 @@ esp_err_t OBD2::requestDTC(uint8_t mode)
     return ESP_OK;
 }
 
-void OBD2::requestClearDTCs()
+esp_err_t OBD2::requestClearDTCs()
 {
+    if (dtcData.clearReadySemaphore == NULL)
+    {
+        ESP_LOGE(TAG, "Semaphore for clear DTCs not initialized!");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    // Drain any stale tokens
+    while (xSemaphoreTake(dtcData.clearReadySemaphore, 0) == pdTRUE)
+        ;
+
     PollRequest r         = {};
     r.id                  = OBD2_FUNCTIONAL_ID;
     r.isRaw               = true;
@@ -1144,6 +1222,14 @@ void OBD2::requestClearDTCs()
     r.retries_left        = DEFAULT_NUMER_OF_RETRIES;
 
     req(r);
+
+    if (xSemaphoreTake(dtcData.clearReadySemaphore, pdMS_TO_TICKS(500)) != pdTRUE)
+    {
+        ESP_LOGW(TAG, "Clear DTCs Request timed out");
+        return ESP_ERR_TIMEOUT;
+    }
+
+    return ESP_OK;
 }
 
 void OBD2::multiframe_watchdog()

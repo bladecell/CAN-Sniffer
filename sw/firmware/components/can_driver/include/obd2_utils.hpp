@@ -201,6 +201,7 @@ typedef struct
     SemaphoreHandle_t        confirmedReadySemaphore;
     SemaphoreHandle_t        pendingReadySemaphore;
     SemaphoreHandle_t        permanentReadySemaphore;
+    SemaphoreHandle_t        clearReadySemaphore;
     SemaphoreHandle_t        mtx_;
 } DTCData_t;
 

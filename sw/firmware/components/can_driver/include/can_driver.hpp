@@ -13,7 +13,7 @@
 #define HEALTH_CHECK_TASK_PRIO 3  // Periodic monitoring
 #define TX_TASK_PRIO 4            // Periodic monitoring
 #define TX_QUEUE_SIZE 10
-#define MIN_TRANSMIT_PERIOD_MS 8
+#define MIN_TRANSMIT_PERIOD_MS 4
 
 #define CORE_ID_CAN_TASKS 1
 #define HEALTHCHECK_PING_PERIOD_MS 2000

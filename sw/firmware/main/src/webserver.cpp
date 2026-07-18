@@ -811,3 +811,18 @@ esp_err_t setup_web_server()
 
     return ESP_OK;
 }
+
+void stop_web_server()
+{
+    if (xWSDataStreamTaskHandle)
+    {
+        vTaskDelete(xWSDataStreamTaskHandle);
+        xWSDataStreamTaskHandle = nullptr;
+    }
+    if (WSDataStreamSemaphore)
+    {
+        vSemaphoreDelete(WSDataStreamSemaphore);
+        WSDataStreamSemaphore = nullptr;
+    }
+    AsyncWebServer::getInstance().stop();
+}

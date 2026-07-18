@@ -58,7 +58,7 @@ public:
     void      getSupportedPids(supportedPIDsGroup_t& supportedPIDsGroup);
     esp_err_t requestVIN();
     esp_err_t requestDTC(uint8_t mode);
-    void      requestClearDTCs();
+    esp_err_t requestClearDTCs();
     void      startPolling();
     void      pollRequestStaticPids();
     void      requestDefaultExtendedDiagnosticSession(uint32_t id, bool isRecurring = false);

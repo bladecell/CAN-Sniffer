@@ -507,10 +507,19 @@ cJSON* m_dtc_request(int mode)
 
 cJSON* m_clear_dtc_request()
 {
-    cJSON* root = cJSON_CreateObject();
-    OBD2::getInstance().requestClearDTCs();
+    cJSON*    root = cJSON_CreateObject();
+    esp_err_t err  = OBD2::getInstance().requestClearDTCs();
 
-    cJSON_AddStringToObject(root, "status", "success");
+    if (err == ESP_OK)
+    {
+        cJSON_AddStringToObject(root, "status", "success");
+        // add DTC data here
+    }
+    else
+    {
+        cJSON_AddStringToObject(root, "status", "error");
+        cJSON_AddStringToObject(root, "reason", esp_err_to_name(err));
+    }
 
     return root;
 }
