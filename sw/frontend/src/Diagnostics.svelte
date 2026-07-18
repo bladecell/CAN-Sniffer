@@ -152,44 +152,12 @@
     width: 100%;
   }
 
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    border: var(--pico-border-width) solid var(--pico-form-element-border-color);
-    background-color: rgb(
-      from var(--pico-form-element-background-color) r g b / 0.6
-    );
-    height: 40px;
-    margin: 0;
-    padding: 0 1rem;
-  }
-
-  .btn :global(svg) {
-    margin: 0 !important;
-  }
-
-  .btn:hover {
-    background-color: rgba(var(--color), 0.2);
-  }
-
-  .btn:active {
-    transform: scale(0.98);
-  }
-
   .btn-scan {
     --color: 57, 241, 166;
-    background-color: rgba(var(--color), 0.1);
-    border: none;
-    color: rgb(var(--color));
   }
 
   .btn-clear {
     --color: 231, 75, 26;
-    background-color: rgba(var(--color), 0.1);
-    border: none;
-    color: rgb(var(--color));
   }
   /* .btn:focus,
   .btn:active,

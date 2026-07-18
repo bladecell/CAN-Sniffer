@@ -1,4 +1,51 @@
+import type { Column } from "$lib/types";
+import { canStore } from "$lib/canStore.svelte";
+import { getModeLabel } from "$lib/pidHelpers.svelte.ts";
+
 export class TelemetryStore {
+  constructor() {
+    $effect.root(() => {
+      $effect(() => {
+        const piddef = canStore.pidDefinitions;
+        if (piddef && piddef !== this.lastPidDef) {
+          this.lastPidDef = piddef;
+
+          const newDefMap = new Map();
+          for (const def of piddef) {
+            newDefMap.set(Number(def.pid), def);
+          }
+
+          const updatedPids = [];
+
+          // 1. Process existing elements to retain their selected/loaded states
+          for (const existing of this.local_piddef) {
+            const rawPid = parseInt(existing.pid, 16);
+            const updatedDef = newDefMap.get(rawPid);
+
+            if (updatedDef) {
+              // PID is still in the CAN store. Keep states, update definitions.
+              updatedPids.push(
+                createRowObject(updatedDef, existing.loaded, existing.selected),
+              );
+              newDefMap.delete(rawPid);
+            } else {
+              // PID was removed from CAN store. Keep it, but set loaded to false.
+              existing.loaded = false;
+              updatedPids.push(existing);
+            }
+          }
+
+          // 2. Add brand new elements
+          for (const newDef of newDefMap.values()) {
+            updatedPids.push(createRowObject(newDef, true, false));
+          }
+
+          this.local_piddef = updatedPids;
+        }
+      });
+    });
+  }
+
   local_piddef = $state<any[]>([]);
   lastPidDef = $state<any[] | null>(null);
 
@@ -38,6 +85,19 @@ export class TelemetryStore {
     if (this.priorityInput !== undefined && (this.priorityInput < 1 || this.priorityInput > 255)) errors.push("Priority must be between 1 and 255.");
     if (this.updateIntervalInput !== undefined && this.updateIntervalInput !== 0 && (this.updateIntervalInput < 16 || this.updateIntervalInput > 4294967295)) errors.push("Update Interval must be at least 16ms (or 0 to disable).");
     return errors;
+  });
+
+  isFormValid = $derived.by(() => {
+    if (this.validationErrors.length > 0) return false;
+    if (!isValidHex(this.pidInput)) return false;
+    if (!isValidName(this.nameInput)) return false;
+    if (!this.modeInput) return false;
+    if (!isValidFormula(this.modeInput, this.formulaInput)) return false;
+    if (this.modeInput !== "0x45" && !isLengthValidForPid(this.pidInput, this.lengthInput, this.modeInput)) return false;
+    if (!isIdValidForMode(this.modeInput, this.idInput)) return false;
+    if (this.priorityInput === undefined || this.priorityInput < 1 || this.priorityInput > 255) return false;
+    if (this.updateIntervalInput === undefined) return false;
+    return true;
   });
 
   clearForm() {
@@ -190,3 +250,252 @@ export function isValidFormula(modeInput: string, formula: string): boolean {
 
   return false;
 }
+
+export function createRowObject(def: any, loaded: boolean, selected: boolean) {
+  const rawPid = Number(def.pid);
+  return {
+    // Static fields
+    name: def.name,
+    moduleDescription: def.description,
+    pid: "0x" + rawPid.toString(16).toUpperCase().padStart(2, "0"),
+    metricUnit: def.unit,
+    formula: def.formula,
+    priority: def.priority,
+    mode: def.mode,
+    modeDisplayFormat: "hex",
+    modeDescription: getModeLabel(def.mode),
+    min_val: def.minValue,
+    max_val: def.maxValue,
+    len: def.length,
+    updateInterval: def.update_interval_ms,
+
+    // Stateful editable fields
+    loaded: loaded,
+    selected: selected,
+
+    // Dynamic reactive getters
+    get value() {
+      return canStore.pids.get(rawPid)?.value ?? "N/A";
+    },
+    get isSupported() {
+      return (
+        canStore.obd2Status?.supported_pids.groups.get(rawPid) ??
+        canStore.pids.get(rawPid)?.isSupported ??
+        false
+      );
+    },
+    get supported() {
+      return this.isSupported ? "Yes" : "No";
+    },
+    get badgeColor() {
+      return this.isSupported ? "var(--normal-color)" : "var(--error-color)";
+    },
+    get isDirty() {
+      const original = canStore.pidDefinitions.find((d: any) => Number(d.pid) === rawPid);
+      const originalLoaded = !!original;
+
+      if (this.loaded !== originalLoaded) return true;
+      if (!this.loaded) return false;
+
+      return (
+        def.name !== original.name ||
+        def.description !== original.description ||
+        def.formula !== original.formula ||
+        def.unit !== original.unit ||
+        def.minValue !== original.minValue ||
+        def.maxValue !== original.maxValue ||
+        def.mode !== original.mode ||
+        def.length !== original.length ||
+        def.update_interval_ms !== original.update_interval_ms ||
+        def.id !== original.id ||
+        def.priority !== original.priority ||
+        def.color !== original.color ||
+        def.icon !== original.icon
+      );
+    },
+    get pendingChanges() {
+      return this.isDirty ? "Yes" : "No";
+    },
+    get pendingChangesColor() {
+      return this.isDirty ? "var(--pico-primary)" : "rgba(255, 255, 255, 0.2)";
+    },
+  };
+}
+
+export function handleSavePid() {
+  if (!telemetryStore.isFormValid) return;
+
+  const rawPid = parseInt(telemetryStore.pidInput.replace(/^0x/i, ""), 16);
+  const newDef = {
+    pid: rawPid,
+    name: telemetryStore.nameInput,
+    description: telemetryStore.descInput,
+    unit: telemetryStore.unitInput,
+    minValue: telemetryStore.minInput,
+    maxValue: telemetryStore.maxInput,
+    mode: parseInt(telemetryStore.modeInput.replace(/^0x/i, ""), 16),
+    length:
+      telemetryStore.modeInput === "0x45" ? 0 : telemetryStore.lengthInput,
+    formula: telemetryStore.formulaInput,
+    id: parseInt(telemetryStore.idInput.replace(/^0x/i, ""), 16),
+    priority: telemetryStore.priorityInput,
+    update_interval_ms: telemetryStore.updateIntervalInput,
+    color: parseInt(telemetryStore.colorInput.replace("#", ""), 16),
+    icon: telemetryStore.iconInput,
+  };
+
+  const localIndex = telemetryStore.local_piddef.findIndex(
+    (row) => parseInt(row.pid, 16) === rawPid,
+  );
+
+  if (localIndex >= 0) {
+    const loaded = telemetryStore.local_piddef[localIndex].loaded;
+    const selected = telemetryStore.local_piddef[localIndex].selected;
+    telemetryStore.local_piddef[localIndex] = createRowObject(
+      newDef,
+      loaded,
+      selected,
+    );
+  } else {
+    telemetryStore.local_piddef = [
+      ...telemetryStore.local_piddef,
+      createRowObject(newDef, false, false),
+    ];
+  }
+
+  // Force reactivity on the array if needed (though localIndex assignment might suffice, it's safer)
+  telemetryStore.local_piddef = [...telemetryStore.local_piddef];
+}
+
+export const columns: Column[] = [
+  {
+    label: "Select",
+    key: "selected",
+    type: "checkbox",
+    width_px: 70, // Fixed: Just wide enough for the checkbox +padg
+  },
+  {
+    label: "Name",
+    key: "name",
+    type: "text",
+    width_px: 160,
+    tooltipKey: "moduleDescription",
+  },
+  {
+    label: "PID",
+    key: "pid",
+    type: "code",
+    width_px: 120,
+  },
+  {
+    label: "Mode",
+    key: "mode",
+    type: "number",
+    formatKey: "modeDisplayFormat",
+    hidden: true,
+    tooltipKey: "modeDescription",
+    width_px: 70,
+  },
+  {
+    label: "Length",
+    key: "len",
+    type: "number",
+    width_px: 70,
+    hidden: true,
+  },
+  {
+    label: "Formula",
+    key: "formula",
+    type: "code",
+    width_px: 500,
+    hidden: true,
+  },
+  {
+    label: "Value",
+    key: "value",
+    type: "number",
+    unitKey: "metricUnit",
+    width_px: 140, // Fixed pixel width to prevent subpixel roundingoverw
+  },
+  {
+    label: "Min Value",
+    key: "min_val",
+    type: "number",
+    width_px: 140,
+    unitKey: "metricUnit",
+    hidden: true,
+  },
+  {
+    label: "Max Value",
+    key: "max_val",
+    type: "number",
+    width_px: 140,
+    unitKey: "metricUnit",
+    hidden: true,
+  },
+  {
+    label: "Update Interval",
+    key: "updateInterval",
+    type: "number",
+    unit: "ms",
+    width_px: 120,
+  },
+  {
+    label: "Pending Sync",
+    key: "pendingChanges",
+    type: "badge",
+    width_px: 120,
+    colorKey: "pendingChangesColor",
+    hidden: true,
+    autoShowKey: "pendingChanges",
+    autoShowValue: "Yes",
+  },
+  {
+    label: "Priority",
+    key: "priority",
+    type: "number",
+    width_px: 80,
+    hidden: true,
+  },
+  {
+    label: "Supported",
+    key: "supported",
+    type: "badge",
+    width_px: 100,
+    colorKey: "badgeColor",
+  },
+  {
+    label: "Loaded",
+    key: "loaded",
+    type: "toggle",
+    width_px: 80,
+  },
+];
+
+export const modes = [
+  { label: "Current Data", value: "0x01" },
+  { label: "Read Data By Identifier", value: "0x22" },
+  { label: "Derived Data", value: "0x45" },
+];
+
+export const units = [
+  "%",
+  "kPa",
+  "Pa",
+  "rpm",
+  "km/h",
+  "° before TDC",
+  "grams/sec",
+  "seconds",
+  "ratio",
+  "count",
+  "km",
+  "V",
+  "minutes",
+  "g/s",
+  "°",
+  "°C",
+  "L/h",
+  "L",
+];
+

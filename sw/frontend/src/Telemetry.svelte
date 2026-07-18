@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { canStore } from "./lib/canStore.svelte";
+  import { canStore } from "$lib/canStore.svelte";
   import {
     telemetryStore,
     isValidHex,
@@ -9,193 +9,18 @@
     isLengthValidForPid,
     isIdValidForMode,
     isValidFormula,
-  } from "./lib/telemetryStore.svelte";
+    handleSavePid,
+    createRowObject,
+    columns,
+    modes,
+    units,
+  } from "$lib/telemetryStore.svelte";
   import { onDestroy, onMount, untrack } from "svelte";
-  import type { DataTableProps, PidValue, PidDefinition } from "$lib/types";
-  import DataTable from "./lib/components/DataTable.svelte";
-  import Icon from "./lib/Icon.svelte";
-  import type { Column } from "$lib/types";
-  import { getModeLabel } from "$lib/pidHelpers.svelte.ts";
-  import { SvelteMap } from "svelte/reactivity";
+  import DataTable from "$lib/components/DataTable.svelte";
+  import Icon from "$lib/Icon.svelte";
+  import { iconData, type IconName } from "$lib/icons";
 
   let activeIndex = $state(-1);
-
-  let piddef = $derived(canStore.pidDefinitions);
-
-  function createRowObject(def: any, loaded: boolean, selected: boolean) {
-    const rawPid = Number(def.pid);
-    return {
-      // Static fields
-      name: def.name,
-      moduleDescription: def.description,
-      pid: "0x" + rawPid.toString(16).toUpperCase().padStart(2, "0"),
-      metricUnit: def.unit,
-      formula: def.formula,
-      priority: def.priority,
-      mode: def.mode,
-      modeDisplayFormat: "hex",
-      modeDescription: getModeLabel(def.mode),
-      min_val: def.minValue,
-      max_val: def.maxValue,
-      len: def.length,
-      updateInterval: def.update_interval_ms,
-
-      // Stateful editable fields
-      loaded: loaded,
-      selected: selected,
-
-      // Dynamic reactive getters
-      get value() {
-        return canStore.pids.get(rawPid)?.value ?? "N/A";
-      },
-      get isSupported() {
-        return (
-          canStore.obd2Status?.supported_pids.groups.get(rawPid) ??
-          canStore.pids.get(rawPid)?.isSupported ??
-          false
-        );
-      },
-      get supported() {
-        return this.isSupported ? "Yes" : "No";
-      },
-      get badgeColor() {
-        return this.isSupported ? "var(--normal-color)" : "var(--error-color)";
-      },
-    };
-  }
-
-  $effect(() => {
-    if (piddef && piddef !== telemetryStore.lastPidDef) {
-      telemetryStore.lastPidDef = piddef;
-
-      const newDefMap = new Map();
-      for (const def of piddef) {
-        newDefMap.set(Number(def.pid), def);
-      }
-
-      const updatedPids = [];
-
-      // 1. Process existing elements to retain their selected/loaded states
-      for (const existing of telemetryStore.local_piddef) {
-        const rawPid = parseInt(existing.pid, 16);
-        const updatedDef = newDefMap.get(rawPid);
-
-        if (updatedDef) {
-          // PID is still in the CAN store. Keep states, update definitions.
-          updatedPids.push(
-            createRowObject(updatedDef, existing.loaded, existing.selected),
-          );
-          newDefMap.delete(rawPid);
-        } else {
-          // PID was removed from CAN store. Keep it, but set loaded to false.
-          existing.loaded = false;
-          updatedPids.push(existing);
-        }
-      }
-
-      // 2. Add brand new elements
-      for (const newDef of newDefMap.values()) {
-        updatedPids.push(createRowObject(newDef, true, false));
-      }
-
-      telemetryStore.local_piddef = updatedPids;
-    }
-  });
-
-  const columns: Column[] = [
-    {
-      label: "Select",
-      key: "selected",
-      type: "checkbox",
-      width_px: 70, // Fixed: Just wide enough for the checkbox +padg
-    },
-    {
-      label: "Name",
-      key: "name",
-      type: "text",
-      width_px: 160,
-      tooltipKey: "moduleDescription",
-    },
-    {
-      label: "PID",
-      key: "pid",
-      type: "code",
-      width_px: 120,
-    },
-    {
-      label: "Mode",
-      key: "mode",
-      type: "number",
-      formatKey: "modeDisplayFormat",
-      hidden: true,
-      tooltipKey: "modeDescription",
-      width_px: 70,
-    },
-    {
-      label: "Length",
-      key: "len",
-      type: "number",
-      width_px: 70,
-      hidden: true,
-    },
-    {
-      label: "Formula",
-      key: "formula",
-      type: "code",
-      width_px: 500,
-      hidden: true,
-    },
-    {
-      label: "Value",
-      key: "value",
-      type: "number",
-      unitKey: "metricUnit",
-      width_px: 140, // Fixed pixel width to prevent subpixel roundingoverw
-    },
-    {
-      label: "Min Value",
-      key: "min_val",
-      type: "number",
-      width_px: 140,
-      unitKey: "metricUnit",
-      hidden: true,
-    },
-    {
-      label: "Max Value",
-      key: "max_val",
-      type: "number",
-      width_px: 140,
-      unitKey: "metricUnit",
-      hidden: true,
-    },
-    {
-      label: "Update Interval",
-      key: "updateInterval",
-      type: "number",
-      unit: "ms",
-      width_px: 120,
-    },
-    {
-      label: "Priority",
-      key: "priority",
-      type: "number",
-      width_px: 80,
-      hidden: true,
-    },
-    {
-      label: "Supported",
-      key: "supported",
-      type: "badge",
-      width_px: 100,
-      colorKey: "badgeColor",
-    },
-    {
-      label: "Loaded",
-      key: "loaded",
-      type: "toggle",
-      width_px: 80,
-    },
-  ];
 
   $effect(() => {
     if (
@@ -209,9 +34,15 @@
   });
 
   $effect(() => {
-    if (telemetryStore.modeInput && telemetryStore.modeInput !== telemetryStore.lastValidModeForId) {
+    if (
+      telemetryStore.modeInput &&
+      telemetryStore.modeInput !== telemetryStore.lastValidModeForId
+    ) {
       telemetryStore.lastValidModeForId = telemetryStore.modeInput;
-      if (telemetryStore.modeInput === "0x01" || telemetryStore.modeInput === "0x45") {
+      if (
+        telemetryStore.modeInput === "0x01" ||
+        telemetryStore.modeInput === "0x45"
+      ) {
         telemetryStore.idInput = "0x7DF";
       }
       if (telemetryStore.modeInput === "0x45") {
@@ -236,6 +67,29 @@
   let selectedElements = $derived(
     telemetryStore.local_piddef.filter((item) => item.selected),
   );
+  let dirtyCount = $derived(
+    telemetryStore.local_piddef.filter((r: any) => r.pendingChanges === "Yes")
+      .length,
+  );
+  let selectedCount = $derived(
+    telemetryStore.local_piddef.filter((r: any) => r.selected).length,
+  );
+  let selectedDirtyCount = $derived(
+    telemetryStore.local_piddef.filter(
+      (r: any) => r.selected && r.pendingChanges === "Yes",
+    ).length,
+  );
+
+  let updateButtonText = $derived(
+    selectedCount > 0
+      ? `Update ${selectedCount} Selected`
+      : `Update ${dirtyCount} Pending`,
+  );
+
+  let updateButtonDisabled = $derived(
+    selectedCount > 0 ? selectedDirtyCount !== selectedCount : dirtyCount === 0,
+  );
+
   let selectedRow = $derived(
     activeIndex >= 0 && activeIndex < telemetryStore.local_piddef.length
       ? telemetryStore.local_piddef[activeIndex]
@@ -287,60 +141,7 @@
     });
   });
 
-  const icons = [
-    "chart",
-    "home",
-    "user",
-    "gear",
-    "gauge",
-    "thermometer",
-    "droplet",
-    "engine",
-    "alert-circle",
-    "lock",
-    "clock",
-    "timeline-arrow",
-    "magnifying-glass",
-    "reload",
-    "dial",
-    "trash",
-    "route",
-    "circle",
-    "square",
-    "circle-solid",
-    "stopwatch",
-    "circle-xmark",
-    "circle-check",
-    "circle-exclamantion",
-    "circle-info",
-  ];
-
-  const modes = [
-    { label: "Current Data", value: "0x01" },
-    { label: "Read Data By Identifier", value: "0x22" },
-    { label: "Derived Data", value: "0x45" },
-  ];
-
-  const units = [
-    "%",
-    "kPa",
-    "Pa",
-    "rpm",
-    "km/h",
-    "° before TDC",
-    "grams/sec",
-    "seconds",
-    "ratio",
-    "count",
-    "km",
-    "V",
-    "minutes",
-    "g/s",
-    "°",
-    "°C",
-    "L/h",
-    "L",
-  ];
+  const icons: IconName[] = Object.keys(iconData) as IconName[];
 </script>
 
 <div class="segmented-control-wrapper">
@@ -377,20 +178,34 @@
         class="dashboard-card header-container"
         style="--module-accent: #01AAFF;"
       >
-        <div class="aligned-title-row">
-          <div class="status-subtitle">
-            <span class="label">Loaded PIDs:</span>
-            <span class="value">{canStore.obd2Status?.pid_def_count}</span>
+        <div
+          style="display: flex; justify-content: space-between; align-items: center; width: 100%; flex-wrap: wrap; gap: 1rem;"
+        >
+          <div class="aligned-title-row">
+            <div class="status-subtitle">
+              <span class="label">Loaded PIDs:</span>
+              <span class="value"
+                >{canStore.obd2Status?.pid_def_count ?? 0}</span
+              >
+            </div>
+            <div class="status-subtitle">
+              <span class="label">Supported PIDs:</span>
+              <span class="value"
+                >{canStore.obd2Status?.supported_pids.count ?? 0}</span
+              >
+            </div>
+            <div class="status-subtitle">
+              <span class="label">Updated:</span>
+              <span class="value">{dirtyCount}</span>
+            </div>
           </div>
-          <div class="status-subtitle">
-            <span class="label">Supported PIDs:</span>
-            <span class="value"
-              >{canStore.obd2Status?.supported_pids.count}</span
-            >
-          </div>
-          <div class="status-subtitle">
-            <span class="label">Selected:</span>
-            <span class="value">{selectedElements.length}</span>
+          <div style="display: flex; gap: 1rem; align-items: center;">
+            <button class="btn btn-remove" disabled={selectedCount === 0}>
+              Remove {selectedCount > 0 ? selectedCount : ""} Selected
+            </button>
+            <button class="btn btn-save" disabled={updateButtonDisabled}>
+              {updateButtonText}
+            </button>
           </div>
         </div>
       </div>
@@ -475,11 +290,17 @@
                 aria-label="length"
                 aria-describedby="length-helper"
                 bind:value={telemetryStore.lengthInput}
-                aria-invalid={!isLengthValidForPid(telemetryStore.pidInput, telemetryStore.lengthInput, telemetryStore.modeInput)}
+                aria-invalid={!isLengthValidForPid(
+                  telemetryStore.pidInput,
+                  telemetryStore.lengthInput,
+                  telemetryStore.modeInput,
+                )}
                 disabled={telemetryStore.modeInput === "0x45"}
               />
               <small id="length-helper">
-                {telemetryStore.modeInput === "0x45" ? "Not used in Derived Data" : "Expected response bytes"}
+                {telemetryStore.modeInput === "0x45"
+                  ? "Not used in Derived Data"
+                  : "Expected response bytes"}
               </small>
             </div>
           </div>
@@ -675,6 +496,24 @@
                 {/if}
               </div>
             </div>
+          </div>
+          <!-- Form Actions -->
+          <div
+            style="display: flex; justify-content: flex-end; margin-top: 1.5rem; gap: 1rem;"
+          >
+            <button
+              class="btn btn-clear"
+              onclick={() => telemetryStore.clearForm()}
+            >
+              Clear Form
+            </button>
+            <button
+              class="btn btn-save"
+              disabled={!telemetryStore.isFormValid}
+              onclick={handleSavePid}
+            >
+              {activeIndex === -1 ? "Add PID Definition" : "Save Changes"}
+            </button>
           </div>
         </div>
       </div>
@@ -903,5 +742,26 @@
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
+  }
+
+  .btn-clear {
+    --color: 246, 142, 104;
+    height: 54px;
+    border-radius: 8px;
+    font-weight: 500;
+  }
+
+  .btn-remove {
+    --color: 231, 75, 26;
+    height: 54px;
+    border-radius: 8px;
+    font-weight: 500;
+  }
+
+  .btn-save {
+    --color: 57, 241, 166;
+    height: 54px;
+    border-radius: 8px;
+    font-weight: 500;
   }
 </style>

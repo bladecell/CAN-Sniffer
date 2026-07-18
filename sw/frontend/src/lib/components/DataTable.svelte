@@ -25,7 +25,26 @@
     columns.filter((c) => !hiddenColumns.has(c.key)),
   );
 
+
+  $effect(() => {
+    let changed = false;
+    const newSet = new Set(hiddenColumns);
+    for (const col of columns) {
+      if (col.autoShowKey !== undefined && newSet.has(col.key)) {
+        const shouldShow = data.some(row => row[col.autoShowKey!] === col.autoShowValue);
+        if (shouldShow) {
+          newSet.delete(col.key);
+          changed = true;
+        }
+      }
+    }
+    if (changed) {
+      hiddenColumns = newSet;
+    }
+  });
+
   // --- FILTER STATE ---
+
   type FilterOperator = "contains" | "equals" | "starts_with" | "gt" | "lt";
   type FilterRule = {
     id: string;
@@ -263,7 +282,7 @@
                   />
 
                   <button
-                    class="icon-btn"
+                    class="btn icon-btn"
                     onclick={() => removeFilter(rule.id)}
                     title="Remove rule"
                   >
@@ -288,10 +307,11 @@
             </div>
 
             <div class="popover-footer">
-              <button class="btn-primary" onclick={addFilter}>Add filter</button
+              <button class="btn btn-primary" onclick={addFilter}
+                >Add filter</button
               >
               {#if filterRules.length > 0}
-                <button class="btn-ghost" onclick={resetFilters}
+                <button class="btn btn-ghost" onclick={resetFilters}
                   >Reset filters</button
                 >
               {/if}
@@ -679,12 +699,6 @@
 
   .icon-btn {
     --color: 238, 64, 46;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(var(--color), 0.15);
-    border: none;
-    color: rgba(var(--color));
     cursor: pointer;
 
     /* Force exact height matching the inputs and make it a perfect square */
@@ -693,15 +707,8 @@
     box-sizing: border-box;
     padding: 0;
 
-    margin: 0;
-    border-radius: 4px;
     flex: 0 0 auto;
     transition: all 0.2s ease;
-  }
-
-  .icon-btn:hover,
-  .btn-primary:hover {
-    background: rgba(var(--color), 0.2);
   }
 
   .empty-state {
@@ -720,21 +727,13 @@
 
   .btn-primary {
     --color: 57, 241, 166;
-    background-color: rgba(var(--color), 0.1);
-    border: none;
-    color: rgb(var(--color));
-    padding: 0.45rem 0.9rem;
-    border-radius: 4px;
     font-size: 0.75rem;
     font-weight: 600;
     cursor: pointer;
   }
 
   .toolbar-btn:focus,
-  .icon-btn:focus,
-  .column-toggle-btn:focus,
-  .btn-primary:focus,
-  .btn-ghost:focus {
+  .column-toggle-btn:focus {
     outline: none;
     box-shadow: none;
   }
@@ -742,9 +741,6 @@
   .btn-ghost {
     background: transparent;
     color: rgba(255, 255, 255, 0.6);
-    border: none;
-    padding: 0.45rem 0.9rem;
-    border-radius: 4px;
     font-size: 0.75rem;
     cursor: pointer;
   }
@@ -1004,4 +1000,7 @@
       padding: 0.5rem;
     }
   }
+
+  
+
 </style>

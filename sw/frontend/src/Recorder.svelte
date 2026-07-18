@@ -121,49 +121,15 @@
     margin-top: 0.5rem; /* A little extra breathing room above the toggle */
   }
 
-  /* --- 4. GENERIC BUTTONS --- */
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    border: var(--pico-border-width) solid var(--pico-form-element-border-color);
-    background-color: rgb(
-      from var(--pico-form-element-background-color) r g b / 0.6
-    );
-    margin: 0;
-    padding: 0 1rem;
-    cursor: pointer;
-  }
-
-  .btn :global(svg) {
-    margin: 0 !important;
-  }
-
-  /* --- 5. SPECIFIC BUTTON STYLES --- */
   .btn-record {
     --color: 57, 241, 166;
-    background-color: rgba(var(--color), 0.1);
-    border: none;
-    color: rgb(var(--color));
     height: 54px;
     border-radius: 8px;
     font-weight: 500;
   }
 
-  .btn:hover {
-    background-color: rgba(var(--color), 0.2);
-  }
-
-  .btn:active {
-    transform: scale(0.98);
-  }
-
   .btn-performance {
     --color: 149, 144, 130;
-    background-color: rgba(var(--color), 0.1);
-    border: none;
-    color: rgb(var(--color));
     height: 54px;
     border-radius: 8px;
     font-weight: 500;

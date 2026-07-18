@@ -215,6 +215,8 @@ export interface Column {
   colorKey?: string;
   hidden?: boolean;
   formatKey?: string;
+  autoShowKey?: string;
+  autoShowValue?: any;
 }
 
 export interface DataTableProps {
