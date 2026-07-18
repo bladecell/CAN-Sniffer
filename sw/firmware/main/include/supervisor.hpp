@@ -13,6 +13,7 @@
 #define PID_DEF_DB_PATH "/storage/pid_def.json"
 #define DTC_DESC_DB_PATH "/storage/dtcs.bin"
 #define SLEEP_TRANSITION_TIMER_S 60
+#define LONG_SLEEP_VOLTAGE_LIMIT 11.8f
 
 class SUPERVISOR
 {

@@ -129,8 +129,8 @@ void SUPERVISOR::task()
                 else
                 {
                     ESP_LOGW(TAG, "Waiting for CAN bus connection...");
-                    // float voltage = get_battery_voltage();
-                    float voltage = 12.f;  // for bench test
+                    float voltage = get_battery_voltage();
+
                     if (voltage > 13.2f)
                     {
                         ESP_LOGI(TAG, "Alternator is running (%.2fV). Staying awake.", voltage);
@@ -175,11 +175,11 @@ void SUPERVISOR::task()
             }
             case State::SLEEPING:
             {
-                // float    voltage       = get_battery_voltage();
-                float    voltage       = 12.f;      // for bench test
+                float voltage = get_battery_voltage();
+
                 uint64_t sleep_time_us = 10000000;  // 10 seconds normal sleep
 
-                if (voltage < 12.0f)
+                if (voltage < LONG_SLEEP_VOLTAGE_LIMIT)
                 {
                     sleep_time_us = 60000000;  // 60 seconds battery low sleep
                     ESP_LOGW(TAG, "Battery low (%.2fV)! Sleeping aggressively...", voltage);
