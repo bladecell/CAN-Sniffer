@@ -76,13 +76,13 @@ void dataSimTask(CanDriver& canDriver)
                 uint32_t val;
                 switch (requested_pid)
                 {
-                    case PID_PIDS_SUPPORTED_0_19:
-                    case PID_PIDS_SUPPORTED_20_39:
-                    case PID_PIDS_SUPPORTED_40_59:
-                    case PID_PIDS_SUPPORTED_60_79:
-                    case PID_PIDS_SUPPORTED_80_99:
-                    case PID_PIDS_SUPPORTED_A0_BF:
-                    case PID_PIDS_SUPPORTED_C0_DF:
+                    case PID_PIDS_SUPPORTED_01_20:
+                    case PID_PIDS_SUPPORTED_21_40:
+                    case PID_PIDS_SUPPORTED_41_60:
+                    case PID_PIDS_SUPPORTED_61_80:
+                    case PID_PIDS_SUPPORTED_81_A0:
+                    case PID_PIDS_SUPPORTED_A1_C0:
+                    case PID_PIDS_SUPPORTED_C1_E0:
                         response_frame.data[0] = 0x06;  // Length 6 (4 data bytes)
                         response_frame.data[3] = 0xFF;  // A
                         response_frame.data[4] = 0xFF;  // B

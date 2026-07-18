@@ -16,8 +16,8 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
-#include <set>
 #include <map>
+#include <set>
 
 #include "can_driver.hpp"
 #include "esp_check.h"
@@ -88,8 +88,8 @@ public:
 OBD2::OBD2()
     : continuousRunning(false),
       xPidConnectedSemaphore(nullptr),
-      xBusArbitrationMutex(nullptr),
       xBusConnectionSemaphore(nullptr),
+      xBusArbitrationMutex(nullptr),
       xRequestNextPIDSemaphore(nullptr)
 {
 }
@@ -123,6 +123,11 @@ void OBD2::deinit()
         vTaskDelete(callbackWorkerTaskHandle);
         callbackWorkerTaskHandle = nullptr;
     }
+    if (obdHealthCheckTaskHandle)
+    {
+        vTaskDelete(obdHealthCheckTaskHandle);
+        obdHealthCheckTaskHandle = nullptr;
+    }
     if (xPidConnectedSemaphore)
     {
         vSemaphoreDelete(xPidConnectedSemaphore);
@@ -137,6 +142,11 @@ void OBD2::deinit()
     {
         vSemaphoreDelete(xBusConnectionSemaphore);
         xBusConnectionSemaphore = nullptr;
+    }
+    if (healthCheckSemaphore)
+    {
+        vSemaphoreDelete(healthCheckSemaphore);
+        healthCheckSemaphore = nullptr;
     }
     if (xRequestNextPIDSemaphore != nullptr)
     {
@@ -211,19 +221,21 @@ esp_err_t OBD2::init()
 
     if (xPidConnectedSemaphore == nullptr)
     {
-        xPidConnectedSemaphore = xSemaphoreCreateBinary();
-        xBusArbitrationMutex = xSemaphoreCreateMutex();
-        xBusConnectionSemaphore = xSemaphoreCreateBinary();
+        xPidConnectedSemaphore   = xSemaphoreCreateBinary();
+        xBusArbitrationMutex     = xSemaphoreCreateMutex();
+        xBusConnectionSemaphore  = xSemaphoreCreateBinary();
         xRequestNextPIDSemaphore = xSemaphoreCreateBinary();
-        
+
         dtcData.confirmedReadySemaphore = xSemaphoreCreateBinary();
-        dtcData.pendingReadySemaphore = xSemaphoreCreateBinary();
+        dtcData.pendingReadySemaphore   = xSemaphoreCreateBinary();
         dtcData.permanentReadySemaphore = xSemaphoreCreateBinary();
-        dtcData.clearReadySemaphore = xSemaphoreCreateBinary();
-        dtcData.mtx_ = xSemaphoreCreateMutex();
-        
+        dtcData.clearReadySemaphore     = xSemaphoreCreateBinary();
+        dtcData.mtx_                    = xSemaphoreCreateMutex();
+
         vinData.vinReadySemaphore = xSemaphoreCreateBinary();
-        vinData.mtx_ = xSemaphoreCreateMutex();
+        vinData.mtx_              = xSemaphoreCreateMutex();
+
+        healthCheckSemaphore = xSemaphoreCreateBinary();
     }
 
     if (derivedPidQueue_ == nullptr)
@@ -261,7 +273,17 @@ esp_err_t OBD2::init()
 
     if (taskCreated != pdPASS)
     {
-        ESP_LOGE(TAG, "Failed to create polling task");
+        ESP_LOGE(TAG, "Failed to create poll task");
+        return ESP_FAIL;
+    }
+
+    taskCreated = xTaskCreatePinnedToCore(obdHealthCheckTaskWrapper, "OBD2_HealthTask", 4096, this,
+                                          tskIDLE_PRIORITY + 1, &obdHealthCheckTaskHandle, CORE_ID_CAN_TASKS);
+
+    if (taskCreated != pdPASS)
+    {
+        ESP_LOGE(TAG, "Failed to create health check task");
+        return ESP_FAIL;
     }
 
     pollQueue.consumerTask = PollTaskHandle;
@@ -286,7 +308,7 @@ void OBD2::requestSuppPids()
 {
     xSemaphoreTake(xRequestNextPIDSemaphore, 0);
     supportedPIDsGroup = {};
-    for (uint16_t pid_marker = 0; pid_marker <= PID_PIDS_SUPPORTED_C0_DF; pid_marker += 0x20)
+    for (uint16_t pid_marker = 0; pid_marker <= PID_PIDS_SUPPORTED_C1_E0; pid_marker += 0x20)
     {
         req(OBD2_FUNCTIONAL_ID, MODE_CURRENT_DATA, pid_marker, 2, 0, 0);
 
@@ -640,7 +662,7 @@ void OBD2::pollTaskWrapper(void* param)
 
 void OBD2::pollTask()
 {
-    CanLoadTracker busTracker;
+    CanLoadTracker                 busTracker;
     std::map<uint32_t, TickType_t> last_tx_time_per_ecu;
 
     while (1)
@@ -668,7 +690,7 @@ void OBD2::pollTask()
                 // ECU is still busy! Delay this specific request and put it back in the queue
                 current.nextWake = last_tx_time_per_ecu[current.id] + pdMS_TO_TICKS(30);
                 pollQueue.push(current);
-                continue; // Immediately grab the next available request
+                continue;  // Immediately grab the next available request
             }
         }
 
@@ -838,13 +860,13 @@ esp_err_t OBD2::parseCurrentData(const CanDriver::CanFrame& f)
 
     switch (pid)
     {
-        case PID_PIDS_SUPPORTED_0_19:
-        case PID_PIDS_SUPPORTED_20_39:
-        case PID_PIDS_SUPPORTED_40_59:
-        case PID_PIDS_SUPPORTED_60_79:
-        case PID_PIDS_SUPPORTED_80_99:
-        case PID_PIDS_SUPPORTED_A0_BF:
-        case PID_PIDS_SUPPORTED_C0_DF:
+        case PID_PIDS_SUPPORTED_01_20:
+        case PID_PIDS_SUPPORTED_21_40:
+        case PID_PIDS_SUPPORTED_41_60:
+        case PID_PIDS_SUPPORTED_61_80:
+        case PID_PIDS_SUPPORTED_81_A0:
+        case PID_PIDS_SUPPORTED_A1_C0:
+        case PID_PIDS_SUPPORTED_C1_E0:
             ret = parseSupportedPIDs(f);
             break;
         default:
@@ -1073,6 +1095,11 @@ esp_err_t OBD2::parseSupportedPIDs(const CanDriver::CanFrame& f)
     if (supportedPIDs & 0x00000001)
     {
         xSemaphoreGive(xRequestNextPIDSemaphore);
+    }
+
+    if (healthCheckSemaphore != nullptr)
+    {
+        xSemaphoreGive(healthCheckSemaphore);
     }
 
     return ret;
@@ -1484,3 +1511,72 @@ void OBD2::callbackWorkerTask()
 }
 
 // TODO: Group requests for pid to one message
+void OBD2::obdHealthCheckTaskWrapper(void* param)
+{
+    OBD2* obd2 = static_cast<OBD2*>(param);
+    obd2->obdHealthCheckTask();
+}
+
+void OBD2::obdHealthCheckTask()
+{
+    uint8_t failed_pings = 0;
+
+    while (1)
+    {
+        if (!canDriver.isBusConnected())
+        {
+            xSemaphoreTake(xBusConnectionSemaphore, portMAX_DELAY);
+            failed_pings = 0;
+            continue;
+        }
+
+        // Wait a bit between checks (e.g. 5 seconds)
+        vTaskDelay(pdMS_TO_TICKS(5000));
+
+        if (!canDriver.isBusConnected())
+            continue;
+
+        // Drain semaphore
+        while (xSemaphoreTake(healthCheckSemaphore, 0) == pdTRUE)
+            ;
+
+        // Enqueue PIDs 01-20 (Mode 01 PID 00)
+        PollRequest r         = {};
+        r.id                  = OBD2_FUNCTIONAL_ID;
+        r.isRaw               = true;
+        r.payload.raw.data[0] = 0x02;
+        r.payload.raw.data[1] = MODE_CURRENT_DATA;
+        r.payload.raw.data[2] = PID_PIDS_SUPPORTED_01_20;
+        r.payload.raw.dlc     = 8;
+        r.interval            = 0;
+        r.nextWake            = xTaskGetTickCount();
+        r.priority            = 0;
+        r.isRecurring         = false;
+        r.retries_left        = 1;
+
+        req(r);
+
+        // Wait up to 2 seconds for a response
+        if (xSemaphoreTake(healthCheckSemaphore, pdMS_TO_TICKS(2000)) == pdTRUE)
+        {
+            failed_pings = 0;
+        }
+        else
+        {
+            failed_pings++;
+            ESP_LOGW(TAG, "OBD Health Check timeout (%d/5)", failed_pings);
+
+            if (failed_pings >= 5)
+            {
+                ESP_LOGE(TAG, "OBD Health Check failed 5 times! Clearing queue and disconnecting.");
+
+                // Clear the poll queue
+                pollQueue.clear();
+
+                // Stop the simulator or anything else if needed, but the main thing is
+                // the session will expire, and CanDriver will soon see no ACKs.
+                failed_pings = 0;
+            }
+        }
+    }
+}

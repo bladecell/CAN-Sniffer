@@ -83,8 +83,21 @@ private:
 
     // PID Definitions and Data Storage
 
-    SemaphoreHandle_t xPidConnectedSemaphore = NULL;
-    SemaphoreHandle_t xBusArbitrationMutex   = NULL;
+    TaskHandle_t                        ReceiveTaskHandle        = nullptr;
+    TaskHandle_t                        PollTaskHandle           = nullptr;
+    TaskHandle_t                        callbackWorkerTaskHandle = nullptr;
+    TaskHandle_t                        obdHealthCheckTaskHandle = nullptr;
+
+    std::vector<OBDIIConnectedCallback> connected_subscribers_;
+
+    QueueHandle_t     derivedPidQueue_         = nullptr;
+    SemaphoreHandle_t xPidConnectedSemaphore   = nullptr;
+    SemaphoreHandle_t xBusConnectionSemaphore  = nullptr;
+    SemaphoreHandle_t xBusArbitrationMutex     = nullptr;
+    SemaphoreHandle_t xRequestNextPIDSemaphore = nullptr;
+    SemaphoreHandle_t healthCheckSemaphore     = nullptr;
+
+    PIDPriorityQueue pollQueue;
 
     uint8_t  multiframe_state         = 99;
     uint32_t last_multiframe_received = 0;
@@ -95,15 +108,16 @@ private:
 
     // Polling Task
     void pollTask();
-
     static void  pollTaskWrapper(void* param);
-    TaskHandle_t PollTaskHandle{nullptr};
     float        pollTaskUtilization = 0.0f;
 
     // Receiving Task
     void         receiveTask();
     static void  receiveTaskWrapper(void* param);
-    TaskHandle_t ReceiveTaskHandle{nullptr};
+
+    // Health Check Task
+    void        obdHealthCheckTask();
+    static void obdHealthCheckTaskWrapper(void* param);
 
     // Callback
     bool pidsInitialized{false};
@@ -113,8 +127,6 @@ private:
     // Handle connection events
     void              handleCanConnected();
     void              handleCanDisconnected();
-    SemaphoreHandle_t xBusConnectionSemaphore  = NULL;
-    SemaphoreHandle_t xRequestNextPIDSemaphore = NULL;
 
     // Frame Parsing
     esp_err_t parseCurrentData(const CanDriver::CanFrame& f);
@@ -134,12 +146,6 @@ private:
 
     supportedPIDsGroup_t supportedPIDsGroup = {};
 
-    // Derived PIDs queue
-    QueueHandle_t derivedPidQueue_ = nullptr;
-
-    // OBDII Connected Callback
-    std::vector<OBDIIConnectedCallback> connected_subscribers_;
-
     void runOBDIIConnectedCallbacks(bool connected);
 
     struct CallbackTaskArgs
@@ -150,7 +156,6 @@ private:
 
     void         callbackWorkerTask();
     static void  callbackWorkerTaskWrapper(void* param);
-    TaskHandle_t callbackWorkerTaskHandle{nullptr};
 
     QueueHandle_t event_queue = nullptr;
 };

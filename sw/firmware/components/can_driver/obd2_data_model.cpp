@@ -31,6 +31,7 @@ void OBD2DataModel::initDef()
         .confirmedReadySemaphore = xSemaphoreCreateBinary(),
         .pendingReadySemaphore   = xSemaphoreCreateBinary(),
         .permanentReadySemaphore = xSemaphoreCreateBinary(),
+        .clearReadySemaphore     = xSemaphoreCreateBinary(),
         .mtx_                    = xSemaphoreCreateMutex(),
     };
 
