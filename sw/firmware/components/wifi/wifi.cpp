@@ -218,9 +218,16 @@ err:
 
 esp_err_t WIFI::start_mdns_service()
 {
+    static bool mdns_initialized = false;
+    if (mdns_initialized)
+    {
+        return ESP_OK;
+    }
+
     esp_err_t err = mdns_init();
     if (err == ESP_ERR_INVALID_STATE)
     {
+        mdns_initialized = true;
         return ESP_OK;
     }
     if (err != ESP_OK)
@@ -229,6 +236,8 @@ esp_err_t WIFI::start_mdns_service()
     mdns_hostname_set(HOSTNAME);
     mdns_instance_name_set(MDNS_INSTANCE);
     mdns_service_add(NULL, "_http", "_tcp", 80, NULL, 0);
+    
+    mdns_initialized = true;
     return ESP_OK;
 }
 

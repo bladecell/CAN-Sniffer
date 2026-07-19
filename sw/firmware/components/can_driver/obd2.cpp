@@ -28,6 +28,9 @@
 #include "obd2_data_model.hpp"
 #include "obd2_utils.hpp"
 
+#define HEALTHCHECK_RETRIES 3
+#define HEALTHCHECK_PERIOD_MS 3000
+
 static const char* TAG = "OBD2";
 
 class CanLoadTracker
@@ -285,7 +288,7 @@ esp_err_t OBD2::init()
         ESP_LOGE(TAG, "Failed to create health check task");
         return ESP_FAIL;
     }
-    
+
     // Start the task in a suspended state
     vTaskSuspend(obdHealthCheckTaskHandle);
 
@@ -1561,25 +1564,22 @@ void OBD2::obdHealthCheckTask()
 
         req(r);
 
-        // Wait up to 2 seconds for a response
-        if (xSemaphoreTake(healthCheckSemaphore, pdMS_TO_TICKS(2000)) == pdTRUE)
+        if (xSemaphoreTake(healthCheckSemaphore, pdMS_TO_TICKS(HEALTHCHECK_PERIOD_MS)) == pdTRUE)
         {
             failed_pings = 0;
         }
         else
         {
             failed_pings++;
-            ESP_LOGW(TAG, "OBD Health Check timeout (%d/5)", failed_pings);
+            ESP_LOGW(TAG, "OBD Health Check timeout (%d/%d)", failed_pings, HEALTHCHECK_RETRIES);
 
-            if (failed_pings >= 5)
+            if (failed_pings >= HEALTHCHECK_RETRIES)
             {
-                ESP_LOGE(TAG, "OBD Health Check failed 5 times! Clearing queue and disconnecting.");
+                ESP_LOGE(TAG, "OBD Health Check failed %d times! Clearing queue and disconnecting.",
+                         HEALTHCHECK_RETRIES);
 
-                // Clear the poll queue
                 pollQueue.clear();
 
-                // Stop the simulator or anything else if needed, but the main thing is
-                // the session will expire, and CanDriver will soon see no ACKs.
                 failed_pings = 0;
             }
         }

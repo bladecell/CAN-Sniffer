@@ -623,7 +623,7 @@ void CanDriver::txTask()
             continue;
         }
 
-        if (xQueueReceive(txQueue, &f, pdMS_TO_TICKS(HEALTHCHECK_PING_PERIOD_MS)) == pdTRUE)
+        if (xQueueReceive(txQueue, &f, pdMS_TO_TICKS(NO_MESSAGE_SENT_HEALTHCHECK_PING_PERIOD_MS)) == pdTRUE)
         {
             TickType_t startTime = xTaskGetTickCount();
 
