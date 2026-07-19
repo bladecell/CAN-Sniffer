@@ -285,6 +285,9 @@ esp_err_t OBD2::init()
         ESP_LOGE(TAG, "Failed to create health check task");
         return ESP_FAIL;
     }
+    
+    // Start the task in a suspended state
+    vTaskSuspend(obdHealthCheckTaskHandle);
 
     pollQueue.consumerTask = PollTaskHandle;
 
@@ -1484,6 +1487,18 @@ void OBD2::connected_subscribe(OBDIIConnectedCallback cb)
 
 void OBD2::runOBDIIConnectedCallbacks(bool connected)
 {
+    if (obdHealthCheckTaskHandle)
+    {
+        if (connected)
+        {
+            vTaskResume(obdHealthCheckTaskHandle);
+        }
+        else
+        {
+            vTaskSuspend(obdHealthCheckTaskHandle);
+        }
+    }
+
     xQueueSend(event_queue, &connected, 0);
 }
 
@@ -1523,18 +1538,8 @@ void OBD2::obdHealthCheckTask()
 
     while (1)
     {
-        if (!canDriver.isBusConnected())
-        {
-            xSemaphoreTake(xBusConnectionSemaphore, portMAX_DELAY);
-            failed_pings = 0;
-            continue;
-        }
-
         // Wait a bit between checks (e.g. 5 seconds)
         vTaskDelay(pdMS_TO_TICKS(5000));
-
-        if (!canDriver.isBusConnected())
-            continue;
 
         // Drain semaphore
         while (xSemaphoreTake(healthCheckSemaphore, 0) == pdTRUE)
