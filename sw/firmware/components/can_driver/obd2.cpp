@@ -656,8 +656,9 @@ void OBD2::pollRequestStaticPids()
 
     for (const uint32_t id : RequestByDataIdentifierIds)
     {
-        requestDefaultExtendedDiagnosticSession(id, true);
+        requestDefaultExtendedDiagnosticSession(id, false);
     }
+    // TODO The diagnostic session needs to be handled differently
 }
 
 void OBD2::pollTaskWrapper(void* param)
