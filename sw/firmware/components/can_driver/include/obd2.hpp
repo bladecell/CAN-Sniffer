@@ -83,10 +83,10 @@ private:
 
     // PID Definitions and Data Storage
 
-    TaskHandle_t                        ReceiveTaskHandle        = nullptr;
-    TaskHandle_t                        PollTaskHandle           = nullptr;
-    TaskHandle_t                        callbackWorkerTaskHandle = nullptr;
-    TaskHandle_t                        obdHealthCheckTaskHandle = nullptr;
+    TaskHandle_t ReceiveTaskHandle        = nullptr;
+    TaskHandle_t PollTaskHandle           = nullptr;
+    TaskHandle_t callbackWorkerTaskHandle = nullptr;
+    TaskHandle_t obdHealthCheckTaskHandle = nullptr;
 
     std::vector<OBDIIConnectedCallback> connected_subscribers_;
 
@@ -107,13 +107,13 @@ private:
     esp_err_t queryMsg(PollRequest& req);
 
     // Polling Task
-    void pollTask();
-    static void  pollTaskWrapper(void* param);
-    float        pollTaskUtilization = 0.0f;
+    void        pollTask();
+    static void pollTaskWrapper(void* param);
+    float       pollTaskUtilization = 0.0f;
 
     // Receiving Task
-    void         receiveTask();
-    static void  receiveTaskWrapper(void* param);
+    void        receiveTask();
+    static void receiveTaskWrapper(void* param);
 
     // Health Check Task
     void        obdHealthCheckTask();
@@ -125,8 +125,8 @@ private:
     static void onCanStateChange(void* arg, bool connected);
 
     // Handle connection events
-    void              handleCanConnected();
-    void              handleCanDisconnected();
+    void handleCanConnected();
+    void handleCanDisconnected();
 
     // Frame Parsing
     esp_err_t parseCurrentData(const CanDriver::CanFrame& f);
@@ -142,6 +142,7 @@ private:
     esp_err_t   parseRDBI(const CanDriver::CanFrame& f);
     esp_err_t   parseDerivedData(const CanDriver::CanFrame& f);
     esp_err_t   parseRMDSC(const CanDriver::CanFrame& f);
+    esp_err_t   handleNegativeResponse(const CanDriver::CanFrame& f);
     inline void sendFlowControlFrame(uint32_t id);
 
     supportedPIDsGroup_t supportedPIDsGroup = {};
@@ -154,8 +155,8 @@ private:
         bool  connected;
     };
 
-    void         callbackWorkerTask();
-    static void  callbackWorkerTaskWrapper(void* param);
+    void        callbackWorkerTask();
+    static void callbackWorkerTaskWrapper(void* param);
 
     QueueHandle_t event_queue = nullptr;
 };

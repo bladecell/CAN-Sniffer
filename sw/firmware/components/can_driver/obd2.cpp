@@ -851,13 +851,19 @@ esp_err_t OBD2::parseRecFrame(const CanDriver::CanFrame& f)
             ret = parseDerivedData(f);
             break;
         case RESPONSE_NEGATIVE_RESPONSE_CODE:
-            // TODO
+            ret = handleNegativeResponse(f);
             break;
         default:
             return ESP_ERR_NOT_SUPPORTED;
     }
 
     return ret;
+}
+
+esp_err_t OBD2::handleNegativeResponse(const CanDriver::CanFrame& f)
+{
+    // TODO implement this function
+    return ESP_OK;
 }
 
 esp_err_t OBD2::parseCurrentData(const CanDriver::CanFrame& f)
@@ -903,19 +909,7 @@ esp_err_t OBD2::parseRDBI(const CanDriver::CanFrame& f)
     uint16_t  pid = (uint16_t)(f.data[2] << 8) | f.data[3];
     esp_err_t ret;
 
-    if (f.data[1] == 0x7F)
-    {
-        uint8_t rejectedService = f.data[2];
-        uint8_t nrcCode         = f.data[3];
-
-        ESP_LOGE(TAG, "NRC Received! Service: 0x%02X, Error: 0x%02X", rejectedService, nrcCode);
-
-        ret = ESP_FAIL;
-    }
-    else
-    {
-        ret = updateData(f);
-    }
+    ret = updateData(f);
 
     _setDataFieldWithLock(pid, &PIDData_t::isValid, ret == ESP_OK);
 
