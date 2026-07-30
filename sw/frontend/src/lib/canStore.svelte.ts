@@ -578,7 +578,130 @@ export class CanStore {
         }
     }
 
+
+    async deletePids(pids: number[]) {
+        let hasError = false;
+        for (const pid of pids) {
+            try {
+                const response = await fetch(`/api/v1/pid_def/${pid}`, {
+                    method: "DELETE"
+                });
+
+                if (!response.ok) {
+                    hasError = true;
+                    console.error(`Failed to delete PID ${pid}: ${response.status}`);
+                    continue;
+                }
+
+                const result = await response.json();
+                if (result.status !== "success") {
+                    hasError = true;
+                    console.error(`Failed to delete PID ${pid}: ${result.reason || 'Unknown error'}`);
+                    alertStore.add(`Failed to delete PID ${pid}: ${result.reason || 'Unknown error'}`, "error");
+                }
+            } catch (e) {
+                hasError = true;
+                console.error(`Exception deleting PID ${pid}:`, e);
+            }
+        }
+
+        await this.loadDefinitions();
+    }
+
+
+    async updatePids(rows: any[]) {
+        let hasError = false;
+        const pidsToDelete: number[] = [];
+        const payloadsToPost: any[] = [];
+        
+        for (const row of rows) {
+            const rawPid = parseInt(row.pid, 16);
+            const def = row.def;
+            
+            if (!row.loaded) {
+                // User wants to remove this PID
+                pidsToDelete.push(rawPid);
+            } else {
+                // User wants to add or update this PID
+                const original = this.pidDefinitions.find((d: any) => Number(d.pid) === rawPid);
+                if (original) {
+                    pidsToDelete.push(rawPid);
+                }
+                
+                payloadsToPost.push({
+                    id: def.id,
+                    mode: def.mode,
+                    pid: def.pid,
+                    len: def.length,
+                    name: def.name,
+                    unit: def.unit,
+                    desc: def.description,
+                    formula: def.formula,
+                    minV: def.minValue,
+                    maxV: def.maxValue,
+                    priority: def.priority,
+                    interval: def.update_interval_ms,
+                    color: def.color,
+                    icon: def.icon
+                });
+            }
+        }
+        
+        // 1. Delete PIDs
+        if (pidsToDelete.length > 0) {
+            for (const pid of pidsToDelete) {
+                try {
+                    const response = await fetch(`/api/v1/pid_def/${pid}`, { method: "DELETE" });
+                    if (!response.ok) {
+                        hasError = true;
+                        continue;
+                    }
+                    const result = await response.json();
+                    if (result.status !== "success") hasError = true;
+                } catch (e) {
+                    hasError = true;
+                }
+            }
+        }
+        
+        // 2. Post PIDs in batches of 5
+        if (payloadsToPost.length > 0) {
+            for (let i = 0; i < payloadsToPost.length; i += 5) {
+                const batch = payloadsToPost.slice(i, i + 5);
+                try {
+                    const response = await fetch("/api/v1/pid_def", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(batch)
+                    });
+                    
+                    if (!response.ok) {
+                        hasError = true;
+                        continue;
+                    }
+                    
+                    const result = await response.json();
+                    if (result.status !== "success") {
+                        hasError = true;
+                    }
+                } catch (e) {
+                    hasError = true;
+                }
+            }
+        }
+        
+        if (hasError) {
+            alertStore.add("Some updates or deletions failed.", "error");
+        } else {
+            alertStore.add("Successfully synced PIDs with device.", "success");
+        }
+        
+        await this.loadDefinitions();
+    }
+    
     isRecording = $state(false);
+
+
 }
 
 export const canStore = new CanStore();

@@ -200,10 +200,29 @@
             </div>
           </div>
           <div style="display: flex; gap: 1rem; align-items: center;">
-            <button class="btn btn-remove" disabled={selectedCount === 0}>
+            <button 
+              class="btn btn-remove" 
+              disabled={selectedCount === 0} 
+              onclick={async () => {
+                const pidsToRemove = selectedElements.map((row: any) => parseInt(row.pid, 16));
+                await canStore.deletePids(pidsToRemove);
+              }}
+            >
               Remove {selectedCount > 0 ? selectedCount : ""} Selected
             </button>
-            <button class="btn btn-save" disabled={updateButtonDisabled}>
+            <button 
+              class="btn btn-save" 
+              disabled={updateButtonDisabled}
+              onclick={async () => {
+                let rowsToUpdate;
+                if (selectedCount > 0) {
+                  rowsToUpdate = selectedElements;
+                } else {
+                  rowsToUpdate = telemetryStore.local_piddef.filter((r: any) => r.pendingChanges === "Yes");
+                }
+                await canStore.updatePids(rowsToUpdate);
+              }}
+            >
               {updateButtonText}
             </button>
           </div>

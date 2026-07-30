@@ -724,8 +724,8 @@ const RouteDef api_routes[] = {{"/", HTTP_GET, index_handler},
                                {"/api/v1/pid_def/*", HTTP_GET, g_pid_def_index_handler},
                                {"/api/v1/pid_def/*", HTTP_DELETE, d_pid_def_index_handler},
                                {"/api/v1/pid_def", HTTP_GET, g_pid_def_index_handler},
-                               {"/api/v1/pid_def/", HTTP_POST, p_pid_def_index_handler},
-                               {"/api/v1/pid_def/save/", HTTP_POST, p_pid_def_save_index_handler},
+                               {"/api/v1/pid_def", HTTP_POST, p_pid_def_index_handler},
+                               {"/api/v1/pid_def/save", HTTP_POST, p_pid_def_save_index_handler},
 
                                {"/api/v1/can_bus", HTTP_GET, g_can_bus_index_handler},
                                {"/api/v1/obd2", HTTP_GET, g_obdii_index_handler},
@@ -826,3 +826,5 @@ void stop_web_server()
     }
     AsyncWebServer::getInstance().stop();
 }
+
+// TODO add nrc endpoint and maybe callback with ws frame

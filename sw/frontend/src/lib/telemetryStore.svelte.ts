@@ -254,6 +254,7 @@ export function isValidFormula(modeInput: string, formula: string): boolean {
 export function createRowObject(def: any, loaded: boolean, selected: boolean) {
   const rawPid = Number(def.pid);
   return {
+    def: def,
     // Static fields
     name: def.name,
     moduleDescription: def.description,
@@ -289,6 +290,15 @@ export function createRowObject(def: any, loaded: boolean, selected: boolean) {
     },
     get badgeColor() {
       return this.isSupported ? "var(--normal-color)" : "var(--error-color)";
+    },
+    get isValid() {
+      return canStore.pids.get(rawPid)?.isValid ?? false;
+    },
+    get validDisplay() {
+      return this.isValid ? "Yes" : "No";
+    },
+    get validBadgeColor() {
+      return this.isValid ? "var(--normal-color)" : "var(--error-color)";
     },
     get isDirty() {
       const original = canStore.pidDefinitions.find((d: any) => Number(d.pid) === rawPid);
@@ -375,6 +385,16 @@ export const columns: Column[] = [
     width_px: 70, // Fixed: Just wide enough for the checkbox +padg
   },
   {
+    label: "Pending Sync",
+    key: "pendingChanges",
+    type: "badge",
+    width_px: 100,
+    colorKey: "pendingChangesColor",
+    hidden: true,
+    autoShowKey: "pendingChanges",
+    autoShowValue: "Yes",
+  },
+  {
     label: "Name",
     key: "name",
     type: "text",
@@ -440,22 +460,20 @@ export const columns: Column[] = [
     unit: "ms",
     width_px: 120,
   },
-  {
-    label: "Pending Sync",
-    key: "pendingChanges",
-    type: "badge",
-    width_px: 120,
-    colorKey: "pendingChangesColor",
-    hidden: true,
-    autoShowKey: "pendingChanges",
-    autoShowValue: "Yes",
-  },
+
   {
     label: "Priority",
     key: "priority",
     type: "number",
     width_px: 80,
     hidden: true,
+  },
+  {
+    label: "Valid",
+    key: "validDisplay",
+    type: "badge",
+    width_px: 100,
+    colorKey: "validBadgeColor",
   },
   {
     label: "Supported",
