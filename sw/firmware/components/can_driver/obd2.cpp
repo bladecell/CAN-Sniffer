@@ -1136,6 +1136,7 @@ void OBD2::requestDefaultExtendedDiagnosticSession(uint32_t id, bool isRecurring
     r.isRecurring         = isRecurring;
     r.retries_left        = DEFAULT_NUMER_OF_RETRIES;
     req(r);
+    // TODO migh not need this session
 }
 
 esp_err_t OBD2::requestVIN()
