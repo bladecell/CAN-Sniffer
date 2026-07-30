@@ -205,6 +205,7 @@ void OBD2::deinit()
 
     connected_subscribers_.clear();
     subscribers_.clear();
+    nrc_list_size = 0;
 
     pidsInitialized = false;
 }
@@ -410,7 +411,7 @@ esp_err_t OBD2::addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std
             }
         }
     }
-    else if (mode == MODE_READ_DATA_BY_IDENTIFIER)
+    else if (mode == MODE_READ_DATA_BY_IDENTIFIER || mode == MODE_DERIVED_DATA)
     {
         if (continuousRunning)
         {
@@ -625,11 +626,10 @@ void OBD2::startPolling()
             return ESP_OK;
         });
 
-    // This part doesn't access the PID map, so it can stay outside the lock
-    for (const uint32_t id : RequestByDataIdentifierIds)
-    {
-        requestDefaultExtendedDiagnosticSession(id, true);
-    }
+    // for (const uint32_t id : RequestByDataIdentifierIds)
+    // {
+    //     requestDefaultDiagnosticSession(id, true);
+    // }
 }
 
 void OBD2::pollRequestStaticPids()
@@ -654,11 +654,10 @@ void OBD2::pollRequestStaticPids()
             return ESP_OK;
         });
 
-    for (const uint32_t id : RequestByDataIdentifierIds)
-    {
-        requestDefaultExtendedDiagnosticSession(id, false);
-    }
-    // TODO The diagnostic session needs to be handled differently
+    // for (const uint32_t id : RequestByDataIdentifierIds)
+    // {
+    //     requestDefaultDiagnosticSession(id, false);
+    // }
 }
 
 void OBD2::pollTaskWrapper(void* param)
@@ -689,15 +688,56 @@ void OBD2::pollTask()
         PollRequest current = pollQueue.pop();
 
         TickType_t now = xTaskGetTickCount();
+
+        // if (!current.isRaw && current.isRecurring)
+        // {
+        //     uint16_t pid = current.payload.obd.pid;
+
+        if (!current.isRaw && current.isRecurring)
+        {
+            uint16_t pid = current.payload.obd.pid;
+
+            withPidMapLock(
+                [&]()
+                {
+                    if (_pidExists(pid))
+                    {
+                        uint32_t last_updated = _getDataField(pid, &PIDData_t::lastUpdated, (uint32_t)0);
+                        uint32_t now_ms       = pdTICKS_TO_MS(now);
+
+                        uint32_t threshold = current.interval * 3;
+                        if (threshold < 1000)
+                            threshold = 1000;
+
+                        if (last_updated == 0 || (now_ms - last_updated > threshold))
+                        {
+                            if (current.retries_left > 0)
+                            {
+                                current.retries_left--;
+                            }
+                            else
+                            {
+                                _setDataField(pid, &PIDData_t::isValid, false);
+                                current.isRecurring = false;
+                            }
+                        }
+                        else
+                        {
+                            current.retries_left = DEFAULT_NUMER_OF_RETRIES;
+                        }
+                    }
+                    return ESP_OK;
+                });
+        }
+
         if (last_tx_time_per_ecu.count(current.id) > 0)
         {
             TickType_t time_since_last = now - last_tx_time_per_ecu[current.id];
             if (time_since_last < pdMS_TO_TICKS(30))
             {
-                // ECU is still busy! Delay this specific request and put it back in the queue
                 current.nextWake = last_tx_time_per_ecu[current.id] + pdMS_TO_TICKS(30);
                 pollQueue.push(current);
-                continue;  // Immediately grab the next available request
+                continue;
             }
         }
 
@@ -733,8 +773,7 @@ void OBD2::pollTask()
         // 4. Reschedule recurring tasks
         if (current.isRecurring && continuousRunning)
         {
-            current.nextWake     = xTaskGetTickCount() + pdMS_TO_TICKS(current.interval);
-            current.retries_left = DEFAULT_NUMER_OF_RETRIES;
+            current.nextWake = xTaskGetTickCount() + pdMS_TO_TICKS(current.interval);
             pollQueue.push(current);
         }
 
@@ -862,7 +901,41 @@ esp_err_t OBD2::parseRecFrame(const CanDriver::CanFrame& f)
 
 esp_err_t OBD2::handleNegativeResponse(const CanDriver::CanFrame& f)
 {
-    // TODO implement this function
+    if (f.length < 4)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    uint16_t id   = f.header.id;
+    uint8_t  mode = f.data[2];
+    uint8_t  nrc  = f.data[3];
+
+    bool found = false;
+    for (uint8_t i = 0; i < nrc_list_size; i++)
+    {
+        if (nrc_list[i].can_id == id && nrc_list[i].mode == mode && nrc_list[i].nrc == nrc)
+        {
+            found = true;
+            break;
+        }
+    }
+
+    if (!found)
+    {
+        if (nrc_list_size < MAX_NRC_LIST_SIZE)
+        {
+            nrc_list[nrc_list_size++] = {id, mode, nrc};
+        }
+        else
+        {
+            for (uint8_t i = 1; i < MAX_NRC_LIST_SIZE; i++)
+            {
+                nrc_list[i - 1] = nrc_list[i];
+            }
+            nrc_list[MAX_NRC_LIST_SIZE - 1] = {id, mode, nrc};
+        }
+    }
+
     return ESP_OK;
 }
 
@@ -1121,7 +1194,7 @@ esp_err_t OBD2::parseClearDTCsAck(const CanDriver::CanFrame& f)
     return ESP_OK;
 }
 
-void OBD2::requestDefaultExtendedDiagnosticSession(uint32_t id, bool isRecurring)
+void OBD2::requestDefaultDiagnosticSession(uint32_t id, bool isRecurring)
 {
     PollRequest r         = {};
     r.id                  = id;
@@ -1136,7 +1209,6 @@ void OBD2::requestDefaultExtendedDiagnosticSession(uint32_t id, bool isRecurring
     r.isRecurring         = isRecurring;
     r.retries_left        = DEFAULT_NUMER_OF_RETRIES;
     req(r);
-    // TODO migh not need this session
 }
 
 esp_err_t OBD2::requestVIN()
@@ -1513,7 +1585,6 @@ void OBD2::callbackWorkerTask()
 
     while (true)
     {
-        // Thread goes to sleep here for 0% CPU usage until a message arrives in the queue
         if (xQueueReceive(event_queue, &is_connected, portMAX_DELAY) == pdTRUE)
         {
             for (const auto& cb : connected_subscribers_)
@@ -1524,7 +1595,6 @@ void OBD2::callbackWorkerTask()
     }
 }
 
-// TODO: Group requests for pid to one message
 void OBD2::obdHealthCheckTaskWrapper(void* param)
 {
     OBD2* obd2 = static_cast<OBD2*>(param);
@@ -1540,11 +1610,9 @@ void OBD2::obdHealthCheckTask()
         // Wait a bit between checks (e.g. 5 seconds)
         vTaskDelay(pdMS_TO_TICKS(5000));
 
-        // Drain semaphore
         while (xSemaphoreTake(healthCheckSemaphore, 0) == pdTRUE)
             ;
 
-        // Enqueue PIDs 01-20 (Mode 01 PID 00)
         PollRequest r         = {};
         r.id                  = OBD2_FUNCTIONAL_ID;
         r.isRaw               = true;

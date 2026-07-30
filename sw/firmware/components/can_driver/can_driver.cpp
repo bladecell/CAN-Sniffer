@@ -488,8 +488,6 @@ void CanDriver::healthCheckTaskWrapper(void* param)
     driver->healthCheckTask();
 }
 
-// TODO - detect disconnect when connected but noone it transmitting, add logic to ping if no transmission has not been
-// mage in a while
 void CanDriver::healthCheckTask()
 {
     STATE   prevState            = STATE::NOT_INITIALIZED;

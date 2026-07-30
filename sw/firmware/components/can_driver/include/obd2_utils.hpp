@@ -143,6 +143,8 @@ struct PIDData_t
 };
 
 #define DEFAULT_NUMER_OF_RETRIES 3
+#define MAX_NRC_LIST_SIZE 20
+#define MESSAGE_TIMEOUT_MS 200
 
 struct PollRequest
 {

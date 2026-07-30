@@ -15,6 +15,13 @@
 #include "pid_def.hpp"
 #include "pid_priority_queue.hpp"
 
+struct NRCRecord
+{
+    uint32_t can_id;
+    uint8_t  mode;
+    uint8_t  nrc;
+};
+
 class OBD2DataModel
 {
 public:
@@ -165,6 +172,9 @@ public:
     std::map<uint16_t, PIDData_t>     pidData;
     VINData_t                         vinData;
     DTCData_t                         dtcData;
+
+    NRCRecord nrc_list[MAX_NRC_LIST_SIZE];
+    uint8_t   nrc_list_size = 0;
 
     PIDPriorityQueue pollQueue;
 

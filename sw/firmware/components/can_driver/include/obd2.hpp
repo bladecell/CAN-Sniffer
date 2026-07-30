@@ -61,7 +61,7 @@ public:
     esp_err_t requestClearDTCs();
     void      startPolling();
     void      pollRequestStaticPids();
-    void      requestDefaultExtendedDiagnosticSession(uint32_t id, bool isRecurring = false);
+    void      requestDefaultDiagnosticSession(uint32_t id, bool isRecurring = false);
 
     void req(uint32_t id, uint8_t mode, uint32_t pid, uint8_t len, uint32_t interval, uint8_t priority,
              bool isRecurring = false);
@@ -160,5 +160,3 @@ private:
 
     QueueHandle_t event_queue = nullptr;
 };
-
-// Get rid of OBD UTILS type definitions and include them in obd2 or obd2datamodel
