@@ -1,5 +1,6 @@
 <script lang="ts">
   import { canStore } from "$lib/canStore.svelte";
+  import SDCardImportModal from "$lib/components/SDCardImportModal.svelte";
   import { alertStore } from "$lib/alertStore.svelte";
   import {
     telemetryStore,
@@ -63,43 +64,31 @@
     canStore.stopLogging();
   });
 
+  let showSdImportModal = $state(false);
   let activeTab = $state("editor");
-
 
   function handleExport() {
     const definitions = canStore.pidDefinitions;
-    const blob = new Blob([JSON.stringify(definitions, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(definitions, null, 2)], {
+      type: "application/json",
+    });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = 'can_sniffer_pid_definitions.json';
+    a.download = "can_sniffer_pid_definitions.json";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }
 
-  function handleImport() {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'application/json';
-    input.onchange = (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        try {
-          const contents = e.target.result;
-          const parsed = JSON.parse(contents);
-          telemetryStore.importPidDefinitions(parsed);
-          alertStore.add("Successfully loaded PIDs from file. Review and click Update.", "success");
-        } catch (err) {
-          alertStore.add("Failed to parse JSON file.", "error");
-        }
-      };
-      reader.readAsText(file);
-    };
-    input.click();
+  async function handleImport() {
+    await canStore.requestSDInfo();
+    if (!canStore.sdInfo?.is_mounted) {
+      alertStore.add("SD Card is not mounted or present.", "warning");
+      return;
+    }
+    showSdImportModal = true;
   }
 
   let selectedElements = $derived(
@@ -182,6 +171,11 @@
   const icons: IconName[] = Object.keys(iconData) as IconName[];
 </script>
 
+<SDCardImportModal
+  isOpen={showSdImportModal}
+  onClose={() => (showSdImportModal = false)}
+/>
+
 <div class="segmented-control-wrapper">
   <fieldset class="segmented-control">
     <label class="segment" class:active={activeTab === "info"}>
@@ -238,25 +232,29 @@
             </div>
           </div>
           <div style="display: flex; gap: 1rem; align-items: center;">
-            <button 
-              class="btn btn-remove" 
-              disabled={selectedCount === 0} 
+            <button
+              class="btn btn-remove"
+              disabled={selectedCount === 0}
               onclick={async () => {
-                const pidsToRemove = selectedElements.map((row: any) => parseInt(row.pid, 16));
+                const pidsToRemove = selectedElements.map((row: any) =>
+                  parseInt(row.pid, 16),
+                );
                 await canStore.deletePids(pidsToRemove);
               }}
             >
               Remove {selectedCount > 0 ? selectedCount : ""} Selected
             </button>
-            <button 
-              class="btn btn-save" 
+            <button
+              class="btn btn-save"
               disabled={updateButtonDisabled}
               onclick={async () => {
                 let rowsToUpdate;
                 if (selectedCount > 0) {
                   rowsToUpdate = selectedElements;
                 } else {
-                  rowsToUpdate = telemetryStore.local_piddef.filter((r: any) => r.pendingChanges === "Yes");
+                  rowsToUpdate = telemetryStore.local_piddef.filter(
+                    (r: any) => r.pendingChanges === "Yes",
+                  );
                 }
                 await canStore.updatePids(rowsToUpdate);
               }}

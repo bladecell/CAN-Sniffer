@@ -346,20 +346,20 @@ export class CanStore {
             const response = await fetch("/api/v1/system");
             const result = await response.json();
 
-            this.system = result.data;
+            this.system = result;
         } catch (e) {
             console.error("Failed to load PIDs", e);
         }
     }
 
-    sdInfo = $state<SDCardInfo[]>([]);
+    sdInfo = $state<SDCardInfo | null>(null);
 
     async requestSDInfo() {
         try {
             const response = await fetch("/api/v1/sd_card/info");
             const result = await response.json();
 
-            this.sdInfo = result.data;
+            this.sdInfo = result;
         } catch (e) {
             console.error("Failed to load SD card info", e);
         }
