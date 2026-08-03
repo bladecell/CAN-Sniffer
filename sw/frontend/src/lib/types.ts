@@ -84,6 +84,26 @@ export interface WsCanStatus {
   battery_voltage: number;
 }
 
+export interface SystemStatus {
+  app_version: number;
+  uptime_s: number;
+  restart_reason: string;
+  mac: string;
+  battery_voltage: number;
+  sd_dard_detected: boolean;
+}
+
+export interface SDCardInfo {
+  name: string;
+  mount_path: string;
+  capacity: number;
+  used_space: number;
+  is_sdio: boolean;
+  is_mmc: boolean;
+  is_mounted: boolean;
+  is_present: boolean;
+}
+
 export interface Alert {
   id: number;
   message: string;
@@ -217,10 +237,14 @@ export interface Column {
   formatKey?: string;
   autoShowKey?: string;
   autoShowValue?: any;
+  showHeaderToggle?: boolean;
+  showHeaderLabel?: boolean;
 }
 
 export interface DataTableProps {
   columns: Column[];
   data: any[];
   selectedRowIndex?: number;
+  onExport?: () => void;
+  onImport?: () => void;
 }

@@ -6,6 +6,8 @@
     columns,
     data,
     selectedRowIndex = $bindable(-1),
+    onExport,
+    onImport,
   }: DataTableProps = $props();
 
   // --- UI STATE ---
@@ -204,7 +206,21 @@
     }
     return value;
   }
+
+  function isAllChecked(key: string) {
+    if (data.length === 0) return false;
+    return data.every((r) => r[key] === true);
+  }
+
+  function handleHeaderToggle(key: string, e: Event) {
+    e.stopPropagation();
+    const newValue = !isAllChecked(key);
+    for (let i = 0; i < data.length; i++) {
+      data[i][key] = newValue;
+    }
+  }
 </script>
+
 
 <!-- Global click listener for closing menus -->
 <svelte:window onclick={handleWindowClick} />
@@ -213,20 +229,22 @@
   <!-- TOP TOOLBAR -->
   <div class="toolbar">
     <div class="toolbar-actions" bind:this={toolbarRef}>
-      <button class="toolbar-btn" disabled>
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          ><path
-            d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"
-          /></svg
-        >
-        Export
-      </button>
+      {#if onImport}
+        <button class="toolbar-btn" onclick={onImport}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5-5 5 5M12 15V3" />
+          </svg>
+          Import
+        </button>
+      {/if}
+      {#if onExport}
+        <button class="toolbar-btn" onclick={onExport}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 14l-5-5-5 5M12 15v-12" />
+          </svg>
+          Export
+        </button>
+      {/if}
 
       <!-- FILTER MENU WRAPPER -->
       <div class="popover-container">
@@ -396,7 +414,26 @@
               onclick={() => handleSort(col.key)}
             >
               <div class="header-content">
-                <span>{col.label}</span>
+                {#if col.showHeaderLabel ?? (col.type !== "toggle" && col.type !== "checkbox")}
+                  <span>{col.label}</span>
+                {/if}
+                {#if col.showHeaderToggle ?? (col.type === "toggle" || col.type === "checkbox")}
+                  <div class="header-control" onclick={(e) => e.stopPropagation()} style="display: flex;">
+                    {#if col.type === "toggle"}
+                      <Switch
+                        checked={isAllChecked(col.key)}
+                        onchange={(e) => handleHeaderToggle(col.key, e)}
+                        style="--toggle-width: 2em; --toggle-height: 1em;"
+                      />
+                    {:else}
+                      <input 
+                        type="checkbox" 
+                        checked={isAllChecked(col.key)} 
+                        onchange={(e) => handleHeaderToggle(col.key, e)}
+                      />
+                    {/if}
+                  </div>
+                {/if}
                 <span class="sort-indicator" class:active={sortKey === col.key}>
                   {#if sortKey === col.key && sortDirection === "desc"}▼{:else}▲{/if}
                 </span>

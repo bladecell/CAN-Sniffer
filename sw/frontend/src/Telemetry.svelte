@@ -1,5 +1,6 @@
 <script lang="ts">
   import { canStore } from "$lib/canStore.svelte";
+  import { alertStore } from "$lib/alertStore.svelte";
   import {
     telemetryStore,
     isValidHex,
@@ -63,6 +64,43 @@
   });
 
   let activeTab = $state("editor");
+
+
+  function handleExport() {
+    const definitions = canStore.pidDefinitions;
+    const blob = new Blob([JSON.stringify(definitions, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'can_sniffer_pid_definitions.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function handleImport() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json';
+    input.onchange = (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const contents = e.target.result;
+          const parsed = JSON.parse(contents);
+          telemetryStore.importPidDefinitions(parsed);
+          alertStore.add("Successfully loaded PIDs from file. Review and click Update.", "success");
+        } catch (err) {
+          alertStore.add("Failed to parse JSON file.", "error");
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  }
 
   let selectedElements = $derived(
     telemetryStore.local_piddef.filter((item) => item.selected),
@@ -546,6 +584,8 @@
 </div>
 
 <DataTable
+  onExport={handleExport}
+  onImport={handleImport}
   {columns}
   data={telemetryStore.local_piddef}
   bind:selectedRowIndex={activeIndex}

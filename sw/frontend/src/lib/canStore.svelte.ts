@@ -9,6 +9,8 @@ import type {
     DtcData,
     DtcModeData,
     singleDtc,
+    SystemStatus,
+    SDCardInfo
 } from "./types";
 
 export const COMMANDS = {
@@ -337,7 +339,7 @@ export class CanStore {
         }
     }
 
-    system = $state<any[]>([]);
+    system = $state<SystemStatus[]>([]);
 
     async requestSystem() {
         try {
@@ -347,6 +349,19 @@ export class CanStore {
             this.system = result.data;
         } catch (e) {
             console.error("Failed to load PIDs", e);
+        }
+    }
+
+    sdInfo = $state<SDCardInfo[]>([]);
+
+    async requestSDInfo() {
+        try {
+            const response = await fetch("/api/v1/sd_card/info");
+            const result = await response.json();
+
+            this.sdInfo = result.data;
+        } catch (e) {
+            console.error("Failed to load SD card info", e);
         }
     }
 
@@ -613,11 +628,11 @@ export class CanStore {
         let hasError = false;
         const pidsToDelete: number[] = [];
         const payloadsToPost: any[] = [];
-        
+
         for (const row of rows) {
             const rawPid = parseInt(row.pid, 16);
             const def = row.def;
-            
+
             if (!row.loaded) {
                 // User wants to remove this PID
                 pidsToDelete.push(rawPid);
@@ -627,7 +642,7 @@ export class CanStore {
                 if (original) {
                     pidsToDelete.push(rawPid);
                 }
-                
+
                 payloadsToPost.push({
                     id: def.id,
                     mode: def.mode,
@@ -646,7 +661,7 @@ export class CanStore {
                 });
             }
         }
-        
+
         // 1. Delete PIDs
         if (pidsToDelete.length > 0) {
             for (const pid of pidsToDelete) {
@@ -663,7 +678,7 @@ export class CanStore {
                 }
             }
         }
-        
+
         // 2. Post PIDs in batches of 5
         if (payloadsToPost.length > 0) {
             for (let i = 0; i < payloadsToPost.length; i += 5) {
@@ -674,12 +689,12 @@ export class CanStore {
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify(batch)
                     });
-                    
+
                     if (!response.ok) {
                         hasError = true;
                         continue;
                     }
-                    
+
                     const result = await response.json();
                     if (result.status !== "success") {
                         hasError = true;
@@ -689,16 +704,16 @@ export class CanStore {
                 }
             }
         }
-        
+
         if (hasError) {
             alertStore.add("Some updates or deletions failed.", "error");
         } else {
             alertStore.add("Successfully synced PIDs with device.", "success");
         }
-        
+
         await this.loadDefinitions();
     }
-    
+
     isRecording = $state(false);
 
 

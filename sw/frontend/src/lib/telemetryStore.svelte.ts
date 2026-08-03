@@ -118,6 +118,35 @@ export class TelemetryStore {
     this.lastValidPidForLength = "";
     this.lastValidModeForId = "";
   }
+
+
+  importPidDefinitions(defs: any[]) {
+    const newRows = [];
+    for (const def of defs) {
+      // Validate or map minimally
+      const rawPid = Number(def.pid);
+      if (isNaN(rawPid)) continue;
+      
+      const newRow = createRowObject(def, true, false);
+      newRow.pendingChanges = "Yes";
+      newRows.push(newRow);
+    }
+    
+    // Merge or replace
+    const current = [...this.local_piddef];
+    for (const row of newRows) {
+      const existingIdx = current.findIndex(r => parseInt(r.pid, 16) === parseInt(row.pid, 16));
+      if (existingIdx >= 0) {
+        current[existingIdx] = row;
+      } else {
+        current.push(row);
+      }
+    }
+    
+    this.local_piddef = current;
+    // Add success notification
+  }
+
 }
 
 export const telemetryStore = new TelemetryStore();
@@ -383,6 +412,8 @@ export const columns: Column[] = [
     key: "selected",
     type: "checkbox",
     width_px: 70, // Fixed: Just wide enough for the checkbox +padg
+    showHeaderLabel: false,
+    showHeaderToggle: true,
   },
   {
     label: "Pending Sync",
@@ -487,6 +518,8 @@ export const columns: Column[] = [
     key: "loaded",
     type: "toggle",
     width_px: 80,
+    showHeaderLabel: true,
+    showHeaderToggle: false,
   },
 ];
 
