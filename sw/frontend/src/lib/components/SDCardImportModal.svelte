@@ -74,7 +74,7 @@
         <button aria-label="Close" class="close-modal-x" onclick={onClose}>✕</button>
       </header>
 
-      <div class="modal-body-content" style="padding: 1.5rem; max-height: 60vh; overflow-y: auto;">
+      <div class="modal-form-body" style="max-height: 60vh; overflow-y: auto; padding: 24px;">
         {#if !canStore.sdInfo?.is_mounted}
           <div class="alert-box warning">SD Card is not mounted or present.</div>
         {:else if loadingTree}
@@ -117,82 +117,84 @@
   </div>
 {/if}
 
+
 <style>
+  /* --- CUSTOM MODAL STYLES (Matching PIDSettingsModal) --- */
   .custom-modal-backdrop {
     position: fixed;
     top: 0;
     left: 0;
     width: 100vw;
     height: 100vh;
-    background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(4px);
+    background: rgba(0, 0, 0, 0.4);
     display: flex;
-    justify-content: center;
     align-items: center;
-    z-index: 1000;
-  }
-  
-  .pico-orange-glass-modal {
-    background: rgba(30, 30, 30, 0.85);
-    border: 1px solid rgba(249, 115, 22, 0.3);
+    justify-content: center;
+    z-index: 12000;
+    padding: 16px;
     border-radius: 12px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1);
-    width: 90%;
-    max-width: 600px;
-    display: flex;
-    flex-direction: column;
   }
-
+  .pico-orange-glass-modal {
+    max-width: 500px;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
   .modal-header-hull {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 1rem 1.5rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    background: linear-gradient(to right, rgba(249, 115, 22, 0.1), transparent);
-    border-top-left-radius: 12px;
-    border-top-right-radius: 12px;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--pico-border-color);
+    background: transparent;
+    margin: 0;
   }
-
   .modal-title-heading {
     margin: 0;
-    color: #f97316;
     font-size: 1.1rem;
     font-weight: 600;
   }
-
   .close-modal-x {
-    background: none;
-    border: none;
-    color: rgba(255, 255, 255, 0.6);
-    font-size: 1.2rem;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    color: var(--pico-muted-color) !important;
     cursor: pointer;
-    transition: color 0.2s;
+    font-size: 1.1rem;
+    padding: 4px !important;
   }
-
-  .close-modal-x:hover {
-    color: #fff;
+  .modal-form-body {
+    padding: 24px;
   }
-
   .file-item {
     display: flex;
     justify-content: space-between;
-    padding: 0.4rem 0.5rem;
-    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--pico-border-radius);
     font-size: 0.9rem;
     transition: background 0.2s;
+    border: 1px solid transparent;
   }
-
   .file-item.clickable {
     cursor: pointer;
   }
-
   .file-item.clickable:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgb(from var(--pico-form-element-background-color) r g b / 0.6);
+    border-color: var(--pico-border-color);
   }
-
   .file-size {
-    color: rgba(255, 255, 255, 0.4);
+    color: var(--pico-muted-color);
     font-size: 0.8rem;
   }
+  .alert-box {
+    padding: 1rem;
+    border-radius: var(--pico-border-radius);
+    text-align: center;
+    font-weight: 600;
+    background: var(--pico-form-element-disabled-background-color);
+    border: 1px dashed var(--pico-border-color);
+    color: var(--pico-muted-color);
+  }
 </style>
+
