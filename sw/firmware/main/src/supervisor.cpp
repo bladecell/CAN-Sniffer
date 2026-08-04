@@ -428,12 +428,12 @@ esp_err_t SUPERVISOR::setup_sd_card()
         []()
         {
             auto& sd = SDCard::getInstance();
-            if (sd.create_directory("/sdcard/config") != ESP_OK)
+            if (sd.create_directory("/config") != ESP_OK)
             {
-                ESP_LOGE("SD_CALLBACK", "Failed to create /config directory");
+                ESP_LOGE(TAG, "Failed to create /config directory");
             }
 
-            if (sd.create_directory("/sdcard/logs") != ESP_OK)
+            if (sd.create_directory("/logs") != ESP_OK)
             {
                 ESP_LOGE("SD_CALLBACK", "Failed to create /logs directory");
             }

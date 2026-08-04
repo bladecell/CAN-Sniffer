@@ -286,11 +286,15 @@ cJSON* m_sdcard_file_delete_delete(const char* path)
 
     if (sd_info.is_mounted)
     {
-        auto filepath = std::make_unique<char[]>(PATH_MAX);
-
-        snprintf(filepath.get(), PATH_MAX, "%s%s", sd_info.mount_path, path);
-
-        err = sd.delete_file(filepath.get());
+        size_t path_len = strlen(path);
+        if (path_len > 0 && path[path_len - 1] == '/')
+        {
+            err = sd.delete_directory(path);
+        }
+        else
+        {
+            err = sd.delete_file(path);
+        }
     }
 
     if (err == ESP_OK)

@@ -277,85 +277,135 @@ bool SDCard::is_directory(struct stat* st)
     return S_ISDIR(st->st_mode);
 }
 
-esp_err_t SDCard::create_file(const char* path)
+esp_err_t SDCard::create_file(const char* relative_path)
 {
+    const size_t buffer_size = PATH_MAX;
+    auto         filepath    = std::make_unique<char[]>(buffer_size);
+
+    esp_err_t err = get_absolute_path(relative_path, filepath.get(), buffer_size);
+
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+
     struct stat st;
-    if (stat(path, &st) == 0 && S_ISREG(st.st_mode))
+    if (stat(filepath.get(), &st) == 0 && S_ISREG(st.st_mode))
     {
         return ESP_OK;
     }
 
-    FILE* f = fopen(path, "w");
+    FILE* f = fopen(filepath.get(), "w");
     if (f == nullptr)
     {
-        ESP_LOGE(TAG, "Failed to create file %s: %s", path, strerror(errno));
+        ESP_LOGE(TAG, "Failed to create file %s: %s", filepath.get(), strerror(errno));
         return ESP_FAIL;
     }
     fclose(f);
     return ESP_OK;
 }
 
-esp_err_t SDCard::create_directory(const char* path)
+esp_err_t SDCard::create_directory(const char* relative_path)
 {
+    const size_t buffer_size = PATH_MAX;
+    auto         filepath    = std::make_unique<char[]>(buffer_size);
+
+    esp_err_t err = get_absolute_path(relative_path, filepath.get(), buffer_size);
+
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+
     struct stat st;
 
-    if (stat(path, &st) == 0)
+    if (stat(filepath.get(), &st) == 0)
     {
         if (S_ISDIR(st.st_mode))
             return ESP_OK;  // Already exists
     }
 
-    if (mkdir(path, 0777) != 0)
+    if (mkdir(filepath.get(), 0777) != 0)
     {
-        ESP_LOGE(TAG, "Failed to create directory %s: %s", path, strerror(errno));
+        ESP_LOGE(TAG, "Failed to create directory %s: %s", filepath.get(), strerror(errno));
         return ESP_FAIL;
     }
     return ESP_OK;
 }
 
-esp_err_t SDCard::delete_file(const char* path)
+esp_err_t SDCard::delete_file(const char* relative_path)
 {
-    if (!exists(path))
+    const size_t buffer_size = PATH_MAX;
+    auto         filepath    = std::make_unique<char[]>(buffer_size);
+
+    esp_err_t err = get_absolute_path(relative_path, filepath.get(), buffer_size);
+
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+
+    if (!exists(filepath.get()))
     {
         return ESP_ERR_NOT_FOUND;
     }
 
-    if (unlink(path) != 0)
+    if (unlink(filepath.get()) != 0)
     {
-        ESP_LOGE(TAG, "Failed to delete file %s: %s", path, strerror(errno));
+        ESP_LOGE(TAG, "Failed to delete file %s: %s", filepath.get(), strerror(errno));
         return ESP_FAIL;
     }
     return ESP_OK;
 }
 
-esp_err_t SDCard::delete_directory(const char* path)
+esp_err_t SDCard::delete_directory(const char* relative_path)
 {
+    const size_t buffer_size = PATH_MAX;
+    auto         filepath    = std::make_unique<char[]>(buffer_size);
+
+    esp_err_t err = get_absolute_path(relative_path, filepath.get(), buffer_size);
+
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+
     struct stat st;
 
-    if (stat(path, &st) != 0 || !S_ISDIR(st.st_mode))
+    if (stat(filepath.get(), &st) != 0 || !S_ISDIR(st.st_mode))
     {
         return ESP_ERR_NOT_FOUND;
     }
 
-    if (rmdir(path) != 0)
+    if (rmdir(filepath.get()) != 0)
     {
-        ESP_LOGE(TAG, "Failed to delete directory %s: %s", path, strerror(errno));
+        ESP_LOGE(TAG, "Failed to delete directory %s: %s", filepath.get(), strerror(errno));
         return ESP_FAIL;
     }
     return ESP_OK;
 }
 
-esp_err_t SDCard::write_file(const char* path, const void* data, size_t size, bool append)
+esp_err_t SDCard::write_file(const char* relative_path, const void* data, size_t size, bool append)
 {
+    const size_t buffer_size = PATH_MAX;
+    auto         filepath    = std::make_unique<char[]>(buffer_size);
+
+    esp_err_t err = get_absolute_path(relative_path, filepath.get(), buffer_size);
+
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+
     if (data == nullptr || size == 0)
         return ESP_ERR_INVALID_ARG;
 
     const char* mode = append ? "a" : "w";
 
-    FILE* f = fopen(path, mode);
+    FILE* f = fopen(filepath.get(), mode);
     if (f == nullptr)
     {
-        ESP_LOGE(TAG, "Failed to open file %s in mode '%s'", path, mode);
+        ESP_LOGE(TAG, "Failed to open file %s in mode '%s'", filepath.get(), mode);
         return ESP_FAIL;
     }
 
@@ -364,30 +414,40 @@ esp_err_t SDCard::write_file(const char* path, const void* data, size_t size, bo
     fflush(f);
     if (fsync(fileno(f)) != 0)
     {
-        ESP_LOGE(TAG, "Hardware sync failed for %s!", path);
+        ESP_LOGE(TAG, "Hardware sync failed for %s!", filepath.get());
     }
 
     fclose(f);
 
     if (written != size)
     {
-        ESP_LOGE(TAG, "Write incomplete! Wrote %zu/%zu bytes to %s", written, size, path);
+        ESP_LOGE(TAG, "Write incomplete! Wrote %zu/%zu bytes to %s", written, size, filepath.get());
         return ESP_FAIL;
     }
 
-    ESP_LOGI(TAG, "Successfully %s %zu bytes to %s", append ? "appended" : "wrote", size, path);
+    ESP_LOGI(TAG, "Successfully %s %zu bytes to %s", append ? "appended" : "wrote", size, filepath.get());
     return ESP_OK;
 }
 
-esp_err_t SDCard::read_file(const char* path, void* buffer, size_t max_size, size_t* bytes_read)
+esp_err_t SDCard::read_file(const char* relative_path, void* buffer, size_t max_size, size_t* bytes_read)
 {
+    const size_t buffer_size = PATH_MAX;
+    auto         filepath    = std::make_unique<char[]>(buffer_size);
+
+    esp_err_t err = get_absolute_path(relative_path, filepath.get(), buffer_size);
+
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+
     if (buffer == nullptr || max_size == 0)
         return ESP_ERR_INVALID_ARG;
 
-    FILE* f = fopen(path, "r");
+    FILE* f = fopen(filepath.get(), "r");
     if (f == nullptr)
     {
-        ESP_LOGE(TAG, "Failed to open file for reading: %s", path);
+        ESP_LOGE(TAG, "Failed to open file for reading: %s", filepath.get());
         return ESP_FAIL;
     }
 
@@ -400,7 +460,7 @@ esp_err_t SDCard::read_file(const char* path, void* buffer, size_t max_size, siz
         *bytes_read = read_len;
     }
 
-    ESP_LOGI(TAG, "Successfully read %zu bytes from %s", read_len, path);
+    ESP_LOGI(TAG, "Successfully read %zu bytes from %s", read_len, filepath.get());
     return ESP_OK;
 }
 
@@ -418,7 +478,10 @@ cJSON* SDCard::scan_directory(const char* relative_path, int depth)
 
     std::unique_ptr<ScanBuffers> bufs(new ScanBuffers);
 
-    get_absolute_path(relative_path, bufs->full_path, sizeof(bufs->full_path));
+    if (get_absolute_path(relative_path, bufs->full_path, sizeof(bufs->full_path)) != ESP_OK)
+    {
+        return NULL;
+    }
 
     cJSON* root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "path", (relative_path[0] == '\0') ? "/" : relative_path);
@@ -441,7 +504,8 @@ cJSON* SDCard::scan_directory(const char* relative_path, int depth)
         snprintf(bufs->next_rel, sizeof(bufs->next_rel), "%s/%s", (relative_path[0] == '\0') ? "" : relative_path,
                  entry->d_name);
 
-        get_absolute_path(bufs->next_rel, bufs->next_full, sizeof(bufs->next_full));
+        if (get_absolute_path(bufs->next_rel, bufs->next_full, sizeof(bufs->next_full)) != ESP_OK)
+            continue;
 
         struct stat st;
         if (stat(bufs->next_full, &st) == 0 && S_ISDIR(st.st_mode))
@@ -465,22 +529,30 @@ cJSON* SDCard::scan_directory(const char* relative_path, int depth)
     return root;
 }
 
-void SDCard::get_absolute_path(const char* relative_path, char* out_buf, size_t out_size)
+esp_err_t SDCard::get_absolute_path(const char* relative_path, char* out_buf, size_t out_size)
 {
+    if (strlen(mount_path) + strlen(relative_path) >= out_size)
+    {
+        ESP_LOGE(TAG, "Path is too long to fit in buffer!");
+        return ESP_ERR_NO_MEM;
+    }
+
     if (relative_path == nullptr || relative_path[0] == '\0' || strcmp(relative_path, "/") == 0)
     {
-        snprintf(out_buf, out_size, "%s", this->mount_path);
+        snprintf(out_buf, out_size, "%s", mount_path);
     }
     else
     {
         const char* p = (relative_path[0] == '/') ? relative_path + 1 : relative_path;
-        snprintf(out_buf, out_size, "%s/%s", this->mount_path, p);
+        snprintf(out_buf, out_size, "%s/%s", mount_path, p);
     }
+
+    return ESP_OK;
 }
 
-esp_err_t SDCard::open_file(const char* path, const char* mode, FILE*& fd)
+esp_err_t SDCard::open_file(const char* relative_path, const char* mode, FILE*& fd)
 {
-    if (mode == nullptr || path == nullptr)
+    if (mode == nullptr || relative_path == nullptr)
         return ESP_ERR_INVALID_ARG;
 
     if (!is_mounted())
@@ -489,7 +561,7 @@ esp_err_t SDCard::open_file(const char* path, const char* mode, FILE*& fd)
         return ESP_FAIL;
     }
 
-    if (strstr(path, "..") || strlen(path) <= 1)
+    if (strstr(relative_path, "..") || strlen(relative_path) <= 1)
     {
         return ESP_FAIL;
     }
@@ -497,14 +569,12 @@ esp_err_t SDCard::open_file(const char* path, const char* mode, FILE*& fd)
     const size_t buffer_size = PATH_MAX;
     auto         filepath    = std::make_unique<char[]>(buffer_size);
 
-    if (strlen(mount_path) + strlen(path) >= buffer_size)
-    {
-        ESP_LOGE(TAG, "Path is too long to fit in buffer!");
-        return ESP_ERR_NO_MEM;
-    }
+    esp_err_t err = get_absolute_path(relative_path, filepath.get(), buffer_size);
 
-    strlcpy(filepath.get(), mount_path, buffer_size);
-    strlcat(filepath.get(), path, buffer_size);
+    if (err != ESP_OK)
+    {
+        return err;
+    }
 
     fd = fopen(filepath.get(), mode);
 
@@ -548,22 +618,32 @@ size_t SDCard::file_read_chunk(FILE* fd, char* chunk, size_t max_len)
     return fread(chunk, 1, max_len, fd);
 }
 
-esp_err_t SDCard::get_file_stat(const char* path, struct stat* st)
+esp_err_t SDCard::get_file_stat(const char* relative_path, struct stat* st)
 {
-    if (path == nullptr || st == nullptr)
+    const size_t buffer_size = PATH_MAX;
+    auto         filepath    = std::make_unique<char[]>(buffer_size);
+
+    esp_err_t err = get_absolute_path(relative_path, filepath.get(), buffer_size);
+
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+
+    if (filepath.get() == nullptr || st == nullptr)
     {
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (stat(path, st) != 0)
+    if (stat(filepath.get(), st) != 0)
     {
         if (errno == ENOENT)
         {
-            ESP_LOGD(TAG, "File does not exist: %s", path);
+            ESP_LOGD(TAG, "File does not exist: %s", filepath.get());
             return ESP_ERR_NOT_FOUND;
         }
 
-        ESP_LOGE(TAG, "Failed to stat file %s (errno: %d)", path, errno);
+        ESP_LOGE(TAG, "Failed to stat file %s (errno: %d)", filepath.get(), errno);
         return ESP_FAIL;
     }
 

@@ -61,19 +61,19 @@ public:
     bool card_present();
     void update_card_status();
 
-    esp_err_t create_file(const char* path);
-    esp_err_t create_directory(const char* path);
-    esp_err_t delete_file(const char* path);
-    esp_err_t delete_directory(const char* path);
-    esp_err_t write_file(const char* path, const void* data, size_t size, bool append);
-    esp_err_t read_file(const char* path, void* buffer, size_t max_size, size_t* bytes_read);
-    esp_err_t open_file(const char* path, const char* mode, FILE*& fd);
-    esp_err_t get_file_stat(const char* path, struct stat* st);
+    esp_err_t create_file(const char* relative_path);
+    esp_err_t create_directory(const char* relative_path);
+    esp_err_t delete_file(const char* relative_path);
+    esp_err_t delete_directory(const char* relative_path);
+    esp_err_t write_file(const char* relative_path, const void* data, size_t size, bool append);
+    esp_err_t read_file(const char* relative_path, void* buffer, size_t max_size, size_t* bytes_read);
+    esp_err_t open_file(const char* relative_path, const char* mode, FILE*& fd);
+    esp_err_t get_file_stat(const char* relative_path, struct stat* st);
     esp_err_t close_file(FILE* fd);
     esp_err_t file_write_chunk(FILE* fd, const char* chunk, size_t len);
     size_t    file_read_chunk(FILE* fd, char* chunk, size_t max_len);
     cJSON*    scan_directory(const char* relative_path, int depth);
-    void      get_absolute_path(const char* relative_path, char* out_buf, size_t out_size);
+    esp_err_t get_absolute_path(const char* relative_path, char* out_buf, size_t out_size);
 
     typedef std::function<void()> Callback;
 

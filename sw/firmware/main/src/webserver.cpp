@@ -512,6 +512,33 @@ esp_err_t p_file_upload_handler(httpd_req_t* req, void* arg)
     strlcpy(path_buf, req->uri + strlen(api_route), sizeof(path_buf));
     url_decode_inplace(path_buf);
     const char* relative_path = path_buf;
+    size_t      path_len      = strlen(relative_path);
+
+    if (SDCard::getInstance().is_mounted() == false)
+    {
+        cJSON* root = cJSON_CreateObject();
+        cJSON_AddStringToObject(root, "status", "error");
+        cJSON_AddStringToObject(root, "reason", "SD Card not mounted");
+        return send_json_response(req, root);
+    }
+
+    // If the path ends with '/', treat it as a directory creation request
+    if (path_len > 0 && relative_path[path_len - 1] == '/')
+    {
+        if (SDCard::getInstance().create_directory(relative_path) != ESP_OK)
+        {
+            ESP_LOGE(TAG, "Failed to create directory: %s", relative_path);
+            cJSON* root = cJSON_CreateObject();
+            cJSON_AddStringToObject(root, "status", "error");
+            cJSON_AddStringToObject(root, "reason", "Failed to create directory");
+
+            return send_json_response(req, root);
+        }
+
+        cJSON* root = cJSON_CreateObject();
+        cJSON_AddStringToObject(root, "status", "success");
+        return send_json_response(req, root);
+    }
 
     FILE*     fd  = nullptr;
     esp_err_t err = SDCard::getInstance().open_file(relative_path, "w", fd);
@@ -519,7 +546,11 @@ esp_err_t p_file_upload_handler(httpd_req_t* req, void* arg)
     if (err != ESP_OK || !fd)
     {
         ESP_LOGE(TAG, "Failed to open file for writing: %s", relative_path);
-        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Storage error");
+        cJSON* root = cJSON_CreateObject();
+        cJSON_AddStringToObject(root, "status", "error");
+        cJSON_AddStringToObject(root, "reason", "Storage error or file already exists");
+
+        return send_json_response(req, root);
     }
 
     int  remaining = req->content_len;
@@ -535,7 +566,11 @@ esp_err_t p_file_upload_handler(httpd_req_t* req, void* arg)
 
             SDCard::getInstance().close_file(fd);
             m_sdcard_file_delete_delete(relative_path);
-            return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Upload timeout");
+            cJSON* root = cJSON_CreateObject();
+            cJSON_AddStringToObject(root, "status", "error");
+            cJSON_AddStringToObject(root, "reason", "Upload failed or connection closed");
+
+            return send_json_response(req, root);
         }
 
         if (SDCard::getInstance().file_write_chunk(fd, chunk, received) != ESP_OK)
@@ -543,7 +578,11 @@ esp_err_t p_file_upload_handler(httpd_req_t* req, void* arg)
             SDCard::getInstance().close_file(fd);
             m_sdcard_file_delete_delete(relative_path);
             ESP_LOGE(TAG, "Disk write failed!");
-            return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Write error");
+            cJSON* root = cJSON_CreateObject();
+            cJSON_AddStringToObject(root, "status", "error");
+            cJSON_AddStringToObject(root, "reason", "Disk write failed");
+
+            return send_json_response(req, root);
         }
 
         remaining -= received;
@@ -559,7 +598,7 @@ esp_err_t p_file_upload_handler(httpd_req_t* req, void* arg)
 
 esp_err_t d_file_delete_handler(httpd_req_t* req, void* arg)
 {
-    const char* api_route = "/api/v1/sd_card/file";  // FIX: mapped to /file
+    const char* api_route = "/api/v1/sd_card/file";
     char        path_buf[CONFIG_HTTPD_MAX_URI_LEN + 1];
     strlcpy(path_buf, req->uri + strlen(api_route), sizeof(path_buf));
     url_decode_inplace(path_buf);
