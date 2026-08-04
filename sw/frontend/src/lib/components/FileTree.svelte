@@ -556,4 +556,17 @@
   .confirm-yes-btn:hover {
     background: rgb(from var(--pico-del-color, #f95050) r g b / 0.2) !important;
   }
+
+  @media (max-width: 768px) {
+    .icon-action-btn {
+      opacity: 0.8;
+      padding: 6px 8px;
+    }
+    .tree-label, .file-item {
+      height: 40px;
+    }
+    .icon-action-btn:active {
+      opacity: 1;
+    }
+  }
 </style>
