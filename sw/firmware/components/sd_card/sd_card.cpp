@@ -377,11 +377,59 @@ esp_err_t SDCard::delete_directory(const char* relative_path)
         return ESP_ERR_NOT_FOUND;
     }
 
+    DIR* dir = opendir(filepath.get());
+    if (!dir)
+    {
+        return ESP_FAIL;
+    }
+
+    const char* base_rel = (relative_path == nullptr || relative_path[0] == '\0' || strcmp(relative_path, "/") == 0) ? "" : relative_path;
+    if (base_rel[0] == '/' && base_rel[1] == '\0') base_rel = ""; // edge case for "/"
+
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != NULL)
+    {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+        {
+            continue;
+        }
+
+        char child_abs[PATH_MAX];
+        snprintf(child_abs, sizeof(child_abs), "%s/%s", filepath.get(), entry->d_name);
+        
+        char child_rel[PATH_MAX];
+        snprintf(child_rel, sizeof(child_rel), "%s/%s", base_rel, entry->d_name);
+
+        struct stat child_st;
+        if (stat(child_abs, &child_st) == 0)
+        {
+            if (S_ISDIR(child_st.st_mode))
+            {
+                if (delete_directory(child_rel) != ESP_OK)
+                {
+                    closedir(dir);
+                    return ESP_FAIL;
+                }
+            }
+            else
+            {
+                if (unlink(child_abs) != 0)
+                {
+                    ESP_LOGE(TAG, "Failed to delete file %s: %s", child_abs, strerror(errno));
+                    closedir(dir);
+                    return ESP_FAIL;
+                }
+            }
+        }
+    }
+    closedir(dir);
+
     if (rmdir(filepath.get()) != 0)
     {
         ESP_LOGE(TAG, "Failed to delete directory %s: %s", filepath.get(), strerror(errno));
         return ESP_FAIL;
     }
+    
     return ESP_OK;
 }
 
