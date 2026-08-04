@@ -25,11 +25,30 @@
   let fileInputForUpload = $state<HTMLInputElement | null>(null);
   let uploadTargetFolder = $state("");
 
-  async function handleDelete(path: string, isFolder: boolean, e: Event) {
+  let confirmDeletePath = $state<string | null>(null);
+  let confirmDeleteIsFolder = $state<boolean>(false);
+
+  function triggerDelete(path: string, isFolder: boolean, e: Event) {
     e.preventDefault();
     e.stopPropagation();
-    
-    if (!confirm(`Are you sure you want to delete this ${isFolder ? 'folder' : 'file'}?\n${path}`)) return;
+    confirmDeletePath = path;
+    confirmDeleteIsFolder = isFolder;
+  }
+
+  function cancelDelete(e: Event) {
+    e.preventDefault();
+    e.stopPropagation();
+    confirmDeletePath = null;
+  }
+
+  async function executeDelete(e: Event) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirmDeletePath) return;
+
+    const path = confirmDeletePath;
+    const isFolder = confirmDeleteIsFolder;
+    confirmDeletePath = null;
 
     try {
       const endpoint = "/api/v1/sd_card/file" + (path.startsWith('/') ? path : '/' + path) + (isFolder ? '/' : '');
@@ -44,19 +63,39 @@
     }
   }
 
-  async function handleAddFolder(parentFolder: string, e: Event) {
+  let isCreatingFolder = $state(false);
+  let newFolderName = $state("");
+  let newFolderInput = $state<HTMLInputElement | null>(null);
+
+  $effect(() => {
+    if (isCreatingFolder && newFolderInput) {
+      newFolderInput.focus();
+      newFolderInput.select();
+    }
+  });
+
+  function triggerAddFolder(e: Event) {
     e.preventDefault();
     e.stopPropagation();
-    
-    const folderName = prompt("Enter new folder name:");
-    if (!folderName) return;
+    isCreatingFolder = true;
+    newFolderName = "New Folder";
+    // Force folder to open
+    const checkbox = document.getElementById(generateId(node.path || "root")) as HTMLInputElement;
+    if (checkbox) checkbox.checked = true;
+  }
+
+  async function commitAddFolder() {
+    if (!isCreatingFolder) return;
+    isCreatingFolder = false;
+    const name = newFolderName.trim();
+    if (!name) return;
 
     try {
-      let base = parentFolder || "/";
+      let base = node.path || "/";
       if (!base.startsWith("/")) base = "/" + base;
       if (!base.endsWith("/")) base += "/";
       
-      const endpoint = "/api/v1/sd_card/file" + base + folderName + "/";
+      const endpoint = "/api/v1/sd_card/file" + base + name + "/";
       const response = await fetch(endpoint, { method: "POST", body: "" });
       
       if (!response.ok) throw new Error("Failed to create folder: " + response.statusText);
@@ -66,6 +105,14 @@
     } catch (err: any) {
       console.error(err);
       alertStore.add("Failed to create folder: " + err.message, "error");
+    }
+  }
+
+  function handleNewFolderKeyDown(e: KeyboardEvent) {
+    if (e.key === 'Enter') {
+      commitAddFolder();
+    } else if (e.key === 'Escape') {
+      isCreatingFolder = false;
     }
   }
 
@@ -115,6 +162,11 @@
   }
 
 
+  
+  function getFileFullPath() {
+    return node.path || ((parentPath.endsWith('/') ? parentPath : parentPath + '/') + (node.name || ''));
+  }
+
   function generateId(path: string) {
     return 'folder-' + path.replace(/[^a-zA-Z0-9]/g, '-');
   }
@@ -149,7 +201,7 @@
         {#if node.children}
           {@const folderId = generateId(node.path || "root")}
           <input type="checkbox" id={folderId} class="tree-toggle" checked />
-          <label for={folderId} class="tree-label">
+          <label for={folderId} class="tree-label" onmouseleave={cancelDelete}>
             <svg class="icon folder-closed-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 2H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path>
             </svg>
@@ -157,21 +209,35 @@
               <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 2H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path>
               <path d="M2 10h20"></path>
             </svg>
-                        <span class="folder-name-span">{displayName}</span>
+            <span class="folder-name-span">{displayName}</span>
             <div class="action-buttons">
-              <button class="icon-action-btn" onclick={(e) => handleAddFolder(node.path, e)} title="New Folder" aria-label="New Folder">
+              <button class="icon-action-btn" onclick={(e) => triggerAddFolder(e)} title="New Folder" aria-label="New Folder">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><line x1="12" y1="10" x2="12" y2="16"/><line x1="9" y1="13" x2="15" y2="13"/></svg>
               </button>
               <button class="icon-action-btn" onclick={(e) => triggerUpload(node.path, e)} title="Upload File" aria-label="Upload File">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
               </button>
-              <button class="icon-action-btn delete-btn" onclick={(e) => handleDelete(node.path, true, e)} title="Delete Folder" aria-label="Delete Folder">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
-              </button>
             </div>
           </label>
           <div class="tree-children-wrapper">
             <ul class="tree-children">
+              {#if isCreatingFolder}
+                <li class="tree-item">
+                  <div class="file-item is-creating">
+                    <svg class="icon folder-closed-icon inline-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 2H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path>
+                    </svg>
+                    <input 
+                      type="text" 
+                      class="new-folder-input" 
+                      bind:value={newFolderName} 
+                      bind:this={newFolderInput} 
+                      onblur={commitAddFolder} 
+                      onkeydown={handleNewFolderKeyDown} 
+                    />
+                  </div>
+                </li>
+              {/if}
               {#each node.children as child}
                 <FileTree node={child} isRoot={false} {allowedExtensions} {onFileSelect} parentPath={node.path || parentPath} {onUploadSuccess} />
               {/each}
@@ -179,10 +245,12 @@
           </div>
         {:else}
           <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div 
             class="file-item" 
             class:is-clickable={isClickable(node.name)}
             onclick={() => handleFileClick(node)}
+            onmouseleave={cancelDelete}
           >
             <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path>
@@ -190,9 +258,18 @@
             </svg>
             <span class="folder-name-span">{displayName}</span>
             <div class="action-buttons">
-              <button class="icon-action-btn delete-btn" onclick={(e) => handleDelete(node.path || ((parentPath.endsWith('/') ? parentPath : parentPath + '/') + (node.name || '')), false, e)} title="Delete File" aria-label="Delete File">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
-              </button>
+              {#if confirmDeletePath === getFileFullPath()}
+                <button class="icon-action-btn confirm-yes-btn" onclick={executeDelete} title="Confirm Delete" aria-label="Confirm">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                </button>
+                <button class="icon-action-btn" onclick={cancelDelete} title="Cancel" aria-label="Cancel">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+              {:else}
+                <button class="icon-action-btn delete-btn" onclick={(e) => triggerDelete(getFileFullPath(), false, e)} title="Delete File" aria-label="Delete File">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                </button>
+              {/if}
             </div>
           </div>
         {/if}
@@ -205,7 +282,7 @@
     {#if node.children}
       {@const folderId = generateId(node.path)}
       <input type="checkbox" id={folderId} class="tree-toggle" checked />
-      <label for={folderId} class="tree-label">
+      <label for={folderId} class="tree-label" onmouseleave={cancelDelete}>
         <svg class="icon folder-closed-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 2H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path>
         </svg>
@@ -213,21 +290,49 @@
           <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 2H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path>
           <path d="M2 10h20"></path>
         </svg>
-                    <span class="folder-name-span">{displayName}</span>
-            <div class="action-buttons">
-              <button class="icon-action-btn" onclick={(e) => handleAddFolder(node.path, e)} title="New Folder" aria-label="New Folder">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><line x1="12" y1="10" x2="12" y2="16"/><line x1="9" y1="13" x2="15" y2="13"/></svg>
-              </button>
-              <button class="icon-action-btn" onclick={(e) => triggerUpload(node.path, e)} title="Upload File" aria-label="Upload File">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-              </button>
-              <button class="icon-action-btn delete-btn" onclick={(e) => handleDelete(node.path, true, e)} title="Delete Folder" aria-label="Delete Folder">
+        <span class="folder-name-span">{displayName}</span>
+        <div class="action-buttons">
+          {#if confirmDeletePath === node.path}
+            <button class="icon-action-btn confirm-yes-btn" onclick={executeDelete} title="Confirm Delete" aria-label="Confirm">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            </button>
+            <button class="icon-action-btn" onclick={cancelDelete} title="Cancel" aria-label="Cancel">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+          {:else}
+            <button class="icon-action-btn" onclick={(e) => triggerAddFolder(e)} title="New Folder" aria-label="New Folder">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><line x1="12" y1="10" x2="12" y2="16"/><line x1="9" y1="13" x2="15" y2="13"/></svg>
+            </button>
+            <button class="icon-action-btn" onclick={(e) => triggerUpload(node.path, e)} title="Upload File" aria-label="Upload File">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            </button>
+            {#if node.path !== '/'}
+              <button class="icon-action-btn delete-btn" onclick={(e) => triggerDelete(node.path, true, e)} title="Delete Folder" aria-label="Delete Folder">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
               </button>
-            </div>
-          </label>
+            {/if}
+          {/if}
+        </div>
+      </label>
       <div class="tree-children-wrapper">
         <ul class="tree-children">
+          {#if isCreatingFolder}
+            <li class="tree-item">
+              <div class="file-item is-creating">
+                <svg class="icon folder-closed-icon inline-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 2H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path>
+                </svg>
+                <input 
+                  type="text" 
+                  class="new-folder-input" 
+                  bind:value={newFolderName} 
+                  bind:this={newFolderInput} 
+                  onblur={commitAddFolder} 
+                  onkeydown={handleNewFolderKeyDown} 
+                />
+              </div>
+            </li>
+          {/if}
           {#each node.children as child}
             <FileTree node={child} isRoot={false} {allowedExtensions} {onFileSelect} parentPath={node.path || parentPath} {onUploadSuccess} />
           {/each}
@@ -240,20 +345,31 @@
         class="file-item" 
         class:is-clickable={isClickable(node.name)}
         onclick={() => handleFileClick(node)}
+        onmouseleave={cancelDelete}
       >
         <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path>
           <polyline points="14 2 14 8 20 8"></polyline>
         </svg>
-        {displayName}
+        <span class="folder-name-span">{displayName}</span>
+        <div class="action-buttons">
+          {#if confirmDeletePath === getFileFullPath()}
+            <button class="icon-action-btn confirm-yes-btn" onclick={executeDelete} title="Confirm Delete" aria-label="Confirm">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            </button>
+            <button class="icon-action-btn" onclick={cancelDelete} title="Cancel" aria-label="Cancel">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+          {:else}
+            <button class="icon-action-btn delete-btn" onclick={(e) => triggerDelete(getFileFullPath(), false, e)} title="Delete File" aria-label="Delete File">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+            </button>
+          {/if}
+        </div>
       </div>
     {/if}
   </li>
 {/if}
-
-
-
-
 <style>
   /* Adapted from Uiverse.io snippet to match PicoCSS glassmorphism dark theme */
   .tree-container {
@@ -365,6 +481,8 @@
 
   .tree-children {
     overflow: hidden;
+    padding-top: 2px;
+    padding-bottom: 2px;
   }
 
   /* State: Open */
@@ -411,5 +529,31 @@
   .icon-action-btn.delete-btn:hover {
     background: rgb(from var(--pico-del-color, #f95050) r g b / 0.2) !important;
     color: var(--pico-del-color, #f95050) !important;
+  }
+.new-folder-input {
+    background: transparent;
+    border: 1px solid var(--pico-primary);
+    color: var(--pico-color);
+    border-radius: 4px;
+    padding: 2px 4px;
+    font-size: 0.9rem;
+    height: 24px;
+    outline: none;
+    width: 150px;
+    margin-top: 2px;
+    margin-bottom: 2px;
+    box-shadow: 0 0 0 2px rgba(from var(--pico-primary) r g b / 0.2);
+  }
+  .inline-svg {
+    display: block !important;
+  }
+  .is-creating {
+    opacity: 1;
+  }
+.confirm-yes-btn {
+    color: var(--pico-del-color, #f95050) !important;
+  }
+  .confirm-yes-btn:hover {
+    background: rgb(from var(--pico-del-color, #f95050) r g b / 0.2) !important;
   }
 </style>
