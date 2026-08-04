@@ -388,24 +388,41 @@
   }
 
   .tree-children {
-    margin-left: 11px;
-    padding-left: 11px;
-    border-left: 1px solid var(--pico-border-color);
+    margin-left: 12px;
+    padding-left: 0;
   }
 
   .tree-item {
     position: relative;
     margin-top: 4px;
+    padding-left: 14px;
   }
 
-  .tree-children .tree-item::before {
+  .tree-children > :global(.tree-item)::before {
     content: "";
     position: absolute;
-    left: -11px;
-    top: 14px;
-    width: 11px;
+    left: 0;
+    top: -4px;
+    bottom: 0;
+    width: 1px;
+    background-color: var(--pico-muted-color);
+    opacity: 0.3;
+  }
+
+  .tree-children > :global(.tree-item)::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 15px;
+    width: 14px;
     height: 1px;
-    background-color: var(--pico-border-color);
+    background-color: var(--pico-muted-color);
+    opacity: 0.3;
+  }
+
+  .tree-children > :global(.tree-item:last-child)::before {
+    height: 20px;
+    bottom: auto;
   }
 
   .tree-label,
