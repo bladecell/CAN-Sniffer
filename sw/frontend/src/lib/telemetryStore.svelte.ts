@@ -122,13 +122,22 @@ export class TelemetryStore {
 
   importPidDefinitions(defs: any[]) {
     const newRows = [];
-    for (const def of defs) {
+    for (let def of defs) {
       // Validate or map minimally
       const rawPid = Number(def.pid);
       if (isNaN(rawPid)) continue;
+
+      // Normalize short keys from SD card JSON to frontend expected keys
+      const normalizedDef = {
+        ...def,
+        description: def.description !== undefined ? def.description : def.desc,
+        length: def.length !== undefined ? def.length : def.len,
+        minValue: def.minValue !== undefined ? def.minValue : def.minV,
+        maxValue: def.maxValue !== undefined ? def.maxValue : def.maxV,
+        update_interval_ms: def.update_interval_ms !== undefined ? def.update_interval_ms : def.interval,
+      };
       
-      const newRow = createRowObject(def, true, false);
-      newRow.pendingChanges = "Yes";
+      const newRow = createRowObject(normalizedDef, true, false);
       newRows.push(newRow);
     }
     
@@ -144,7 +153,7 @@ export class TelemetryStore {
     }
     
     this.local_piddef = current;
-    // Add success notification
+    return newRows.length;
   }
 
 }

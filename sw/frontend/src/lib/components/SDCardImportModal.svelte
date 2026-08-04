@@ -2,6 +2,7 @@
   import { canStore } from "$lib/canStore.svelte";
   import { alertStore } from "$lib/alertStore.svelte";
   import { telemetryStore } from "$lib/telemetryStore.svelte";
+  import FileTree from "./FileTree.svelte";
 
   interface Props {
     isOpen: boolean;
@@ -43,16 +44,21 @@
 
     fetchingFile = true;
     try {
-      // The API streams the file directly without needing mountpoint
-      // path example: /CONFIG/dtcs.json -> /api/v1/sd_card/file/CONFIG/dtcs.json
-      const endpoint = "/api/v1/sd_card/file" + path;
+      const endpoint = "/api/v1/sd_card/file" + (path.startsWith('/') ? path : '/' + path);
+      console.log("Fetching SD card file from:", endpoint);
       const response = await fetch(endpoint);
-      if (!response.ok) throw new Error("Fetch failed");
-      const result = await response.json();
-      telemetryStore.importPidDefinitions(result);
-      alertStore.add("Successfully loaded PIDs from SD card. Review and click Update.", "success");
+      if (!response.ok) {
+        console.error("HTTP error:", response.status, response.statusText);
+        throw new Error("HTTP " + response.status);
+      }
+      const rawText = await response.text();
+      console.log("File content preview:", rawText.substring(0, 100));
+      const result = JSON.parse(rawText);
+      const importedCount = telemetryStore.importPidDefinitions(result);
+      alertStore.add(`Successfully imported ${importedCount} PID${importedCount === 1 ? '' : 's'}.`, "success");
       onClose();
     } catch (e) {
+      console.error("SD Card Import Exception:", e);
       alertStore.add("Failed to load or parse JSON file from SD card.", "error");
     } finally {
       fetchingFile = false;
@@ -80,35 +86,7 @@
         {:else if loadingTree}
           <div class="alert-box info">Scanning SD Card...</div>
         {:else if tree}
-          <div class="tree-container">
-            <!-- Recursive Tree Renderer -->
-            {#snippet renderNode(node)}
-              <div class="tree-node" style="margin-left: 1rem; margin-bottom: 0.25rem;">
-                {#if node.children}
-                  <div class="folder-name" style="font-weight: 600; color: #f97316;">
-                    📁 {node.name || (node.path === '/' ? 'SD Root' : node.path.split('/').pop())}
-                  </div>
-                  {#each node.children as child}
-                    {@render renderNode(child)}
-                  {/each}
-                {:else}
-                  <!-- svelte-ignore a11y_click_events_have_key_events -->
-                  <div 
-                    class="file-item" 
-                    class:clickable={node.name.endsWith('.json')}
-                    onclick={() => node.name.endsWith('.json') && handleFileSelect(node.path)}
-                  >
-                    <span style="color: {node.name.endsWith('.json') ? '#84da89' : 'rgba(255,255,255,0.5)'}">
-                      📄 {node.name}
-                    </span>
-                    <span class="file-size">{(node.size / 1024).toFixed(1)} KB</span>
-                  </div>
-                {/if}
-              </div>
-            {/snippet}
-
-            {@render renderNode(tree)}
-          </div>
+            <FileTree node={tree} onFileSelect={handleFileSelect} allowedExtensions={[".json"]} onUploadSuccess={loadTree} />
         {:else}
           <div class="alert-box error">Failed to load directory tree.</div>
         {/if}

@@ -130,10 +130,7 @@
     untrack(() => {
       if (idx >= 0 && idx < telemetryStore.local_piddef.length) {
         const row = telemetryStore.local_piddef[idx];
-        const rawPid = parseInt(row.pid, 16);
-        const def = telemetryStore.lastPidDef?.find(
-          (d: any) => Number(d.pid) === rawPid,
-        );
+        const def = row.def;
 
         if (def) {
           telemetryStore.pidInput =
