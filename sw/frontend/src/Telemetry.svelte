@@ -19,6 +19,7 @@
   } from "$lib/telemetryStore.svelte";
   import { onDestroy, onMount, untrack } from "svelte";
   import DataTable from "$lib/components/DataTable.svelte";
+  import LayerChartLarge from "$lib/components/LayerChartLarge.svelte";
   import Icon from "$lib/Icon.svelte";
   import { iconData, type IconName } from "$lib/icons";
 
@@ -195,9 +196,9 @@
       Editor
     </label>
 
-    <label class="segment" class:active={activeTab === "vue"}>
-      <input type="radio" name="framework" value="vue" bind:group={activeTab} />
-      Vue
+    <label class="segment" class:active={activeTab === "chart"}>
+      <input type="radio" name="framework" value="chart" bind:group={activeTab} />
+      Chart
     </label>
   </fieldset>
 
@@ -578,11 +579,12 @@
           </div>
         </div>
       </div>
-    {:else if activeTab === "vue"}
-      <article class="panel fade-in">
-        <h4>Vue Content</h4>
-        <p>This is the reactive template and composition API area.</p>
-      </article>
+    {:else if activeTab === "chart"}
+      <div class="dashboard-card header-container" style="--module-accent: {telemetryStore.colorInput}; padding: 0;">
+        <LayerChartLarge 
+          pid={selectedRow?.pid ? parseInt(selectedRow.pid, 16) : undefined} 
+        />
+      </div>
     {/if}
   </div>
 </div>

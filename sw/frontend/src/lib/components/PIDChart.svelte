@@ -5,6 +5,7 @@
   import "uplot/dist/uPlot.min.css";
   import Icon from "$lib/Icon.svelte";
   import { usePidData } from "$lib/pidHelpers.svelte.ts";
+  import { chartHistoryStore } from "$lib/chartHistoryStore";
   import type { PidGridItem } from "$lib/types";
 
   interface Props {
@@ -120,22 +121,16 @@
   }
 
   // 2. Data Subscription Management
-  onMount(() => {
-    let unsubscribe = canStore.subscribe((update: any) => {
-      if (update.pid !== item.pid) return;
+  $effect(() => {
+    let unsubscribe = chartHistoryStore.subscribe(item.pid, (tData, vData) => {
+      timeData = tData;
+      valueData = vData;
 
-      timeData.push(update.timestamp);
-      valueData.push(update.value);
-
-      const cutoff = update.timestamp - MAX_HISTORY_SEC * 1000;
-      while (timeData.length > 0 && timeData[0] < cutoff) {
-        timeData.shift();
-        valueData.shift();
-      }
-
-      if (chartInstance) {
+      if (chartInstance && timeData.length > 0) {
         chartInstance.setData([timeData, valueData], false);
-        chartInstance.setScale("x", { min: cutoff, max: update.timestamp });
+        const cutoff = timeData[0];
+        const latest = timeData[timeData.length - 1];
+        chartInstance.setScale("x", { min: cutoff, max: latest });
       }
     });
 
