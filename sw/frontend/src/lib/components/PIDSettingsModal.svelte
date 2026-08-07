@@ -70,10 +70,11 @@
     const { w, h, cardType } = localItem;
 
     // Read properties dynamically based on type for tracking
-    let p: any, m: any, c: any, ps: any;
+    let p: any, m: any, g: any, c: any, ps: any;
     if (localItem.cardType === "pid") {
       p = (localItem as PidGridItem).pid;
       m = (localItem as PidGridItem).displayMode;
+      g = (localItem as PidGridItem).gaugeStyle;
     } else if (localItem.cardType === "overview") {
       const over = localItem as OverviewGridItem;
       m = over.displayMode;
@@ -88,6 +89,7 @@
       if (localItem.cardType === "pid") {
         (nextPreview as PidGridItem).pid = p;
         (nextPreview as PidGridItem).displayMode = m;
+        (nextPreview as PidGridItem).gaugeStyle = g;
       } else if (localItem.cardType === "overview") {
         (nextPreview as OverviewGridItem).displayMode = m;
         (nextPreview as OverviewGridItem).pids = JSON.parse(ps);
@@ -238,6 +240,24 @@
               <option value="gauge">Radial Gauge</option>
               <option value="bar">Horizon Bar</option>
             </select>
+
+            {#if pidItem.displayMode === "gauge"}
+              <label for="pid-gauge-style-select" class="field-heading"
+                >Gauge Style</label
+              >
+              <select
+                id="pid-gauge-style-select"
+                bind:value={pidItem.gaugeStyle}
+                class="orange-select-field"
+              >
+                <option value={undefined}>Arc (Default 240°)</option>
+                <option value="arc">Arc (240°)</option>
+                <option value="half">Half (180°)</option>
+                <option value="donut">Donut (360°)</option>
+                <option value="speedometer">Speedometer (Detailed)</option>
+                <option value="gradient">Gradient Progress</option>
+              </select>
+            {/if}
           </div>
         {:else if localItem.cardType === "overview"}
           {@const overItem = localItem as OverviewGridItem}

@@ -15,10 +15,13 @@ export interface BaseGridItem {
   cardType: CardType;
 }
 
+export type GaugeStyle = "arc" | "donut" | "half" | "speedometer" | "gradient";
+
 export interface PidGridItem extends BaseGridItem {
   cardType: "pid";
   pid: number;
   displayMode: PidDisplayMode;
+  gaugeStyle?: GaugeStyle;
 }
 
 export interface BatteryGridItem extends BaseGridItem {
