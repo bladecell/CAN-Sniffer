@@ -55,7 +55,10 @@
     Waiting for data...
   </div>
 {:else}
-  <div class="chart-wrapper" style="height: 400px; padding: 1rem; position: relative;">
+  <div
+    class="chart-wrapper"
+    style="height: 400px; padding: 1rem; position: relative;"
+  >
     <Chart
       data={chartData}
       x="date"
@@ -65,103 +68,122 @@
       padding={{ left: 56, bottom: 24, top: 16, right: 16 }}
       tooltipContext={{ mode: "bisect-x" }}
     >
-      <Svg>
-        <defs>
-          <linearGradient id="chart-area-gradient" x1="0" x2="0" y1="0" y2="1">
-            <stop
-              offset="0%"
-              stop-color={metric.color ?? "#01AAFF"}
-              stop-opacity="0.35"
-            />
-            <stop
-              offset="70%"
-              stop-color={metric.color ?? "#01AAFF"}
-              stop-opacity="0.05"
-            />
-            <stop
-              offset="100%"
-              stop-color={metric.color ?? "#01AAFF"}
-              stop-opacity="0.0"
-            />
-          </linearGradient>
-        </defs>
+      {#snippet children({ context })}
+        <Svg>
+          <defs>
+            <linearGradient
+              id="chart-area-gradient"
+              x1="0"
+              x2="0"
+              y1="0"
+              y2="1"
+            >
+              <stop
+                offset="0%"
+                stop-color={metric.color ?? "#01AAFF"}
+                stop-opacity="0.35"
+              />
+              <stop
+                offset="70%"
+                stop-color={metric.color ?? "#01AAFF"}
+                stop-opacity="0.05"
+              />
+              <stop
+                offset="100%"
+                stop-color={metric.color ?? "#01AAFF"}
+                stop-opacity="0.0"
+              />
+            </linearGradient>
+          </defs>
 
-        <Axis
-          placement="left"
-          ticks={5}
-          format={(d) => `${d}${metric.unit ? " " + metric.unit : ""}`}
-          grid={{ stroke: "rgba(128, 128, 128, 0.05)", strokeDasharray: "2" }}
-          rule={false}
-          tickLabelProps={{
-            fill: "var(--pico-muted-color)",
-            fontSize: 11,
-            textAnchor: "end",
-            dx: -6
-          }}
-        />
-        <Axis
-          placement="bottom"
-          ticks={5}
-          format={(d) =>
-            new Date(d).toLocaleTimeString([], {
+          <Axis
+            placement="left"
+            ticks={5}
+            format={(d) => `${d}${metric.unit ? " " + metric.unit : ""}`}
+            grid={{ stroke: "rgba(128, 128, 128, 0.05)", dashArray: "2" }}
+            rule={false}
+            tickLabelProps={{
+              fill: "var(--pico-muted-color)",
+              fontSize: 11,
+              textAnchor: "end",
+              dx: -12,
+            }}
+          />
+          <Axis
+            placement="bottom"
+            ticks={5}
+            format={(d) =>
+              new Date(d).toLocaleTimeString([], {
+                hour12: false,
+                minute: "2-digit",
+                second: "2-digit",
+              })}
+            rule={{ stroke: "rgba(128, 128, 128, 0.1)" }}
+            tickLabelProps={{
+              fill: "var(--pico-muted-color)",
+              fontSize: 11,
+              dy: 16,
+            }}
+          />
+
+          <Area fill="url(#chart-area-gradient)" />
+
+          <Spline
+            stroke={metric.color ?? "#01AAFF"}
+            strokeWidth={3}
+            class="fill-none chart-spline"
+          />
+
+          <Highlight
+            axis="both"
+            points={{
+              fill: metric.color ?? "#01AAFF",
+              stroke: "#ffffff",
+              strokeWidth: 4,
+              r: 6,
+            }}
+            lines={{
+              stroke: "rgba(128, 128, 128, 0.4)",
+              strokeWidth: 1,
+              dashArray: "4",
+            }}
+          />
+        </Svg>
+
+        <Tooltip.Root
+          {context}
+          x={70}
+          y="data"
+          anchor="right"
+          contained={false}
+          variant="none"
+          class="chart-tooltip-crosshair"
+        >
+          {#snippet children({ data })}
+            {Math.round(data.value * 100) / 100}{metric.unit
+              ? " " + metric.unit
+              : ""}
+          {/snippet}
+        </Tooltip.Root>
+
+        <Tooltip.Root
+          {context}
+          x="data"
+          y={376}
+          anchor="top"
+          contained={false}
+          variant="none"
+          class="chart-tooltip-crosshair"
+        >
+          {#snippet children({ data })}
+            {new Date(data.date).toLocaleTimeString([], {
               hour12: false,
               minute: "2-digit",
               second: "2-digit",
             })}
-          rule={{ stroke: "rgba(128, 128, 128, 0.1)" }}
-          tickLabelProps={{ fill: "var(--pico-muted-color)", fontSize: 11 }}
-        />
-
-        <Area fill="url(#chart-area-gradient)" />
-
-        <Spline
-          stroke={metric.color ?? "#01AAFF"}
-          strokeWidth={3}
-          class="fill-none chart-spline"
-        />
-
-        <Highlight
-          points={{
-            fill: metric.color ?? "#01AAFF",
-            stroke: "#ffffff",
-            strokeWidth: 4,
-            r: 6,
-          }}
-          lines={{ stroke: "rgba(128, 128, 128, 0.4)", strokeDasharray: "4" }}
-        />
-      </Svg>
-
-      <Tooltip.Root
-        x={70}
-        y="data"
-        anchor="right"
-        contained={false}
-        variant="none"
-        class="chart-tooltip-crosshair"
-      >
-        {#snippet children({ data })}
-          {Math.round(data.value * 100) / 100}{metric.unit
-            ? " " + metric.unit
-            : ""}
-        {/snippet}
-      </Tooltip.Root>
-
-      <Tooltip.Root
-        x="data"
-        y={376}
-        anchor="top"
-        contained={false}
-        variant="none"
-        class="chart-tooltip-crosshair"
-      >
-        {#snippet children({ data })}
-          {new Date(data.date).toLocaleTimeString([], {
-            hour12: false,
-            minute: "2-digit",
-            second: "2-digit",
-          })}
-        {/snippet}
-      </Tooltip.Root>
+          {/snippet}
+        </Tooltip.Root>
+      {/snippet}
     </Chart>
   </div>
 {/if}
