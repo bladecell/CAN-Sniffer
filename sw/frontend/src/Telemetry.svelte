@@ -258,6 +258,15 @@
             >
               {updateButtonText}
             </button>
+            <button
+              class="btn btn-save"
+              onclick={async () => {
+                await canStore.savePids();
+              }}
+              title="Save current PID map to ESP filesystem"
+            >
+              Save to FS
+            </button>
           </div>
         </div>
       </div>

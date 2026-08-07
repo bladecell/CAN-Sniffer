@@ -592,6 +592,27 @@ export class CanStore {
             this.isClearing = false;
         }
     }
+    async savePids() {
+        try {
+            const response = await fetch('/api/v1/pid_def/save', {
+                method: 'POST'
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP Error: ${response.status}`);
+            }
+
+            const result = await response.json();
+            if (result.status === "success") {
+                alertStore.add("PIDs saved successfully to FS.", "success");
+            } else {
+                throw new Error(result.reason || "Unknown error");
+            }
+        } catch (e) {
+            console.error("Failed to save PIDs:", e);
+            alertStore.add("Failed to save PIDs.", "error");
+        }
+    }
 
 
     async deletePids(pids: number[]) {

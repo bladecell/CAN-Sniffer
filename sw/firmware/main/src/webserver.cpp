@@ -360,7 +360,7 @@ esp_err_t p_pid_def_index_handler(httpd_req_t* req, void* arg)
 esp_err_t p_pid_def_save_index_handler(httpd_req_t* req, void* arg)
 {
     httpd_resp_set_status(req, "200 OK");
-    return send_json_response(req, m_clear_dtc_request());
+    return send_json_response(req, m_pid_def_save());
 }
 
 esp_err_t d_pid_def_index_handler(httpd_req_t* req, void* arg)
