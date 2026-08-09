@@ -23,16 +23,13 @@ const content = fs.readFileSync(fullSvgPath, "utf-8");
 const viewBoxMatch = content.match(/viewBox="([^"]+)"/);
 const viewBox = viewBoxMatch ? viewBoxMatch[1] : "0 0 512 512";
 
-let pathData = "";
-const pathRegex = /<path[^>]+d="([^"]+)"/g;
-let match;
-while ((match = pathRegex.exec(content)) !== null) {
-  pathData += match[1] + " ";
-}
-pathData = pathData.trim();
-
-if (!pathData) {
-  console.error("Error: Could not find a <path d=\"...\"> in the SVG file.");
+// Extract everything inside the <svg ...> ... </svg> tags
+const bodyMatch = content.match(/<svg[^>]*>([\s\S]*?)<\/svg>/i);
+let bodyData = "";
+if (bodyMatch && bodyMatch[1]) {
+  bodyData = bodyMatch[1].trim();
+} else {
+  console.error("Error: Could not find inner SVG content.");
   process.exit(1);
 }
 
@@ -42,7 +39,9 @@ const safeName =
     ? `"${iconName}"`
     : iconName;
 
-const newEntry = `  ${safeName}: {\n    viewBox: "${viewBox}",\n    path: "${pathData}",\n  },\n`;
+// We use backticks and escape backticks in the bodyData just in case
+const safeBodyData = bodyData.replace(/`/g, "\\`");
+const newEntry = `  ${safeName}: {\n    viewBox: "${viewBox}",\n    body: \`${safeBodyData}\`,\n  },\n`;
 
 // 3. Inject it into src/lib/icons.ts
 const iconsFile = path.join(process.cwd(), "src/lib/icons.ts");

@@ -14,5 +14,9 @@
   aria-hidden="true"
   role="img"
 >
-  <path d={icon.path} fill="currentColor" />
+  {#if icon.body}
+    {@html icon.body}
+  {:else if icon.path}
+    <path d={icon.path} fill="currentColor" />
+  {/if}
 </svg>
