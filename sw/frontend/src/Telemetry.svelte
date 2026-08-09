@@ -21,6 +21,7 @@
   import DataTable from "$lib/components/DataTable.svelte";
   import LayerChartLarge from "$lib/components/LayerChartLarge.svelte";
   import GridSelector from "$lib/components/GridSelector.svelte";
+  import Tabs from "$lib/components/Tabs.svelte";
   import Icon from "$lib/Icon.svelte";
 
 
@@ -67,7 +68,6 @@
   });
 
   let showSdImportModal = $state(false);
-  let activeTab = $state("editor");
 
   function handleExport() {
     const definitions = canStore.pidDefinitions;
@@ -228,36 +228,17 @@
   onClose={() => (showSdImportModal = false)}
 />
 
-<div class="segmented-control-wrapper">
-  <fieldset class="segmented-control">
-    <label class="segment" class:active={activeTab === "info"}>
-      <input
-        type="radio"
-        name="framework"
-        value="info"
-        bind:group={activeTab}
-      />
-      Info
-    </label>
-
-    <label class="segment" class:active={activeTab === "editor"}>
-      <input
-        type="radio"
-        name="framework"
-        value="editor"
-        bind:group={activeTab}
-      />
-      Editor
-    </label>
-
-    <label class="segment" class:active={activeTab === "chart"}>
-      <input type="radio" name="framework" value="chart" bind:group={activeTab} />
-      Chart
-    </label>
-  </fieldset>
+<Tabs
+  options={[
+    { value: "info", label: "Info" },
+    { value: "editor", label: "Editor" },
+    { value: "chart", label: "Chart" }
+  ]}
+  bind:selected={telemetryStore.activeTab}
+/>
 
   <div class="tab-content">
-    {#if activeTab === "info"}
+    {#if telemetryStore.activeTab === "info"}
       <div
         class="dashboard-card header-container"
         style="--module-accent: #01AAFF;"
@@ -325,7 +306,7 @@
           </div>
         </div>
       </div>
-    {:else if activeTab === "editor"}
+    {:else if telemetryStore.activeTab === "editor"}
       <div
         class="dashboard-card header-container"
         style="--module-accent: {telemetryStore.colorInput};"
@@ -640,7 +621,7 @@
           </div>
         </div>
       </div>
-    {:else if activeTab === "chart"}
+    {:else if telemetryStore.activeTab === "chart"}
       <div class="dashboard-card header-container" style="--module-accent: var(--pico-primary); padding: 1rem; display: flex; flex-direction: column; gap: 1rem; min-height: 500px;">
         <div style="display: flex; justify-content: flex-end; align-items: center;">
           <GridSelector maxRows={4} maxCols={4} onSelect={handleLayoutSelect} />
@@ -668,7 +649,6 @@
       </div>
     {/if}
   </div>
-</div>
 
 <DataTable
   onExport={handleExport}
@@ -724,38 +704,7 @@
     text-align: left;
   }
 
-  .segmented-control-wrapper {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-  }
-
-  /* 1. The Outer Track */
-  fieldset.segmented-control {
-    display: inline-flex;
-    margin: 0;
-    padding: 4px;
-    background: var(
-      --pico-muted-border-color
-    ); /* Matches the soft background */
-    border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    width: fit-content; /* Keeps it wrapped tight around the text */
-  }
-
-  /* 2. The Labels (The clickable areas) */
-  .segment {
-    position: relative;
-    margin: 0;
-    padding: 8px 24px;
-    cursor: pointer;
-    font-size: 0.9rem;
-    font-weight: 500;
-    color: var(--pico-muted-color);
-    border-radius: 8px;
-    transition: all 0.2s ease;
-    user-select: none;
-  }
+  /* --- 2. LAYOUT UTILITIES --- */
 
 
   
@@ -832,27 +781,7 @@
     color: var(--pico-primary);
   }
 
-  /* 3. Hide the actual radio circles completely */
-  .segment input[type="radio"] {
-    position: absolute;
-    opacity: 0;
-    width: 0;
-    height: 0;
-    margin: 0;
-  }
 
-  /* 4. The Active State (The highlighted pill) */
-  .segment.active {
-    color: var(--pico-color); /* Make text brighter */
-    /* Gives it that raised, frosted glass look from the screenshot */
-    background: var(--pico-background-color);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  }
-
-  /* Hover effect for unselected tabs */
-  .segment:not(.active):hover {
-    color: var(--pico-primary);
-  }
 
 
 

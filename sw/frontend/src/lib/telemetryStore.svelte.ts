@@ -54,6 +54,7 @@ export class TelemetryStore {
   activeChartIndex = $state(0);
   chartPids = $state<number[][]>([[]]);
   activeIndex = $state(-1);
+  activeTab = $state("editor");
 
   // --- FORM STATE ---
   pidInput = $state("");

@@ -37,14 +37,15 @@
   }
 
   async function handleFileSelect(path: string) {
-    if (!path.endsWith('.json')) {
+    if (!path.endsWith(".json")) {
       alertStore.add("Please select a JSON file.", "warning");
       return;
     }
 
     fetchingFile = true;
     try {
-      const endpoint = "/api/v1/sd_card/file" + (path.startsWith('/') ? path : '/' + path);
+      const endpoint =
+        "/api/v1/sd_card/file" + (path.startsWith("/") ? path : "/" + path);
       console.log("Fetching SD card file from:", endpoint);
       const response = await fetch(endpoint);
       if (!response.ok) {
@@ -55,11 +56,17 @@
       console.log("File content preview:", rawText.substring(0, 100));
       const result = JSON.parse(rawText);
       const importedCount = telemetryStore.importPidDefinitions(result);
-      alertStore.add(`Successfully imported ${importedCount} PID${importedCount === 1 ? '' : 's'}.`, "success");
+      alertStore.add(
+        `Successfully imported ${importedCount} PID${importedCount === 1 ? "" : "s"}.`,
+        "success",
+      );
       onClose();
     } catch (e) {
       console.error("SD Card Import Exception:", e);
-      alertStore.add("Failed to load or parse JSON file from SD card.", "error");
+      alertStore.add(
+        "Failed to load or parse JSON file from SD card.",
+        "error",
+      );
     } finally {
       fetchingFile = false;
     }
@@ -77,16 +84,28 @@
     >
       <header class="modal-header-hull">
         <h5 class="modal-title-heading">Select PID Configuration File</h5>
-        <button aria-label="Close" class="close-modal-x" onclick={onClose}>✕</button>
+        <button aria-label="Close" class="close-modal-x" onclick={onClose}
+          >✕</button
+        >
       </header>
 
-      <div class="modal-form-body" style="max-height: 60vh; overflow-y: auto; padding: 24px;">
+      <div
+        class="modal-form-body"
+        style="max-height: 60vh; overflow-y: auto; padding: 24px;"
+      >
         {#if !canStore.sdInfo?.is_mounted}
-          <div class="alert-box warning">SD Card is not mounted or present.</div>
+          <div class="alert-box warning">
+            SD Card is not mounted or present.
+          </div>
         {:else if loadingTree}
           <div class="alert-box info">Scanning SD Card...</div>
         {:else if tree}
-            <FileTree node={tree} onFileSelect={handleFileSelect} allowedExtensions={[".json"]} onUploadSuccess={loadTree} />
+          <FileTree
+            node={tree}
+            onFileSelect={handleFileSelect}
+            allowedExtensions={[".json"]}
+            onUploadSuccess={loadTree}
+          />
         {:else}
           <div class="alert-box error">Failed to load directory tree.</div>
         {/if}
@@ -94,7 +113,6 @@
     </article>
   </div>
 {/if}
-
 
 <style>
   /* --- CUSTOM MODAL STYLES (Matching PIDSettingsModal) --- */
@@ -142,4 +160,3 @@
     color: var(--pico-muted-color);
   }
 </style>
-
