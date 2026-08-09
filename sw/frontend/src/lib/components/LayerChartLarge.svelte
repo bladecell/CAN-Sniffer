@@ -8,11 +8,13 @@
     Area,
     Tooltip,
     Highlight,
+    ChartClipPath,
   } from "layerchart";
   import { scaleTime, scaleLinear } from "d3-scale";
   import { usePidData } from "$lib/pidHelpers.svelte.ts";
   import { chartHistoryStore } from "$lib/chartHistoryStore";
   import { canStore } from "$lib/canStore.svelte.ts";
+  import Icon from "$lib/Icon.svelte";
 
   interface Props {
     pid?: number;
@@ -22,6 +24,7 @@
 
   // Derive chart data explicitly when triggered
   let chartData = $state<{ date: Date; value: number }[]>([]);
+  let chartContext = $state<any>();
 
   $effect(() => {
     // When pid changes, reset data
@@ -43,7 +46,6 @@
     const unsubscribeCan = canStore.subscribe((update) => {
       if (update.pid === pid) {
         chartData.push({ date: new Date(update.timestamp), value: update.value });
-        chartData = [...chartData]; // trigger Svelte reactivity
       }
     });
 
@@ -51,6 +53,30 @@
       unsubscribeCan();
     };
   });
+
+  let isZoomed = $derived(
+    chartContext?.transformState &&
+    (Math.abs(chartContext.transformState.scale - 1) > 0.001 ||
+     Math.abs(chartContext.transformState.translate.x) > 0.001 ||
+     Math.abs(chartContext.transformState.translate.y) > 0.001)
+  );
+
+  let autoXDomain = $derived(
+    chartData.length > 1
+      ? [chartData[0].date, chartData[chartData.length - 1].date]
+      : undefined
+  );
+  let frozenXDomain = $state<[Date, Date] | undefined>();
+
+  $effect(() => {
+    if (isZoomed) {
+      if (!frozenXDomain) frozenXDomain = autoXDomain as [Date, Date];
+    } else {
+      frozenXDomain = undefined;
+    }
+  });
+
+  let activeXDomain = $derived(frozenXDomain ?? autoXDomain);
 </script>
 
 {#if pid === undefined}
@@ -70,14 +96,34 @@
     class="chart-wrapper"
     style="height: 400px; padding: 1rem; position: relative;"
   >
+    {#if isZoomed}
+      <button
+        class="secondary outline"
+        style="position: absolute; top: 0.5rem; right: 1rem; z-index: 10; padding: 0.25rem 0.5rem; display: flex; align-items: center; gap: 0.25rem; font-size: 0.75rem;"
+        onclick={() => chartContext?.transformState?.reset()}
+        title="Reset Zoom"
+      >
+        <Icon name="lucide:home" size={14} />
+        Reset View
+      </button>
+    {/if}
+
     <Chart
+      bind:context={chartContext}
       data={chartData}
       x="date"
       xScale={scaleTime()}
+      xDomain={activeXDomain}
       y="value"
       yScale={scaleLinear()}
+      yDomain={[
+        metric.min - (metric.max - metric.min) * 0.05,
+        metric.max + (metric.max - metric.min) * 0.05,
+      ]}
       padding={{ left: 56, bottom: 24, top: 16, right: 16 }}
       tooltipContext={{ mode: "bisect-x" }}
+      transform={{ mode: "domain", axis: "x", scrollMode: "scale" }}
+      brush={{ axis: "x", zoomOnBrush: true }}
     >
       {#snippet children({ context })}
         <Svg>
@@ -111,26 +157,28 @@
             }}
           />
 
-          <Spline
-            stroke={metric.color ?? "#01AAFF"}
-            strokeWidth={3}
-            class="fill-none chart-spline"
-          />
+          <ChartClipPath>
+            <Spline
+              stroke={metric.color ?? "#01AAFF"}
+              strokeWidth={3}
+              class="fill-none chart-spline"
+            />
 
-          <Highlight
-            axis="both"
-            points={{
-              fill: metric.color ?? "#01AAFF",
-              stroke: "#ffffff",
-              strokeWidth: 4,
-              r: 6,
-            }}
-            lines={{
-              stroke: "rgba(128, 128, 128, 0.4)",
-              strokeWidth: 1,
-              dashArray: "4",
-            }}
-          />
+            <Highlight
+              axis="both"
+              points={{
+                fill: metric.color ?? "#01AAFF",
+                stroke: "#ffffff",
+                strokeWidth: 4,
+                r: 6,
+              }}
+              lines={{
+                stroke: "rgba(128, 128, 128, 0.4)",
+                strokeWidth: 1,
+                dashArray: "4",
+              }}
+            />
+          </ChartClipPath>
         </Svg>
 
         <Tooltip.Root
