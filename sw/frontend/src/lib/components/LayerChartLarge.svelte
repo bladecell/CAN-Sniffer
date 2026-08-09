@@ -12,6 +12,7 @@
   import { scaleTime, scaleLinear } from "d3-scale";
   import { usePidData } from "$lib/pidHelpers.svelte.ts";
   import { chartHistoryStore } from "$lib/chartHistoryStore";
+  import { canStore } from "$lib/canStore.svelte.ts";
 
   interface Props {
     pid?: number;
@@ -32,12 +33,22 @@
   $effect(() => {
     if (pid === undefined) return;
 
-    const unsubscribe = chartHistoryStore.subscribe(pid, (tData, vData) => {
-      // Update svelte state
+    // Seed initial data from history store (max 60s)
+    const unsubscribeHistory = chartHistoryStore.subscribe(pid, (tData, vData) => {
       chartData = tData.map((t, i) => ({ date: new Date(t), value: vData[i] }));
     });
+    unsubscribeHistory(); // Unsubscribe immediately, we just wanted the initial state
+
+    // Listen to new events and accumulate locally infinitely while open
+    const unsubscribeCan = canStore.subscribe((update) => {
+      if (update.pid === pid) {
+        chartData.push({ date: new Date(update.timestamp), value: update.value });
+        chartData = [...chartData]; // trigger Svelte reactivity
+      }
+    });
+
     return () => {
-      unsubscribe();
+      unsubscribeCan();
     };
   });
 </script>
@@ -70,32 +81,6 @@
     >
       {#snippet children({ context })}
         <Svg>
-          <defs>
-            <linearGradient
-              id="chart-area-gradient"
-              x1="0"
-              x2="0"
-              y1="0"
-              y2="1"
-            >
-              <stop
-                offset="0%"
-                stop-color={metric.color ?? "#01AAFF"}
-                stop-opacity="0.35"
-              />
-              <stop
-                offset="70%"
-                stop-color={metric.color ?? "#01AAFF"}
-                stop-opacity="0.05"
-              />
-              <stop
-                offset="100%"
-                stop-color={metric.color ?? "#01AAFF"}
-                stop-opacity="0.0"
-              />
-            </linearGradient>
-          </defs>
-
           <Axis
             placement="left"
             ticks={5}
@@ -125,8 +110,6 @@
               dy: 16,
             }}
           />
-
-          <Area fill="url(#chart-area-gradient)" />
 
           <Spline
             stroke={metric.color ?? "#01AAFF"}
