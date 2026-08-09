@@ -165,7 +165,7 @@
         y="value"
         yScale={scaleLinear()}
         yDomain={yDomain}
-        padding={{ left: 56, bottom: 24, top: 16, right: 16 }}
+        padding={{ left: pids.length === 1 && getPidDef(pids[0])?.unit ? 80 : 56, bottom: 24, top: 16, right: 16 }}
         tooltipContext={{ mode: "bisect-x" }}
         transform={{ mode: "domain", axis: "x", scrollMode: "scale" }}
         brush={{ axis: "x", zoomOnBrush: true }}
@@ -275,7 +275,7 @@
       </Chart>
     </div>
     
-    {#if pids.length > 1}
+    {#if pids.length > 0}
       <div class="custom-chart-legend">
         {#each pids as p}
           <div class="legend-item" style="border-color: {getPidColor(p)}20; background-color: {getPidColor(p)}15;">

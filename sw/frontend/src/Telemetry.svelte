@@ -20,6 +20,7 @@
   import { onDestroy, onMount, untrack } from "svelte";
   import DataTable from "$lib/components/DataTable.svelte";
   import LayerChartLarge from "$lib/components/LayerChartLarge.svelte";
+  import GridSelector from "$lib/components/GridSelector.svelte";
   import Icon from "$lib/Icon.svelte";
 
   let activeIndex = $state(-1);
@@ -95,6 +96,60 @@
   let selectedElements = $derived(
     telemetryStore.local_piddef.filter((item) => item.selected),
   );
+
+  let chartRows = $state(1);
+  let chartCols = $state(1);
+  let activeChartIndex = $state(0);
+  let chartPids = $state<number[][]>([[]]);
+
+  $effect(() => {
+    let currentSelectedPids: number[] = [];
+    if (selectedElements.length > 0) {
+      currentSelectedPids = selectedElements.map((row) => parseInt(row.pid, 16));
+    } else if (selectedRow?.pid) {
+      currentSelectedPids = [parseInt(selectedRow.pid, 16)];
+    }
+    
+    untrack(() => {
+      if (activeChartIndex >= 0 && activeChartIndex < chartRows * chartCols) {
+        chartPids[activeChartIndex] = currentSelectedPids;
+      }
+    });
+  });
+
+  function handleLayoutSelect(r: number, c: number) {
+    chartRows = r;
+    chartCols = c;
+    const total = r * c;
+    const newChartPids = [...chartPids];
+    while (newChartPids.length < total) {
+      newChartPids.push([]);
+    }
+    chartPids = newChartPids;
+    if (activeChartIndex >= total) {
+      setActiveChart(0);
+    }
+  }
+
+  function setActiveChart(index: number) {
+    activeChartIndex = index;
+    const targetPids = chartPids[index] || [];
+    for (const item of telemetryStore.local_piddef) {
+      item.selected = targetPids.includes(parseInt(item.pid, 16));
+    }
+  }
+
+  function getChartAccent(pids: number[]) {
+    if (!pids || pids.length === 0) return null;
+    const pid = pids[0];
+    const def = telemetryStore.local_piddef.find((d) => parseInt(d.pid, 16) === pid)?.def;
+    if (!def?.color) return "#10b981";
+    if (typeof def.color === "number") {
+      return `#${def.color.toString(16).padStart(6, "0")}`;
+    }
+    return def.color;
+  }
+
   let dirtyCount = $derived(
     telemetryStore.local_piddef.filter((r: any) => r.pendingChanges === "Yes")
       .length,
@@ -589,10 +644,30 @@
         </div>
       </div>
     {:else if activeTab === "chart"}
-      <div class="dashboard-card header-container" style="--module-accent: {telemetryStore.colorInput}; padding: 0;">
-        <LayerChartLarge 
-          pids={selectedElements.length > 0 ? selectedElements.map(row => parseInt(row.pid, 16)) : (selectedRow?.pid ? [parseInt(selectedRow.pid, 16)] : [])} 
-        />
+      <div class="dashboard-card header-container" style="--module-accent: var(--pico-primary); padding: 1rem; display: flex; flex-direction: column; gap: 1rem; min-height: 500px;">
+        <div style="display: flex; justify-content: flex-end; align-items: center;">
+          <GridSelector maxRows={4} maxCols={4} onSelect={handleLayoutSelect} />
+        </div>
+        <div 
+          class="chart-grid" 
+          style="display: grid; grid-template-columns: repeat({chartCols}, 1fr); grid-template-rows: repeat({chartRows}, 1fr); gap: 1rem; flex: 1;"
+        >
+          {#each Array(chartRows * chartCols) as _, i}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div 
+              class="chart-cell" 
+              class:active={activeChartIndex === i}
+              style:border-color={activeChartIndex === i && chartPids[i]?.length > 0 ? `${getChartAccent(chartPids[i])}30` : undefined}
+              style:background-color={activeChartIndex === i && chartPids[i]?.length > 0 ? `${getChartAccent(chartPids[i])}15` : undefined}
+              onclick={() => setActiveChart(i)}
+            >
+              <div class="chart-cell-inner">
+                <LayerChartLarge pids={chartPids[i] || []} />
+              </div>
+            </div>
+          {/each}
+        </div>
       </div>
     {/if}
   </div>
@@ -923,5 +998,29 @@
     height: 54px;
     border-radius: 8px;
     font-weight: 500;
+  }
+
+  .chart-cell {
+    border: 2px solid transparent;
+    border-radius: 8px;
+    transition: border-color 0.2s;
+    background: rgba(0, 0, 0, 0.1);
+    display: flex;
+    flex-direction: column;
+    min-height: 200px;
+  }
+
+  .chart-cell.active {
+    border-color: rgba(255, 255, 255, 0.15);
+    background: rgba(0, 0, 0, 0.15);
+  }
+
+  .chart-cell-inner {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    pointer-events: auto;
   }
 </style>

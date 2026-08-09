@@ -1,4 +1,5 @@
 <script lang="ts">
+  // Force vite update
   // Load all SVG files as raw strings
   const svgFiles = import.meta.glob("/src/lib/icons_svg/*.svg", {
     query: "?raw",
