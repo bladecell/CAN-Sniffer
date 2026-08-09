@@ -23,7 +23,7 @@
   import GridSelector from "$lib/components/GridSelector.svelte";
   import Icon from "$lib/Icon.svelte";
 
-  let activeIndex = $state(-1);
+
   let iconDropdownOpen = $state(false);
 
   $effect(() => {
@@ -56,7 +56,7 @@
   });
 
   $effect(() => {
-    console.log("Active index changed to:", activeIndex);
+    console.log("Active index changed to:", telemetryStore.activeIndex);
   });
 
   $effect(() => {
@@ -169,14 +169,14 @@
   );
 
   let selectedRow = $derived(
-    activeIndex >= 0 && activeIndex < telemetryStore.local_piddef.length
-      ? telemetryStore.local_piddef[activeIndex]
+    telemetryStore.activeIndex >= 0 && telemetryStore.activeIndex < telemetryStore.local_piddef.length
+      ? telemetryStore.local_piddef[telemetryStore.activeIndex]
       : null,
   );
 
   $effect(() => {
     // Only subscribe to activeIndex changes
-    const idx = activeIndex;
+    const idx = telemetryStore.activeIndex;
 
     untrack(() => {
       if (idx >= 0 && idx < telemetryStore.local_piddef.length) {
@@ -332,7 +332,7 @@
       >
         <div class="title-row">
           <div class="header-title-row">
-            <h2>{activeIndex === -1 ? "Editor" : "Editing"}</h2>
+            <h2>{telemetryStore.activeIndex === -1 ? "Editor" : "Editing"}</h2>
             <p class="status-subtitle">{selectedRow?.pid}</p>
           </div>
         </div>
@@ -590,6 +590,8 @@
                       <Icon name="folder-closed" class="caret" size={14} /> <!-- Reusing an icon for caret or just simple CSS arrow -->
                     </button>
                     {#if iconDropdownOpen}
+                      <!-- svelte-ignore a11y_click_events_have_key_events -->
+                      <!-- svelte-ignore a11y_no_static_element_interactions -->
                       <div class="dropdown-overlay" onclick={() => (iconDropdownOpen = false)}></div>
                       <div class="dropdown-menu blur-background">
                         {#each icons as iconName}
@@ -633,7 +635,7 @@
               disabled={!telemetryStore.isFormValid}
               onclick={handleSavePid}
             >
-              {activeIndex === -1 ? "Add PID Definition" : "Save Changes"}
+              {telemetryStore.activeIndex === -1 ? "Add PID Definition" : "Save Changes"}
             </button>
           </div>
         </div>
@@ -673,7 +675,7 @@
   onImport={handleImport}
   {columns}
   data={telemetryStore.local_piddef}
-  bind:selectedRowIndex={activeIndex}
+  bind:selectedRowIndex={telemetryStore.activeIndex}
 />
 
 <style>
@@ -755,13 +757,7 @@
     user-select: none;
   }
 
-  .color-picker {
-    padding: 0;
-    height: 48px;
-    cursor: pointer;
-    border: none;
-    background: none;
-  }
+
   
   .custom-icon-dropdown {
     position: relative;
@@ -858,10 +854,7 @@
     color: var(--pico-primary);
   }
 
-  /* Optional: Smooth fade-in for the content swapping */
-  .fade-in {
-    animation: fadeIn 0.3s ease-in-out;
-  }
+
 
   .header-title-row {
     display: flex;
@@ -883,16 +876,7 @@
     letter-spacing: 0.05em;
   }
 
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-      transform: translateY(5px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
+
 
   .editor-wrapper {
     width: 100%;
@@ -913,14 +897,7 @@
     margin-top: 0.5rem;
   }
 
-  .color-picker {
-    height: calc(
-      1rem * var(--pico-line-height) + var(--pico-form-element-spacing-vertical) *
-        2 + var(--pico-border-width) * 2
-    );
-    padding: 0.25rem;
-    width: 100%;
-  }
+
 
   .icon-selector-wrapper {
     display: flex;
@@ -933,20 +910,7 @@
     flex-grow: 1;
   }
 
-  .icon-preview-box {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    /* Height matches the input minus padding/border */
-    height: calc(
-      1rem * var(--pico-line-height) + var(--pico-form-element-spacing-vertical) *
-        2 + var(--pico-border-width) * 2
-    );
-    width: 3rem;
-    border: var(--pico-border-width) solid var(--pico-form-element-border-color);
-    border-radius: var(--pico-border-radius);
-    background-color: var(--pico-form-element-background-color);
-  }
+
 
   .validation-errors-container {
     margin-bottom: 1.5rem;

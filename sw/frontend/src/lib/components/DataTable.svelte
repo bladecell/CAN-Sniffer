@@ -20,6 +20,7 @@
   let sortDirection = $state<"asc" | "desc">("asc");
 
   // --- VIEW (COLUMN VISIBILITY) STATE ---
+  // svelte-ignore state_referenced_locally
   let hiddenColumns = $state<Set<string>>(
     new Set(columns.filter((c) => c.hidden).map((c) => c.key)),
   );
@@ -378,6 +379,8 @@
                   <span>{col.label}</span>
                 {/if}
                 {#if col.showHeaderToggle ?? (col.type === "toggle" || col.type === "checkbox")}
+                  <!-- svelte-ignore a11y_click_events_have_key_events -->
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <div class="header-control" onclick={(e) => e.stopPropagation()} style="display: flex;">
                     {#if col.type === "toggle"}
                       <Switch

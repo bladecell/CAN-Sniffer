@@ -132,6 +132,7 @@
   }
 </script>
 
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="dashboard-card-wrapper"
   oncontextmenu={handlePcContext}
@@ -211,6 +212,7 @@
   {/if}
 
   {#if isEditing}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class="edit-blueprint-overlay"
       transition:fade={{ duration: 100 }}
@@ -218,8 +220,9 @@
     >
       <span class="watermark-badge">{item.cardType}</span>
 
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div class="action-pill" onpointerdown={(e) => e.stopPropagation()}>
-        <button class="pill-btn edit" onclick={() => onOpenSettings(item)}>
+        <button class="pill-btn edit" aria-label="Edit" onclick={() => onOpenSettings(item)}>
           <svg
             viewBox="0 0 24 24"
             width="16"
@@ -234,7 +237,7 @@
           Edit
         </button>
         <div class="pill-divider"></div>
-        <button class="pill-btn delete" onclick={() => onDelete(item.id)}>
+        <button class="pill-btn delete" aria-label="Delete" onclick={() => onDelete(item.id)}>
           <svg
             viewBox="0 0 24 24"
             width="18"

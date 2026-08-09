@@ -3,8 +3,8 @@ import { canStore } from "./canStore.svelte";
 export const MAX_HISTORY_SEC = 60;
 
 class ChartHistoryStore {
-    private history = new Map<number, { timeData: number[], valueData: number[] }>();
-    private listeners = new Map<number, Set<(timeData: number[], valueData: number[]) => void>>();
+    private history = new Map<number, { timeData: number[], valueData: (number | null)[] }>();
+    private listeners = new Map<number, Set<(timeData: number[], valueData: (number | null)[]) => void>>();
 
     constructor() {
         canStore.subscribe((update: any) => {
@@ -12,6 +12,12 @@ class ChartHistoryStore {
             if (!pidHistory) {
                 pidHistory = { timeData: [], valueData: [] };
                 this.history.set(update.pid, pidHistory);
+            }
+
+            const lastTime = pidHistory.timeData.length > 0 ? pidHistory.timeData[pidHistory.timeData.length - 1] : 0;
+            if (lastTime > 0 && update.timestamp - lastTime > 2000) {
+                pidHistory.timeData.push(update.timestamp - 1);
+                pidHistory.valueData.push(null);
             }
 
             pidHistory.timeData.push(update.timestamp);
@@ -36,7 +42,7 @@ class ChartHistoryStore {
         });
     }
 
-    subscribe(pid: number, callback: (timeData: number[], valueData: number[]) => void) {
+    subscribe(pid: number, callback: (timeData: number[], valueData: (number | null)[]) => void) {
         let pidListeners = this.listeners.get(pid);
         if (!pidListeners) {
             pidListeners = new Set();

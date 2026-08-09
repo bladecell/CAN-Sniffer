@@ -132,26 +132,6 @@
   .modal-form-body {
     padding: 24px;
   }
-  .file-item {
-    display: flex;
-    justify-content: space-between;
-    padding: 0.5rem 0.75rem;
-    border-radius: var(--pico-border-radius);
-    font-size: 0.9rem;
-    transition: background 0.2s;
-    border: 1px solid transparent;
-  }
-  .file-item.clickable {
-    cursor: pointer;
-  }
-  .file-item.clickable:hover {
-    background: rgb(from var(--pico-form-element-background-color) r g b / 0.6);
-    border-color: var(--pico-border-color);
-  }
-  .file-size {
-    color: var(--pico-muted-color);
-    font-size: 0.8rem;
-  }
   .alert-box {
     padding: 1rem;
     border-radius: var(--pico-border-radius);

@@ -440,17 +440,6 @@
     background-color: rgb(from var(--pico-form-element-background-color) r g b / 0.3);
   }
 
-  .icon {
-    width: 16px;
-    height: 16px;
-    color: var(--pico-muted-color);
-    flex-shrink: 0;
-  }
-  
-  .file-item.is-clickable .icon {
-    color: #f97316;
-  }
-
   :global(.folder-open-icon) {
     display: none;
   }
@@ -542,9 +531,7 @@
     margin-bottom: 2px;
     box-shadow: 0 0 0 2px rgba(from var(--pico-primary) r g b / 0.2);
   }
-  .inline-svg {
-    display: block !important;
-  }
+
   .is-creating {
     opacity: 1;
   }

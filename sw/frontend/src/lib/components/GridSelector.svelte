@@ -26,6 +26,8 @@
   </button>
   
   {#if open}
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="dropdown-overlay" onclick={() => (open = false)}></div>
     <div class="popup-menu blur-background">
       <div class="grid-label">
@@ -39,6 +41,7 @@
                 class="square" 
                 class:active={r < hoverR && c < hoverC}
                 onmouseover={() => { hoverR = r + 1; hoverC = c + 1; }}
+                onfocus={() => { hoverR = r + 1; hoverC = c + 1; }}
                 onclick={() => handleSelect(r + 1, c + 1)}
                 aria-label="{r+1}x{c+1} Grid"
               ></button>

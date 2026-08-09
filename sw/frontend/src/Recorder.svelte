@@ -135,14 +135,6 @@
     font-weight: 500;
   }
 
-  /* --- 6. EXTERNAL CONTAINERS --- */
-  .record-container {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-    gap: 1rem;
-    width: 100%;
-  }
-
   /* --- 7. MOBILE POLISH --- */
   @media (max-width: 500px) {
     .recorder-header {

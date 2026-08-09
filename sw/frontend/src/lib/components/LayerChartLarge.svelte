@@ -21,7 +21,7 @@
   let { pids = [], isActive = true }: Props = $props();
 
   // A map of PID -> array of data points
-  let chartDataMap = $state<Record<number, { date: Date; value: number; pid: number }[]>>({});
+  let chartDataMap = $state<Record<number, { date: Date; value: number | null; pid: number }[]>>({});
 
   function getPidDef(pid: number) {
     return canStore.pidDefinitions?.find((c: any) => c.pid === pid);
@@ -42,7 +42,7 @@
     const currentPids = pids;
     
     untrack(() => {
-      const newMap: Record<number, { date: Date; value: number; pid: number }[]> = {};
+      const newMap: Record<number, { date: Date; value: number | null; pid: number }[]> = {};
       for (const pid of currentPids) {
         if (chartDataMap[pid]) {
           newMap[pid] = chartDataMap[pid];
@@ -209,6 +209,7 @@
                   data={chartDataMap[p] ?? []}
                   x="date"
                   y="value"
+                  defined={(d) => d.value !== null}
                   stroke={getPidColor(p)}
                   strokeWidth={3}
                   class="fill-none chart-spline"
@@ -241,10 +242,12 @@
             class="chart-tooltip-crosshair"
           >
             {#snippet children({ data })}
-              <div style="display:flex; align-items:center; gap: 6px;">
-                <div style="width:10px; height:10px; border-radius:50%; background-color:{getPidColor(data.pid)};"></div>
-                {Math.round(data.value * 100) / 100}{getPidDef(data.pid)?.unit ? " " + getPidDef(data.pid)?.unit : ""}
-              </div>
+              {#if data.value !== null}
+                <div style="display:flex; align-items:center; gap: 6px;">
+                  <div style="width:10px; height:10px; border-radius:50%; background-color:{getPidColor(data.pid)};"></div>
+                  {Math.round(data.value * 100) / 100}{getPidDef(data.pid)?.unit ? " " + getPidDef(data.pid)?.unit : ""}
+                </div>
+              {/if}
             {/snippet}
           </Tooltip.Root>
 
