@@ -97,11 +97,6 @@
     telemetryStore.local_piddef.filter((item) => item.selected),
   );
 
-  let chartRows = $state(1);
-  let chartCols = $state(1);
-  let activeChartIndex = $state(0);
-  let chartPids = $state<number[][]>([[]]);
-
   $effect(() => {
     let currentSelectedPids: number[] = [];
     if (selectedElements.length > 0) {
@@ -111,29 +106,29 @@
     }
     
     untrack(() => {
-      if (activeChartIndex >= 0 && activeChartIndex < chartRows * chartCols) {
-        chartPids[activeChartIndex] = currentSelectedPids;
+      if (telemetryStore.activeChartIndex >= 0 && telemetryStore.activeChartIndex < telemetryStore.chartRows * telemetryStore.chartCols) {
+        telemetryStore.chartPids[telemetryStore.activeChartIndex] = currentSelectedPids;
       }
     });
   });
 
   function handleLayoutSelect(r: number, c: number) {
-    chartRows = r;
-    chartCols = c;
+    telemetryStore.chartRows = r;
+    telemetryStore.chartCols = c;
     const total = r * c;
-    const newChartPids = [...chartPids];
+    const newChartPids = [...telemetryStore.chartPids];
     while (newChartPids.length < total) {
       newChartPids.push([]);
     }
-    chartPids = newChartPids;
-    if (activeChartIndex >= total) {
+    telemetryStore.chartPids = newChartPids;
+    if (telemetryStore.activeChartIndex >= total) {
       setActiveChart(0);
     }
   }
 
   function setActiveChart(index: number) {
-    activeChartIndex = index;
-    const targetPids = chartPids[index] || [];
+    telemetryStore.activeChartIndex = index;
+    const targetPids = telemetryStore.chartPids[index] || [];
     for (const item of telemetryStore.local_piddef) {
       item.selected = targetPids.includes(parseInt(item.pid, 16));
     }
@@ -650,20 +645,20 @@
         </div>
         <div 
           class="chart-grid" 
-          style="display: grid; grid-template-columns: repeat({chartCols}, 1fr); grid-template-rows: repeat({chartRows}, 1fr); gap: 1rem; flex: 1;"
+          style="display: grid; grid-template-columns: repeat({telemetryStore.chartCols}, 1fr); grid-template-rows: repeat({telemetryStore.chartRows}, 1fr); gap: 1rem; flex: 1;"
         >
-          {#each Array(chartRows * chartCols) as _, i}
+          {#each Array(telemetryStore.chartRows * telemetryStore.chartCols) as _, i}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div 
               class="chart-cell" 
-              class:active={activeChartIndex === i}
-              style:border-color={activeChartIndex === i && chartPids[i]?.length > 0 ? `${getChartAccent(chartPids[i])}30` : undefined}
-              style:background-color={activeChartIndex === i && chartPids[i]?.length > 0 ? `${getChartAccent(chartPids[i])}15` : undefined}
+              class:active={telemetryStore.activeChartIndex === i}
+              style:border-color={telemetryStore.activeChartIndex === i && telemetryStore.chartPids[i]?.length > 0 ? `${getChartAccent(telemetryStore.chartPids[i])}30` : undefined}
+              style:background-color={telemetryStore.activeChartIndex === i && telemetryStore.chartPids[i]?.length > 0 ? `${getChartAccent(telemetryStore.chartPids[i])}15` : undefined}
               onclick={() => setActiveChart(i)}
             >
               <div class="chart-cell-inner">
-                <LayerChartLarge pids={chartPids[i] || []} isActive={activeChartIndex === i} />
+                <LayerChartLarge pids={telemetryStore.chartPids[i] || []} isActive={telemetryStore.activeChartIndex === i} />
               </div>
             </div>
           {/each}
@@ -1018,5 +1013,12 @@
     width: 100%;
     height: 100%;
     pointer-events: auto;
+  }
+
+  @media (max-width: 768px) {
+    :global(.chart-grid) {
+      grid-template-columns: 1fr !important;
+      grid-template-rows: auto !important;
+    }
   }
 </style>

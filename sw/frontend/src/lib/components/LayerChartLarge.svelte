@@ -128,23 +128,16 @@
 </script>
 
 {#if pids.length === 0}
-  <div
-    style="display:flex; justify-content:center; align-items:center; height: 100%; min-height: 400px; color: var(--pico-muted-color);"
-  >
+  <div class="empty-state">
     Select one or more PIDs from the table to view on the chart
   </div>
 {:else if flatChartData.length === 0}
-  <div
-    style="display:flex; justify-content:center; align-items:center; height: 100%; min-height: 400px; color: var(--pico-muted-color);"
-  >
+  <div class="empty-state">
     Waiting for data...
   </div>
 {:else}
-  <div
-    class="chart-wrapper"
-    style="padding: 1rem; position: relative; display: flex; flex-direction: column;"
-  >
-    <div style="height: 400px; position: relative; width: 100%; flex-shrink: 0;">
+  <div class="chart-wrapper">
+    <div class="chart-inner-container">
       {#if isZoomed}
         <button
           class="secondary outline"
@@ -351,5 +344,39 @@
     font-size: 0.85rem;
     font-weight: 500;
     color: var(--pico-color);
+  }
+  .empty-state {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+    min-height: 400px;
+    color: var(--pico-muted-color);
+  }
+
+  .chart-wrapper {
+    padding: 1rem;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .chart-inner-container {
+    height: 400px;
+    position: relative;
+    width: 100%;
+    flex-shrink: 0;
+  }
+
+  @media (max-width: 768px) {
+    .empty-state {
+      min-height: 250px;
+    }
+    .chart-wrapper {
+      padding: 0.5rem;
+    }
+    .chart-inner-container {
+      height: 250px;
+    }
   }
 </style>

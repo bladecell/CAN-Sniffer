@@ -49,6 +49,11 @@ export class TelemetryStore {
   local_piddef = $state<any[]>([]);
   lastPidDef = $state<any[] | null>(null);
 
+  chartRows = $state(1);
+  chartCols = $state(1);
+  activeChartIndex = $state(0);
+  chartPids = $state<number[][]>([[]]);
+
   // --- FORM STATE ---
   pidInput = $state("");
   nameInput = $state("");
