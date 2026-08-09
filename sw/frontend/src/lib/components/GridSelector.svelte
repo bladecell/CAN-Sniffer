@@ -26,7 +26,7 @@
   </button>
   
   {#if open}
-    <div class="overlay" onclick={() => (open = false)}></div>
+    <div class="dropdown-overlay" onclick={() => (open = false)}></div>
     <div class="popup-menu blur-background">
       <div class="grid-label">
         {hoverR > 0 && hoverC > 0 ? `${hoverR} x ${hoverC}` : "Select Layout"}
@@ -76,11 +76,7 @@
     border-color: rgba(255, 255, 255, 0.2);
   }
   
-  .overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 99;
-  }
+
   
   .popup-menu {
     position: absolute;

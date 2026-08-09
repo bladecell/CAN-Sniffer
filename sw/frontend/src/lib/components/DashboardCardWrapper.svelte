@@ -163,7 +163,7 @@
 
   {#if isMenuOpen && !isEditing}
     <div
-      class="local-context-menu"
+      class="local-context-menu blur-background"
       style="top: {menuPos.y}px; left: {menuPos.x}px;"
     >
       <button
@@ -191,7 +191,7 @@
         onclick={() => {
           onAddNew();
           dashboardStore.activeMenuId = null;
-        }}>Add New Module</button
+        }}>Add New Component</button
       >
       <button
         class="edit-action"
@@ -205,7 +205,7 @@
         onclick={() => {
           onDelete(item.id);
           dashboardStore.activeMenuId = null;
-        }}>Remove Module</button
+        }}>Remove Component</button
       >
     </div>
   {/if}
@@ -298,12 +298,6 @@
   .local-context-menu {
     position: fixed;
     z-index: 11000;
-    background: var(--pico-card-background);
-    border: 1px solid var(--pico-card-border-color);
-    border-radius: var(--pico-border-radius);
-    box-shadow: var(--pico-card-box-shadow);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
     padding: 6px;
     display: flex;
     flex-direction: column;

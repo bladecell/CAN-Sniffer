@@ -70,7 +70,7 @@
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-  <div class="custom-modal-backdrop" onclick={onClose}>
+  <div class="modal-backdrop" onclick={onClose}>
     <article
       onclick={(e) => e.stopPropagation()}
       class="pico-orange-glass-modal blur-background"
@@ -98,20 +98,7 @@
 
 <style>
   /* --- CUSTOM MODAL STYLES (Matching PIDSettingsModal) --- */
-  .custom-modal-backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    background: rgba(0, 0, 0, 0.4);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 12000;
-    padding: 16px;
-    border-radius: 12px;
-  }
+
   .pico-orange-glass-modal {
     max-width: 500px;
     width: 100%;

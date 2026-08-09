@@ -800,11 +800,7 @@
     gap: 8px;
   }
 
-  .dropdown-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 99;
-  }
+
 
   .dropdown-menu {
     position: absolute;

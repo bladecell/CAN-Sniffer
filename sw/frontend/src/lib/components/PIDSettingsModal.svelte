@@ -150,7 +150,7 @@
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="custom-modal-backdrop" onclick={handleCancel}>
+  <div class="modal-backdrop" onclick={handleCancel}>
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <article
       onclick={(e) => e.stopPropagation()}
@@ -158,7 +158,9 @@
     >
       <header class="modal-header-hull">
         <h5 class="modal-title-heading">
-          {isNewCard ? "Create System Module" : "Configure Module Parameters"}
+          {isNewCard
+            ? "Create System Component"
+            : "Configure Component Parameters"}
         </h5>
         <button aria-label="Close" class="close-modal-x" onclick={handleCancel}
           >✕</button
@@ -167,7 +169,7 @@
 
       <form onsubmit={handleSubmit} class="modal-form-body">
         <label for="card-type-select" class="field-heading"
-          >Module Classification</label
+          >Component Classification</label
         >
         <select
           id="card-type-select"
@@ -317,20 +319,6 @@
 {/if}
 
 <style>
-  .custom-modal-backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    background: rgba(0, 0, 0, 0.4);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 12000;
-    padding: 16px;
-    border-radius: 12px;
-  }
   .pico-orange-glass-modal {
     max-width: 500px;
     width: 100%;

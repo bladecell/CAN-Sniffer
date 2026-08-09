@@ -174,7 +174,9 @@
   {:else if dashboardStore.items.length === 0}
     <div class="empty-placeholder">
       <p>Dashboard canvas workspace is empty.</p>
-      <button class="outline" onclick={openAddWizard}>Map First Module</button>
+      <button class="outline" onclick={openAddWizard}
+        >Map First Component</button
+      >
     </div>
   {:else}
     <div
@@ -253,7 +255,7 @@
       onclick={() => {
         openAddWizard();
         dashboardStore.activeMenuId = null;
-      }}>Add New Module</button
+      }}>Add New Component</button
     >
     <button
       class="layout-action"
