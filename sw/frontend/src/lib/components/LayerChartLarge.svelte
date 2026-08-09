@@ -8,6 +8,7 @@
     Tooltip,
     Highlight,
     ChartClipPath,
+    Circle,
   } from "layerchart";
   import { scaleTime, scaleLinear } from "d3-scale";
   import { chartHistoryStore } from "$lib/chartHistoryStore";
@@ -218,17 +219,25 @@
 
               <Highlight
                 axis="both"
-                points={{
-                  stroke: "#ffffff",
-                  strokeWidth: 4,
-                  r: 6,
-                }}
                 lines={{
                   stroke: "rgba(128, 128, 128, 0.4)",
                   strokeWidth: 1,
                   dashArray: "4",
                 }}
-              />
+              >
+                {#snippet points({ points })}
+                  {#each points as point}
+                    <Circle
+                      cx={point.x}
+                      cy={point.y}
+                      fill={getPidColor(flatChartData.find(d => d.value === point.data.y && d.date.getTime() === point.data.x?.getTime())?.pid)}
+                      stroke="#ffffff"
+                      strokeWidth={4}
+                      r={6}
+                    />
+                  {/each}
+                {/snippet}
+              </Highlight>
             </ChartClipPath>
           </Svg>
 

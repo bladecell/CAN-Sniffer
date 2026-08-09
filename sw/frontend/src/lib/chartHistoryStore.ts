@@ -15,7 +15,11 @@ class ChartHistoryStore {
             }
 
             const lastTime = pidHistory.timeData.length > 0 ? pidHistory.timeData[pidHistory.timeData.length - 1] : 0;
-            if (lastTime > 0 && update.timestamp - lastTime > 2000) {
+            
+            const pidDef = canStore.pidDefinitions?.find((c: any) => c.pid === update.pid);
+            const splitThreshold = pidDef?.update_interval_ms ? Math.max(2000, pidDef.update_interval_ms * 1.5) : 2000;
+
+            if (lastTime > 0 && update.timestamp - lastTime > splitThreshold) {
                 pidHistory.timeData.push(update.timestamp - 1);
                 pidHistory.valueData.push(null);
             }
