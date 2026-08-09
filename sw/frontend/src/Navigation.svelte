@@ -15,7 +15,7 @@
 </script>
 
 <div class="nav-wrapper">
-  <nav class="pill-nav" class:is-editing={dashboardStore.isEditMode}>
+  <nav class="pill-nav blur-background" class:is-editing={dashboardStore.isEditMode}>
     {#if dashboardStore.isEditMode}
       <!-- EDIT MODE OVERRIDE -->
       <div class="edit-mode-hud">
@@ -71,13 +71,9 @@
 
   .pill-nav {
     pointer-events: auto;
-    background: var(--backdrop-filter-background) !important;
-    border: 1px solid var(--pico-muted-border-color);
     border-radius: 26px;
     padding: 0px 20px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-    backdrop-filter: var(--backdrop-filter);
-    -webkit-backdrop-filter: var(--backdrop-filter);
     transition:
       border-color 0.3s ease,
       box-shadow 0.3s ease;

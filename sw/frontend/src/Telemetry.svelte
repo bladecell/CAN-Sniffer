@@ -663,7 +663,7 @@
               onclick={() => setActiveChart(i)}
             >
               <div class="chart-cell-inner">
-                <LayerChartLarge pids={chartPids[i] || []} />
+                <LayerChartLarge pids={chartPids[i] || []} isActive={activeChartIndex === i} />
               </div>
             </div>
           {/each}

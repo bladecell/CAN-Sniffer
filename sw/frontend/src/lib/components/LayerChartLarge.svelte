@@ -16,8 +16,9 @@
 
   interface Props {
     pids?: number[];
+    isActive?: boolean;
   }
-  let { pids = [] }: Props = $props();
+  let { pids = [], isActive = true }: Props = $props();
 
   // A map of PID -> array of data points
   let chartDataMap = $state<Record<number, { date: Date; value: number; pid: number }[]>>({});
@@ -167,8 +168,8 @@
         yDomain={yDomain}
         padding={{ left: pids.length === 1 && getPidDef(pids[0])?.unit ? 80 : 56, bottom: 24, top: 16, right: 16 }}
         tooltipContext={{ mode: "bisect-x" }}
-        transform={{ mode: "domain", axis: "x", scrollMode: "scale" }}
-        brush={{ axis: "x", zoomOnBrush: true }}
+        transform={isActive ? { mode: "domain", axis: "x", scrollMode: "scale" } : undefined}
+        brush={isActive ? { axis: "x", zoomOnBrush: true } : undefined}
       >
         {#snippet children({ context })}
           <Svg>
