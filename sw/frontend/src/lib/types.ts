@@ -78,7 +78,6 @@ export interface PidValue {
   rate: number;
   isValid: boolean;
   isSupported: boolean;
-  history: { value: number; lastUpdated: number }[];
 }
 
 export interface WsCanStatus {

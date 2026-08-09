@@ -145,7 +145,7 @@
           onclick={() => chartContext?.transformState?.reset()}
           title="Reset Zoom"
         >
-          <Icon name="folder-closed" size={14} /> <!-- simple fallback icon for reset -->
+          <Icon name="reload" size={14} /> <!-- simple fallback icon for reset -->
           Reset View
         </button>
       {/if}

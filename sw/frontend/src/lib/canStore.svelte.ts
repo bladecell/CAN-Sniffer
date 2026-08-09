@@ -301,15 +301,6 @@ export class CanStore {
 
         const existing = this.pids.get(fullPid);
 
-        // 1. Manage the history array properly so Svelte tracks it
-        // If you plan to chart this data later, the array reference MUST change!
-        let newHistory = existing ? [...existing.history] : [];
-        newHistory.push({ value: value, lastUpdated: time });
-
-        if (newHistory.length > 1000) {
-            newHistory.shift();
-        }
-
         // 2. Create the completely new object using consistent property names!
         const newData = {
             value: value,
@@ -317,7 +308,6 @@ export class CanStore {
             rate: rate,
             isValid: isValid,         // Matches usePidData perfectly
             isSupported: isSupported, // Matches usePidData perfectly
-            history: newHistory
         };
 
         // 3. Trigger the SvelteMap update
