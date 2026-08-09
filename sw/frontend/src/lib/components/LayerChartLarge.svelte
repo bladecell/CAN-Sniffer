@@ -157,8 +157,8 @@
     <div class="chart-inner-container">
       {#if isZoomed}
         <button
-          class="secondary outline"
-          style="position: absolute; top: 0.5rem; right: 1rem; z-index: 10; padding: 0.25rem 0.5rem; display: flex; align-items: center; gap: 0.25rem; font-size: 0.75rem;"
+          class="secondary outline blur-background"
+          style="position: absolute; top: 0.5rem; right: 1rem; z-index: 10; padding: 0.25rem 0.5rem; display: flex; align-items: center; gap: 0.25rem; font-size: 0.75rem; background-color: rgba(var(--pico-background-color), 0.1);"
           onclick={() => chartContext?.transformState?.reset()}
           title="Reset Zoom"
         >
@@ -312,7 +312,7 @@
       <div class="custom-chart-legend">
         {#each pids as p}
           <div
-            class="legend-item"
+            class="legend-item blur-background"
             style="border-color: {getPidColor(
               p,
             )}20; background-color: {getPidColor(p)}15;"

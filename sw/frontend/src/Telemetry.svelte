@@ -626,7 +626,7 @@
         </div>
       </div>
     {:else if telemetryStore.activeTab === "chart"}
-      <div class="dashboard-card header-container" style="--module-accent: var(--pico-primary); padding: 1rem; display: flex; flex-direction: column; gap: 1rem; min-height: 500px;">
+      <div class="dashboard-card header-container" style="--module-accent: var(--pico-primary); padding: 1rem; display: flex; flex-direction: column; gap: 1rem;">
         <div style="display: flex; justify-content: flex-end; align-items: center;">
           <GridSelector maxRows={4} maxCols={4} onSelect={handleLayoutSelect} />
         </div>
