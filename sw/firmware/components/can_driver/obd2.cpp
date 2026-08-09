@@ -803,7 +803,7 @@ void OBD2::receiveTask()
         {
             CanDriver::CanFrame f{};
             f.header.id = OBD2_FUNCTIONAL_ID;
-            f.length    = 3;
+            f.length    = 4;
             f.data[0]   = 0x03;  // DLC
             f.data[1]   = RESPONSE_MODE_DERIVED_DATA;
             f.data[2]   = (derivedPid >> 8) & 0xFF;
@@ -1022,7 +1022,7 @@ esp_err_t OBD2::parseDerivedData(const CanDriver::CanFrame& f)
             pdat->value       = result;
             pdat->id          = OBD2_FUNCTIONAL_ID;
             pdat->lastUpdated = xTaskGetTickCount();
-            pdat->isValid     = true;
+            pdat->isValid     = (err == ESP_OK);
 
             return err;
         });

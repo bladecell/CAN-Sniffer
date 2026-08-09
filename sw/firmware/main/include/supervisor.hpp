@@ -10,14 +10,20 @@
 
 #define SUPERVISOR_TASK_STACK_SIZE 4096
 #define SUPERVISOR_TASK_CORE_ID 1
-#define PID_DEF_DB_PATH "/storage/pid_def.json"
-#define DTC_DESC_DB_PATH "/storage/dtcs.bin"
+#define PID_DEF_DB_PATH "/sdcard/config/pid_def.json"
+#define DTC_DESC_DB_PATH "/sdcard/config/dtcs.bin"
 #define SLEEP_TRANSITION_TIMER_S 60
 #define LONG_SLEEP_VOLTAGE_LIMIT 11.8f
 
 class SUPERVISOR
 {
 public:
+    struct Config
+    {
+        std::string pid_def_path  = PID_DEF_DB_PATH;
+        std::string dtc_desc_path = DTC_DESC_DB_PATH;
+    };
+
     enum class State
     {
         UNINITIALIZED,
@@ -64,6 +70,7 @@ private:
     TaskHandle_t         xTaskHandle;
     SUPERVISOR::State    eState   = State::UNINITIALIZED;
     esp_pm_lock_handle_t pm_lock_ = nullptr;
+    Config               _config  = {};
 
     // component initializers
     static esp_err_t setup_flash_filesystem();

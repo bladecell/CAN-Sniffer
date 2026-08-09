@@ -97,6 +97,10 @@ void SUPERVISOR::task()
                 {
                     esp_pm_lock_acquire(pm_lock_);
                 }
+
+                _config.pid_def_path  = PID_DEF_DB_PATH;   // TODO: Load from nvs storage
+                _config.dtc_desc_path = DTC_DESC_DB_PATH;  // TODO: Load from nvs storage
+
                 bool success = true;
                 for (size_t i = 0; i < sizeof(setup_functions) / sizeof(setup_functions[0]); i++)
                 {
@@ -266,22 +270,7 @@ esp_err_t SUPERVISOR::setup_flash_filesystem()
     }
     ESP_LOGI("FS", "WWW partition mounted successfully at /www");
 
-    // 2. Mount Storage Partition (Read/Write)
-    esp_vfs_littlefs_conf_t storage_conf = {.base_path              = "/storage",
-                                            .partition_label        = "storage",
-                                            .partition              = nullptr,
-                                            .format_if_mount_failed = true,
-                                            .read_only              = false,
-                                            .dont_mount             = false,
-                                            .grow_on_mount          = true};
-
-    err = esp_vfs_littlefs_register(&storage_conf);
-    if (err != ESP_OK)
-    {
-        ESP_LOGE("FS", "Failed to mount Storage partition");
-        return err;
-    }
-    ESP_LOGI("FS", "Storage partition mounted successfully at /storage");
+    // Storage partition has been removed.
 
     return ESP_OK;
 }
@@ -294,7 +283,7 @@ esp_err_t SUPERVISOR::setup_webserver()
 esp_err_t SUPERVISOR::setup_wifi()
 {
     // Configure
-    WIFI::Config config;
+    WIFI::Config config;  // TODO: Load from nvs storage
     config.ssid            = "CAN-SNIFFER-AP";
     config.password        = "";
     config.channel         = 6;
@@ -312,7 +301,7 @@ esp_err_t SUPERVISOR::setup_wifi()
 
 esp_err_t SUPERVISOR::setup_can()
 {
-    CanDriver::Config config;
+    CanDriver::Config config;  // TODO: Load from nvs storage
     config.bitrate            = CanDriver::Bitrate::BITRATE_500K;
     config.rx_pin             = CAN_RX_GPIO;
     config.tx_pin             = CAN_TX_GPIO;

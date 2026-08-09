@@ -816,7 +816,7 @@ static void register_routes()
 
 esp_err_t setup_web_server()
 {
-    AsyncWebServer::Config server_config;
+    AsyncWebServer::Config server_config;  // TODO: Load from nvs storage
     server_config.async_worker_task_num         = 6;
     server_config.max_open_sockets              = 7;
     server_config.max_requests_per_sec          = 50;

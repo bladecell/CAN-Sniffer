@@ -18,6 +18,4 @@ add_custom_target(build_svelte_frontend
 
 littlefs_create_partition_image(www "../../frontend/dist" FLASH_IN_PROJECT)
 
-littlefs_create_partition_image(storage "../default_storage" FLASH_IN_PROJECT)
-
 add_dependencies(littlefs_www_bin build_svelte_frontend)
