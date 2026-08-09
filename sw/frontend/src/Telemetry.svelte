@@ -591,7 +591,7 @@
     {:else if activeTab === "chart"}
       <div class="dashboard-card header-container" style="--module-accent: {telemetryStore.colorInput}; padding: 0;">
         <LayerChartLarge 
-          pid={selectedRow?.pid ? parseInt(selectedRow.pid, 16) : undefined} 
+          pids={selectedElements.length > 0 ? selectedElements.map(row => parseInt(row.pid, 16)) : (selectedRow?.pid ? [parseInt(selectedRow.pid, 16)] : [])} 
         />
       </div>
     {/if}
