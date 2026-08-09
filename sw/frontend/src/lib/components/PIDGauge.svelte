@@ -2,7 +2,16 @@
   import { usePidData } from "$lib/pidHelpers.svelte.ts";
   import type { PidGridItem } from "$lib/types";
   import Icon from "../Icon.svelte";
-  import { Arc, Chart, Group, Layer, Line, Circle, ClipPath, LinearGradient } from "layerchart";
+  import {
+    Arc,
+    Chart,
+    Group,
+    Layer,
+    Line,
+    Circle,
+    ClipPath,
+    LinearGradient,
+  } from "layerchart";
   import { scaleLinear } from "d3-scale";
 
   interface Props {
@@ -62,16 +71,26 @@
 
   const isSpeedometer = $derived(item.gaugeStyle === "speedometer");
   const isGradient = $derived(item.gaugeStyle === "gradient");
-  
+
   // Use scaleLinear to map value to angle, and to generate clean "rounded" ticks
-  const angleScale = $derived(scaleLinear().domain([metric.min, metric.max]).range(styleConfig.range));
-  
+  const angleScale = $derived(
+    scaleLinear().domain([metric.min, metric.max]).range(styleConfig.range),
+  );
+
   const majorTicks = $derived(angleScale.ticks(8));
   const minorTicksTemp = $derived(angleScale.ticks(40));
-  const minorTicks = $derived(minorTicksTemp.filter((t) => !majorTicks.includes(t)));
+  const minorTicks = $derived(
+    minorTicksTemp.filter((t) => !majorTicks.includes(t)),
+  );
 
   // Used by speedometer style
-  const needleAngleRad = $derived((angleScale(Math.max(metric.min, Math.min(metric.max, metric.currentValue))) * Math.PI) / 180);
+  const needleAngleRad = $derived(
+    (angleScale(
+      Math.max(metric.min, Math.min(metric.max, metric.currentValue)),
+    ) *
+      Math.PI) /
+      180,
+  );
 
   // Used by gradient style
   const gradientTicks = $derived(angleScale.ticks(4));
@@ -172,7 +191,7 @@
               </text>
             </g>
           {:else if isGradient}
-            <LinearGradient stops={['#10b981', '#eab308', '#ef4444']}>
+            <LinearGradient stops={["#10b981", "#eab308", "#ef4444"]}>
               {#snippet children({ gradient })}
                 <ClipPath>
                   {#snippet clip()}
@@ -208,7 +227,12 @@
               innerRadius={R - 18}
               cornerRadius={6}
               class="fill-none"
-              track={{ fill: 'none', stroke: "var(--pico-muted-border-color)", strokeWidth: 1.5, opacity: 0.4 }}
+              track={{
+                fill: "none",
+                stroke: "var(--pico-muted-border-color)",
+                strokeWidth: 1.5,
+                opacity: 0.4,
+              }}
             />
 
             <!-- Tick marks and labels -->

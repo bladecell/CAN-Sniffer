@@ -29,13 +29,14 @@
     columns.filter((c) => !hiddenColumns.has(c.key)),
   );
 
-
   $effect(() => {
     let changed = false;
     const newSet = new Set(hiddenColumns);
     for (const col of columns) {
       if (col.autoShowKey !== undefined && newSet.has(col.key)) {
-        const shouldShow = data.some(row => row[col.autoShowKey!] === col.autoShowValue);
+        const shouldShow = data.some(
+          (row) => row[col.autoShowKey!] === col.autoShowValue,
+        );
         if (shouldShow) {
           newSet.delete(col.key);
           changed = true;
@@ -223,7 +224,6 @@
   }
 </script>
 
-
 <!-- Global click listener for closing menus -->
 <svelte:window onclick={handleWindowClick} />
 
@@ -381,7 +381,11 @@
                 {#if col.showHeaderToggle ?? (col.type === "toggle" || col.type === "checkbox")}
                   <!-- svelte-ignore a11y_click_events_have_key_events -->
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
-                  <div class="header-control" onclick={(e) => e.stopPropagation()} style="display: flex;">
+                  <div
+                    class="header-control"
+                    onclick={(e) => e.stopPropagation()}
+                    style="display: flex;"
+                  >
                     {#if col.type === "toggle"}
                       <Switch
                         checked={isAllChecked(col.key)}
@@ -389,9 +393,9 @@
                         style="--toggle-width: 2em; --toggle-height: 1em;"
                       />
                     {:else}
-                      <input 
-                        type="checkbox" 
-                        checked={isAllChecked(col.key)} 
+                      <input
+                        type="checkbox"
+                        checked={isAllChecked(col.key)}
                         onchange={(e) => handleHeaderToggle(col.key, e)}
                       />
                     {/if}
@@ -1001,7 +1005,4 @@
       padding: 0.5rem;
     }
   }
-
-  
-
 </style>

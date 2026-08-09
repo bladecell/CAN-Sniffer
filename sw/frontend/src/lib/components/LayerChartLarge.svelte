@@ -22,7 +22,9 @@
   let { pids = [], isActive = true }: Props = $props();
 
   // A map of PID -> array of data points
-  let chartDataMap = $state<Record<number, { date: Date; value: number | null; pid: number }[]>>({});
+  let chartDataMap = $state<
+    Record<number, { date: Date; value: number | null; pid: number }[]>
+  >({});
 
   function getPidDef(pid: number) {
     return canStore.pidDefinitions?.find((c: any) => c.pid === pid);
@@ -41,16 +43,26 @@
   $effect(() => {
     // Only react to changes in `pids`
     const currentPids = pids;
-    
+
     untrack(() => {
-      const newMap: Record<number, { date: Date; value: number | null; pid: number }[]> = {};
+      const newMap: Record<
+        number,
+        { date: Date; value: number | null; pid: number }[]
+      > = {};
       for (const pid of currentPids) {
         if (chartDataMap[pid]) {
           newMap[pid] = chartDataMap[pid];
         } else {
-          const unsubscribe = chartHistoryStore.subscribe(pid, (tData, vData) => {
-            newMap[pid] = tData.map((t, i) => ({ date: new Date(t), value: vData[i], pid }));
-          });
+          const unsubscribe = chartHistoryStore.subscribe(
+            pid,
+            (tData, vData) => {
+              newMap[pid] = tData.map((t, i) => ({
+                date: new Date(t),
+                value: vData[i],
+                pid,
+              }));
+            },
+          );
           unsubscribe(); // just want one-shot
         }
       }
@@ -65,7 +77,11 @@
     const unsubscribeCan = canStore.subscribe((update) => {
       if (pids.includes(update.pid)) {
         if (!chartDataMap[update.pid]) chartDataMap[update.pid] = [];
-        chartDataMap[update.pid].push({ date: new Date(update.timestamp), value: update.value, pid: update.pid });
+        chartDataMap[update.pid].push({
+          date: new Date(update.timestamp),
+          value: update.value,
+          pid: update.pid,
+        });
       }
     });
 
@@ -78,9 +94,9 @@
 
   let isZoomed = $derived(
     chartContext?.transformState &&
-    (Math.abs(chartContext.transformState.scale - 1) > 0.001 ||
-     Math.abs(chartContext.transformState.translate.x) > 0.001 ||
-     Math.abs(chartContext.transformState.translate.y) > 0.001)
+      (Math.abs(chartContext.transformState.scale - 1) > 0.001 ||
+        Math.abs(chartContext.transformState.translate.x) > 0.001 ||
+        Math.abs(chartContext.transformState.translate.y) > 0.001),
   );
 
   let autoXDomain = $derived.by(() => {
@@ -92,7 +108,9 @@
         maxT = Math.max(maxT, data[data.length - 1].date.getTime());
       }
     }
-    return minT <= maxT && isFinite(minT) ? [new Date(minT), new Date(maxT)] : undefined;
+    return minT <= maxT && isFinite(minT)
+      ? [new Date(minT), new Date(maxT)]
+      : undefined;
   });
 
   let frozenXDomain = $state<[Date, Date] | undefined>();
@@ -110,20 +128,20 @@
   let yDomain = $derived.by(() => {
     let minV = Infinity;
     let maxV = -Infinity;
-    
+
     // Calculate based on actual data
     for (const data of flatChartData) {
       minV = Math.min(minV, data.value);
       maxV = Math.max(maxV, data.value);
     }
-    
+
     if (minV === Infinity) minV = 0;
     if (maxV === -Infinity) maxV = 100;
-    
+
     // Add 5% padding
     let padding = (maxV - minV) * 0.05;
     if (padding === 0) padding = 10;
-    
+
     return [minV - padding, maxV + padding];
   });
 </script>
@@ -133,9 +151,7 @@
     Select one or more PIDs from the table to view on the chart
   </div>
 {:else if flatChartData.length === 0}
-  <div class="empty-state">
-    Waiting for data...
-  </div>
+  <div class="empty-state">Waiting for data...</div>
 {:else}
   <div class="chart-wrapper">
     <div class="chart-inner-container">
@@ -146,7 +162,8 @@
           onclick={() => chartContext?.transformState?.reset()}
           title="Reset Zoom"
         >
-          <Icon name="reload" size={14} /> <!-- simple fallback icon for reset -->
+          <Icon name="reload" size={14} />
+          <!-- simple fallback icon for reset -->
           Reset View
         </button>
       {/if}
@@ -159,10 +176,17 @@
         xDomain={activeXDomain}
         y="value"
         yScale={scaleLinear()}
-        yDomain={yDomain}
-        padding={{ left: pids.length === 1 && getPidDef(pids[0])?.unit ? 80 : 56, bottom: 24, top: 16, right: 16 }}
-        tooltipContext={{ mode: "bisect-x" }}
-        transform={isActive ? { mode: "domain", axis: "x", scrollMode: "scale" } : undefined}
+        {yDomain}
+        padding={{
+          left: pids.length === 1 && getPidDef(pids[0])?.unit ? 80 : 56,
+          bottom: 24,
+          top: 16,
+          right: 16,
+        }}
+        tooltipContext={{ mode: "quadtree" }}
+        transform={isActive
+          ? { mode: "domain", axis: "x", scrollMode: "scale" }
+          : undefined}
         brush={isActive ? { axis: "x", zoomOnBrush: true } : undefined}
       >
         {#snippet children({ context })}
@@ -230,7 +254,13 @@
                     <Circle
                       cx={point.x}
                       cy={point.y}
-                      fill={getPidColor(flatChartData.find(d => d.value === point.data.y && d.date.getTime() === point.data.x?.getTime())?.pid)}
+                      fill={getPidColor(
+                        flatChartData.find(
+                          (d) =>
+                            d.value === point.data.y &&
+                            d.date.getTime() === point.data.x?.getTime(),
+                        )?.pid,
+                      )}
                       stroke="#ffffff"
                       strokeWidth={4}
                       r={6}
@@ -248,14 +278,11 @@
             anchor="right"
             contained={false}
             variant="none"
-            class="chart-tooltip-crosshair"
+            class="chart-tooltip-crosshair blur-background"
           >
             {#snippet children({ data })}
               {#if data.value !== null}
-                <div style="display:flex; align-items:center; gap: 6px;">
-                  <div style="width:10px; height:10px; border-radius:50%; background-color:{getPidColor(data.pid)};"></div>
-                  {Math.round(data.value * 100) / 100}{getPidDef(data.pid)?.unit ? " " + getPidDef(data.pid)?.unit : ""}
-                </div>
+                {Math.round(data.value * 100) / 100}{getPidDef(data.pid)?.unit ? " " + getPidDef(data.pid)?.unit : ""}
               {/if}
             {/snippet}
           </Tooltip.Root>
@@ -267,7 +294,7 @@
             anchor="top"
             contained={false}
             variant="none"
-            class="chart-tooltip-crosshair"
+            class="chart-tooltip-crosshair blur-background"
           >
             {#snippet children({ data })}
               {new Date(data.date).toLocaleTimeString([], {
@@ -280,13 +307,23 @@
         {/snippet}
       </Chart>
     </div>
-    
+
     {#if pids.length > 0}
       <div class="custom-chart-legend">
         {#each pids as p}
-          <div class="legend-item" style="border-color: {getPidColor(p)}20; background-color: {getPidColor(p)}15;">
-            <div class="legend-color-dot" style="background-color: {getPidColor(p)};"></div>
-            <span class="legend-label">{getPidDef(p)?.name || `0x${p.toString(16).toUpperCase()}`}</span>
+          <div
+            class="legend-item"
+            style="border-color: {getPidColor(
+              p,
+            )}20; background-color: {getPidColor(p)}15;"
+          >
+            <div
+              class="legend-color-dot"
+              style="background-color: {getPidColor(p)};"
+            ></div>
+            <span class="legend-label"
+              >{getPidDef(p)?.name || `0x${p.toString(16).toUpperCase()}`}</span
+            >
           </div>
         {/each}
       </div>
@@ -314,13 +351,13 @@
     font-size: 14px;
     font-weight: 600;
     color: var(--pico-h1-color);
-    background-color: var(--pico-card-background-color);
     margin-top: 2px;
     padding: 4px 10px;
-    border: 1px solid var(--pico-muted-border-color);
     border-radius: 6px;
     white-space: nowrap;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--pico-form-element-border-color) !important;
+    background-color: transparent !important;
+    box-shadow: none !important;
   }
   .chart-wrapper :global(svg) {
     overflow: visible !important;
@@ -342,7 +379,9 @@
     padding: 6px 12px;
     border-radius: 20px;
     border: 1px solid transparent;
-    transition: background-color 0.2s, border-color 0.2s;
+    transition:
+      background-color 0.2s,
+      border-color 0.2s;
   }
 
   .legend-color-dot {

@@ -496,7 +496,7 @@ body:has(.scroll) {
       --backdrop-filter-background,
       oklch(1 0 0 / 0.01)
     ) !important;
-    border: var(--pico-border-width) solid var(--pico-form-element-border-color);
+    border: 1px solid rgba(255, 255, 255, 0.15) !important;
 	box-shadow: var(--pico-box-shadow) !important;
 	border-radius: 12px;
 }
