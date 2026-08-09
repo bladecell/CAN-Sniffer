@@ -23,6 +23,7 @@
   import Icon from "$lib/Icon.svelte";
 
   let activeIndex = $state(-1);
+  let iconDropdownOpen = $state(false);
 
   $effect(() => {
     if (
@@ -514,51 +515,56 @@
               >
             </div>
             <div>
-              <input
-                class="color-picker"
-                type="color"
-                name="Color"
-                aria-label="color"
-                aria-describedby="color-helper"
-                bind:value={telemetryStore.colorInput}
-              />
-              <small id="color-helper">
-                Color ({telemetryStore.colorInput.toUpperCase()})
-              </small>
-            </div>
-            <div>
               <div class="icon-selector-wrapper">
                 <div class="icon-select-container">
-                  <select
-                    bind:value={telemetryStore.iconInput}
-                    name="Icon"
-                    aria-label="icon"
-                    aria-describedby="icon-helper"
-                  >
-                    <option value="" disabled selected>Select an icon...</option
+                  <div class="custom-icon-dropdown">
+                    <button
+                      class="dropdown-trigger"
+                      onclick={() => (iconDropdownOpen = !iconDropdownOpen)}
+                      aria-label="icon"
+                      aria-describedby="icon-helper"
                     >
-                    {#each icons as iconName}
-                      <option value={iconName}>
-                        {iconName
-                          .split("-")
-                          .map(
-                            (word) =>
-                              word.charAt(0).toUpperCase() + word.slice(1),
-                          )
-                          .join(" ")}
-                      </option>
-                    {/each}
-                  </select>
+                      {#if telemetryStore.iconInput}
+                        <div class="trigger-content" style="color: {telemetryStore.colorInput};">
+                          <Icon name={telemetryStore.iconInput} size={18} />
+                          <span>
+                            {telemetryStore.iconInput
+                              .split("-")
+                              .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+                              .join(" ")}
+                          </span>
+                        </div>
+                      {:else}
+                        <span class="placeholder">Select an icon...</span>
+                      {/if}
+                      <Icon name="folder-closed" class="caret" size={14} /> <!-- Reusing an icon for caret or just simple CSS arrow -->
+                    </button>
+                    {#if iconDropdownOpen}
+                      <div class="dropdown-overlay" onclick={() => (iconDropdownOpen = false)}></div>
+                      <div class="dropdown-menu blur-background">
+                        {#each icons as iconName}
+                          <button
+                            class="dropdown-item"
+                            class:active={telemetryStore.iconInput === iconName}
+                            onclick={() => {
+                              telemetryStore.iconInput = iconName;
+                              iconDropdownOpen = false;
+                            }}
+                          >
+                            <Icon name={iconName} size={18} />
+                            <span>
+                              {iconName
+                                .split("-")
+                                .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+                                .join(" ")}
+                            </span>
+                          </button>
+                        {/each}
+                      </div>
+                    {/if}
+                  </div>
                   <small id="icon-helper"> Display icon </small>
                 </div>
-                {#if telemetryStore.iconInput}
-                  <div
-                    class="icon-preview-box"
-                    style="color: {telemetryStore.colorInput};"
-                  >
-                    <Icon name={telemetryStore.iconInput} size={24} />
-                  </div>
-                {/if}
               </div>
             </div>
           </div>
@@ -614,6 +620,7 @@
 
   .dashboard-card.header-container {
     border: none !important;
+    overflow: visible !important;
   }
 
   .dashboard-card.header-container:hover {
@@ -676,6 +683,91 @@
     border-radius: 8px;
     transition: all 0.2s ease;
     user-select: none;
+  }
+
+  .color-picker {
+    padding: 0;
+    height: 48px;
+    cursor: pointer;
+    border: none;
+    background: none;
+  }
+  
+  .custom-icon-dropdown {
+    position: relative;
+    width: 100%;
+  }
+
+  .dropdown-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: var(--pico-form-element-spacing-vertical) var(--pico-form-element-spacing-horizontal);
+    background-color: var(--pico-form-element-background-color);
+    border: var(--pico-border-width) solid var(--pico-form-element-border-color);
+    border-radius: var(--pico-border-radius);
+    color: var(--pico-form-element-color);
+    cursor: pointer;
+    text-align: left;
+    height: 48px;
+    transition: background-color var(--pico-transition), border-color var(--pico-transition), color var(--pico-transition), box-shadow var(--pico-transition);
+  }
+
+  .dropdown-trigger:focus {
+    box-shadow: var(--pico-form-element-focus-color) 0 0 0 0.125rem;
+    border-color: var(--pico-form-element-active-border-color);
+  }
+
+  .trigger-content {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .dropdown-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 99;
+  }
+
+  .dropdown-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    width: 100%;
+    max-height: 250px;
+    overflow-y: auto;
+    background-color: var(--pico-form-element-background-color);
+    border: 1px solid var(--pico-form-element-border-color);
+    border-radius: var(--pico-border-radius);
+    z-index: 100;
+    margin-top: 4px;
+    padding: 4px 0;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  }
+
+  .dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 12px;
+    background: none;
+    border: none;
+    color: var(--pico-color);
+    cursor: pointer;
+    text-align: left;
+    transition: background-color 0.2s;
+  }
+
+  .dropdown-item:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+
+  .dropdown-item.active {
+    background-color: rgba(from var(--pico-primary) r g b / 0.1);
+    color: var(--pico-primary);
   }
 
   /* 3. Hide the actual radio circles completely */
