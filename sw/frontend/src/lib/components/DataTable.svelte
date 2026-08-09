@@ -407,15 +407,16 @@
       </thead>
       <tbody>
         {#if processedData.length > 0}
-          {#each processedData as row, rowIndex}
+          {#each processedData as row}
+            {@const originalIndex = data.indexOf(row)}
             <tr
-              class:selected={selectedRowIndex === rowIndex}
+              class:selected={selectedRowIndex === originalIndex}
               onclick={(e) => {
                 e.stopPropagation();
-                selectRow(rowIndex);
+                selectRow(originalIndex);
               }}
               tabindex="0"
-              aria-selected={selectedRowIndex === rowIndex}
+              aria-selected={selectedRowIndex === originalIndex}
             >
               {#each activeColumns as col, colIndex}
                 <td>
