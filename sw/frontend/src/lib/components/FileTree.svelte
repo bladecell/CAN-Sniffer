@@ -193,9 +193,9 @@
   let displayName = $derived(node.name || (node.path === '/' ? 'SD Root' : node.path.split('/').pop() || 'Folder'));
 </script>
 
+<input type="file" bind:this={fileInputForUpload} style="display: none;" onchange={handleFileSelected} />
 {#if isRoot}
   <div class="tree-container">
-    <input type="file" bind:this={fileInputForUpload} style="display: none;" onchange={handleFileSelected} />
     <ul class="tree-root-ul">
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <li class="tree-item">
