@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import Icon from "$lib/Icon.svelte";
   import { usePidData } from "$lib/pidHelpers.svelte.ts";
-  import { chartHistoryStore } from "$lib/chartHistoryStore";
+  import { chartHistoryStore, MAX_HISTORY_SEC } from "$lib/chartHistoryStore";
   import type { PidGridItem } from "$lib/types";
   import { Chart, Svg, Spline, Area } from "layerchart";
   import { scaleTime } from "d3-scale";
@@ -29,6 +29,15 @@
       unsubscribe();
     };
   });
+
+  const xDomain = $derived(
+    chartData.length > 0
+      ? [
+          new Date(chartData[chartData.length - 1].date.getTime() - MAX_HISTORY_SEC * 1000),
+          chartData[chartData.length - 1].date,
+        ]
+      : undefined
+  );
 </script>
 
 <article
@@ -59,6 +68,7 @@
         data={chartData}
         x="date"
         xScale={scaleTime()}
+        xDomain={xDomain}
         y="value"
         yDomain={[metric.min, metric.max]}
         padding={{ top: 10, bottom: 2, left: 0, right: 0 }}
