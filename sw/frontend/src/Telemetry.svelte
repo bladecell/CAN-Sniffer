@@ -546,6 +546,10 @@
               >
             </div>
             <div>
+              <input class="color-picker" type="color" name="Color" aria-label="color" aria-describedby="color-helper" bind:value={telemetryStore.colorInput} />
+              <small id="color-helper"> Color ({telemetryStore.colorInput.toUpperCase()}) </small>
+            </div>
+            <div>
               <div class="icon-selector-wrapper">
                 <div class="icon-select-container">
                   <div class="custom-icon-dropdown">
@@ -556,7 +560,7 @@
                       aria-describedby="icon-helper"
                     >
                       {#if telemetryStore.iconInput}
-                        <div class="trigger-content" style="color: {telemetryStore.colorInput};">
+                        <div class="trigger-content">
                           <Icon name={telemetryStore.iconInput} size={18} />
                           <span>
                             {telemetryStore.iconInput
@@ -568,7 +572,7 @@
                       {:else}
                         <span class="placeholder">Select an icon...</span>
                       {/if}
-                      <Icon name="folder-closed" class="caret" size={14} /> <!-- Reusing an icon for caret or just simple CSS arrow -->
+                      <Icon name="chevron-down" class="caret" size={14} />
                     </button>
                     {#if iconDropdownOpen}
                       <!-- svelte-ignore a11y_click_events_have_key_events -->
