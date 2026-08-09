@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { DataTableProps } from "$lib/types";
   import Switch from "$lib/components/Switch.svelte";
+  import Icon from "$lib/Icon.svelte";
 
   let {
     columns,
@@ -231,17 +232,13 @@
     <div class="toolbar-actions" bind:this={toolbarRef}>
       {#if onImport}
         <button class="toolbar-btn" onclick={onImport}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5-5 5 5M12 15V3" />
-          </svg>
+          <Icon name="import" size={14} />
           Import
         </button>
       {/if}
       {#if onExport}
         <button class="toolbar-btn" onclick={onExport}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 14l-5-5-5 5M12 15v-12" />
-          </svg>
+          <Icon name="export" size={14} />
           Export
         </button>
       {/if}
@@ -253,17 +250,7 @@
           class:active={activePopover === "filter" || filterRules.length > 0}
           onclick={() => togglePopover("filter")}
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            ><polygon
-              points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"
-            /></svg
-          >
+          <Icon name="filter" size={14} />
           Filter {#if filterRules.length > 0}<span class="badge-count"
               >{filterRules.length}</span
             >{/if}
@@ -304,17 +291,7 @@
                     onclick={() => removeFilter(rule.id)}
                     title="Remove rule"
                   >
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      ><polyline points="3 6 5 6 21 6" /><path
-                        d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
-                      /></svg
-                    >
+                    <Icon name="trash" size={14} />
                   </button>
                 </div>
               {/each}
@@ -345,17 +322,7 @@
           class:active={activePopover === "view" || hiddenColumns.size > 0}
           onclick={() => togglePopover("view")}
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            ><circle cx="12" cy="12" r="3" /><path
-              d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"
-            /></svg
-          >
+          <Icon name="eye" size={14} />
           View
           {#if hiddenColumns.size > 0}
             <span class="badge-count">{hiddenColumns.size}</span>
@@ -372,14 +339,7 @@
                 >
                   <span>{col.label}</span>
                   {#if !hiddenColumns.has(col.key)}
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"><polyline points="20 6 9 17 4 12" /></svg
-                    >
+                    <Icon name="check" size={14} />
                   {/if}
                 </button>
               {/each}

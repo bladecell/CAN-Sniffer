@@ -21,7 +21,6 @@
   import DataTable from "$lib/components/DataTable.svelte";
   import LayerChartLarge from "$lib/components/LayerChartLarge.svelte";
   import Icon from "$lib/Icon.svelte";
-  import { iconData, type IconName } from "$lib/icons";
 
   let activeIndex = $state(-1);
 
@@ -166,7 +165,11 @@
     });
   });
 
-  const icons: IconName[] = Object.keys(iconData) as IconName[];
+  const svgFiles = import.meta.glob("$lib/icons_svg/*.svg");
+  const icons: string[] = Object.keys(svgFiles).map(path => {
+    const parts = path.split('/');
+    return parts[parts.length - 1].replace('.svg', '');
+  });
 </script>
 
 <SDCardImportModal
