@@ -18,6 +18,7 @@
 #include "obd2.hpp"
 #include "sd_card.hpp"
 #include "secrets.h"
+#include "settings.hpp"
 #include "utilities.h"
 #include "webserver.hpp"
 #include "wifi.hpp"
@@ -98,8 +99,37 @@ void SUPERVISOR::task()
                     esp_pm_lock_acquire(pm_lock_);
                 }
 
-                _config.pid_def_path  = PID_DEF_DB_PATH;   // TODO: Load from nvs storage
-                _config.dtc_desc_path = DTC_DESC_DB_PATH;  // TODO: Load from nvs storage
+                esp_err_t err = Settings::getInstance().init();
+
+                if (err != ESP_OK)
+                {
+                    ESP_LOGE(TAG, "Failed to initialize NVS: %s", esp_err_to_name(err));
+                    eState = State::ERROR;
+                    continue;
+                }
+
+                err = Settings::getInstance().getSupervisorConfig(_config);
+
+                if (err == ESP_ERR_NVS_NOT_FOUND)
+                {
+                    ESP_LOGI(TAG, "First boot detected. Saving default System config.");
+                    Settings::getInstance().setDefaultSupervisorConfig();
+                    err = Settings::getInstance().getSupervisorConfig(_config);
+                    if (err != ESP_OK)
+                    {
+                        ESP_LOGE(TAG, "Failed to retrieve default System config: %s", esp_err_to_name(err));
+                        eState = State::ERROR;
+                        continue;
+                    }
+                }
+                else if (err != ESP_OK)
+                {
+                    ESP_LOGE(TAG, "NVS corruption detected! Factory resetting...");
+                    Settings::getInstance().factoryReset();
+                    restart_system();
+                    eState = State::ERROR;
+                    continue;
+                }
 
                 bool success = true;
                 for (size_t i = 0; i < sizeof(setup_functions) / sizeof(setup_functions[0]); i++)
@@ -283,16 +313,27 @@ esp_err_t SUPERVISOR::setup_webserver()
 esp_err_t SUPERVISOR::setup_wifi()
 {
     // Configure
-    WIFI::Config config;  // TODO: Load from nvs storage
-    config.ssid            = "CAN-SNIFFER-AP";
-    config.password        = "";
-    config.channel         = 6;
-    config.max_connections = 4;
-    config.auth_mode       = WIFI_AUTH_OPEN;
-    config.mode            = WIFI_MODE_STA;
-    config.sta_ssid        = WIFI_SSID;
-    config.sta_password    = WIFI_PASSWORD;
-    config.sta_auth_mode   = WIFI_AUTH_WPA2_PSK;
+    WIFI::Config config;
+    esp_err_t    err = Settings::getInstance().getWifiConfig(config);
+
+    if (err == ESP_ERR_NVS_NOT_FOUND)
+    {
+        ESP_LOGI(TAG, "First boot detected. Saving default WIFI config.");
+        Settings::getInstance().setDefaultWifiConfig();
+        err = Settings::getInstance().getWifiConfig(config);
+        if (err != ESP_OK)
+        {
+            ESP_LOGE(TAG, "Failed to retrieve default WIFI config: %s", esp_err_to_name(err));
+            return err;
+        }
+    }
+    else if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "NVS corruption detected! Factory resetting...");
+        Settings::getInstance().factoryReset();
+        SUPERVISOR::getInstance().restart_system();
+        return ESP_FAIL;
+    }
 
     esp_err_t ret = WIFI::getInstance().init(config);
     ret |= WIFI::getInstance().start();
@@ -301,19 +342,28 @@ esp_err_t SUPERVISOR::setup_wifi()
 
 esp_err_t SUPERVISOR::setup_can()
 {
-    CanDriver::Config config;  // TODO: Load from nvs storage
-    config.bitrate            = CanDriver::Bitrate::BITRATE_500K;
-    config.rx_pin             = CAN_RX_GPIO;
-    config.tx_pin             = CAN_TX_GPIO;
-    config.lbk_pin            = CAN_LBK_GPIO;
-    config.rs_pin             = CAN_RS_GPIO;
-    config.debug              = DEBUG_MODE;
-    config.filter             = false;
-    config.mfilter_cfg.id     = 0b011100000000;  // 0b111 11100000
-    config.mfilter_cfg.mask   = 0b011100000000;  // 0b111 11100000
-    config.mfilter_cfg.is_ext = false;           // Standard 11-bit IDs
+    CanDriver::Config config;
 
-    // Settings::getInstance().getCanConfig(config);
+    esp_err_t err = Settings::getInstance().getCanConfig(config);
+
+    if (err == ESP_ERR_NVS_NOT_FOUND)
+    {
+        ESP_LOGI(TAG, "First boot detected. Saving default CAN config.");
+        Settings::getInstance().setDefaultCanConfig();
+        err = Settings::getInstance().getCanConfig(config);
+        if (err != ESP_OK)
+        {
+            ESP_LOGE(TAG, "Failed to retrieve default CAN config: %s", esp_err_to_name(err));
+            return err;
+        }
+    }
+    else if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "NVS corruption detected! Factory resetting...");
+        Settings::getInstance().factoryReset();
+        SUPERVISOR::getInstance().restart_system();
+        return ESP_FAIL;
+    }
 
     esp_err_t ret = CanDriver::getInstance().init(config);
     CanDriver::getInstance().setRxCallback(LedStatus::staticBlink, nullptr);

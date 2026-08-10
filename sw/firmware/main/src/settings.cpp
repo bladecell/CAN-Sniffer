@@ -4,6 +4,9 @@
 
 #include "esp_log.h"
 #include "nvs_flash.h"
+#include "secrets.h"
+#include "utilities.h"
+#include "wifi.hpp"
 
 static const char* TAG           = "SETTINGS";
 static const char* NVS_NAMESPACE = "storage";
@@ -68,34 +71,49 @@ esp_err_t Settings::getWifiConfig(WIFI::Config& config)
 
     // Load SSID
     len = sizeof(buf);
-    if (nvs_get_str(handle, "w_ssid", buf, &len) == ESP_OK)
+    if ((err |= nvs_get_str(handle, "w_ssid", buf, &len)) == ESP_OK)
         config.ssid = std::string(buf);
 
     // Load Pass
     len = sizeof(buf);
-    if (nvs_get_str(handle, "w_pass", buf, &len) == ESP_OK)
+    if ((err |= nvs_get_str(handle, "w_pass", buf, &len)) == ESP_OK)
         config.password = std::string(buf);
 
     // Load STA SSID
     len = sizeof(buf);
-    if (nvs_get_str(handle, "w_sta_ssid", buf, &len) == ESP_OK)
+    if ((err |= nvs_get_str(handle, "w_sta_ssid", buf, &len)) == ESP_OK)
         config.sta_ssid = std::string(buf);
 
     // Load STA Pass
     len = sizeof(buf);
-    if (nvs_get_str(handle, "w_sta_pass", buf, &len) == ESP_OK)
+    if ((err |= nvs_get_str(handle, "w_sta_pass", buf, &len)) == ESP_OK)
         config.sta_password = std::string(buf);
 
     uint8_t val8;
-    if (nvs_get_u8(handle, "w_chan", &val8) == ESP_OK)
+    if ((err |= nvs_get_u8(handle, "w_chan", &val8)) == ESP_OK)
         config.channel = val8;
-    if (nvs_get_u8(handle, "w_mode", &val8) == ESP_OK)
+    if ((err |= nvs_get_u8(handle, "w_mode", &val8)) == ESP_OK)
         config.mode = (wifi_mode_t)val8;
-    if (nvs_get_u8(handle, "w_auth", &val8) == ESP_OK)
+    if ((err |= nvs_get_u8(handle, "w_auth", &val8)) == ESP_OK)
         config.auth_mode = (wifi_auth_mode_t)val8;
 
     nvs_close(handle);
-    return ESP_OK;
+    return err;
+}
+
+esp_err_t Settings::setDefaultWifiConfig()
+{
+    WIFI::Config config;
+    config.ssid            = "Can Sniffer";
+    config.password        = "";
+    config.channel         = 6;
+    config.max_connections = 4;
+    config.auth_mode       = WIFI_AUTH_OPEN;
+    config.mode            = WIFI_MODE_STA;
+    config.sta_ssid        = WIFI_SSID;
+    config.sta_password    = WIFI_PASSWORD;
+    config.sta_auth_mode   = WIFI_AUTH_WPA2_PSK;
+    return setWifiConfig(config);
 }
 
 // --- CAN CONFIG (Mostly numbers, use Blob for speed) ---
@@ -107,9 +125,17 @@ esp_err_t Settings::setCanConfig(const CanDriver::Config& config)
     if (err != ESP_OK)
         return err;
 
-    // WARNING: If you change the struct layout in code later, you must wipe NVS or handle versions.
-    err = nvs_set_blob(handle, "can_cfg", &config, sizeof(CanDriver::Config));
-    // TODO save pid_def and dbc_desc path
+    err |= nvs_set_u32(handle, "c_bitrate", (uint32_t)config.bitrate);
+    err |= nvs_set_i32(handle, "c_tx_pin", config.tx_pin);
+    err |= nvs_set_i32(handle, "c_rx_pin", config.rx_pin);
+    err |= nvs_set_i32(handle, "c_lbk_pin", config.lbk_pin);
+    err |= nvs_set_i32(handle, "c_rs_pin", config.rs_pin);
+    err |= nvs_set_u8(handle, "c_debug", config.debug ? 1 : 0);
+    err |= nvs_set_u8(handle, "c_rs_mode", (uint8_t)config.rs_mode);
+    err |= nvs_set_u32(handle, "c_tx_q", config.tx_queue_depth);
+    err |= nvs_set_u32(handle, "c_rx_q", (uint32_t)config.rx_queue_size);
+    err |= nvs_set_u8(handle, "c_filter", config.filter ? 1 : 0);
+    err |= nvs_set_blob(handle, "c_mfilter", &config.mfilter_cfg, sizeof(twai_mask_filter_config_t));
 
     if (err == ESP_OK)
     {
@@ -127,13 +153,100 @@ esp_err_t Settings::getCanConfig(CanDriver::Config& config)
     if (err != ESP_OK)
         return err;
 
-    size_t required_size = sizeof(CanDriver::Config);
+    uint32_t val32;
+    int32_t  vali32;
+    uint8_t  val8;
 
-    // Check if blob exists and is correct size
-    err = nvs_get_blob(handle, "can_cfg", &config, &required_size);
+    if ((err |= nvs_get_u32(handle, "c_bitrate", &val32)) == ESP_OK)
+        config.bitrate = (CanDriver::Bitrate)val32;
+    if ((err |= nvs_get_i32(handle, "c_tx_pin", &vali32)) == ESP_OK)
+        config.tx_pin = (gpio_num_t)vali32;
+    if ((err |= nvs_get_i32(handle, "c_rx_pin", &vali32)) == ESP_OK)
+        config.rx_pin = (gpio_num_t)vali32;
+    if ((err |= nvs_get_i32(handle, "c_lbk_pin", &vali32)) == ESP_OK)
+        config.lbk_pin = (gpio_num_t)vali32;
+    if ((err |= nvs_get_i32(handle, "c_rs_pin", &vali32)) == ESP_OK)
+        config.rs_pin = (gpio_num_t)vali32;
+    if ((err |= nvs_get_u8(handle, "c_debug", &val8)) == ESP_OK)
+        config.debug = (val8 != 0);
+    if ((err |= nvs_get_u8(handle, "c_rs_mode", &val8)) == ESP_OK)
+        config.rs_mode = (CanDriver::RS_MODE)val8;
+    if ((err |= nvs_get_u32(handle, "c_tx_q", &val32)) == ESP_OK)
+        config.tx_queue_depth = val32;
+    if ((err |= nvs_get_u32(handle, "c_rx_q", &val32)) == ESP_OK)
+        config.rx_queue_size = val32;
+    if ((err |= nvs_get_u8(handle, "c_filter", &val8)) == ESP_OK)
+        config.filter = (val8 != 0);
+
+    size_t req_size = sizeof(twai_mask_filter_config_t);
+    err |= nvs_get_blob(handle, "c_mfilter", &config.mfilter_cfg, &req_size);
 
     nvs_close(handle);
     return err;
+}
+
+esp_err_t Settings::setDefaultCanConfig()
+{
+    CanDriver::Config config;
+    config.bitrate            = CanDriver::Bitrate::BITRATE_500K;
+    config.rx_pin             = CAN_RX_GPIO;
+    config.tx_pin             = CAN_TX_GPIO;
+    config.lbk_pin            = CAN_LBK_GPIO;
+    config.rs_pin             = CAN_RS_GPIO;
+    config.debug              = DEBUG_MODE;
+    config.filter             = false;
+    config.mfilter_cfg.id     = 0b011100000000;
+    config.mfilter_cfg.mask   = 0b011100000000;
+    config.mfilter_cfg.is_ext = false;  // Standard 11-bit IDs
+    return setCanConfig(config);
+}
+
+esp_err_t Settings::setSupervisorConfig(const SUPERVISOR::Config& config)
+{
+    nvs_handle_t handle;
+    esp_err_t    err = openHandle(&handle, NVS_READWRITE);
+    if (err != ESP_OK)
+        return err;
+
+    err |= nvs_set_str(handle, "pid_def_path", config.pid_def_path.c_str());
+    err |= nvs_set_str(handle, "dtc_desc_path", config.dtc_desc_path.c_str());
+
+    if (err == ESP_OK)
+    {
+        nvs_commit(handle);
+        ESP_LOGI(TAG, "Supervisor Config Saved");
+    }
+    nvs_close(handle);
+    return err;
+}
+
+esp_err_t Settings::getSupervisorConfig(SUPERVISOR::Config& config)
+{
+    nvs_handle_t handle;
+    esp_err_t    err = openHandle(&handle, NVS_READONLY);
+    if (err != ESP_OK)
+        return err;
+
+    char   buf[256];
+    size_t len = sizeof(buf);
+
+    if ((err |= nvs_get_str(handle, "pid_def_path", buf, &len)) == ESP_OK)
+        config.pid_def_path = std::string(buf);
+
+    len = sizeof(buf);
+    if ((err |= nvs_get_str(handle, "dtc_desc_path", buf, &len)) == ESP_OK)
+        config.dtc_desc_path = std::string(buf);
+
+    nvs_close(handle);
+    return err;
+}
+
+esp_err_t Settings::setDefaultSupervisorConfig()
+{
+    SUPERVISOR::Config config;
+    config.pid_def_path  = PID_DEF_DB_PATH;
+    config.dtc_desc_path = DTC_DESC_DB_PATH;
+    return setSupervisorConfig(config);
 }
 
 esp_err_t Settings::factoryReset()
