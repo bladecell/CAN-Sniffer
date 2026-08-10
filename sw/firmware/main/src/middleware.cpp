@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "cJSON.h"
@@ -17,6 +18,7 @@
 #include "freertos/task.h"
 #include "obd2.hpp"
 #include "sd_card.hpp"
+#include "settings.hpp"
 #include "string"
 #include "supervisor.hpp"
 #include "utilities.h"
@@ -198,6 +200,9 @@ cJSON* m_obdii_get()
     cJSON_AddNumberToObject(root, "pid_def_count", OBD2::getInstance().getPIDDEFSize());
     cJSON_AddNumberToObject(root, "pid_data_count", OBD2::getInstance().getPIDDataSize());
     cJSON_AddNumberToObject(root, "poll_task_utilization", OBD2::getInstance().getPollTaskUtilization());
+    cJSON_AddStringToObject(root, "pid_def_path", SUPERVISOR::getInstance().get_pid_def_path().c_str());
+    cJSON_AddStringToObject(root, "dtc_desc_path", SUPERVISOR::getInstance().get_dtc_desc_path().c_str());
+
     cJSON*               supported_pids = cJSON_CreateObject();
     supportedPIDsGroup_t supportedPIDsGroup;
     OBD2::getInstance().getSupportedPids(supportedPIDsGroup);
@@ -211,6 +216,64 @@ cJSON* m_obdii_get()
 
     cJSON_AddItemToObject(root, "supported_pids", supported_pids);
 
+    return root;
+}
+
+cJSON* m_obdii_set(cJSON* payload)
+{
+    if (!cJSON_IsObject(payload))
+    {
+        cJSON* error_resp = cJSON_CreateObject();
+        cJSON_AddStringToObject(error_resp, "status", "error");
+        cJSON_AddStringToObject(error_resp, "reason", "Payload must be a JSON object");
+        return error_resp;
+    }
+
+    bool               matched = false;
+    SUPERVISOR::Config config;
+
+    if (Settings::getInstance().getSupervisorConfig(config) != ESP_OK)
+    {
+        cJSON* error_resp = cJSON_CreateObject();
+        cJSON_AddStringToObject(error_resp, "status", "error");
+        cJSON_AddStringToObject(error_resp, "reason", "Failed to retrieve current supervisor configuration");
+        return error_resp;
+    }
+
+    cJSON* obj = cJSON_GetObjectItemCaseSensitive(payload, "pid_def_path");
+    if (cJSON_IsString(obj) && (obj->valuestring != NULL))
+    {
+        config.pid_def_path = obj->valuestring;
+        matched             = true;
+    }
+
+    obj = cJSON_GetObjectItemCaseSensitive(payload, "dtc_desc_path");
+    if (cJSON_IsString(obj) && (obj->valuestring != NULL))
+    {
+        config.dtc_desc_path = obj->valuestring;
+        matched              = true;
+    }
+
+    if (!matched)
+    {
+        cJSON* error_resp = cJSON_CreateObject();
+        cJSON_AddStringToObject(error_resp, "status", "error");
+        cJSON_AddStringToObject(error_resp, "reason", "No valid configuration keys found in payload");
+        return error_resp;
+    }
+
+    if (Settings::getInstance().setSupervisorConfig(config) != ESP_OK)
+    {
+        cJSON* error_resp = cJSON_CreateObject();
+        cJSON_AddStringToObject(error_resp, "status", "error");
+        cJSON_AddStringToObject(error_resp, "reason", "Failed to save supervisor configuration");
+        return error_resp;
+    }
+
+    SUPERVISOR::getInstance().load_config_from_nvs();
+
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "status", "success");
     return root;
 }
 
@@ -246,6 +309,25 @@ cJSON* m_sdcard_info_get()
     cJSON_AddBoolToObject(root, "is_mmc", sd_info.is_mmc);
     cJSON_AddBoolToObject(root, "is_mounted", sd_info.is_mounted);
     cJSON_AddBoolToObject(root, "is_present", sd_info.is_present);
+
+    return root;
+}
+
+cJSON* m_sdcard_format_post()
+{
+    cJSON* root = cJSON_CreateObject();
+
+    esp_err_t ret = SDCard::getInstance().format_sdcard();
+
+    if (ret == ESP_OK)
+    {
+        cJSON_AddStringToObject(root, "status", "success");
+    }
+    else
+    {
+        cJSON_AddStringToObject(root, "status", "error");
+        cJSON_AddStringToObject(root, "reason", esp_err_to_name(ret));
+    }
 
     return root;
 }
@@ -367,14 +449,16 @@ cJSON* m_dtc_description_get(const char* target_codes[], size_t count)
 {
     cJSON* root = cJSON_CreateObject();
 
-    std::unique_ptr<FILE, decltype(&fclose)> file(fopen(DTC_DESC_DB_PATH, "rb"), fclose);
+    std::string dtc_desc_db_path = SUPERVISOR::getInstance().get_pid_def_path();
+
+    std::unique_ptr<FILE, decltype(&fclose)> file(fopen(dtc_desc_db_path.c_str(), "rb"), fclose);
 
     if (!file)
     {
         cJSON_AddStringToObject(root, "status", "error");
 
-        std::string reason =
-            "File " + std::string(DTC_DESC_DB_PATH) + " not found (resolved to " + DTC_DESC_DB_PATH + ")";
+        std::string reason = "File " + std::string(dtc_desc_db_path.c_str()) + " not found (resolved to " +
+                             dtc_desc_db_path.c_str() + ")";
 
         cJSON_AddStringToObject(root, "reason", reason.c_str());
 
@@ -389,7 +473,7 @@ cJSON* m_dtc_description_get(const char* target_codes[], size_t count)
     {
         cJSON_AddStringToObject(root, "status", "error");
 
-        std::string reason = "No records found in " + std::string(DTC_DESC_DB_PATH);
+        std::string reason = "No records found in " + std::string(dtc_desc_db_path.c_str());
 
         cJSON_AddStringToObject(root, "reason", reason.c_str());
         cJSON_AddNumberToObject(root, "dtc_count", 0);
@@ -420,7 +504,7 @@ cJSON* m_dtc_description_get(const char* target_codes[], size_t count)
                 cJSON_Delete(dtcs_array);
                 cJSON_AddStringToObject(root, "status", "error");
 
-                std::string reason = "Failed to read file " + std::string(DTC_DESC_DB_PATH);
+                std::string reason = "Failed to read file " + std::string(dtc_desc_db_path.c_str());
 
                 cJSON_AddStringToObject(root, "reason", reason.c_str());
                 cJSON_AddNumberToObject(root, "dtc_count", 0);
@@ -802,9 +886,84 @@ cJSON* m_pid_def_post(cJSON* data)
     return root;
 }
 
-cJSON* m_pid_def_save()
+cJSON* m_pid_def_save(cJSON* payload)
 {
-    esp_err_t ret = SUPERVISOR::getInstance().save_pid_def_to_json(PID_DEF_DB_PATH);
+    esp_err_t ret = ESP_OK;
+
+    if (payload == nullptr)
+    {
+        ret = SUPERVISOR::getInstance().save_pid_def_to_json(SUPERVISOR::getInstance().get_pid_def_path().c_str());
+    }
+    else
+    {
+        if (!cJSON_IsObject(payload))
+        {
+            cJSON* error_resp = cJSON_CreateObject();
+            cJSON_AddStringToObject(error_resp, "status", "error");
+            cJSON_AddStringToObject(error_resp, "reason", "Payload must be a JSON object");
+            return error_resp;
+        }
+
+        cJSON* obj = cJSON_GetObjectItemCaseSensitive(payload, "pid_def_path");
+        if (cJSON_IsString(obj) && (obj->valuestring != NULL))
+        {
+            ret = SUPERVISOR::getInstance().save_pid_def_to_json(obj->valuestring);
+        }
+        else
+        {
+            cJSON* error_resp = cJSON_CreateObject();
+            cJSON_AddStringToObject(error_resp, "status", "error");
+            cJSON_AddStringToObject(error_resp, "reason", "Missing or invalid 'pid_def_path' in payload");
+            return error_resp;
+        }
+    }
+
+    cJSON* root = cJSON_CreateObject();
+
+    if (ret == ESP_OK)
+    {
+        cJSON_AddStringToObject(root, "status", "success");
+    }
+    else
+    {
+        cJSON_AddStringToObject(root, "status", "error");
+        cJSON_AddStringToObject(root, "reason", esp_err_to_name(ret));
+    }
+
+    return root;
+}
+
+cJSON* m_pid_def_load(cJSON* payload)
+{
+    esp_err_t ret = ESP_OK;
+
+    if (payload == nullptr)
+    {
+        ret = SUPERVISOR::getInstance().load_pid_def_from_json(SUPERVISOR::getInstance().get_pid_def_path().c_str());
+    }
+    else
+    {
+        if (!cJSON_IsObject(payload))
+        {
+            cJSON* error_resp = cJSON_CreateObject();
+            cJSON_AddStringToObject(error_resp, "status", "error");
+            cJSON_AddStringToObject(error_resp, "reason", "Payload must be a JSON object");
+            return error_resp;
+        }
+
+        cJSON* obj = cJSON_GetObjectItemCaseSensitive(payload, "pid_def_path");
+        if (cJSON_IsString(obj) && (obj->valuestring != NULL))
+        {
+            ret = SUPERVISOR::getInstance().load_pid_def_from_json(obj->valuestring);
+        }
+        else
+        {
+            cJSON* error_resp = cJSON_CreateObject();
+            cJSON_AddStringToObject(error_resp, "status", "error");
+            cJSON_AddStringToObject(error_resp, "reason", "Missing or invalid 'pid_def_path' in payload");
+            return error_resp;
+        }
+    }
 
     cJSON* root = cJSON_CreateObject();
 

@@ -134,7 +134,8 @@ esp_err_t SDCard::mount_sdcard()
         return ret;
     }
 
-    mount_callback();
+    if (mount_callback)
+        mount_callback();
 
     return ret;
 }
@@ -155,7 +156,8 @@ esp_err_t SDCard::unmount_sdcard()
 
     card = nullptr;
 
-    unmount_callback();
+    if (unmount_callback)
+        unmount_callback();
 
     return ESP_OK;
 }

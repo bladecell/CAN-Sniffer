@@ -99,34 +99,15 @@ void SUPERVISOR::task()
                     esp_pm_lock_acquire(pm_lock_);
                 }
 
-                esp_err_t err = Settings::getInstance().init();
-
-                if (err != ESP_OK)
+                if (esp_err_t err = Settings::getInstance().init(); err != ESP_OK)
                 {
                     ESP_LOGE(TAG, "Failed to initialize NVS: %s", esp_err_to_name(err));
                     eState = State::ERROR;
                     continue;
                 }
 
-                err = Settings::getInstance().getSupervisorConfig(_config);
-
-                if (err == ESP_ERR_NVS_NOT_FOUND)
+                if (load_config_from_nvs() != ESP_OK)
                 {
-                    ESP_LOGI(TAG, "First boot detected. Saving default System config.");
-                    Settings::getInstance().setDefaultSupervisorConfig();
-                    err = Settings::getInstance().getSupervisorConfig(_config);
-                    if (err != ESP_OK)
-                    {
-                        ESP_LOGE(TAG, "Failed to retrieve default System config: %s", esp_err_to_name(err));
-                        eState = State::ERROR;
-                        continue;
-                    }
-                }
-                else if (err != ESP_OK)
-                {
-                    ESP_LOGE(TAG, "NVS corruption detected! Factory resetting...");
-                    Settings::getInstance().factoryReset();
-                    restart_system();
                     eState = State::ERROR;
                     continue;
                 }
@@ -433,7 +414,7 @@ esp_err_t SUPERVISOR::setup_obd()
         return ret;
     }
 
-    ret = SUPERVISOR::getInstance().load_pid_def_from_json(PID_DEF_DB_PATH);
+    ret = SUPERVISOR::getInstance().load_pid_def_from_json(SUPERVISOR::getInstance().get_pid_def_path().c_str());
 
     if (ret != ESP_OK && ret != ESP_ERR_NOT_FOUND)
     {
@@ -843,4 +824,30 @@ esp_err_t SUPERVISOR::copy_file(const char* src_path, const char* dest_path)
     }
 
     return ret;
+}
+
+esp_err_t SUPERVISOR::load_config_from_nvs()
+{
+    esp_err_t err = Settings::getInstance().getSupervisorConfig(_config);
+
+    if (err == ESP_ERR_NVS_NOT_FOUND)
+    {
+        ESP_LOGI(TAG, "NVS config not found. Saving default System config.");
+        Settings::getInstance().setDefaultSupervisorConfig();
+        err = Settings::getInstance().getSupervisorConfig(_config);
+        if (err != ESP_OK)
+        {
+            ESP_LOGE(TAG, "Failed to retrieve default System config: %s", esp_err_to_name(err));
+            return err;
+        }
+    }
+    else if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "NVS corruption detected! Factory resetting...");
+        Settings::getInstance().factoryReset();
+        restart_system();
+        return ESP_FAIL;
+    }
+
+    return ESP_OK;
 }

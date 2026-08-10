@@ -57,6 +57,28 @@ public:
         return eState;
     }
 
+    std::string get_pid_def_path() const
+    {
+        return _config.pid_def_path;
+    }
+
+    std::string get_dtc_desc_path() const
+    {
+        return _config.dtc_desc_path;
+    }
+
+    void set_pid_def_path(const std::string& path)
+    {
+        _config.pid_def_path = path;
+    }
+
+    void set_dtc_desc_path(const std::string& path)
+    {
+        _config.dtc_desc_path = path;
+    }
+
+    esp_err_t load_config_from_nvs();
+
     esp_err_t save_pid_def_to_json(const char* path);
     esp_err_t load_pid_def_from_json(const char* path);
     esp_err_t copy_file(const char* src_path, const char* dest_path);

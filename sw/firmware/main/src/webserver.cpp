@@ -278,6 +278,17 @@ esp_err_t g_obdii_index_handler(httpd_req_t* req, void* arg)
     return send_json_response(req, m_obdii_get());
 }
 
+esp_err_t p_obdii_index_handler(httpd_req_t* req, void* arg)
+{
+    cJSON* root = get_validated_json_payload(req, 256);
+    if (root == nullptr)
+        return ESP_OK;
+
+    cJSON* resp = m_obdii_set(root);
+    cJSON_Delete(root);
+    return send_json_response(req, resp);
+}
+
 esp_err_t g_vin_index_handler(httpd_req_t* req, void* arg)
 {
     return send_json_response(req, m_vin_get());
@@ -359,8 +370,34 @@ esp_err_t p_pid_def_index_handler(httpd_req_t* req, void* arg)
 
 esp_err_t p_pid_def_save_index_handler(httpd_req_t* req, void* arg)
 {
-    httpd_resp_set_status(req, "200 OK");
-    return send_json_response(req, m_pid_def_save());
+    if (req->content_len > 0)
+    {
+        cJSON* root = get_validated_json_payload(req, 256);
+        cJSON* resp = m_pid_def_save(root);
+        cJSON_Delete(root);
+        return send_json_response(req, resp);
+    }
+    else
+    {
+        cJSON* resp = m_pid_def_save(nullptr);
+        return send_json_response(req, resp);
+    }
+}
+
+esp_err_t p_pid_def_load_index_handler(httpd_req_t* req, void* arg)
+{
+    if (req->content_len > 0)
+    {
+        cJSON* root = get_validated_json_payload(req, 256);
+        cJSON* resp = m_pid_def_load(root);
+        cJSON_Delete(root);
+        return send_json_response(req, resp);
+    }
+    else
+    {
+        cJSON* resp = m_pid_def_load(nullptr);
+        return send_json_response(req, resp);
+    }
 }
 
 esp_err_t d_pid_def_index_handler(httpd_req_t* req, void* arg)
@@ -428,6 +465,11 @@ esp_err_t p_settings_can_index_handler(httpd_req_t* req, void* arg)
 esp_err_t g_sd_card_info_handler(httpd_req_t* req, void* arg)
 {
     return send_json_response(req, m_sdcard_info_get());
+}
+
+esp_err_t p_sd_card_format_handler(httpd_req_t* req, void* arg)
+{
+    return send_json_response(req, m_sdcard_format_post());
 }
 
 esp_err_t g_sd_card_file_tree_handler(httpd_req_t* req, void* arg)
@@ -765,9 +807,11 @@ const RouteDef api_routes[] = {{"/", HTTP_GET, index_handler},
                                {"/api/v1/pid_def", HTTP_GET, g_pid_def_index_handler},
                                {"/api/v1/pid_def", HTTP_POST, p_pid_def_index_handler},
                                {"/api/v1/pid_def/save", HTTP_POST, p_pid_def_save_index_handler},
+                               {"/api/v1/pid_def/load", HTTP_POST, p_pid_def_load_index_handler},
 
                                {"/api/v1/can_bus", HTTP_GET, g_can_bus_index_handler},
                                {"/api/v1/obd2", HTTP_GET, g_obdii_index_handler},
+                               {"/api/v1/obd2", HTTP_POST, p_obdii_index_handler},
 
                                {"/api/v1/pid_data/*", HTTP_GET, g_pid_data_index_handler},
                                {"/api/v1/pid_data", HTTP_GET, g_pid_data_index_handler},
@@ -785,6 +829,7 @@ const RouteDef api_routes[] = {{"/", HTTP_GET, index_handler},
                                {"/api/v1/system/copy_file", HTTP_POST, p_system_copy_file_index_handler},
 
                                {"/api/v1/sd_card/info", HTTP_GET, g_sd_card_info_handler},
+                               {"/api/v1/sd_card/format", HTTP_POST, p_sd_card_format_handler},
                                {"/api/v1/sd_card/tree", HTTP_GET, g_sd_card_file_tree_handler},
                                {"/api/v1/sd_card/tree/*", HTTP_GET, g_sd_card_file_tree_handler},
                                {"/api/v1/sd_card/file/*", HTTP_POST, p_file_upload_handler},
@@ -823,7 +868,7 @@ esp_err_t setup_web_server()
     server_config.async_worker_task_priority    = 5;
     server_config.async_worker_stack_size       = 8192;
     server_config.httpd_config.uri_match_fn     = httpd_uri_match_wildcard;
-    server_config.httpd_config.max_uri_handlers = 32;
+    server_config.httpd_config.max_uri_handlers = 48;
 
     esp_err_t ret = AsyncWebServer::getInstance().start(server_config);
     if (ret != ESP_OK)
