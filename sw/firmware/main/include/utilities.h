@@ -3,7 +3,7 @@
 
 #define DEBUG_MODE 1
 #define APP_VERSION_MAJOR 0
-#define APP_VERION_MINOR 4
+#define APP_VERION_MINOR 5
 
 #define VERSION_1_1
 // #define VERSION_1_2

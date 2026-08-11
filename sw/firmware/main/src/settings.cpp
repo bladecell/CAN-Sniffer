@@ -64,41 +64,56 @@ esp_err_t Settings::getWifiConfig(WIFI::Config& config)
     nvs_handle_t handle;
     esp_err_t    err = openHandle(&handle, NVS_READONLY);
     if (err != ESP_OK)
-        return err;  // Likely first boot, return error so defaults are used
+        return err;
 
-    size_t len;
-    char   buf[64];  // Max SSID/Pass length
+    size_t    len;
+    char      buf[64];
+    bool      has_missing = false;
+    esp_err_t fatal_err   = ESP_OK;
 
-    // Load SSID
+    auto check_err = [&](esp_err_t res) {
+        if (res == ESP_ERR_NVS_NOT_FOUND) {
+            has_missing = true;
+            return false;
+        } else if (res != ESP_OK) {
+            fatal_err = res;
+            return false;
+        }
+        return true;
+    };
+
     len = sizeof(buf);
-    if ((err |= nvs_get_str(handle, "w_ssid", buf, &len)) == ESP_OK)
+    if (check_err(nvs_get_str(handle, "w_ssid", buf, &len)))
         config.ssid = std::string(buf);
 
-    // Load Pass
     len = sizeof(buf);
-    if ((err |= nvs_get_str(handle, "w_pass", buf, &len)) == ESP_OK)
+    if (check_err(nvs_get_str(handle, "w_pass", buf, &len)))
         config.password = std::string(buf);
 
-    // Load STA SSID
     len = sizeof(buf);
-    if ((err |= nvs_get_str(handle, "w_sta_ssid", buf, &len)) == ESP_OK)
+    if (check_err(nvs_get_str(handle, "w_sta_ssid", buf, &len)))
         config.sta_ssid = std::string(buf);
 
-    // Load STA Pass
     len = sizeof(buf);
-    if ((err |= nvs_get_str(handle, "w_sta_pass", buf, &len)) == ESP_OK)
+    if (check_err(nvs_get_str(handle, "w_sta_pass", buf, &len)))
         config.sta_password = std::string(buf);
 
     uint8_t val8;
-    if ((err |= nvs_get_u8(handle, "w_chan", &val8)) == ESP_OK)
+    if (check_err(nvs_get_u8(handle, "w_chan", &val8)))
         config.channel = val8;
-    if ((err |= nvs_get_u8(handle, "w_mode", &val8)) == ESP_OK)
+    if (check_err(nvs_get_u8(handle, "w_mode", &val8)))
         config.mode = (wifi_mode_t)val8;
-    if ((err |= nvs_get_u8(handle, "w_auth", &val8)) == ESP_OK)
+    if (check_err(nvs_get_u8(handle, "w_auth", &val8)))
         config.auth_mode = (wifi_auth_mode_t)val8;
 
     nvs_close(handle);
-    return err;
+
+    if (fatal_err != ESP_OK)
+        return fatal_err;
+    if (has_missing)
+        return ESP_ERR_NVS_NOT_FOUND;
+
+    return ESP_OK;
 }
 
 esp_err_t Settings::setDefaultWifiConfig()
@@ -153,36 +168,55 @@ esp_err_t Settings::getCanConfig(CanDriver::Config& config)
     if (err != ESP_OK)
         return err;
 
-    uint32_t val32;
-    int32_t  vali32;
-    uint8_t  val8;
+    uint32_t  val32;
+    int32_t   vali32;
+    uint8_t   val8;
+    bool      has_missing = false;
+    esp_err_t fatal_err   = ESP_OK;
 
-    if ((err |= nvs_get_u32(handle, "c_bitrate", &val32)) == ESP_OK)
+    auto check_err = [&](esp_err_t res) {
+        if (res == ESP_ERR_NVS_NOT_FOUND) {
+            has_missing = true;
+            return false;
+        } else if (res != ESP_OK) {
+            fatal_err = res;
+            return false;
+        }
+        return true;
+    };
+
+    if (check_err(nvs_get_u32(handle, "c_bitrate", &val32)))
         config.bitrate = (CanDriver::Bitrate)val32;
-    if ((err |= nvs_get_i32(handle, "c_tx_pin", &vali32)) == ESP_OK)
+    if (check_err(nvs_get_i32(handle, "c_tx_pin", &vali32)))
         config.tx_pin = (gpio_num_t)vali32;
-    if ((err |= nvs_get_i32(handle, "c_rx_pin", &vali32)) == ESP_OK)
+    if (check_err(nvs_get_i32(handle, "c_rx_pin", &vali32)))
         config.rx_pin = (gpio_num_t)vali32;
-    if ((err |= nvs_get_i32(handle, "c_lbk_pin", &vali32)) == ESP_OK)
+    if (check_err(nvs_get_i32(handle, "c_lbk_pin", &vali32)))
         config.lbk_pin = (gpio_num_t)vali32;
-    if ((err |= nvs_get_i32(handle, "c_rs_pin", &vali32)) == ESP_OK)
+    if (check_err(nvs_get_i32(handle, "c_rs_pin", &vali32)))
         config.rs_pin = (gpio_num_t)vali32;
-    if ((err |= nvs_get_u8(handle, "c_debug", &val8)) == ESP_OK)
+    if (check_err(nvs_get_u8(handle, "c_debug", &val8)))
         config.debug = (val8 != 0);
-    if ((err |= nvs_get_u8(handle, "c_rs_mode", &val8)) == ESP_OK)
+    if (check_err(nvs_get_u8(handle, "c_rs_mode", &val8)))
         config.rs_mode = (CanDriver::RS_MODE)val8;
-    if ((err |= nvs_get_u32(handle, "c_tx_q", &val32)) == ESP_OK)
+    if (check_err(nvs_get_u32(handle, "c_tx_q", &val32)))
         config.tx_queue_depth = val32;
-    if ((err |= nvs_get_u32(handle, "c_rx_q", &val32)) == ESP_OK)
+    if (check_err(nvs_get_u32(handle, "c_rx_q", &val32)))
         config.rx_queue_size = val32;
-    if ((err |= nvs_get_u8(handle, "c_filter", &val8)) == ESP_OK)
+    if (check_err(nvs_get_u8(handle, "c_filter", &val8)))
         config.filter = (val8 != 0);
 
     size_t req_size = sizeof(twai_mask_filter_config_t);
-    err |= nvs_get_blob(handle, "c_mfilter", &config.mfilter_cfg, &req_size);
+    check_err(nvs_get_blob(handle, "c_mfilter", &config.mfilter_cfg, &req_size));
 
     nvs_close(handle);
-    return err;
+
+    if (fatal_err != ESP_OK)
+        return fatal_err;
+    if (has_missing)
+        return ESP_ERR_NVS_NOT_FOUND;
+
+    return ESP_OK;
 }
 
 esp_err_t Settings::setDefaultCanConfig()
@@ -227,18 +261,38 @@ esp_err_t Settings::getSupervisorConfig(SUPERVISOR::Config& config)
     if (err != ESP_OK)
         return err;
 
-    char   buf[256];
-    size_t len = sizeof(buf);
+    char      buf[256];
+    size_t    len;
+    bool      has_missing = false;
+    esp_err_t fatal_err   = ESP_OK;
 
-    if ((err |= nvs_get_str(handle, "pid_def_path", buf, &len)) == ESP_OK)
+    auto check_err = [&](esp_err_t res) {
+        if (res == ESP_ERR_NVS_NOT_FOUND) {
+            has_missing = true;
+            return false;
+        } else if (res != ESP_OK) {
+            fatal_err = res;
+            return false;
+        }
+        return true;
+    };
+
+    len = sizeof(buf);
+    if (check_err(nvs_get_str(handle, "pid_def_path", buf, &len)))
         config.pid_def_path = std::string(buf);
 
     len = sizeof(buf);
-    if ((err |= nvs_get_str(handle, "dtc_desc_path", buf, &len)) == ESP_OK)
+    if (check_err(nvs_get_str(handle, "dtc_desc_path", buf, &len)))
         config.dtc_desc_path = std::string(buf);
 
     nvs_close(handle);
-    return err;
+
+    if (fatal_err != ESP_OK)
+        return fatal_err;
+    if (has_missing)
+        return ESP_ERR_NVS_NOT_FOUND;
+
+    return ESP_OK;
 }
 
 esp_err_t Settings::setDefaultSupervisorConfig()

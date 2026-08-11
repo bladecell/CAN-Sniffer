@@ -90,48 +90,29 @@ void SUPERVISOR::task()
                 break;
             case State::STARTING:
             {
-                esp_pm_config_t pm_config = {.max_freq_mhz = 240, .min_freq_mhz = 40, .light_sleep_enable = true};
-                esp_pm_configure(&pm_config);
+                eState = State::STARTING;
 
-                esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "no_sleep", &pm_lock_);
-                if (pm_lock_)
+                for (auto& step : _setup_steps)
                 {
-                    esp_pm_lock_acquire(pm_lock_);
-                }
+                    ESP_LOGI(TAG, "Initializing module: %s", step.name);
 
-                if (esp_err_t err = Settings::getInstance().init(); err != ESP_OK)
-                {
-                    ESP_LOGE(TAG, "Failed to initialize NVS: %s", esp_err_to_name(err));
-                    eState = State::ERROR;
-                    continue;
-                }
+                    step.result = step.init_fn();
 
-                if (load_config_from_nvs() != ESP_OK)
-                {
-                    eState = State::ERROR;
-                    continue;
-                }
-
-                bool success = true;
-                for (size_t i = 0; i < sizeof(setup_functions) / sizeof(setup_functions[0]); i++)
-                {
-                    if (setup_functions[i]() != ESP_OK)
+                    if (step.result != ESP_OK)
                     {
-                        LedStatus::getInstance().blink(0xFFFFFFFF, 100, 100);
-                        success = false;
+                        ESP_LOGE(TAG, "Setup failed for [%s] with error: %s", step.name, esp_err_to_name(step.result));
+
+                        if (step.is_critical)
+                        {
+                            eState = State::ERROR;
+                            break;
+                        }
                     }
                 }
 
-                if (success)
-                {
-                    eState = State::NOT_CONNECTED;
-                    ESP_LOGI(TAG, "System INITIALIZED");
-                }
-                else
-                {
-                    ESP_LOGE(TAG, "Failed to initialize modules");
-                    eState = State::ERROR;
-                }
+                eState = State::NOT_CONNECTED;
+                ESP_LOGI(TAG, "System INITIALIZED");
+
                 break;
             }
             case State::NOT_CONNECTED:
@@ -249,7 +230,7 @@ void SUPERVISOR::task()
                 break;
             }
             case State::ERROR:
-                // handle error, maybe try to restart components or just log and wait for manual intervention
+                LedStatus::getInstance().blink(0xFFFFFFFF, 100, 100);
                 break;
             default:
                 ESP_LOGE(TAG, "Unknown state %d", eState);
@@ -261,6 +242,49 @@ void SUPERVISOR::task()
 }
 
 // ----- component setup functions --------------------------------------------------------------
+
+esp_err_t SUPERVISOR::setup_power_management()
+{
+    SUPERVISOR& instance = getInstance();
+
+    esp_pm_config_t pm_config = {.max_freq_mhz = 240, .min_freq_mhz = 40, .light_sleep_enable = true};
+
+    esp_err_t err = esp_pm_configure(&pm_config);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to configure power management: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    err = esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "no_sleep", &instance.pm_lock_);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to create power lock: %s", esp_err_to_name(err));
+        instance.pm_lock_ = nullptr;
+        return err;
+    }
+
+    err = esp_pm_lock_acquire(instance.pm_lock_);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to acquire power lock: %s", esp_err_to_name(err));
+        esp_pm_lock_delete(instance.pm_lock_);
+        instance.pm_lock_ = nullptr;
+        return err;
+    }
+
+    return ESP_OK;
+}
+
+esp_err_t SUPERVISOR::setup_settings()
+{
+    esp_err_t err = Settings::getInstance().init();
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+    return SUPERVISOR::getInstance().load_config_from_nvs();
+}
 
 esp_err_t SUPERVISOR::setup_flash_filesystem()
 {
@@ -850,4 +874,24 @@ esp_err_t SUPERVISOR::load_config_from_nvs()
     }
 
     return ESP_OK;
+}
+
+const char* SUPERVISOR::setup_function_to_string(SetupFunction func) const
+{
+    size_t index = static_cast<size_t>(func);
+    if (index < _setup_steps.size())
+    {
+        return _setup_steps[index].name;
+    }
+    return "UNKNOWN";
+}
+
+esp_err_t SUPERVISOR::get_setup_result(SetupFunction func) const
+{
+    size_t index = static_cast<size_t>(func);
+    if (index < _setup_steps.size())
+    {
+        return _setup_steps[index].result;
+    }
+    return ESP_ERR_INVALID_ARG;
 }

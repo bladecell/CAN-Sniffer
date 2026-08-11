@@ -42,10 +42,8 @@ cJSON* m_static_pid_request();
 cJSON* m_pid_def_set(cJSON* payload);
 cJSON* m_pid_def_save(cJSON* payload);
 cJSON* m_pid_def_load(cJSON* payload);
-cJSON* m_settings_wifi_get();
-cJSON* m_settings_can_get();
-cJSON* m_settings_wifi_set(cJSON* payload);
-cJSON* m_settings_can_set(cJSON* payload);
+cJSON* m_settings_get();
+cJSON* m_settings_set(cJSON* payload);
 
 cJSON* single_pid_def_get(uint16_t pid);
 cJSON* single_pid_data_get(uint16_t pid);

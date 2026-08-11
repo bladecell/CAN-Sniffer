@@ -278,17 +278,6 @@ esp_err_t g_obdii_index_handler(httpd_req_t* req, void* arg)
     return send_json_response(req, m_obdii_get());
 }
 
-esp_err_t p_obdii_index_handler(httpd_req_t* req, void* arg)
-{
-    cJSON* root = get_validated_json_payload(req, 256);
-    if (root == nullptr)
-        return ESP_OK;
-
-    cJSON* resp = m_obdii_set(root);
-    cJSON_Delete(root);
-    return send_json_response(req, resp);
-}
-
 esp_err_t g_vin_index_handler(httpd_req_t* req, void* arg)
 {
     return send_json_response(req, m_vin_get());
@@ -296,7 +285,6 @@ esp_err_t g_vin_index_handler(httpd_req_t* req, void* arg)
 
 esp_err_t p_vin_index_handler(httpd_req_t* req, void* arg)
 {
-    httpd_resp_set_status(req, "200 OK");
     return send_json_response(req, m_vin_request());
 }
 
@@ -445,21 +433,20 @@ esp_err_t p_static_pid_index_handler(httpd_req_t* req, void* arg)
     return send_json_response(req, m_static_pid_request());
 }
 
-esp_err_t g_settings_wifi_index_handler(httpd_req_t* req, void* arg)
+esp_err_t g_settings_index_handler(httpd_req_t* req, void* arg)
 {
-    return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Not Implemented");
+    return send_json_response(req, m_settings_get());
 }
-esp_err_t p_settings_wifi_index_handler(httpd_req_t* req, void* arg)
+
+esp_err_t p_settings_index_handler(httpd_req_t* req, void* arg)
 {
-    return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Not Implemented");
-}
-esp_err_t g_settings_can_index_handler(httpd_req_t* req, void* arg)
-{
-    return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Not Implemented");
-}
-esp_err_t p_settings_can_index_handler(httpd_req_t* req, void* arg)
-{
-    return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Not Implemented");
+    cJSON* root = get_validated_json_payload(req, 2048);
+    if (root == nullptr)
+        return ESP_OK;
+
+    cJSON* resp = m_settings_set(root);
+    cJSON_Delete(root);
+    return send_json_response(req, resp);
 }
 
 esp_err_t g_sd_card_info_handler(httpd_req_t* req, void* arg)
@@ -811,7 +798,6 @@ const RouteDef api_routes[] = {{"/", HTTP_GET, index_handler},
 
                                {"/api/v1/can_bus", HTTP_GET, g_can_bus_index_handler},
                                {"/api/v1/obd2", HTTP_GET, g_obdii_index_handler},
-                               {"/api/v1/obd2", HTTP_POST, p_obdii_index_handler},
 
                                {"/api/v1/pid_data/*", HTTP_GET, g_pid_data_index_handler},
                                {"/api/v1/pid_data", HTTP_GET, g_pid_data_index_handler},
@@ -836,10 +822,8 @@ const RouteDef api_routes[] = {{"/", HTTP_GET, index_handler},
                                {"/api/v1/sd_card/file/*", HTTP_DELETE, d_file_delete_handler},
                                {"/api/v1/sd_card/file/*", HTTP_GET, g_sd_card_file_read_handler},
 
-                               {"/api/v1/settings/wifi", HTTP_GET, g_settings_wifi_index_handler},
-                               {"/api/v1/settings/wifi", HTTP_POST, p_settings_wifi_index_handler},
-                               {"/api/v1/settings/can", HTTP_GET, g_settings_can_index_handler},
-                               {"/api/v1/settings/can", HTTP_POST, p_settings_can_index_handler}};
+                               {"/api/v1/settings", HTTP_GET, g_settings_index_handler},
+                               {"/api/v1/settings", HTTP_POST, p_settings_index_handler}};
 
 static void register_routes()
 {
