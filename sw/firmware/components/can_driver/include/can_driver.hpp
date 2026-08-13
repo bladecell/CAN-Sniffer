@@ -108,14 +108,14 @@ public:
 
     esp_err_t flushRxQueue();
 
-    twai_onchip_node_config_t getNodeConfig() const
+    const twai_onchip_node_config_t& getNodeConfig() const
     {
         return nodeConfig;
     }
 
     bool quickCheckBus();
 
-    Config getConfig() const
+    const Config& getConfig() const
     {
         return m_config;
     }

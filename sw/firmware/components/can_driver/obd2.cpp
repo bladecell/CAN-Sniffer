@@ -1396,7 +1396,7 @@ esp_err_t OBD2::captureMultiFrame(const CanDriver::CanFrame& f)
             multiFrameBuffer.push_back(f);
             xSemaphoreTake(xBusArbitrationMutex, portMAX_DELAY);
             vTaskDelay(pdMS_TO_TICKS(10));  // Wait before sending Flow Control
-            sendFlowControlFrame(f.header.id - 8);
+            sendFlowControlFrame(f.header.id - RESPONSE_ID_OFFSET);
             multiframe_state = 1;  // Go to Consecutive Frame state
             break;
         }

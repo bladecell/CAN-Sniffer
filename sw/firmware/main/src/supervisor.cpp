@@ -17,7 +17,6 @@
 #include "led_status.hpp"
 #include "obd2.hpp"
 #include "sd_card.hpp"
-#include "secrets.h"
 #include "settings.hpp"
 #include "utilities.h"
 #include "webserver.hpp"

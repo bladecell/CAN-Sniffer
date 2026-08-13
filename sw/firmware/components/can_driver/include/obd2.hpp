@@ -99,8 +99,6 @@ private:
     SemaphoreHandle_t xRequestNextPIDSemaphore = nullptr;
     SemaphoreHandle_t healthCheckSemaphore     = nullptr;
 
-    PIDPriorityQueue pollQueue;
-
     uint8_t  multiframe_state         = 99;
     uint32_t last_multiframe_received = 0;
 

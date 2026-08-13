@@ -4,7 +4,6 @@
 
 #include "esp_log.h"
 #include "nvs_flash.h"
-#include "secrets.h"
 #include "utilities.h"
 #include "wifi.hpp"
 
@@ -125,8 +124,8 @@ esp_err_t Settings::setDefaultWifiConfig()
     config.max_connections = 4;
     config.auth_mode       = WIFI_AUTH_OPEN;
     config.mode            = WIFI_MODE_STA;
-    config.sta_ssid        = WIFI_SSID;
-    config.sta_password    = WIFI_PASSWORD;
+    config.sta_ssid        = "";
+    config.sta_password    = "";
     config.sta_auth_mode   = WIFI_AUTH_WPA2_PSK;
     return setWifiConfig(config);
 }

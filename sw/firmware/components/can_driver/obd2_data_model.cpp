@@ -124,7 +124,7 @@ esp_err_t OBD2DataModel::updateData(const CanDriver::CanFrame& frame)
 
                 if (mode == RESPONSE_CURRENT_DATA && pdat->id != OBD2_FUNCTIONAL_ID)
                 {
-                    pdat->id = frame.header.id - 8;
+                    pdat->id = frame.header.id - RESPONSE_ID_OFFSET;
                 }
 
                 memcpy(pdat->data, frame.data, PID_DATA_LENGTH < frame.length ? PID_DATA_LENGTH : frame.length);

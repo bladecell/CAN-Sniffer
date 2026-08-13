@@ -674,7 +674,7 @@ esp_err_t SDCard::open_file(const char* relative_path, const char* mode, FILE*& 
         return ESP_FAIL;
     }
 
-    if (strstr(relative_path, "..") || strlen(relative_path) <= 1)
+    if (strlen(relative_path) <= 1)
     {
         return ESP_FAIL;
     }
