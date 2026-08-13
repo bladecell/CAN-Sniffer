@@ -67,9 +67,7 @@ public:
 
     struct WorkerHandle
     {
-        TaskHandle_t  task;
-        StaticTask_t* tcb;
-        StackType_t*  stack;
+        TaskHandle_t task;
     };
 
 private:

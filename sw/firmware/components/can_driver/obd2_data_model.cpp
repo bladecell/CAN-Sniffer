@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <utility>
 
 #include "esp_err.h"
 #include "esp_log.h"
@@ -16,26 +17,35 @@ static const char* TAG = "OBD2DataModel";
 
 void OBD2DataModel::initDef()
 {
-    vinData = {
-        .vin               = {0},
-        .lastUpdated       = 0,
-        .isValid           = false,
-        .vinReadySemaphore = xSemaphoreCreateBinary(),
-        .mtx_              = xSemaphoreCreateMutex(),
-    };
+    memset(vinData.vin, 0, sizeof(vinData.vin));
+    vinData.lastUpdated = 0;
+    vinData.isValid     = false;
 
-    dtcData = {
-        .confirmed               = {},
-        .pending                 = {},
-        .permanent               = {},
-        .confirmedReadySemaphore = xSemaphoreCreateBinary(),
-        .pendingReadySemaphore   = xSemaphoreCreateBinary(),
-        .permanentReadySemaphore = xSemaphoreCreateBinary(),
-        .clearReadySemaphore     = xSemaphoreCreateBinary(),
-        .mtx_                    = xSemaphoreCreateMutex(),
-    };
+    dtcData.confirmed.clear();
+    dtcData.pending.clear();
+    dtcData.permanent.clear();
 
-    pidMapMtx = xSemaphoreCreateMutex();
+    if (vinData.vinReadySemaphore == nullptr)
+        vinData.vinReadySemaphore = xSemaphoreCreateBinary();
+    if (vinData.mtx_ == nullptr)
+        vinData.mtx_ = xSemaphoreCreateMutex();
+
+    if (dtcData.confirmedReadySemaphore == nullptr)
+        dtcData.confirmedReadySemaphore = xSemaphoreCreateBinary();
+    if (dtcData.pendingReadySemaphore == nullptr)
+        dtcData.pendingReadySemaphore = xSemaphoreCreateBinary();
+    if (dtcData.permanentReadySemaphore == nullptr)
+        dtcData.permanentReadySemaphore = xSemaphoreCreateBinary();
+    if (dtcData.clearReadySemaphore == nullptr)
+        dtcData.clearReadySemaphore = xSemaphoreCreateBinary();
+    if (dtcData.mtx_ == nullptr)
+        dtcData.mtx_ = xSemaphoreCreateMutex();
+
+    if (pidMapMtx == nullptr)
+        pidMapMtx = xSemaphoreCreateMutex();
+
+    if (subscribers_mtx_ == nullptr)
+        subscribers_mtx_ = xSemaphoreCreateMutex();
 };
 
 esp_err_t OBD2DataModel::addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std::string name,
@@ -412,16 +422,13 @@ esp_err_t OBD2DataModel::clearDTC(uint8_t mode)
         case MODE_DTCS:
         case RESPONSE_DTCS:
             dtcData.confirmed.clear();
-            dtcData.confirmed.clear();
             break;
         case MODE_PENDING_DTCS:
         case RESPONSE_PENDING_DTCS:
             dtcData.pending.clear();
-            dtcData.pending.clear();
             break;
         case MODE_PERMANENT_DTCS:
         case RESPONSE_PERMANENT_DTCS:
-            dtcData.permanent.clear();
             dtcData.permanent.clear();
             break;
     }
@@ -499,12 +506,23 @@ std::vector<std::string> OBD2DataModel::getDTC(uint8_t mode) const
 
 void OBD2DataModel::subscribe(PidUpdateCallback cb)
 {
-    subscribers_.push_back(cb);
+    bool locked = (subscribers_mtx_ != nullptr) && (xSemaphoreTake(subscribers_mtx_, portMAX_DELAY) == pdTRUE);
+    subscribers_.push_back(std::move(cb));
+    if (locked)
+        xSemaphoreGive(subscribers_mtx_);
 }
 
 void OBD2DataModel::runPidUpdateCallbacks(uint16_t pid)
 {
-    for (const auto& cb : subscribers_)
+    std::vector<PidUpdateCallback> callbacks;
+
+    if (subscribers_mtx_ != nullptr && xSemaphoreTake(subscribers_mtx_, portMAX_DELAY) == pdTRUE)
+    {
+        callbacks = subscribers_;
+        xSemaphoreGive(subscribers_mtx_);
+    }
+
+    for (const auto& cb : callbacks)
     {
         cb(pid);
     }

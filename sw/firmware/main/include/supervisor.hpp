@@ -67,8 +67,6 @@ public:
         return instance;
     }
 
-    esp_err_t run_setup();
-
     const char* setup_function_to_string(SetupFunction func) const;
     esp_err_t   get_setup_result(SetupFunction func) const;
     const auto& get_setup_steps() const

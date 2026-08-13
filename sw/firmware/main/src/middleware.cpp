@@ -1,7 +1,5 @@
 #include "middleware.hpp"
 
-#include <sys/_intsup.h>
-
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -223,7 +221,7 @@ cJSON* m_system_get()
 {
     cJSON* root = cJSON_CreateObject();
 
-    cJSON_AddNumberToObject(root, "app_version", APP_VERSION_MAJOR + APP_VERION_MINOR * 0.1);
+    cJSON_AddStringToObject(root, "app_version", APP_VERSION_STRING);
     cJSON_AddNumberToObject(root, "uptime_s", SUPERVISOR::getInstance().get_uptime_seconds());
     cJSON_AddStringToObject(root, "restart_reason", SUPERVISOR::getInstance().get_restart_reason().c_str());
     cJSON_AddStringToObject(root, "mac", SUPERVISOR::getInstance().get_MAC_address().c_str());

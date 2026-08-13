@@ -180,6 +180,7 @@ public:
 
 protected:
     mutable SemaphoreHandle_t pidMapMtx = nullptr;
+    mutable SemaphoreHandle_t subscribers_mtx_ = nullptr;
     bool                      _isSup(uint16_t pid) const;
     bool                      _pidExists(uint16_t pid) const;
 

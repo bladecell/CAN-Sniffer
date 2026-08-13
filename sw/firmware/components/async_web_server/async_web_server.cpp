@@ -86,13 +86,6 @@ esp_err_t AsyncWebServer::stop()
             xSemaphoreTake(shutdown_sem_, pdMS_TO_TICKS(500));
     }
 
-    for (auto& w : worker_handles)
-    {
-        if (w.task)
-            vTaskDelete(w.task);
-        heap_caps_free(w.tcb);
-        heap_caps_free(w.stack);
-    }
     worker_handles.clear();
 
     if (shutdown_sem_)
@@ -237,7 +230,6 @@ void AsyncWebServer::worker_task()
     }
 
     xSemaphoreGive(shutdown_sem_);
-    vTaskSuspend(NULL);
 }
 
 void AsyncWebServer::worker_task_wrapper(void* arg)
@@ -261,34 +253,18 @@ esp_err_t AsyncWebServer::start_workers(uint8_t num_workers, uint32_t stack_size
     // start worker tasks
     for (int i = 0; i < num_workers; i++)
     {
-        StaticTask_t* task_buf =
-            (StaticTask_t*)heap_caps_malloc(sizeof(StaticTask_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        TaskHandle_t hdl = NULL;
 
-        StackType_t* stack =
-            (StackType_t*)heap_caps_malloc(stack_size * sizeof(StackType_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        BaseType_t created = xTaskCreatePinnedToCore(worker_task_wrapper, "async_req_worker", stack_size, this,
+                                                     priority, &hdl, core_id);
 
-        if (!task_buf || !stack)
+        if (created != pdPASS || hdl == NULL)
         {
-            if (task_buf)
-                heap_caps_free(task_buf);
-            if (stack)
-                heap_caps_free(stack);
-            ESP_LOGE(TAG, "Failed to allocate memory for worker %d. Stack size too large?", i);
-            continue;
-        }
-
-        TaskHandle_t hdl = xTaskCreateStaticPinnedToCore(worker_task_wrapper, "async_req_worker", stack_size, this,
-                                                         priority, stack, task_buf, core_id);
-
-        if (hdl == NULL)
-        {
-            heap_caps_free(task_buf);
-            heap_caps_free(stack);
             ESP_LOGE(TAG, "Failed to start async worker %d", i);
             continue;
         }
 
-        worker_handles.push_back({hdl, task_buf, stack});
+        worker_handles.push_back({hdl});
     }
 
     return ESP_OK;

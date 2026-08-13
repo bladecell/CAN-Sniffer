@@ -18,6 +18,7 @@
 #include <cstring>
 #include <map>
 #include <set>
+#include <utility>
 
 #include "can_driver.hpp"
 #include "esp_check.h"
@@ -203,6 +204,22 @@ void OBD2::deinit()
         vinData.mtx_ = nullptr;
     }
 
+    if (pidMapMtx)
+    {
+        vSemaphoreDelete(pidMapMtx);
+        pidMapMtx = nullptr;
+    }
+    if (subscribers_mtx_)
+    {
+        vSemaphoreDelete(subscribers_mtx_);
+        subscribers_mtx_ = nullptr;
+    }
+    if (connected_subscribers_mtx_)
+    {
+        vSemaphoreDelete(connected_subscribers_mtx_);
+        connected_subscribers_mtx_ = nullptr;
+    }
+
     connected_subscribers_.clear();
     subscribers_.clear();
     nrc_list_size = 0;
@@ -230,16 +247,9 @@ esp_err_t OBD2::init()
         xBusConnectionSemaphore  = xSemaphoreCreateBinary();
         xRequestNextPIDSemaphore = xSemaphoreCreateBinary();
 
-        dtcData.confirmedReadySemaphore = xSemaphoreCreateBinary();
-        dtcData.pendingReadySemaphore   = xSemaphoreCreateBinary();
-        dtcData.permanentReadySemaphore = xSemaphoreCreateBinary();
-        dtcData.clearReadySemaphore     = xSemaphoreCreateBinary();
-        dtcData.mtx_                    = xSemaphoreCreateMutex();
-
-        vinData.vinReadySemaphore = xSemaphoreCreateBinary();
-        vinData.mtx_              = xSemaphoreCreateMutex();
-
         healthCheckSemaphore = xSemaphoreCreateBinary();
+
+        connected_subscribers_mtx_ = xSemaphoreCreateMutex();
     }
 
     if (derivedPidQueue_ == nullptr)
@@ -448,7 +458,7 @@ esp_err_t OBD2::requestPID(uint16_t pid)
 void OBD2::req(uint32_t id, uint8_t mode, uint32_t pid, uint8_t len, uint32_t interval, uint8_t priority,
                bool isRecurring)
 {
-    static uint32_t staggerOffsetMs = 0;  // Offset so we don't send all requests at the same time
+    static std::atomic<uint32_t> staggerOffsetMs{0};  // Offset so we don't send all requests at the same time
 
     PollRequest r;
     r.isRaw            = false;
@@ -462,11 +472,11 @@ void OBD2::req(uint32_t id, uint8_t mode, uint32_t pid, uint8_t len, uint32_t in
     r.retries_left     = DEFAULT_NUMER_OF_RETRIES;
 
     uint32_t maxDelay     = (interval > 0 && interval < 15) ? interval : 15;
-    uint32_t initialDelay = staggerOffsetMs % maxDelay;
+    uint32_t initialDelay = staggerOffsetMs.load() % maxDelay;
 
     r.nextWake = xTaskGetTickCount() + pdMS_TO_TICKS(initialDelay);
 
-    staggerOffsetMs += 7;
+    staggerOffsetMs.fetch_add(7, std::memory_order_relaxed);
 
     req(r);
 }
@@ -1553,7 +1563,11 @@ esp_err_t OBD2::parseVINMultiFrame(std::vector<CanDriver::CanFrame>& frames)
 
 void OBD2::connected_subscribe(OBDIIConnectedCallback cb)
 {
-    connected_subscribers_.push_back(cb);
+    bool locked = (connected_subscribers_mtx_ != nullptr) &&
+                  (xSemaphoreTake(connected_subscribers_mtx_, portMAX_DELAY) == pdTRUE);
+    connected_subscribers_.push_back(std::move(cb));
+    if (locked)
+        xSemaphoreGive(connected_subscribers_mtx_);
 }
 
 void OBD2::runOBDIIConnectedCallbacks(bool connected)
@@ -1587,7 +1601,16 @@ void OBD2::callbackWorkerTask()
     {
         if (xQueueReceive(event_queue, &is_connected, portMAX_DELAY) == pdTRUE)
         {
-            for (const auto& cb : connected_subscribers_)
+            std::vector<OBDIIConnectedCallback> callbacks;
+
+            if (connected_subscribers_mtx_ != nullptr &&
+                xSemaphoreTake(connected_subscribers_mtx_, portMAX_DELAY) == pdTRUE)
+            {
+                callbacks = connected_subscribers_;
+                xSemaphoreGive(connected_subscribers_mtx_);
+            }
+
+            for (const auto& cb : callbacks)
             {
                 cb(is_connected);
             }

@@ -191,8 +191,8 @@ typedef struct
     char              vin[18];
     uint32_t          lastUpdated;
     bool              isValid;
-    SemaphoreHandle_t vinReadySemaphore;
-    SemaphoreHandle_t mtx_;
+    SemaphoreHandle_t vinReadySemaphore = nullptr;
+    SemaphoreHandle_t mtx_              = nullptr;
 } VINData_t;
 
 typedef struct
@@ -200,11 +200,11 @@ typedef struct
     std::vector<std::string> confirmed;
     std::vector<std::string> pending;
     std::vector<std::string> permanent;
-    SemaphoreHandle_t        confirmedReadySemaphore;
-    SemaphoreHandle_t        pendingReadySemaphore;
-    SemaphoreHandle_t        permanentReadySemaphore;
-    SemaphoreHandle_t        clearReadySemaphore;
-    SemaphoreHandle_t        mtx_;
+    SemaphoreHandle_t        confirmedReadySemaphore = nullptr;
+    SemaphoreHandle_t        pendingReadySemaphore   = nullptr;
+    SemaphoreHandle_t        permanentReadySemaphore = nullptr;
+    SemaphoreHandle_t        clearReadySemaphore     = nullptr;
+    SemaphoreHandle_t        mtx_                    = nullptr;
 } DTCData_t;
 
 class MutexGuard

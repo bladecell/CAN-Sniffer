@@ -90,6 +90,8 @@ private:
 
     std::vector<OBDIIConnectedCallback> connected_subscribers_;
 
+    SemaphoreHandle_t connected_subscribers_mtx_ = nullptr;
+
     QueueHandle_t     derivedPidQueue_         = nullptr;
     SemaphoreHandle_t xPidConnectedSemaphore   = nullptr;
     SemaphoreHandle_t xBusConnectionSemaphore  = nullptr;
