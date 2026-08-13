@@ -1,6 +1,7 @@
 // tinyexpr_helpers.h
 #pragma once
-#include "obd2.hpp"
+
+#include <cstdint>
 
 // tinyexpr custom functions
 inline double get_bit(double val, double bit_idx)
@@ -24,12 +25,6 @@ inline double bit_mask(double val, double start, double len)
     return (double)((v >> s) & mask);
 }
 
-inline double get_pid_value(double id)
-{
-    return (double)OBD2::getInstance().getValueUnsafe((uint16_t)id);
-}
-
-inline double get_pid_raw(double id, double byte_idx)
-{
-    return (double)OBD2::getInstance().getRawDataByteUnsafe((uint16_t)id, (uint8_t)byte_idx);
-}
+// Defined in obd2.cpp (need access to the OBD2 data model).
+double get_pid_value(double id);
+double get_pid_raw(double id, double byte_idx);

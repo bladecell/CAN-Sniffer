@@ -5,7 +5,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/idf_additions.h"
 #include "freertos/semphr.h"
-#include "obd2_utils.hpp"
+#include "obd2_common.hpp"
 
 #define NUMBER_OF_ITEMS 256
 

@@ -7,11 +7,19 @@
 #include "can_driver.hpp"
 #include "esp_log.h"
 #include "esp_random.h"
-#include "obd2_utils.hpp"
+#include "obd2_common.hpp"
 
 static const char* TAG = "SIM_TASK";
 
 TaskHandle_t xDataSimTaskHandle = NULL;
+
+void IRAM_ATTR sim_notify(uint32_t data, BaseType_t* woken)
+{
+    if (xDataSimTaskHandle != NULL)
+    {
+        xTaskNotifyFromISR(xDataSimTaskHandle, data, eSetValueWithOverwrite, woken);
+    }
+}
 
 void start_sim_task(CanDriver* driver)
 {

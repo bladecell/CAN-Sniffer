@@ -128,6 +128,17 @@ public:
     typedef void (*RxCallback_t)(void* arg);
     void setRxCallback(RxCallback_t callback, void* arg);
 
+    // Simulation hooks (injected by the OBD2 simulator component at runtime)
+    typedef void (*SimStartFn)(CanDriver*);
+    typedef void (*SimStopFn)();
+    typedef void (*SimNotifyFn)(uint32_t data, BaseType_t* woken);  // ISR context; must be IRAM_ATTR
+    void setSimHooks(SimStartFn start, SimStopFn stop, SimNotifyFn notify)
+    {
+        simStart_  = start;
+        simStop_   = stop;
+        simNotify_ = notify;
+    }
+
     QueueHandle_t getRxQueueHandle()
     {
         return rxQueue;
@@ -156,6 +167,11 @@ private:
     void         rxCb();
     RxCallback_t rxCallback    = nullptr;
     void*        rxCallbackArg = nullptr;
+
+    // Simulation hooks (nullptr until injected by the simulator component)
+    SimStartFn  simStart_  = nullptr;
+    SimStopFn   simStop_   = nullptr;
+    SimNotifyFn simNotify_ = nullptr;
 
     // Twai Configuration
     twai_onchip_node_config_t nodeConfig{};

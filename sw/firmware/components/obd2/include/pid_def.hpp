@@ -6,7 +6,7 @@
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
-#include "obd2_utils.hpp"
+#include "obd2_common.hpp"
 
 // Forward declaration for tinyexpr
 struct te_expr;

@@ -10,7 +10,7 @@
 #include "esp_err.h"
 #include "esp_log.h"
 #include "freertos/idf_additions.h"
-#include "obd2_utils.hpp"
+#include "obd2_common.hpp"
 #include "pid_def.hpp"
 
 static const char* TAG = "OBD2DataModel";

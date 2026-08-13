@@ -1,4 +1,4 @@
-// obd2_utils.hpp
+// obd2_common.hpp
 #pragma once
 
 #include <cstdint>
@@ -13,7 +13,6 @@
 #define OBD2_RESPONSE_BASE_ID 0x7E8
 #define PID_DATA_LENGTH 8
 #define VIN_LENGTH 17
-#define PID_REQUEST_DELAY_MS MIN_TRANSMIT_PERIOD_MS
 #define RESPONSE_ID_OFFSET 8
 #define DAGNOSTIC_SESSION_TIMEOUT 2000
 #define SUPPORTED_PIDS_GROUP_COUNT 7

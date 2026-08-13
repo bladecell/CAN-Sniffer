@@ -16,6 +16,7 @@
 #include "esp_timer.h"
 #include "led_status.hpp"
 #include "obd2.hpp"
+#include "obd2_simulator.hpp"
 #include "sd_card.hpp"
 #include "settings.hpp"
 #include "utilities.h"
@@ -376,6 +377,11 @@ esp_err_t SUPERVISOR::setup_can()
         SUPERVISOR::getInstance().restart_system();
         return ESP_FAIL;
     }
+
+    if (config.debug)
+        CanDriver::getInstance().setSimHooks(start_sim_task, stop_sim_task, sim_notify);
+    else
+        CanDriver::getInstance().setSimHooks(nullptr, nullptr, nullptr);
 
     esp_err_t ret = CanDriver::getInstance().init(config);
     CanDriver::getInstance().setRxCallback(LedStatus::staticBlink, nullptr);

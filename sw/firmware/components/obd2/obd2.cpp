@@ -27,12 +27,23 @@
 #include "freertos/idf_additions.h"
 #include "freertos/projdefs.h"
 #include "obd2_data_model.hpp"
-#include "obd2_utils.hpp"
+#include "obd2_common.hpp"
 
 #define HEALTHCHECK_RETRIES 3
 #define HEALTHCHECK_PERIOD_MS 3000
 
 static const char* TAG = "OBD2";
+
+// tinyexpr formula helpers: read other PID values/raw bytes during evaluation.
+double get_pid_value(double id)
+{
+    return (double)OBD2::getInstance().getValueUnsafe((uint16_t)id);
+}
+
+double get_pid_raw(double id, double byte_idx)
+{
+    return (double)OBD2::getInstance().getRawDataByteUnsafe((uint16_t)id, (uint8_t)byte_idx);
+}
 
 class CanLoadTracker
 {

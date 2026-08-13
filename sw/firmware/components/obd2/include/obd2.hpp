@@ -23,7 +23,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "obd2_data_model.hpp"
-#include "obd2_utils.hpp"
+#include "obd2_common.hpp"
 
 #define POLL_TASK_PERIOD_MS MIN_TRANSMIT_PERIOD_MS
 #define ERR_ACCUMULATE(result, expr) ((result) = (result) ?: (expr))

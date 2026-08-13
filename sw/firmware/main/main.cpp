@@ -4,8 +4,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "led_status.hpp"
-#include "obd2.hpp"
-#include "obd2_utils.hpp"
 #include "supervisor.hpp"
 #include "utilities.h"
 

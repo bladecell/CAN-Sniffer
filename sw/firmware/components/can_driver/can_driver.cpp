@@ -4,7 +4,6 @@
 #include "freertos/projdefs.h"
 #include "freertos/queue.h"
 #include "hal/twai_types.h"
-#include "obd2_simulator.hpp"
 
 static const char* TAG                   = "CAN_DRIVER";
 SemaphoreHandle_t  canConnectedSemaphore = nullptr;
@@ -38,7 +37,16 @@ void CanDriver::setDebugMode(bool enable)
     nodeConfig.flags.enable_loopback  = enable ? 1 : 0;
     gpio_set_level(LBK_PIN, enable ? 1 : 0);
     debug_mode = enable ? 1 : 0;
-    enable ? start_sim_task(this) : stop_sim_task();
+    if (enable)
+    {
+        if (simStart_)
+            simStart_(this);
+    }
+    else
+    {
+        if (simStop_)
+            simStop_();
+    }
 }
 
 esp_err_t CanDriver::init(const Config& config)
@@ -201,7 +209,8 @@ esp_err_t CanDriver::deinit()
         return ret;
     }
 
-    stop_sim_task();
+    if (simStop_)
+        simStop_();
     canState.store(STATE::NOT_INITIALIZED);
     return ESP_OK;
 }
@@ -280,11 +289,10 @@ bool IRAM_ATTR CanDriver::twai_rx_cb(twai_node_handle_t handle, const twai_rx_do
             {
                 return false;
             }
-            if (xDataSimTaskHandle != NULL)
+            if (driver->simNotify_)
             {
                 uint32_t sd = (frame.data[1] << 8) | frame.data[2];
-                xTaskNotifyFromISR(xDataSimTaskHandle,  // Directly use the global handle
-                                   sd, eSetValueWithOverwrite, &woken);
+                driver->simNotify_(sd, &woken);
             }
         }
         else
