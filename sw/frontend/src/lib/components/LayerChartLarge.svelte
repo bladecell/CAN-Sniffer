@@ -12,6 +12,7 @@
   } from "layerchart";
   import { scaleTime, scaleLinear } from "d3-scale";
   import { chartHistoryStore } from "$lib/chartHistoryStore";
+  import { chartSyncStore } from "$lib/chartSyncStore.svelte";
   import { canStore } from "$lib/canStore.svelte.ts";
   import Icon from "$lib/Icon.svelte";
 
@@ -173,9 +174,48 @@
     }
   });
 
-  let activeXDomain = $derived(frozenXDomain ?? autoXDomain);
+  $effect(() => {
+    if (!chartSyncStore.syncEnabled || !isActive) return;
+    const d = chartContext?.xDomain;
+    chartSyncStore.domain = isZoomed && d ? [Number(d[0]), Number(d[1])] : null;
+  });
+
+  let syncedDomain = $derived(
+    !isActive && chartSyncStore.syncEnabled && chartSyncStore.domain
+      ? [new Date(chartSyncStore.domain[0]), new Date(chartSyncStore.domain[1])]
+      : undefined,
+  );
+
+  let activeXDomain = $derived(
+    isActive ? (frozenXDomain ?? autoXDomain) : (syncedDomain ?? autoXDomain),
+  );
+
+  let yDomainOverride = $state<[number, number] | null>(null);
+
+  function adjustYToZoom() {
+    const xd = chartContext?.xDomain as [Date, Date] | undefined;
+    if (!xd) return;
+    const xMin = Number(xd[0]);
+    const xMax = Number(xd[1]);
+
+    let minV = Infinity;
+    let maxV = -Infinity;
+    for (const data of flatChartData) {
+      if (data.v === null) continue;
+      if (data.t < xMin || data.t > xMax) continue;
+      minV = Math.min(minV, data.v);
+      maxV = Math.max(maxV, data.v);
+    }
+    if (!isFinite(minV) || !isFinite(maxV)) return;
+
+    let padding = (maxV - minV) * 0.05;
+    if (padding === 0) padding = 10;
+    yDomainOverride = [minV - padding, maxV + padding];
+  }
 
   let yDomain = $derived.by(() => {
+    if (yDomainOverride) return yDomainOverride;
+
     let minV = Infinity;
     let maxV = -Infinity;
 
@@ -197,8 +237,6 @@
   });
 </script>
 
-//TODO sync multiple charts time even when zooming and panning
-
 {#if pids.length === 0}
   <div class="empty-state">
     Select one or more PIDs from the table to view on the chart
@@ -209,16 +247,27 @@
   <div class="chart-wrapper">
     <div class="chart-inner-container">
       {#if isZoomed}
-        <button
-          class="secondary outline blur-background"
-          style="position: absolute; top: 0.5rem; right: 1rem; z-index: 10; padding: 0.25rem 0.5rem; display: flex; align-items: center; gap: 0.25rem; font-size: 0.75rem; background-color: rgba(var(--pico-background-color), 0.1);"
-          onclick={() => chartContext?.transformState?.reset()}
-          title="Reset Zoom"
-        >
-          <Icon name="reload" size={14} />
-          <!-- simple fallback icon for reset -->
-          Reset View
-        </button>
+        <div class="chart-toolbar">
+          <button
+            class="secondary outline blur-background chart-toolbar-btn"
+            onclick={() => {
+              chartContext?.transformState?.reset();
+              yDomainOverride = null;
+            }}
+            title="Reset Zoom"
+          >
+            <Icon name="reload" size={14} />
+            Reset View
+          </button>
+          <button
+            class="secondary outline blur-background chart-toolbar-btn"
+            onclick={adjustYToZoom}
+            title="Auto-fit Y axis to the current zoom"
+          >
+            <Icon name="chart" size={14} />
+            Fit Y
+          </button>
+        </div>
       {/if}
 
       <Chart
@@ -288,8 +337,7 @@
                   x="t"
                   y="v"
                   defined={(d: { t: number; v: number | null; pid: number }) =>
-                    d.v !== null
-                  }
+                    d.v !== null}
                   stroke={getPidColor(p)}
                   strokeWidth={3}
                   class="fill-none chart-spline"
@@ -472,6 +520,32 @@
     position: relative;
     width: 100%;
     flex-shrink: 0;
+  }
+
+  .chart-toolbar {
+    position: absolute;
+    top: 0.5rem;
+    right: 1rem;
+    z-index: 10;
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-start;
+  }
+
+  .chart-toolbar-btn {
+    padding: 0.25rem 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.75rem;
+    background-color: rgba(var(--pico-background-color), 0.1);
+  }
+
+  .chart-toolbar-btn:focus,
+  .chart-toolbar-btn:focus-visible,
+  .chart-toolbar-btn:active {
+    box-shadow: none !important;
+    outline: none;
   }
 
   @media (max-width: 768px) {

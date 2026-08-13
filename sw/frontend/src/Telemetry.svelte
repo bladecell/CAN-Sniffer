@@ -627,7 +627,7 @@
       </div>
     {:else if telemetryStore.activeTab === "chart"}
       <div class="dashboard-card header-container" style="--module-accent: var(--pico-primary); padding: 1rem; display: flex; flex-direction: column; gap: 1rem;">
-        <div style="display: flex; justify-content: flex-end; align-items: center;">
+        <div style="display: flex; justify-content: flex-end; align-items: center; gap: 1rem;">
           <GridSelector maxRows={4} maxCols={4} onSelect={handleLayoutSelect} />
         </div>
         <div 
@@ -682,6 +682,19 @@
   .dashboard-card.header-container:hover {
     box-shadow: none;
     border-color: var(--pico-muted-border-color) !important;
+  }
+
+  .sync-button:focus,
+  .sync-button:focus-visible,
+  .sync-button:active {
+    box-shadow: none;
+    outline: none;
+  }
+
+  .sync-button.active {
+    background: color-mix(in srgb, var(--normal-color) 15%, transparent);
+    border-color: var(--normal-color);
+    color: var(--normal-color);
   }
 
   .aligned-title-row {
