@@ -75,6 +75,8 @@ public:
     cJSON*    scan_directory(const char* relative_path, int depth);
     esp_err_t get_absolute_path(const char* relative_path, char* out_buf, size_t out_size);
 
+    static bool is_path_under(const char* path, const char* root);
+
     typedef std::function<void()> Callback;
 
     void on_mount(Callback cb)

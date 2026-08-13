@@ -403,7 +403,7 @@ cJSON* m_dtc_description_get(const char* target_codes[], size_t count)
 {
     cJSON* root = cJSON_CreateObject();
 
-    std::string dtc_desc_db_path = SUPERVISOR::getInstance().get_pid_def_path();
+    std::string dtc_desc_db_path = SUPERVISOR::getInstance().get_dtc_desc_path();
 
     std::unique_ptr<FILE, decltype(&fclose)> file(fopen(dtc_desc_db_path.c_str(), "rb"), fclose);
 
@@ -411,8 +411,7 @@ cJSON* m_dtc_description_get(const char* target_codes[], size_t count)
     {
         cJSON_AddStringToObject(root, "status", "error");
 
-        std::string reason = "File " + std::string(dtc_desc_db_path.c_str()) + " not found (resolved to " +
-                             dtc_desc_db_path.c_str() + ")";
+        std::string reason = "File " + dtc_desc_db_path + " not found";
 
         cJSON_AddStringToObject(root, "reason", reason.c_str());
 
@@ -861,6 +860,14 @@ cJSON* m_pid_def_save(cJSON* payload)
         cJSON* obj = cJSON_GetObjectItemCaseSensitive(payload, "pid_def_path");
         if (cJSON_IsString(obj) && (obj->valuestring != NULL))
         {
+            if (!SDCard::is_path_under(obj->valuestring, "/sdcard"))
+            {
+                cJSON* error_resp = cJSON_CreateObject();
+                cJSON_AddStringToObject(error_resp, "status", "error");
+                cJSON_AddStringToObject(error_resp, "reason", "pid_def_path must be under /sdcard");
+                return error_resp;
+            }
+
             ret = SUPERVISOR::getInstance().save_pid_def_to_json(obj->valuestring);
         }
         else
@@ -908,6 +915,14 @@ cJSON* m_pid_def_load(cJSON* payload)
         cJSON* obj = cJSON_GetObjectItemCaseSensitive(payload, "pid_def_path");
         if (cJSON_IsString(obj) && (obj->valuestring != NULL))
         {
+            if (!SDCard::is_path_under(obj->valuestring, "/sdcard"))
+            {
+                cJSON* error_resp = cJSON_CreateObject();
+                cJSON_AddStringToObject(error_resp, "status", "error");
+                cJSON_AddStringToObject(error_resp, "reason", "pid_def_path must be under /sdcard");
+                return error_resp;
+            }
+
             ret = SUPERVISOR::getInstance().load_pid_def_from_json(obj->valuestring);
         }
         else
@@ -957,6 +972,14 @@ cJSON* m_system_copy_file(cJSON* payload)
 
     const char* src_path  = src_node->valuestring;
     const char* dest_path = dest_node->valuestring;
+
+    if (!SDCard::is_path_under(src_path, "/sdcard") || !SDCard::is_path_under(dest_path, "/sdcard"))
+    {
+        cJSON* error_resp = cJSON_CreateObject();
+        cJSON_AddStringToObject(error_resp, "status", "error");
+        cJSON_AddStringToObject(error_resp, "reason", "source_path and destination_path must be under /sdcard");
+        return error_resp;
+    }
 
     esp_err_t err = SUPERVISOR::getInstance().copy_file(src_path, dest_path);
 

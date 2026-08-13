@@ -16,6 +16,28 @@
 
 static const char* TAG = "SD_CARD";
 
+static bool path_has_traversal(const char* path)
+{
+    if (path == nullptr)
+        return true;
+
+    while (*path != '\0')
+    {
+        while (*path == '/')
+            path++;
+
+        const char* start = path;
+        while (*path != '\0' && *path != '/')
+            path++;
+
+        size_t len = (size_t)(path - start);
+        if (len == 2 && start[0] == '.' && start[1] == '.')
+            return true;
+    }
+
+    return false;
+}
+
 SDCard::SDCard() : card(nullptr), mount_path(nullptr)
 {
 }
@@ -581,13 +603,22 @@ cJSON* SDCard::scan_directory(const char* relative_path, int depth)
 
 esp_err_t SDCard::get_absolute_path(const char* relative_path, char* out_buf, size_t out_size)
 {
+    if (relative_path == nullptr)
+        return ESP_ERR_INVALID_ARG;
+
+    if (path_has_traversal(relative_path))
+    {
+        ESP_LOGE(TAG, "Rejected path containing traversal component: %s", relative_path);
+        return ESP_ERR_INVALID_ARG;
+    }
+
     if (strlen(mount_path) + strlen(relative_path) >= out_size)
     {
         ESP_LOGE(TAG, "Path is too long to fit in buffer!");
         return ESP_ERR_NO_MEM;
     }
 
-    if (relative_path == nullptr || relative_path[0] == '\0' || strcmp(relative_path, "/") == 0)
+    if (relative_path[0] == '\0' || strcmp(relative_path, "/") == 0)
     {
         snprintf(out_buf, out_size, "%s", mount_path);
     }
@@ -598,6 +629,22 @@ esp_err_t SDCard::get_absolute_path(const char* relative_path, char* out_buf, si
     }
 
     return ESP_OK;
+}
+
+bool SDCard::is_path_under(const char* path, const char* root)
+{
+    if (path == nullptr || root == nullptr)
+        return false;
+
+    if (path_has_traversal(path))
+        return false;
+
+    size_t root_len = strlen(root);
+
+    if (strncmp(path, root, root_len) != 0)
+        return false;
+
+    return (path[root_len] == '\0' || path[root_len] == '/');
 }
 
 esp_err_t SDCard::open_file(const char* relative_path, const char* mode, FILE*& fd)

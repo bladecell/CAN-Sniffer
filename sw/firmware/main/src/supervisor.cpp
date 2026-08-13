@@ -92,6 +92,8 @@ void SUPERVISOR::task()
             {
                 eState = State::STARTING;
 
+                bool critical_failed = false;
+
                 for (auto& step : _setup_steps)
                 {
                     ESP_LOGI(TAG, "Initializing module: %s", step.name);
@@ -104,10 +106,16 @@ void SUPERVISOR::task()
 
                         if (step.is_critical)
                         {
-                            eState = State::ERROR;
+                            eState          = State::ERROR;
+                            critical_failed = true;
                             break;
                         }
                     }
+                }
+
+                if (critical_failed)
+                {
+                    break;
                 }
 
                 eState = State::NOT_CONNECTED;
@@ -563,6 +571,12 @@ float SUPERVISOR::get_battery_voltage() const
 
 esp_err_t SUPERVISOR::save_pid_def_to_json(const char* path)
 {
+    if (path == nullptr || !SDCard::is_path_under(path, "/sdcard"))
+    {
+        ESP_LOGE(TAG, "Refusing to write PID definitions outside /sdcard");
+        return ESP_ERR_INVALID_ARG;
+    }
+
     cJSON*                rootArray = cJSON_CreateArray();
     auto&                 obd2      = OBD2::getInstance();
     std::vector<uint16_t> pid_keys  = obd2.getPIDs();
@@ -626,6 +640,12 @@ esp_err_t SUPERVISOR::save_pid_def_to_json(const char* path)
 
 esp_err_t SUPERVISOR::load_pid_def_from_json(const char* path)
 {
+    if (path == nullptr || !SDCard::is_path_under(path, "/sdcard"))
+    {
+        ESP_LOGE(TAG, "Refusing to read PID definitions outside /sdcard");
+        return ESP_ERR_INVALID_ARG;
+    }
+
     struct stat st;
     if (stat(path, &st) != 0)
     {
@@ -796,6 +816,12 @@ esp_err_t SUPERVISOR::copy_file(const char* src_path, const char* dest_path)
 {
     if (src_path == nullptr || dest_path == nullptr)
     {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!SDCard::is_path_under(src_path, "/sdcard") || !SDCard::is_path_under(dest_path, "/sdcard"))
+    {
+        ESP_LOGE("FileOps", "Refusing file copy outside /sdcard: %s -> %s", src_path, dest_path);
         return ESP_ERR_INVALID_ARG;
     }
 

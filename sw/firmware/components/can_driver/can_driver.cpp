@@ -461,7 +461,7 @@ esp_err_t CanDriver::pingBus()
         return ESP_FAIL;
     }
 
-    static twai_frame_t tx = {};
+    twai_frame_t tx = {};
     // 1. Use the universal OBD ID
     tx.header.id  = 0x7DF;
     tx.header.rtr = 0;
@@ -470,7 +470,7 @@ esp_err_t CanDriver::pingBus()
     tx.header.fdf = 0;
     tx.header.brs = 0;
 
-    static uint8_t buff[8] = {0};
+    uint8_t buff[8] = {0};
 
     buff[0] = 0x02;  // Valid length byte
     buff[1] = 0x01;  // Service 01
