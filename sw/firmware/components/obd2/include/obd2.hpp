@@ -86,7 +86,6 @@ private:
     TaskHandle_t ReceiveTaskHandle        = nullptr;
     TaskHandle_t PollTaskHandle           = nullptr;
     TaskHandle_t callbackWorkerTaskHandle = nullptr;
-    TaskHandle_t obdHealthCheckTaskHandle = nullptr;
 
     std::vector<OBDIIConnectedCallback> connected_subscribers_;
 
@@ -114,10 +113,6 @@ private:
     // Receiving Task
     void        receiveTask();
     static void receiveTaskWrapper(void* param);
-
-    // Health Check Task
-    void        obdHealthCheckTask();
-    static void obdHealthCheckTaskWrapper(void* param);
 
     // Callback
     bool pidsInitialized{false};

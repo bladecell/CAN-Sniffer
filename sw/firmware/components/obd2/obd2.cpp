@@ -26,11 +26,12 @@
 #include "esp_log.h"
 #include "freertos/idf_additions.h"
 #include "freertos/projdefs.h"
-#include "obd2_data_model.hpp"
 #include "obd2_common.hpp"
+#include "obd2_data_model.hpp"
 
 #define HEALTHCHECK_RETRIES 3
-#define HEALTHCHECK_PERIOD_MS 3000
+#define OBD2_HEALTHCHECK_PING_PERIOD_MS HEALTHCHECK_PING_PERIOD_MS - 1000
+#define HEALTHCHECK_RESPONSE_TIMEOUT_MS 3000
 
 static const char* TAG = "OBD2";
 
@@ -137,11 +138,6 @@ void OBD2::deinit()
     {
         vTaskDelete(callbackWorkerTaskHandle);
         callbackWorkerTaskHandle = nullptr;
-    }
-    if (obdHealthCheckTaskHandle)
-    {
-        vTaskDelete(obdHealthCheckTaskHandle);
-        obdHealthCheckTaskHandle = nullptr;
     }
     if (xPidConnectedSemaphore)
     {
@@ -301,18 +297,6 @@ esp_err_t OBD2::init()
         ESP_LOGE(TAG, "Failed to create poll task");
         return ESP_FAIL;
     }
-
-    taskCreated = xTaskCreatePinnedToCore(obdHealthCheckTaskWrapper, "OBD2_HealthTask", 4096, this,
-                                          tskIDLE_PRIORITY + 1, &obdHealthCheckTaskHandle, CORE_ID_CAN_TASKS);
-
-    if (taskCreated != pdPASS)
-    {
-        ESP_LOGE(TAG, "Failed to create health check task");
-        return ESP_FAIL;
-    }
-
-    // Start the task in a suspended state
-    vTaskSuspend(obdHealthCheckTaskHandle);
 
     pollQueue.consumerTask = PollTaskHandle;
 
@@ -810,11 +794,21 @@ void OBD2::receiveTaskWrapper(void* param)
 
 void OBD2::receiveTask()
 {
+    TickType_t last_ping_ms      = 0;
+    uint8_t    failed_pings      = 0;
+    bool       awaiting_response = false;
+    TickType_t response_deadline = 0;
+
     while (1)
     {
         if (!canDriver.isBusConnected())
         {
             xSemaphoreTake(xBusConnectionSemaphore, portMAX_DELAY);
+
+            // Reset health-check state on (re)connect.
+            last_ping_ms      = xTaskGetTickCount();
+            failed_pings      = 0;
+            awaiting_response = false;
             continue;
         }
 
@@ -851,6 +845,60 @@ void OBD2::receiveTask()
         }
 
         multiframe_watchdog();
+
+        // Health check: periodically probe Mode 1 (supported PIDs) and clear the
+        // poll queue if the ECU stops responding (e.g. ignition turned off).
+        TickType_t now = xTaskGetTickCount();
+
+        if (now - last_ping_ms >= pdMS_TO_TICKS(OBD2_HEALTHCHECK_PING_PERIOD_MS))
+        {
+            last_ping_ms = now;
+
+            while (xSemaphoreTake(healthCheckSemaphore, 0) == pdTRUE)
+                ;
+
+            PollRequest r         = {};
+            r.id                  = OBD2_FUNCTIONAL_ID;
+            r.isRaw               = true;
+            r.payload.raw.data[0] = 0x02;
+            r.payload.raw.data[1] = MODE_CURRENT_DATA;
+            r.payload.raw.data[2] = PID_PIDS_SUPPORTED_01_20;
+            r.payload.raw.dlc     = 8;
+            r.interval            = 0;
+            r.nextWake            = now;
+            r.priority            = 0;
+            r.isRecurring         = false;
+            r.retries_left        = 1;
+
+            req(r);
+
+            awaiting_response = true;
+            response_deadline = now + pdMS_TO_TICKS(HEALTHCHECK_RESPONSE_TIMEOUT_MS);
+        }
+
+        if (awaiting_response)
+        {
+            if (xSemaphoreTake(healthCheckSemaphore, 0) == pdTRUE)
+            {
+                failed_pings      = 0;
+                awaiting_response = false;
+            }
+            else if (now >= response_deadline)
+            {
+                failed_pings++;
+                ESP_LOGW(TAG, "OBD Health Check timeout (%d/%d)", failed_pings, HEALTHCHECK_RETRIES);
+
+                if (failed_pings >= HEALTHCHECK_RETRIES)
+                {
+                    ESP_LOGW(TAG, "OBD Health Check failed %d times! Clearing poll queue.", HEALTHCHECK_RETRIES);
+
+                    pollQueue.clear();
+                    failed_pings = 0;
+                }
+
+                awaiting_response = false;
+            }
+        }
     }
 }
 
@@ -1583,18 +1631,6 @@ void OBD2::connected_subscribe(OBDIIConnectedCallback cb)
 
 void OBD2::runOBDIIConnectedCallbacks(bool connected)
 {
-    if (obdHealthCheckTaskHandle)
-    {
-        if (connected)
-        {
-            vTaskResume(obdHealthCheckTaskHandle);
-        }
-        else
-        {
-            vTaskSuspend(obdHealthCheckTaskHandle);
-        }
-    }
-
     xQueueSend(event_queue, &connected, 0);
 }
 
@@ -1624,61 +1660,6 @@ void OBD2::callbackWorkerTask()
             for (const auto& cb : callbacks)
             {
                 cb(is_connected);
-            }
-        }
-    }
-}
-
-void OBD2::obdHealthCheckTaskWrapper(void* param)
-{
-    OBD2* obd2 = static_cast<OBD2*>(param);
-    obd2->obdHealthCheckTask();
-}
-
-void OBD2::obdHealthCheckTask()
-{
-    uint8_t failed_pings = 0;
-
-    while (1)
-    {
-        // Wait a bit between checks (e.g. 5 seconds)
-        vTaskDelay(pdMS_TO_TICKS(5000));
-
-        while (xSemaphoreTake(healthCheckSemaphore, 0) == pdTRUE)
-            ;
-
-        PollRequest r         = {};
-        r.id                  = OBD2_FUNCTIONAL_ID;
-        r.isRaw               = true;
-        r.payload.raw.data[0] = 0x02;
-        r.payload.raw.data[1] = MODE_CURRENT_DATA;
-        r.payload.raw.data[2] = PID_PIDS_SUPPORTED_01_20;
-        r.payload.raw.dlc     = 8;
-        r.interval            = 0;
-        r.nextWake            = xTaskGetTickCount();
-        r.priority            = 0;
-        r.isRecurring         = false;
-        r.retries_left        = 1;
-
-        req(r);
-
-        if (xSemaphoreTake(healthCheckSemaphore, pdMS_TO_TICKS(HEALTHCHECK_PERIOD_MS)) == pdTRUE)
-        {
-            failed_pings = 0;
-        }
-        else
-        {
-            failed_pings++;
-            ESP_LOGW(TAG, "OBD Health Check timeout (%d/%d)", failed_pings, HEALTHCHECK_RETRIES);
-
-            if (failed_pings >= HEALTHCHECK_RETRIES)
-            {
-                ESP_LOGE(TAG, "OBD Health Check failed %d times! Clearing queue and disconnecting.",
-                         HEALTHCHECK_RETRIES);
-
-                pollQueue.clear();
-
-                failed_pings = 0;
             }
         }
     }

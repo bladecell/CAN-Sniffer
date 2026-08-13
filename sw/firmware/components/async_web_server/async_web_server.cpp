@@ -64,17 +64,13 @@ esp_err_t AsyncWebServer::start(Config config)
 
 esp_err_t AsyncWebServer::stop()
 {
-    if (server_)
-    {
-        httpd_stop(server_);
-        server_ = NULL;
-    }
-
     running_ = false;
 
+    // Drain workers FIRST, while the server is still alive, so their request
+    // data stays valid. Each worker exits after the poison pill (or when the
+    // current request finishes) and gives shutdown_sem_ exactly once.
     if (request_queue)
     {
-        xQueueReset(request_queue);
         AsyncRequest poison = {};
         for (size_t i = 0; i < worker_handles.size(); i++)
             xQueueSend(request_queue, &poison, pdMS_TO_TICKS(100));
@@ -83,7 +79,14 @@ esp_err_t AsyncWebServer::stop()
     if (shutdown_sem_)
     {
         for (size_t i = 0; i < worker_handles.size(); i++)
-            xSemaphoreTake(shutdown_sem_, pdMS_TO_TICKS(500));
+            xSemaphoreTake(shutdown_sem_, portMAX_DELAY);
+    }
+
+    // Now safe to stop the httpd server: no worker is touching its data.
+    if (server_)
+    {
+        httpd_stop(server_);
+        server_ = NULL;
     }
 
     worker_handles.clear();
@@ -149,6 +152,14 @@ esp_err_t AsyncWebServer::async_handler(httpd_req_t* req)
 
 esp_err_t AsyncWebServer::queue_request(httpd_req_t* req)
 {
+    if (!running_)
+    {
+        // Server is stopping; reject new work synchronously instead of detaching it.
+        httpd_resp_set_status(req, "503 Shutting Down");
+        httpd_resp_sendstr(req, "{\"error\":\"Server is shutting down.\"}");
+        return ESP_OK;
+    }
+
     httpd_req_t* copy = NULL;
 
     // 1. Detach the request first
@@ -230,12 +241,14 @@ void AsyncWebServer::worker_task()
     }
 
     xSemaphoreGive(shutdown_sem_);
+    vTaskDelete(NULL);
 }
 
 void AsyncWebServer::worker_task_wrapper(void* arg)
 {
     AsyncWebServer* instance = (AsyncWebServer*)arg;
-    instance->worker_task();  // Call instance method
+    instance->worker_task();
+    vTaskDelete(NULL);  // defensive: worker_task() should already self-delete
 }
 
 // start worker threads
@@ -255,8 +268,8 @@ esp_err_t AsyncWebServer::start_workers(uint8_t num_workers, uint32_t stack_size
     {
         TaskHandle_t hdl = NULL;
 
-        BaseType_t created = xTaskCreatePinnedToCore(worker_task_wrapper, "async_req_worker", stack_size, this,
-                                                     priority, &hdl, core_id);
+        BaseType_t created =
+            xTaskCreatePinnedToCore(worker_task_wrapper, "async_req_worker", stack_size, this, priority, &hdl, core_id);
 
         if (created != pdPASS || hdl == NULL)
         {

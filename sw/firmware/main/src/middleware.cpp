@@ -1191,62 +1191,79 @@ static bool cj_bool(cJSON* obj, const char* key, T& out)
     return false;
 }
 
-static void apply_wifi_settings(cJSON* s, WIFI::Config& c)
+static size_t apply_wifi_settings(cJSON* s, WIFI::Config& c)
 {
-    cj_str(s, "ssid", c.ssid);
-    cj_str(s, "password", c.password);
-    cj_str(s, "sta_ssid", c.sta_ssid);
-    cj_str(s, "sta_password", c.sta_password);
-    cj_num(s, "channel", c.channel);
-    cj_num(s, "max_connections", c.max_connections);
-    cj_num(s, "auth_mode", c.auth_mode);
-    cj_bool(s, "ssid_hidden", c.ssid_hidden);
-    cj_bool(s, "pmf_required", c.pmf_required);
-    cj_num(s, "gtk_rekey_interval", c.gtk_rekey_interval);
-    cj_num(s, "sta_auth_mode", c.sta_auth_mode);
-    cj_num(s, "mode", c.mode);
-    cj_num(s, "sta_max_retry", c.sta_max_retry);
+    size_t n = 0;
+    n += cj_str(s, "ssid", c.ssid);
+    n += cj_str(s, "password", c.password);
+    n += cj_str(s, "sta_ssid", c.sta_ssid);
+    n += cj_str(s, "sta_password", c.sta_password);
+    n += cj_num(s, "channel", c.channel);
+    n += cj_num(s, "max_connections", c.max_connections);
+    n += cj_num(s, "auth_mode", c.auth_mode);
+    n += cj_bool(s, "ssid_hidden", c.ssid_hidden);
+    n += cj_bool(s, "pmf_required", c.pmf_required);
+    n += cj_num(s, "gtk_rekey_interval", c.gtk_rekey_interval);
+    n += cj_num(s, "sta_auth_mode", c.sta_auth_mode);
+    n += cj_num(s, "mode", c.mode);
+    n += cj_num(s, "sta_max_retry", c.sta_max_retry);
+    return n;
 }
 
-static void apply_can_settings(cJSON* s, CanDriver::Config& c)
+static size_t apply_can_settings(cJSON* s, CanDriver::Config& c)
 {
-    cj_num(s, "bitrate", c.bitrate);
-    cj_num(s, "tx_pin", c.tx_pin);
-    cj_num(s, "rx_pin", c.rx_pin);
-    cj_num(s, "lbk_pin", c.lbk_pin);
-    cj_num(s, "rs_pin", c.rs_pin);
-    cj_bool(s, "debug", c.debug);
-    cj_num(s, "rs_mode", c.rs_mode);
-    cj_num(s, "tx_queue_depth", c.tx_queue_depth);
-    cj_num(s, "rx_queue_size", c.rx_queue_size);
-    cj_bool(s, "filter", c.filter);
+    size_t n = 0;
+    n += cj_num(s, "bitrate", c.bitrate);
+    n += cj_num(s, "tx_pin", c.tx_pin);
+    n += cj_num(s, "rx_pin", c.rx_pin);
+    n += cj_num(s, "lbk_pin", c.lbk_pin);
+    n += cj_num(s, "rs_pin", c.rs_pin);
+    n += cj_bool(s, "debug", c.debug);
+    n += cj_num(s, "rs_mode", c.rs_mode);
+    n += cj_num(s, "tx_queue_depth", c.tx_queue_depth);
+    n += cj_num(s, "rx_queue_size", c.rx_queue_size);
+    n += cj_bool(s, "filter", c.filter);
 
     cJSON* m = cJSON_GetObjectItemCaseSensitive(s, "mfilter_cfg");
     if (cJSON_IsObject(m))
     {
-        cj_num(m, "id", c.mfilter_cfg.id);
-        cj_num(m, "mask", c.mfilter_cfg.mask);
+        n += cj_num(m, "id", c.mfilter_cfg.id);
+        n += cj_num(m, "mask", c.mfilter_cfg.mask);
 
         bool is_ext;
         if (cj_bool(m, "is_ext", is_ext))
+        {
             c.mfilter_cfg.is_ext = is_ext;
+            n++;
+        }
     }
+    return n;
 }
 
-static void apply_system_settings(cJSON* s, SUPERVISOR::Config& c)
+static size_t apply_system_settings(cJSON* s, SUPERVISOR::Config& c)
 {
-    cj_str(s, "pid_def_path", c.pid_def_path);
-    cj_str(s, "dtc_desc_path", c.dtc_desc_path);
+    size_t n = 0;
+    n += cj_str(s, "pid_def_path", c.pid_def_path);
+    n += cj_str(s, "dtc_desc_path", c.dtc_desc_path);
+    return n;
 }
 
-static void process_single_setting_item(cJSON* item, esp_err_t& overall_err)
+static void process_single_setting_item(cJSON* item, esp_err_t& overall_err, std::string& reason)
 {
     if (!cJSON_IsObject(item))
+    {
+        overall_err = ESP_ERR_INVALID_ARG;
+        reason      = "settings item must be a JSON object";
         return;
+    }
 
     cJSON* name_node = cJSON_GetObjectItemCaseSensitive(item, "name");
     if (!cJSON_IsString(name_node) || name_node->valuestring == nullptr)
+    {
+        overall_err = ESP_ERR_INVALID_ARG;
+        reason      = "missing or invalid 'name'";
         return;
+    }
 
     std::string name = name_node->valuestring;
 
@@ -1256,32 +1273,52 @@ static void process_single_setting_item(cJSON* item, esp_err_t& overall_err)
         settings_node = item;
     }
 
-    esp_err_t res = ESP_OK;
+    esp_err_t res   = ESP_OK;
+    bool      no_fields = false;
 
     if (name == "wifi")
     {
         WIFI::Config wifi_cfg;
         Settings::getInstance().getWifiConfig(wifi_cfg);
-        apply_wifi_settings(settings_node, wifi_cfg);
-        res = Settings::getInstance().setWifiConfig(wifi_cfg);
+        no_fields = (apply_wifi_settings(settings_node, wifi_cfg) == 0);
+        if (!no_fields)
+            res = Settings::getInstance().setWifiConfig(wifi_cfg);
     }
     else if (name == "can")
     {
         CanDriver::Config can_cfg;
         Settings::getInstance().getCanConfig(can_cfg);
-        apply_can_settings(settings_node, can_cfg);
-        res = Settings::getInstance().setCanConfig(can_cfg);
+        no_fields = (apply_can_settings(settings_node, can_cfg) == 0);
+        if (!no_fields)
+            res = Settings::getInstance().setCanConfig(can_cfg);
     }
     else if (name == "system")
     {
         SUPERVISOR::Config sup_cfg;
         Settings::getInstance().getSupervisorConfig(sup_cfg);
-        apply_system_settings(settings_node, sup_cfg);
-        res = Settings::getInstance().setSupervisorConfig(sup_cfg);
+        no_fields = (apply_system_settings(settings_node, sup_cfg) == 0);
+        if (!no_fields)
+            res = Settings::getInstance().setSupervisorConfig(sup_cfg);
+    }
+    else
+    {
+        overall_err = ESP_ERR_NOT_FOUND;
+        reason      = "unknown settings section";
+        return;
+    }
+
+    if (no_fields)
+    {
+        overall_err = ESP_ERR_INVALID_ARG;
+        reason      = "no valid settings fields";
+        return;
     }
 
     if (res != ESP_OK)
+    {
         overall_err = res;
+        reason      = esp_err_to_name(res);
+    }
 }
 
 cJSON* m_settings_set(cJSON* payload)
@@ -1294,7 +1331,8 @@ cJSON* m_settings_set(cJSON* payload)
         return error_resp;
     }
 
-    esp_err_t overall_err = ESP_OK;
+    esp_err_t   overall_err = ESP_OK;
+    std::string reason;
 
     if (cJSON_IsArray(payload))
     {
@@ -1302,12 +1340,12 @@ cJSON* m_settings_set(cJSON* payload)
         for (int i = 0; i < size; i++)
         {
             cJSON* item = cJSON_GetArrayItem(payload, i);
-            process_single_setting_item(item, overall_err);
+            process_single_setting_item(item, overall_err, reason);
         }
     }
     else if (cJSON_IsObject(payload))
     {
-        process_single_setting_item(payload, overall_err);
+        process_single_setting_item(payload, overall_err, reason);
     }
     else
     {
@@ -1325,7 +1363,7 @@ cJSON* m_settings_set(cJSON* payload)
     else
     {
         cJSON_AddStringToObject(root, "status", "error");
-        cJSON_AddStringToObject(root, "reason", esp_err_to_name(overall_err));
+        cJSON_AddStringToObject(root, "reason", reason.empty() ? esp_err_to_name(overall_err) : reason.c_str());
     }
 
     return root;

@@ -146,6 +146,8 @@
   });
 </script>
 
+//TODO sync multiple charts time even when zooming and panning
+
 {#if pids.length === 0}
   <div class="empty-state">
     Select one or more PIDs from the table to view on the chart
@@ -282,7 +284,9 @@
           >
             {#snippet children({ data })}
               {#if data.value !== null}
-                {Math.round(data.value * 100) / 100}{getPidDef(data.pid)?.unit ? " " + getPidDef(data.pid)?.unit : ""}
+                {Math.round(data.value * 100) / 100}{getPidDef(data.pid)?.unit
+                  ? " " + getPidDef(data.pid)?.unit
+                  : ""}
               {/if}
             {/snippet}
           </Tooltip.Root>

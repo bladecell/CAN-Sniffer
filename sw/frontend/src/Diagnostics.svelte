@@ -49,6 +49,9 @@
   );
 </script>
 
+//TODO: add vizual indication that can bus is not connected and card that no dtc
+is detected
+
 <div class="dashboard-card dtc-header" style="--module-accent: {statusColor};">
   <div class="dtc-header-title-row">
     <h2>Diagnostic Trouble Codes</h2>

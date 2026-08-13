@@ -48,6 +48,14 @@ esp_err_t Settings::setWifiConfig(const WIFI::Config& config)
     err |= nvs_set_u8(handle, "w_mode", (uint8_t)config.mode);
     err |= nvs_set_u8(handle, "w_auth", (uint8_t)config.auth_mode);
 
+    // Remaining fields (previously not persisted)
+    err |= nvs_set_u8(handle, "w_maxconn", config.max_connections);
+    err |= nvs_set_u8(handle, "w_ssidhid", config.ssid_hidden ? 1 : 0);
+    err |= nvs_set_u8(handle, "w_pmf", config.pmf_required ? 1 : 0);
+    err |= nvs_set_u32(handle, "w_gtkrekey", config.gtk_rekey_interval);
+    err |= nvs_set_u8(handle, "w_sta_auth", (uint8_t)config.sta_auth_mode);
+    err |= nvs_set_u8(handle, "w_sta_retry", config.sta_max_retry);
+
     if (err == ESP_OK)
     {
         err = nvs_commit(handle);
@@ -104,6 +112,21 @@ esp_err_t Settings::getWifiConfig(WIFI::Config& config)
         config.mode = (wifi_mode_t)val8;
     if (check_err(nvs_get_u8(handle, "w_auth", &val8)))
         config.auth_mode = (wifi_auth_mode_t)val8;
+
+    // Optional fields: default if absent, so existing configs upgrade cleanly
+    uint32_t val32;
+    if (nvs_get_u8(handle, "w_maxconn", &val8) == ESP_OK)
+        config.max_connections = val8;
+    if (nvs_get_u8(handle, "w_ssidhid", &val8) == ESP_OK)
+        config.ssid_hidden = (val8 != 0);
+    if (nvs_get_u8(handle, "w_pmf", &val8) == ESP_OK)
+        config.pmf_required = (val8 != 0);
+    if (nvs_get_u32(handle, "w_gtkrekey", &val32) == ESP_OK)
+        config.gtk_rekey_interval = val32;
+    if (nvs_get_u8(handle, "w_sta_auth", &val8) == ESP_OK)
+        config.sta_auth_mode = (wifi_auth_mode_t)val8;
+    if (nvs_get_u8(handle, "w_sta_retry", &val8) == ESP_OK)
+        config.sta_max_retry = val8;
 
     nvs_close(handle);
 

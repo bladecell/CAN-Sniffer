@@ -13,7 +13,7 @@
 #define PID_DEF_DB_PATH "/sdcard/config/pid_def.json"
 #define DTC_DESC_DB_PATH "/sdcard/config/dtcs.bin"
 #define SLEEP_TRANSITION_TIMER_S 60
-#define LONG_SLEEP_VOLTAGE_LIMIT 11.8f
+#define LONG_SLEEP_VOLTAGE_LIMIT 11.4f  // TODO: save this to nvs
 
 class SUPERVISOR
 {
