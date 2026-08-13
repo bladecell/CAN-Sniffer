@@ -556,9 +556,20 @@ cJSON* SDCard::scan_directory(const char* relative_path, int depth)
     }
 
     cJSON* root = cJSON_CreateObject();
+    if (root == nullptr)
+    {
+        ESP_LOGE(TAG, "OOM building directory scan");
+        return NULL;
+    }
     cJSON_AddStringToObject(root, "path", (relative_path[0] == '\0') ? "/" : relative_path);
 
     cJSON* children = cJSON_CreateArray();
+    if (children == nullptr)
+    {
+        cJSON_Delete(root);
+        ESP_LOGE(TAG, "OOM building directory scan children");
+        return NULL;
+    }
     cJSON_AddItemToObject(root, "children", children);
 
     DIR* dir = opendir(bufs->full_path);
@@ -589,6 +600,11 @@ cJSON* SDCard::scan_directory(const char* relative_path, int depth)
         else
         {
             cJSON* file = cJSON_CreateObject();
+            if (file == nullptr)
+            {
+                ESP_LOGE(TAG, "OOM building directory scan entry");
+                continue;
+            }
             cJSON_AddStringToObject(file, "name", entry->d_name);
             cJSON_AddStringToObject(file, "type", "file");
             cJSON_AddNumberToObject(file, "size", (double)st.st_size);

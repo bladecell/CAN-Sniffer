@@ -1149,7 +1149,7 @@ esp_err_t OBD2::parseSupportedPIDs(const CanDriver::CanFrame& f)
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (f.length < 4)
+    if (f.length < 7)
         return ESP_OK;
 
     uint32_t supportedPIDs = (f.data[3] << 24) | (f.data[4] << 16) | (f.data[5] << 8) | (f.data[6]);

@@ -11,6 +11,7 @@
 #include "cJSON.h"
 #include "esp_check.h"
 #include "esp_err.h"
+#include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -20,6 +21,8 @@
 #include "string"
 #include "supervisor.hpp"
 #include "utilities.h"
+
+static const char* TAG = "MIDDLEWARE";
 
 cJSON* single_pid_def_get(uint16_t pid)
 {
@@ -32,6 +35,11 @@ cJSON* single_pid_def_get(uint16_t pid)
     }
 
     cJSON* item = cJSON_CreateObject();
+    if (item == nullptr)
+    {
+        ESP_LOGE(TAG, "OOM building PID definition");
+        return nullptr;
+    }
 
     // Use the struct data - no more mutex calls here
     cJSON_AddNumberToObject(item, "pid", def.pid);
@@ -62,6 +70,11 @@ cJSON* single_pid_data_get(uint16_t pid)
     }
 
     cJSON* item = cJSON_CreateObject();
+    if (item == nullptr)
+    {
+        ESP_LOGE(TAG, "OOM building PID data");
+        return nullptr;
+    }
 
     cJSON_AddNumberToObject(item, "id", data.id);
     cJSON_AddNumberToObject(item, "pid", pid);
@@ -76,9 +89,21 @@ cJSON* single_pid_data_get(uint16_t pid)
 
 cJSON* m_pid_def_get(int filter_id)
 {
-    cJSON* root       = cJSON_CreateObject();
+    cJSON* root = cJSON_CreateObject();
+    if (root == nullptr)
+    {
+        ESP_LOGE(TAG, "OOM building PID def response");
+        return nullptr;
+    }
+
     cJSON* data_array = cJSON_CreateArray();
-    int    count      = 0;
+    if (data_array == nullptr)
+    {
+        cJSON_Delete(root);
+        ESP_LOGE(TAG, "OOM building PID def array");
+        return nullptr;
+    }
+    int count = 0;
 
     if (filter_id >= 0)
     {
@@ -111,9 +136,21 @@ cJSON* m_pid_def_get(int filter_id)
 
 cJSON* m_pid_data_get(int filter_id)
 {
-    cJSON* root       = cJSON_CreateObject();
+    cJSON* root = cJSON_CreateObject();
+    if (root == nullptr)
+    {
+        ESP_LOGE(TAG, "OOM building PID data response");
+        return nullptr;
+    }
+
     cJSON* data_array = cJSON_CreateArray();
-    int    count      = 0;
+    if (data_array == nullptr)
+    {
+        cJSON_Delete(root);
+        ESP_LOGE(TAG, "OOM building PID data array");
+        return nullptr;
+    }
+    int count = 0;
 
     if (filter_id >= 0)
     {
@@ -400,6 +437,11 @@ cJSON* m_dtc_get(int mode)
 cJSON* m_dtc_description_get(const char* target_codes[], size_t count)
 {
     cJSON* root = cJSON_CreateObject();
+    if (root == nullptr)
+    {
+        ESP_LOGE(TAG, "OOM building DTC description response");
+        return nullptr;
+    }
 
     std::string dtc_desc_db_path = SUPERVISOR::getInstance().get_dtc_desc_path();
 
@@ -432,12 +474,27 @@ cJSON* m_dtc_description_get(const char* target_codes[], size_t count)
     }
 
     cJSON* dtcs_array = cJSON_CreateArray();
-    char   read_code[6];
-    char   desc_buf[128];
+    if (dtcs_array == nullptr)
+    {
+        cJSON_Delete(root);
+        ESP_LOGE(TAG, "OOM building DTC description array");
+        return nullptr;
+    }
+
+    char read_code[6];
+    char desc_buf[128];
 
     for (size_t i = 0; i < count; i++)
     {
         cJSON* item = cJSON_CreateObject();
+        if (item == nullptr)
+        {
+            cJSON_Delete(dtcs_array);
+            cJSON_Delete(root);
+            ESP_LOGE(TAG, "OOM building DTC description item");
+            return nullptr;
+        }
+
         cJSON_AddStringToObject(item, "dtc", target_codes[i]);
 
         long left = 0, right = total_records - 1;

@@ -74,6 +74,12 @@ static void url_decode_inplace(char* s)
 
 static esp_err_t send_json_response(httpd_req_t* req, cJSON* root)
 {
+    if (root == nullptr)
+    {
+        ESP_LOGE(TAG, "Failed to allocate JSON response");
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OOM");
+    }
+
     const char* json_str = cJSON_PrintUnformatted(root);
     if (json_str == NULL)
     {
@@ -96,13 +102,12 @@ static bool get_query_str(httpd_req_t* req, const char* key, char* out_val, size
     if (len <= 1)
         return false;
 
-    char* buf = (char*)malloc(len);
-    if (!buf)
+    if (len > CONFIG_HTTPD_MAX_URI_LEN + 1)
         return false;
 
+    char buf[CONFIG_HTTPD_MAX_URI_LEN + 1];
     httpd_req_get_url_query_str(req, buf, len);
     esp_err_t err = httpd_query_key_value(buf, key, out_val, val_len);
-    free(buf);
 
     return (err == ESP_OK);
 }
@@ -582,9 +587,9 @@ esp_err_t p_file_upload_handler(httpd_req_t* req, void* arg)
         return send_json_response(req, root);
     }
 
-    int  remaining = req->content_len;
-    int  received;
-    char chunk[1024];
+    size_t remaining = req->content_len;
+    int    received;
+    char   chunk[1024];
 
     while (remaining > 0)
     {
