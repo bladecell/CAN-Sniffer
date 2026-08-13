@@ -21,16 +21,60 @@
   }
   let { pids = [], isActive = true }: Props = $props();
 
+  const KEEP_RAW_POINTS = 10_000;
+  const MAX_CHART_POINTS = 40_000;
+
   // A map of PID -> array of data points
   let chartDataMap = $state<
-    Record<number, { date: Date; value: number | null; pid: number }[]>
+    Record<number, { t: number; v: number | null; pid: number }[]>
   >({});
 
-  function getPidDef(pid: number) {
+  function downsample(
+    points: { t: number; v: number | null; pid: number }[],
+  ): { t: number; v: number | null; pid: number }[] {
+    const pid = points[0].pid;
+    const recent = points.slice(points.length - KEEP_RAW_POINTS);
+    const older = points.slice(0, points.length - KEEP_RAW_POINTS);
+    const buckets = MAX_CHART_POINTS - KEEP_RAW_POINTS;
+    const size = older.length / buckets;
+    const compressed: { t: number; v: number | null; pid: number }[] = [];
+
+    for (let b = 0; b < buckets; b++) {
+      const start = Math.floor(b * size);
+      if (start >= older.length) break;
+      const end = Math.min(
+        older.length,
+        Math.max(start + 1, Math.floor((b + 1) * size)),
+      );
+      let sum = 0;
+      let tSum = 0;
+      let count = 0;
+      let hasNull = false;
+      for (let i = start; i < end; i++) {
+        const val = older[i].v;
+        if (val === null) {
+          hasNull = true;
+          break;
+        }
+        sum += val;
+        tSum += older[i].t;
+        count++;
+      }
+      compressed.push({
+        t: count > 0 ? tSum / count : older[start].t,
+        v: hasNull || count === 0 ? null : sum / count,
+        pid,
+      });
+    }
+
+    return [...compressed, ...recent];
+  }
+
+  function getPidDef(pid: number | undefined) {
     return canStore.pidDefinitions?.find((c: any) => c.pid === pid);
   }
 
-  function getPidColor(pid: number) {
+  function getPidColor(pid: number | undefined) {
     const def = getPidDef(pid);
     if (!def?.color) return "#10b981";
     if (typeof def.color === "number") {
@@ -47,7 +91,7 @@
     untrack(() => {
       const newMap: Record<
         number,
-        { date: Date; value: number | null; pid: number }[]
+        { t: number; v: number | null; pid: number }[]
       > = {};
       for (const pid of currentPids) {
         if (chartDataMap[pid]) {
@@ -57,8 +101,8 @@
             pid,
             (tData, vData) => {
               newMap[pid] = tData.map((t, i) => ({
-                date: new Date(t),
-                value: vData[i],
+                t,
+                v: vData[i],
                 pid,
               }));
             },
@@ -77,11 +121,17 @@
     const unsubscribeCan = canStore.subscribe((update) => {
       if (pids.includes(update.pid)) {
         if (!chartDataMap[update.pid]) chartDataMap[update.pid] = [];
-        chartDataMap[update.pid].push({
-          date: new Date(update.timestamp),
-          value: update.value,
+        const arr = chartDataMap[update.pid];
+        arr.push({
+          t: update.timestamp,
+          v: update.value,
           pid: update.pid,
         });
+        if (arr.length > MAX_CHART_POINTS + KEEP_RAW_POINTS) {
+          const next = downsample(arr);
+          arr.length = 0;
+          arr.push(...next);
+        }
       }
     });
 
@@ -104,8 +154,8 @@
     let maxT = -Infinity;
     for (const data of Object.values(chartDataMap)) {
       if (data.length > 0) {
-        minT = Math.min(minT, data[0].date.getTime());
-        maxT = Math.max(maxT, data[data.length - 1].date.getTime());
+        minT = Math.min(minT, data[0].t);
+        maxT = Math.max(maxT, data[data.length - 1].t);
       }
     }
     return minT <= maxT && isFinite(minT)
@@ -131,8 +181,9 @@
 
     // Calculate based on actual data
     for (const data of flatChartData) {
-      minV = Math.min(minV, data.value);
-      maxV = Math.max(maxV, data.value);
+      if (data.v === null) continue;
+      minV = Math.min(minV, data.v);
+      maxV = Math.max(maxV, data.v);
     }
 
     if (minV === Infinity) minV = 0;
@@ -173,10 +224,10 @@
       <Chart
         bind:context={chartContext}
         data={flatChartData}
-        x="date"
+        x="t"
         xScale={scaleTime()}
         xDomain={activeXDomain}
-        y="value"
+        y="v"
         yScale={scaleLinear()}
         {yDomain}
         padding={{
@@ -234,9 +285,11 @@
               {#each pids as p}
                 <Spline
                   data={chartDataMap[p] ?? []}
-                  x="date"
-                  y="value"
-                  defined={(d) => d.value !== null}
+                  x="t"
+                  y="v"
+                  defined={(d: { t: number; v: number | null; pid: number }) =>
+                    d.v !== null
+                  }
                   stroke={getPidColor(p)}
                   strokeWidth={3}
                   class="fill-none chart-spline"
@@ -258,9 +311,7 @@
                       cy={point.y}
                       fill={getPidColor(
                         flatChartData.find(
-                          (d) =>
-                            d.value === point.data.y &&
-                            d.date.getTime() === point.data.x?.getTime(),
+                          (d) => d.t === point.data.x && d.v === point.data.y,
                         )?.pid,
                       )}
                       stroke="#ffffff"
@@ -283,8 +334,8 @@
             class="chart-tooltip-crosshair blur-background"
           >
             {#snippet children({ data })}
-              {#if data.value !== null}
-                {Math.round(data.value * 100) / 100}{getPidDef(data.pid)?.unit
+              {#if data.v !== null}
+                {Math.round(data.v * 100) / 100}{getPidDef(data.pid)?.unit
                   ? " " + getPidDef(data.pid)?.unit
                   : ""}
               {/if}
@@ -301,7 +352,7 @@
             class="chart-tooltip-crosshair blur-background"
           >
             {#snippet children({ data })}
-              {new Date(data.date).toLocaleTimeString([], {
+              {new Date(data.t).toLocaleTimeString([], {
                 hour12: false,
                 minute: "2-digit",
                 second: "2-digit",
