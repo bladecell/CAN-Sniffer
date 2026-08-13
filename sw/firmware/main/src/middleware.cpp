@@ -1156,6 +1156,89 @@ cJSON* m_settings_get()
     return root;
 }
 
+template <typename T>
+static bool cj_num(cJSON* obj, const char* key, T& out)
+{
+    cJSON* n = cJSON_GetObjectItemCaseSensitive(obj, key);
+    if (cJSON_IsNumber(n))
+    {
+        out = static_cast<T>(n->valuedouble);
+        return true;
+    }
+    return false;
+}
+
+static bool cj_str(cJSON* obj, const char* key, std::string& out)
+{
+    cJSON* n = cJSON_GetObjectItemCaseSensitive(obj, key);
+    if (cJSON_IsString(n) && n->valuestring)
+    {
+        out = n->valuestring;
+        return true;
+    }
+    return false;
+}
+
+template <typename T>
+static bool cj_bool(cJSON* obj, const char* key, T& out)
+{
+    cJSON* n = cJSON_GetObjectItemCaseSensitive(obj, key);
+    if (cJSON_IsBool(n))
+    {
+        out = static_cast<T>(cJSON_IsTrue(n));
+        return true;
+    }
+    return false;
+}
+
+static void apply_wifi_settings(cJSON* s, WIFI::Config& c)
+{
+    cj_str(s, "ssid", c.ssid);
+    cj_str(s, "password", c.password);
+    cj_str(s, "sta_ssid", c.sta_ssid);
+    cj_str(s, "sta_password", c.sta_password);
+    cj_num(s, "channel", c.channel);
+    cj_num(s, "max_connections", c.max_connections);
+    cj_num(s, "auth_mode", c.auth_mode);
+    cj_bool(s, "ssid_hidden", c.ssid_hidden);
+    cj_bool(s, "pmf_required", c.pmf_required);
+    cj_num(s, "gtk_rekey_interval", c.gtk_rekey_interval);
+    cj_num(s, "sta_auth_mode", c.sta_auth_mode);
+    cj_num(s, "mode", c.mode);
+    cj_num(s, "sta_max_retry", c.sta_max_retry);
+}
+
+static void apply_can_settings(cJSON* s, CanDriver::Config& c)
+{
+    cj_num(s, "bitrate", c.bitrate);
+    cj_num(s, "tx_pin", c.tx_pin);
+    cj_num(s, "rx_pin", c.rx_pin);
+    cj_num(s, "lbk_pin", c.lbk_pin);
+    cj_num(s, "rs_pin", c.rs_pin);
+    cj_bool(s, "debug", c.debug);
+    cj_num(s, "rs_mode", c.rs_mode);
+    cj_num(s, "tx_queue_depth", c.tx_queue_depth);
+    cj_num(s, "rx_queue_size", c.rx_queue_size);
+    cj_bool(s, "filter", c.filter);
+
+    cJSON* m = cJSON_GetObjectItemCaseSensitive(s, "mfilter_cfg");
+    if (cJSON_IsObject(m))
+    {
+        cj_num(m, "id", c.mfilter_cfg.id);
+        cj_num(m, "mask", c.mfilter_cfg.mask);
+
+        bool is_ext;
+        if (cj_bool(m, "is_ext", is_ext))
+            c.mfilter_cfg.is_ext = is_ext;
+    }
+}
+
+static void apply_system_settings(cJSON* s, SUPERVISOR::Config& c)
+{
+    cj_str(s, "pid_def_path", c.pid_def_path);
+    cj_str(s, "dtc_desc_path", c.dtc_desc_path);
+}
+
 static void process_single_setting_item(cJSON* item, esp_err_t& overall_err)
 {
     if (!cJSON_IsObject(item))
@@ -1173,100 +1256,32 @@ static void process_single_setting_item(cJSON* item, esp_err_t& overall_err)
         settings_node = item;
     }
 
+    esp_err_t res = ESP_OK;
+
     if (name == "wifi")
     {
         WIFI::Config wifi_cfg;
         Settings::getInstance().getWifiConfig(wifi_cfg);
-
-        cJSON* obj;
-        if ((obj = cJSON_GetObjectItem(settings_node, "ssid")) && cJSON_IsString(obj) && obj->valuestring)
-            wifi_cfg.ssid = obj->valuestring;
-        if ((obj = cJSON_GetObjectItem(settings_node, "password")) && cJSON_IsString(obj) && obj->valuestring)
-            wifi_cfg.password = obj->valuestring;
-        if ((obj = cJSON_GetObjectItem(settings_node, "channel")) && cJSON_IsNumber(obj))
-            wifi_cfg.channel = static_cast<uint8_t>(obj->valuedouble);
-        if ((obj = cJSON_GetObjectItem(settings_node, "max_connections")) && cJSON_IsNumber(obj))
-            wifi_cfg.max_connections = static_cast<uint8_t>(obj->valuedouble);
-        if ((obj = cJSON_GetObjectItem(settings_node, "auth_mode")) && cJSON_IsNumber(obj))
-            wifi_cfg.auth_mode = static_cast<wifi_auth_mode_t>(obj->valuedouble);
-        if ((obj = cJSON_GetObjectItem(settings_node, "ssid_hidden")) && cJSON_IsBool(obj))
-            wifi_cfg.ssid_hidden = cJSON_IsTrue(obj);
-        if ((obj = cJSON_GetObjectItem(settings_node, "pmf_required")) && cJSON_IsBool(obj))
-            wifi_cfg.pmf_required = cJSON_IsTrue(obj);
-        if ((obj = cJSON_GetObjectItem(settings_node, "gtk_rekey_interval")) && cJSON_IsNumber(obj))
-            wifi_cfg.gtk_rekey_interval = static_cast<uint32_t>(obj->valuedouble);
-        if ((obj = cJSON_GetObjectItem(settings_node, "sta_ssid")) && cJSON_IsString(obj) && obj->valuestring)
-            wifi_cfg.sta_ssid = obj->valuestring;
-        if ((obj = cJSON_GetObjectItem(settings_node, "sta_password")) && cJSON_IsString(obj) && obj->valuestring)
-            wifi_cfg.sta_password = obj->valuestring;
-        if ((obj = cJSON_GetObjectItem(settings_node, "sta_auth_mode")) && cJSON_IsNumber(obj))
-            wifi_cfg.sta_auth_mode = static_cast<wifi_auth_mode_t>(obj->valuedouble);
-        if ((obj = cJSON_GetObjectItem(settings_node, "mode")) && cJSON_IsNumber(obj))
-            wifi_cfg.mode = static_cast<wifi_mode_t>(obj->valuedouble);
-        if ((obj = cJSON_GetObjectItem(settings_node, "sta_max_retry")) && cJSON_IsNumber(obj))
-            wifi_cfg.sta_max_retry = static_cast<uint8_t>(obj->valuedouble);
-
-        esp_err_t res = Settings::getInstance().setWifiConfig(wifi_cfg);
-        if (res != ESP_OK)
-            overall_err = res;
+        apply_wifi_settings(settings_node, wifi_cfg);
+        res = Settings::getInstance().setWifiConfig(wifi_cfg);
     }
     else if (name == "can")
     {
         CanDriver::Config can_cfg;
         Settings::getInstance().getCanConfig(can_cfg);
-
-        cJSON* obj;
-        if ((obj = cJSON_GetObjectItem(settings_node, "bitrate")) && cJSON_IsNumber(obj))
-            can_cfg.bitrate = static_cast<CanDriver::Bitrate>(obj->valuedouble);
-        if ((obj = cJSON_GetObjectItem(settings_node, "tx_pin")) && cJSON_IsNumber(obj))
-            can_cfg.tx_pin = static_cast<gpio_num_t>(obj->valuedouble);
-        if ((obj = cJSON_GetObjectItem(settings_node, "rx_pin")) && cJSON_IsNumber(obj))
-            can_cfg.rx_pin = static_cast<gpio_num_t>(obj->valuedouble);
-        if ((obj = cJSON_GetObjectItem(settings_node, "lbk_pin")) && cJSON_IsNumber(obj))
-            can_cfg.lbk_pin = static_cast<gpio_num_t>(obj->valuedouble);
-        if ((obj = cJSON_GetObjectItem(settings_node, "rs_pin")) && cJSON_IsNumber(obj))
-            can_cfg.rs_pin = static_cast<gpio_num_t>(obj->valuedouble);
-        if ((obj = cJSON_GetObjectItem(settings_node, "debug")) && cJSON_IsBool(obj))
-            can_cfg.debug = cJSON_IsTrue(obj);
-        if ((obj = cJSON_GetObjectItem(settings_node, "rs_mode")) && cJSON_IsNumber(obj))
-            can_cfg.rs_mode = static_cast<CanDriver::RS_MODE>(obj->valuedouble);
-        if ((obj = cJSON_GetObjectItem(settings_node, "tx_queue_depth")) && cJSON_IsNumber(obj))
-            can_cfg.tx_queue_depth = static_cast<uint32_t>(obj->valuedouble);
-        if ((obj = cJSON_GetObjectItem(settings_node, "rx_queue_size")) && cJSON_IsNumber(obj))
-            can_cfg.rx_queue_size = static_cast<size_t>(obj->valuedouble);
-        if ((obj = cJSON_GetObjectItem(settings_node, "filter")) && cJSON_IsBool(obj))
-            can_cfg.filter = cJSON_IsTrue(obj);
-
-        cJSON* mfilter_node = cJSON_GetObjectItem(settings_node, "mfilter_cfg");
-        if (mfilter_node && cJSON_IsObject(mfilter_node))
-        {
-            if ((obj = cJSON_GetObjectItem(mfilter_node, "id")) && cJSON_IsNumber(obj))
-                can_cfg.mfilter_cfg.id = static_cast<uint32_t>(obj->valuedouble);
-            if ((obj = cJSON_GetObjectItem(mfilter_node, "mask")) && cJSON_IsNumber(obj))
-                can_cfg.mfilter_cfg.mask = static_cast<uint32_t>(obj->valuedouble);
-            if ((obj = cJSON_GetObjectItem(mfilter_node, "is_ext")) && cJSON_IsBool(obj))
-                can_cfg.mfilter_cfg.is_ext = cJSON_IsTrue(obj);
-        }
-
-        esp_err_t res = Settings::getInstance().setCanConfig(can_cfg);
-        if (res != ESP_OK)
-            overall_err = res;
+        apply_can_settings(settings_node, can_cfg);
+        res = Settings::getInstance().setCanConfig(can_cfg);
     }
     else if (name == "system")
     {
         SUPERVISOR::Config sup_cfg;
         Settings::getInstance().getSupervisorConfig(sup_cfg);
-
-        cJSON* obj;
-        if ((obj = cJSON_GetObjectItem(settings_node, "pid_def_path")) && cJSON_IsString(obj) && obj->valuestring)
-            sup_cfg.pid_def_path = obj->valuestring;
-        if ((obj = cJSON_GetObjectItem(settings_node, "dtc_desc_path")) && cJSON_IsString(obj) && obj->valuestring)
-            sup_cfg.dtc_desc_path = obj->valuestring;
-
-        esp_err_t res = Settings::getInstance().setSupervisorConfig(sup_cfg);
-        if (res != ESP_OK)
-            overall_err = res;
+        apply_system_settings(settings_node, sup_cfg);
+        res = Settings::getInstance().setSupervisorConfig(sup_cfg);
     }
+
+    if (res != ESP_OK)
+        overall_err = res;
 }
 
 cJSON* m_settings_set(cJSON* payload)
