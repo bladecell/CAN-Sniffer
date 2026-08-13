@@ -327,7 +327,7 @@ void AsyncWebServer::wsBroadcast(httpd_ws_frame_t* ws_pkt)
             {
                 // 1. Dynamically allocate memory: size of struct + size of payload
                 WsSendContext* ctx =
-                    (WsSendContext*)heap_caps_malloc(sizeof(WsSendContext) + ws_pkt->len, MALLOC_CAP_SPIRAM);
+                    (WsSendContext*)heap_caps_malloc(sizeof(WsSendContext) + ws_pkt->len, MALLOC_CAP_INTERNAL);
 
                 if (!ctx)
                 {

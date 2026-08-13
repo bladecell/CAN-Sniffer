@@ -259,7 +259,7 @@ esp_err_t g_system_index_handler(httpd_req_t* req, void* arg)
 
 esp_err_t p_system_reboot_index_handler(httpd_req_t* req, void* arg)
 {
-    return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Not Implemented");
+    return send_json_response(req, m_system_reboot());
 }
 
 esp_err_t p_system_copy_file_index_handler(httpd_req_t* req, void* arg)

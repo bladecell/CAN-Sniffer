@@ -26,6 +26,7 @@ cJSON* m_can_bus_get();
 cJSON* m_obdii_get();
 cJSON* m_obdii_set(cJSON* payload);
 cJSON* m_system_get();
+cJSON* m_system_reboot();
 cJSON* m_system_copy_file(cJSON* payload);
 cJSON* m_sdcard_info_get();
 cJSON* m_sdcard_format_post();

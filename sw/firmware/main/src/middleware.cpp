@@ -281,6 +281,32 @@ cJSON* m_system_get()
     return root;
 }
 
+static void reboot_delayed_task(void* arg)
+{
+    vTaskDelay(pdMS_TO_TICKS(500));
+    SUPERVISOR::getInstance().restart_system();
+}
+
+cJSON* m_system_reboot()
+{
+    cJSON* root = cJSON_CreateObject();
+    if (root == nullptr)
+    {
+        ESP_LOGE(TAG, "OOM building reboot response");
+        return nullptr;
+    }
+
+    cJSON_AddStringToObject(root, "status", "success");
+
+    BaseType_t result = xTaskCreate(reboot_delayed_task, "sys_reboot", 2048, NULL, 5, NULL);
+    if (result != pdPASS)
+    {
+        ESP_LOGW(TAG, "Failed to create reboot task");
+    }
+
+    return root;
+}
+
 cJSON* m_sdcard_info_get()
 {
     cJSON* root = cJSON_CreateObject();
