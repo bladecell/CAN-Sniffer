@@ -75,6 +75,8 @@ public:
     cJSON*    scan_directory(const char* relative_path, int depth);
     esp_err_t get_absolute_path(const char* relative_path, char* out_buf, size_t out_size);
 
+    // Validates a decoded, slash-separated path relative to the SD mount point.
+    static esp_err_t validate_relative_path(const char* path, bool allow_root = true);
     static bool is_path_under(const char* path, const char* root);
 
     typedef std::function<void()> Callback;

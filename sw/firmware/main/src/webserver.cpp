@@ -3,6 +3,8 @@
 #include <sys/param.h>
 
 #include <atomic>
+#include <cctype>
+#include <cstdlib>
 #include <cstring>
 
 #include "async_web_server.hpp"
@@ -46,30 +48,60 @@ namespace
 // 1. HTTP & PARSING UTILITIES
 // ============================================================================
 
-static void url_decode_inplace(char* s)
+// Extracts, percent-decodes and validates an SD-card route suffix. Separators
+// must be literal slashes so an encoded delimiter cannot change path structure.
+static esp_err_t get_sd_rest_path(httpd_req_t* req, const char* api_route, char* out, size_t out_size,
+                                  bool allow_root)
 {
-    char* read  = s;
-    char* write = s;
+    if (req == nullptr || api_route == nullptr || out == nullptr || out_size == 0)
+        return ESP_ERR_INVALID_ARG;
 
-    while (*read)
+    const size_t route_len = strlen(api_route);
+    if (strncmp(req->uri, api_route, route_len) != 0)
+        return ESP_ERR_INVALID_ARG;
+
+    const char* read = req->uri + route_len;
+    if (*read != '\0' && *read != '/' && *read != '?')
+        return ESP_ERR_INVALID_ARG;
+
+    char*       write = out;
+    char*       end   = out + out_size - 1;
+
+    while (*read != '\0' && *read != '?')
     {
-        if (*read == '%' && isxdigit((unsigned char)read[1]) && isxdigit((unsigned char)read[2]))
+        unsigned char decoded;
+        if (*read == '%')
         {
+            if (read[1] == '\0' || read[2] == '\0' || !std::isxdigit((unsigned char)read[1]) ||
+                !std::isxdigit((unsigned char)read[2]))
+                return ESP_ERR_INVALID_ARG;
+
             char hex[3] = {read[1], read[2], '\0'};
-            *write++    = (char)strtol(hex, NULL, 16);
+            decoded     = (unsigned char)std::strtol(hex, NULL, 16);
             read += 3;
-        }
-        else if (*read == '+')
-        {
-            *write++ = ' ';
-            read++;
+
+            if (decoded == '/' || decoded == '\\' || decoded == '?' || decoded == '#')
+                return ESP_ERR_INVALID_ARG;
         }
         else
         {
-            *write++ = *read++;
+            decoded = (unsigned char)*read++;
         }
+
+        if (decoded == 0 || decoded < 0x20 || decoded == 0x7f || decoded == '\\' || decoded == '#')
+            return ESP_ERR_INVALID_ARG;
+        if (write == end)
+            return ESP_ERR_NO_MEM;
+        *write++ = (char)decoded;
     }
+
+    // URI fragments are not valid in HTTP requests. Reject them even after a
+    // legitimate query delimiter rather than allowing parser disagreement.
+    if (strchr(read, '#') != nullptr)
+        return ESP_ERR_INVALID_ARG;
+
     *write = '\0';
+    return SDCard::validate_relative_path(out, allow_root);
 }
 
 static esp_err_t send_json_response(httpd_req_t* req, cJSON* root)
@@ -468,11 +500,10 @@ esp_err_t g_sd_card_file_tree_handler(httpd_req_t* req, void* arg)
 {
     const char* api_route = "/api/v1/sd_card/tree";
     char        path_buf[CONFIG_HTTPD_MAX_URI_LEN + 1];
-    strlcpy(path_buf, req->uri + strlen(api_route), sizeof(path_buf));
-    url_decode_inplace(path_buf);
-    const char* relative_path = path_buf;
+    if (get_sd_rest_path(req, api_route, path_buf, sizeof(path_buf), true) != ESP_OK)
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid SD card path");
 
-    return send_json_response(req, m_sdcard_file_tree_get(relative_path));
+    return send_json_response(req, m_sdcard_file_tree_get(path_buf));
 }
 
 esp_err_t g_sd_card_file_read_handler(httpd_req_t* req, void* arg)
@@ -483,36 +514,37 @@ esp_err_t g_sd_card_file_read_handler(httpd_req_t* req, void* arg)
     get_query_bool(req, "download", &download);
 
     char path_buf[CONFIG_HTTPD_MAX_URI_LEN + 1];
-    strlcpy(path_buf, req->uri + strlen(api_route), sizeof(path_buf));
-    url_decode_inplace(path_buf);
-    const char* relative_path = path_buf;
-
-    char clean_path[256];
-    strlcpy(clean_path, relative_path, sizeof(clean_path));
-    char* query_ptr = strchr(clean_path, '?');
-    if (query_ptr)
-        *query_ptr = '\0';
-
-    if (strstr(clean_path, "..") || strlen(clean_path) <= 1)
-        return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Invalid path");
+    if (get_sd_rest_path(req, api_route, path_buf, sizeof(path_buf), false) != ESP_OK)
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid SD card path");
 
     FILE*     fd  = nullptr;
-    esp_err_t err = SDCard::getInstance().open_file(clean_path, "r", fd);
+    esp_err_t err = SDCard::getInstance().open_file(path_buf, "r", fd);
 
     if (err != ESP_OK || !fd)
     {
         return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File not found");
     }
 
-    set_content_type_from_file(req, clean_path);
+    set_content_type_from_file(req, path_buf);
 
     if (download)
     {
-        const char* filename = strrchr(clean_path, '/');
-        filename             = (filename != nullptr) ? (filename + 1) : clean_path;
+        const char* filename = strrchr(path_buf, '/');
+        filename             = (filename != nullptr) ? (filename + 1) : path_buf;
 
-        char disp_header[128];
-        snprintf(disp_header, sizeof(disp_header), "attachment; filename=\"%s\"", filename);
+        static constexpr char disposition_prefix[] = "attachment; filename=\"";
+        const size_t          filename_len          = strlen(filename);
+        char disp_header[CONFIG_HTTPD_MAX_URI_LEN + sizeof(disposition_prefix) + 1];
+        if (filename_len > CONFIG_HTTPD_MAX_URI_LEN)
+        {
+            SDCard::getInstance().close_file(fd);
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid SD card filename");
+        }
+
+        memcpy(disp_header, disposition_prefix, sizeof(disposition_prefix) - 1);
+        memcpy(disp_header + sizeof(disposition_prefix) - 1, filename, filename_len);
+        disp_header[sizeof(disposition_prefix) - 1 + filename_len]     = '"';
+        disp_header[sizeof(disposition_prefix) - 1 + filename_len + 1] = '\0';
         httpd_resp_set_hdr(req, "Content-Disposition", disp_header);
     }
     else
@@ -543,8 +575,9 @@ esp_err_t p_file_upload_handler(httpd_req_t* req, void* arg)
 {
     const char* api_route = "/api/v1/sd_card/file";
     char        path_buf[CONFIG_HTTPD_MAX_URI_LEN + 1];
-    strlcpy(path_buf, req->uri + strlen(api_route), sizeof(path_buf));
-    url_decode_inplace(path_buf);
+    if (get_sd_rest_path(req, api_route, path_buf, sizeof(path_buf), false) != ESP_OK)
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid SD card path");
+
     const char* relative_path = path_buf;
     size_t      path_len      = strlen(relative_path);
 
@@ -634,11 +667,10 @@ esp_err_t d_file_delete_handler(httpd_req_t* req, void* arg)
 {
     const char* api_route = "/api/v1/sd_card/file";
     char        path_buf[CONFIG_HTTPD_MAX_URI_LEN + 1];
-    strlcpy(path_buf, req->uri + strlen(api_route), sizeof(path_buf));
-    url_decode_inplace(path_buf);
-    const char* relative_path = path_buf;
+    if (get_sd_rest_path(req, api_route, path_buf, sizeof(path_buf), false) != ESP_OK)
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid SD card path");
 
-    return send_json_response(req, m_sdcard_file_delete_delete(relative_path));
+    return send_json_response(req, m_sdcard_file_delete_delete(path_buf));
 }
 
 // ============================================================================

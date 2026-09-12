@@ -16,26 +16,45 @@
 
 static const char* TAG = "SD_CARD";
 
-static bool path_has_traversal(const char* path)
+esp_err_t SDCard::validate_relative_path(const char* path, bool allow_root)
 {
     if (path == nullptr)
-        return true;
+        return ESP_ERR_INVALID_ARG;
 
-    while (*path != '\0')
+    const char* p = path;
+    if (*p == '/')
+        p++;
+
+    if (*p == '\0')
+        return allow_root ? ESP_OK : ESP_ERR_INVALID_ARG;
+
+    while (*p != '\0')
     {
-        while (*path == '/')
-            path++;
+        const char* start = p;
+        while (*p != '\0' && *p != '/')
+        {
+            const unsigned char c = (unsigned char)*p;
+            if (c < 0x20 || c == 0x7f || c == '\\' || c == '?' || c == '#' || c == '"')
+                return ESP_ERR_INVALID_ARG;
+            p++;
+        }
 
-        const char* start = path;
-        while (*path != '\0' && *path != '/')
-            path++;
+        size_t len = (size_t)(p - start);
+        if (len == 0 || (len == 1 && start[0] == '.') ||
+            (len == 2 && start[0] == '.' && start[1] == '.'))
+            return ESP_ERR_INVALID_ARG;
 
-        size_t len = (size_t)(path - start);
-        if (len == 2 && start[0] == '.' && start[1] == '.')
-            return true;
+        if (*p == '/')
+        {
+            p++;
+            // A single trailing slash is meaningful to the REST API. Empty
+            // components in the middle (or repeated trailing slashes) are not.
+            if (*p == '/')
+                return ESP_ERR_INVALID_ARG;
+        }
     }
 
-    return false;
+    return ESP_OK;
 }
 
 SDCard::SDCard() : card(nullptr), mount_path(nullptr)
@@ -384,6 +403,11 @@ esp_err_t SDCard::delete_file(const char* relative_path)
 
 esp_err_t SDCard::delete_directory(const char* relative_path)
 {
+    // Deleting the mount point is never a valid directory operation. This
+    // guard is deliberately below the REST layer as a final safety boundary.
+    if (validate_relative_path(relative_path, false) != ESP_OK)
+        return ESP_ERR_INVALID_ARG;
+
     const size_t buffer_size = PATH_MAX;
     auto         filepath    = std::make_unique<char[]>(buffer_size);
 
@@ -407,8 +431,7 @@ esp_err_t SDCard::delete_directory(const char* relative_path)
         return ESP_FAIL;
     }
 
-    const char* base_rel = (relative_path == nullptr || relative_path[0] == '\0' || strcmp(relative_path, "/") == 0) ? "" : relative_path;
-    if (base_rel[0] == '/' && base_rel[1] == '\0') base_rel = ""; // edge case for "/"
+    const char* base_rel = relative_path;
 
     struct dirent* entry;
     while ((entry = readdir(dir)) != NULL)
@@ -419,10 +442,23 @@ esp_err_t SDCard::delete_directory(const char* relative_path)
         }
 
         char child_abs[PATH_MAX];
-        snprintf(child_abs, sizeof(child_abs), "%s/%s", filepath.get(), entry->d_name);
+        int child_abs_len = snprintf(child_abs, sizeof(child_abs), "%s/%s", filepath.get(), entry->d_name);
+        if (child_abs_len < 0 || (size_t)child_abs_len >= sizeof(child_abs))
+        {
+            closedir(dir);
+            return ESP_ERR_NO_MEM;
+        }
         
         char child_rel[PATH_MAX];
-        snprintf(child_rel, sizeof(child_rel), "%s/%s", base_rel, entry->d_name);
+        const size_t base_len = strlen(base_rel);
+        int child_rel_len = snprintf(child_rel, sizeof(child_rel), "%s%s%s", base_rel,
+                                     (base_len > 0 && base_rel[base_len - 1] == '/') ? "" : "/",
+                                     entry->d_name);
+        if (child_rel_len < 0 || (size_t)child_rel_len >= sizeof(child_rel))
+        {
+            closedir(dir);
+            return ESP_ERR_NO_MEM;
+        }
 
         struct stat child_st;
         if (stat(child_abs, &child_st) == 0)
@@ -584,8 +620,12 @@ cJSON* SDCard::scan_directory(const char* relative_path, int depth)
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
             continue;
 
-        snprintf(bufs->next_rel, sizeof(bufs->next_rel), "%s/%s", (relative_path[0] == '\0') ? "" : relative_path,
-                 entry->d_name);
+        const size_t relative_len = strlen(relative_path);
+        const char*  separator = (relative_len > 0 && relative_path[relative_len - 1] == '/') ? "" : "/";
+        int next_rel_len = snprintf(bufs->next_rel, sizeof(bufs->next_rel), "%s%s%s", relative_path, separator,
+                                    entry->d_name);
+        if (next_rel_len < 0 || (size_t)next_rel_len >= sizeof(bufs->next_rel))
+            continue;
 
         if (get_absolute_path(bufs->next_rel, bufs->next_full, sizeof(bufs->next_full)) != ESP_OK)
             continue;
@@ -619,29 +659,33 @@ cJSON* SDCard::scan_directory(const char* relative_path, int depth)
 
 esp_err_t SDCard::get_absolute_path(const char* relative_path, char* out_buf, size_t out_size)
 {
-    if (relative_path == nullptr)
+    if (relative_path == nullptr || mount_path == nullptr || out_buf == nullptr || out_size == 0)
         return ESP_ERR_INVALID_ARG;
 
-    if (path_has_traversal(relative_path))
+    if (validate_relative_path(relative_path, true) != ESP_OK)
     {
-        ESP_LOGE(TAG, "Rejected path containing traversal component: %s", relative_path);
+        ESP_LOGE(TAG, "Rejected unsafe relative path: %s", relative_path);
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (strlen(mount_path) + strlen(relative_path) >= out_size)
-    {
-        ESP_LOGE(TAG, "Path is too long to fit in buffer!");
-        return ESP_ERR_NO_MEM;
-    }
-
+    int written;
     if (relative_path[0] == '\0' || strcmp(relative_path, "/") == 0)
     {
-        snprintf(out_buf, out_size, "%s", mount_path);
+        written = snprintf(out_buf, out_size, "%s", mount_path);
     }
     else
     {
         const char* p = (relative_path[0] == '/') ? relative_path + 1 : relative_path;
-        snprintf(out_buf, out_size, "%s/%s", mount_path, p);
+        written       = snprintf(out_buf, out_size, "%s/%s", mount_path, p);
+    }
+
+    if (written < 0 || (size_t)written >= out_size)
+    {
+        // Never expose a truncated path to a caller, even when it correctly
+        // checks the returned error.
+        out_buf[0] = '\0';
+        ESP_LOGE(TAG, "Path is too long to fit in buffer!");
+        return ESP_ERR_NO_MEM;
     }
 
     return ESP_OK;
@@ -652,7 +696,7 @@ bool SDCard::is_path_under(const char* path, const char* root)
     if (path == nullptr || root == nullptr)
         return false;
 
-    if (path_has_traversal(path))
+    if (validate_relative_path(path, true) != ESP_OK)
         return false;
 
     size_t root_len = strlen(root);

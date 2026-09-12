@@ -1092,7 +1092,7 @@ cJSON* m_settings_get()
 
         cJSON* wifi_settings = cJSON_CreateObject();
         cJSON_AddStringToObject(wifi_settings, "ssid", wifi_cfg.ssid.c_str());
-        cJSON_AddStringToObject(wifi_settings, "password", wifi_cfg.password.c_str());
+        // cJSON_AddStringToObject(wifi_settings, "password", wifi_cfg.password.c_str());
         cJSON_AddNumberToObject(wifi_settings, "channel", wifi_cfg.channel);
         cJSON_AddNumberToObject(wifi_settings, "max_connections", wifi_cfg.max_connections);
         cJSON_AddNumberToObject(wifi_settings, "auth_mode", static_cast<int>(wifi_cfg.auth_mode));
@@ -1273,7 +1273,7 @@ static void process_single_setting_item(cJSON* item, esp_err_t& overall_err, std
         settings_node = item;
     }
 
-    esp_err_t res   = ESP_OK;
+    esp_err_t res       = ESP_OK;
     bool      no_fields = false;
 
     if (name == "wifi")
