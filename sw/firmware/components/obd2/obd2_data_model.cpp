@@ -122,11 +122,6 @@ esp_err_t OBD2DataModel::updateData(const CanDriver::CanFrame& frame)
                 pdat->value       = val;
                 pdat->lastUpdated = pdTICKS_TO_MS(xTaskGetTickCount());
 
-                if (mode == RESPONSE_CURRENT_DATA && pdat->id != OBD2_FUNCTIONAL_ID)
-                {
-                    pdat->id = frame.header.id - RESPONSE_ID_OFFSET;
-                }
-
                 memcpy(pdat->data, frame.data, PID_DATA_LENGTH < frame.length ? PID_DATA_LENGTH : frame.length);
             }
 
@@ -225,6 +220,143 @@ esp_err_t OBD2DataModel::getDef(uint16_t pid, PIDDefinitionData& outDef) const
             }
 
             return ret;
+        });
+}
+
+esp_err_t OBD2DataModel::getDefinitionSnapshot(std::vector<PIDDefinitionData>& out) const
+{
+    return withPidMapLock(
+        [&]() -> esp_err_t
+        {
+            out.clear();
+            out.reserve(PID_DEF.size());
+            for (const auto& [pid, definition] : PID_DEF)
+            {
+                PIDDefinitionData snapshot = {};
+                snapshot.id                = definition.id_;
+                snapshot.mode              = definition.mode_;
+                snapshot.pid               = pid;
+                snapshot.len               = definition.len_;
+                snapshot.name              = definition.name_;
+                snapshot.unit              = definition.unit_;
+                snapshot.description       = definition.description_;
+                snapshot.formula           = definition.formula_;
+                snapshot.minValue          = definition.minValue_;
+                snapshot.maxValue          = definition.maxValue_;
+                snapshot.priority          = definition.priority_;
+                snapshot.updateInterval_ms = definition.updateInterval_ms_;
+                snapshot.color             = definition.color_;
+                snapshot.icon              = definition.icon_;
+                out.push_back(std::move(snapshot));
+            }
+            return ESP_OK;
+        });
+}
+
+esp_err_t OBD2DataModel::getDataSnapshot(std::vector<std::pair<uint16_t, PIDData_t>>& out) const
+{
+    return withPidMapLock(
+        [&]() -> esp_err_t
+        {
+            out.clear();
+            out.reserve(pidData.size());
+            for (const auto& [pid, data] : pidData)
+                out.emplace_back(pid, data);
+            return ESP_OK;
+        });
+}
+
+uint32_t OBD2DataModel::getPIDDataSize() const
+{
+    uint32_t result = 0;
+    withPidMapLock(
+        [&]()
+        {
+            result = static_cast<uint32_t>(pidData.size());
+            return ESP_OK;
+        });
+    return result;
+}
+
+uint32_t OBD2DataModel::getPIDDEFSize() const
+{
+    uint32_t result = 0;
+    withPidMapLock(
+        [&]()
+        {
+            result = static_cast<uint32_t>(PID_DEF.size());
+            return ESP_OK;
+        });
+    return result;
+}
+
+esp_err_t OBD2DataModel::replacePIDDefinitions(const std::vector<PIDDefinitionData>& definitions,
+                                               const std::vector<PollRequest>& recurringRequests,
+                                               const std::vector<uint16_t>& supportedCurrentPids)
+{
+    if (definitions.size() > NUMBER_OF_ITEMS || recurringRequests.size() > NUMBER_OF_ITEMS)
+        return ESP_ERR_INVALID_SIZE;
+
+    std::map<uint16_t, PIDDefinition> stagedDefinitions;
+    std::map<uint16_t, PIDData_t> stagedData;
+
+    for (const auto& definition : definitions)
+    {
+        auto result = stagedDefinitions.emplace(
+            std::piecewise_construct, std::forward_as_tuple(definition.pid),
+            std::forward_as_tuple(definition.id, definition.mode, definition.pid, definition.len, definition.name,
+                                  definition.unit, definition.description, definition.formula, definition.minValue,
+                                  definition.maxValue, definition.priority, definition.updateInterval_ms,
+                                  definition.color, definition.icon));
+        if (!result.second || !result.first->second.formulaValid())
+            return ESP_ERR_INVALID_ARG;
+
+        const bool currentSupported =
+            definition.mode == MODE_CURRENT_DATA &&
+            std::find(supportedCurrentPids.begin(), supportedCurrentPids.end(), definition.pid) !=
+                supportedCurrentPids.end();
+        const bool defaultSupported = currentSupported || definition.mode == MODE_READ_DATA_BY_IDENTIFIER ||
+                                      definition.mode == MODE_DERIVED_DATA;
+
+        stagedData.emplace(definition.pid,
+                           PIDData_t{definition.id, 0.0f, 0, {0}, defaultSupported, false,
+                                     definition.updateInterval_ms});
+    }
+
+    return withPidMapLock(
+        [&]() -> esp_err_t
+        {
+            // Queue capacity is checked and changed before either active map
+            // is touched. A failed capacity check therefore leaves both the
+            // old maps and the old queue intact.
+            if (!pollQueue.replaceRecurring(recurringRequests.data(), recurringRequests.size()))
+                return ESP_ERR_INVALID_SIZE;
+
+            // Responder ownership is the only telemetry state that survives
+            // a complete definition replacement. Carry it only when the same
+            // PID remains a supported Mode-1 entry; all value, validity,
+            // timestamp, and raw-data fields stay freshly initialized.
+            for (const auto& definition : definitions)
+            {
+                if (definition.mode != MODE_CURRENT_DATA ||
+                    std::find(supportedCurrentPids.begin(), supportedCurrentPids.end(), definition.pid) ==
+                        supportedCurrentPids.end())
+                    continue;
+
+                const auto oldDefinition = PID_DEF.find(definition.pid);
+                const auto oldData       = pidData.find(definition.pid);
+                if (oldDefinition == PID_DEF.end() || oldData == pidData.end() ||
+                    oldDefinition->second.mode() != MODE_CURRENT_DATA || !oldData->second.isSupported)
+                    continue;
+
+                auto staged = stagedData.find(definition.pid);
+                if (staged != stagedData.end())
+                    staged->second.id = oldData->second.id;
+            }
+
+            PID_DEF.swap(stagedDefinitions);
+            pidData.swap(stagedData);
+            return ESP_OK;
         });
 }
 

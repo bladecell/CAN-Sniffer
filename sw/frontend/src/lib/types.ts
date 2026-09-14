@@ -116,7 +116,7 @@ export interface PidDefinition {
   id: number;
   mode: number;
   pid: number;
-  len: number;
+  length: number;
   name: string;
   unit: string;
   description: string;

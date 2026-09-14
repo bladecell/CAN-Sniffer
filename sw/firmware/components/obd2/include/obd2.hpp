@@ -48,6 +48,8 @@ public:
     esp_err_t addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std::string name, std::string unit,
                      std::string desc, std::string formula, float minV, float maxV, uint8_t priority, uint16_t interval,
                      uint32_t color, std::string icon) override;
+    esp_err_t removePID(uint16_t pid);
+    esp_err_t replacePIDDefinitions(const std::vector<PIDDefinitionData>& definitions);
 
     void      startContinuousMode();
     void      stopContinuousMode();
@@ -79,7 +81,11 @@ private:
     OBD2(const OBD2&)                 = delete;
     OBD2&      operator=(const OBD2&) = delete;
     CanDriver& canDriver              = CanDriver::getInstance();
-    bool       continuousRunning;
+    std::atomic<bool> continuousRunning{false};
+    // Polling acquires bus arbitration, then configuration, then the PID map
+    // and poll queue. Definition mutations acquire configuration, then the
+    // PID map and poll queue; they never hold bus arbitration.
+    SemaphoreHandle_t configurationMtx_ = nullptr;
 
     // PID Definitions and Data Storage
 
@@ -110,12 +116,17 @@ private:
     static void pollTaskWrapper(void* param);
     float       pollTaskUtilization = 0.0f;
 
+    PollRequest makePollRequest(uint32_t id, uint8_t mode, uint32_t pid, uint8_t len, uint32_t interval,
+                                uint8_t priority, bool isRecurring);
+    esp_err_t enqueueDefinitionRequestLocked(const PollRequest& request);
+    void startPollingLocked();
+
     // Receiving Task
     void        receiveTask();
     static void receiveTaskWrapper(void* param);
 
     // Callback
-    bool pidsInitialized{false};
+    std::atomic<bool> pidsInitialized{false};
 
     static void onCanStateChange(void* arg, bool connected);
 
@@ -141,6 +152,10 @@ private:
     inline void sendFlowControlFrame(uint32_t id);
 
     supportedPIDsGroup_t supportedPIDsGroup = {};
+    bool                 discoveryActive_ = false;
+    bool                 discoveryFailed_ = false;
+    uint8_t              discoveryExpectedGroup_ = 0xFF;
+    uint32_t             discoverySeenGroups_ = 0;
 
     void runOBDIIConnectedCallbacks(bool connected);
 

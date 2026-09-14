@@ -28,6 +28,12 @@ def pytest_addoption(parser):
         default=False,
         help="allow potentially destructive SD POST/DELETE security probes",
     )
+    parser.addoption(
+        "--run-pid-def-write",
+        action="store_true",
+        default=False,
+        help="allow the opt-in PID definition replacement/clear roundtrip",
+    )
 
 
 def pytest_collection_modifyitems(config, items):
@@ -35,11 +41,16 @@ def pytest_collection_modifyitems(config, items):
     skip_security = pytest.mark.skip(
         reason="pass --run-mutating-sd-security to opt in to mutating SD security probes"
     )
+    skip_pid_def_write = pytest.mark.skip(
+        reason="pass --run-pid-def-write and set CAN_SNIFFER_ENABLE_PID_DEF_WRITE=1"
+    )
     for item in items:
         if "sd_write" in item.keywords and not config.getoption("--run-sd-write"):
             item.add_marker(skip_write)
         if "sd_mutating_security" in item.keywords and not config.getoption("--run-mutating-sd-security"):
             item.add_marker(skip_security)
+        if "pid_def_write" in item.keywords and not config.getoption("--run-pid-def-write"):
+            item.add_marker(skip_pid_def_write)
 
 
 class RateLimiter:
@@ -149,6 +160,14 @@ def mutating_sd_security_enabled(request):
         pytest.skip("pass --run-mutating-sd-security to enable mutating SD security probes")
     if os.environ.get("CAN_SNIFFER_ENABLE_SD_WRITE") != "1":
         pytest.skip("set CAN_SNIFFER_ENABLE_SD_WRITE=1 to enable mutating SD security probes")
+
+
+@pytest.fixture
+def pid_def_write_enabled(request):
+    if not request.config.getoption("--run-pid-def-write"):
+        pytest.skip("pass --run-pid-def-write to opt in to PID definition replacement")
+    if os.environ.get("CAN_SNIFFER_ENABLE_PID_DEF_WRITE") != "1":
+        pytest.skip("set CAN_SNIFFER_ENABLE_PID_DEF_WRITE=1 to enable PID definition replacement")
 
 
 @pytest.fixture(scope="session")

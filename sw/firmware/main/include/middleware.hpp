@@ -21,6 +21,9 @@ cJSON* m_pid_def_get(int filter_id);
 cJSON* m_pid_data_get(int filter_id);
 cJSON* m_pid_def_delete(int filter_id);
 cJSON* m_pid_def_post(cJSON* data);
+// Returns an error JSON tree on failure and nullptr after a committed PUT.
+// A successful call reports HTTP 204 through http_status.
+cJSON* m_pid_def_put(cJSON* data, int* http_status);
 void   m_pid_poll_set_running(bool running);
 cJSON* m_can_bus_get();
 cJSON* m_obdii_get();

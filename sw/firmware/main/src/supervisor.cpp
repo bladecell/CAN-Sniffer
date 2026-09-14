@@ -15,6 +15,7 @@
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "led_status.hpp"
+#include "middleware.hpp"
 #include "obd2.hpp"
 #include "obd2_simulator.hpp"
 #include "sd_card.hpp"
@@ -582,17 +583,27 @@ esp_err_t SUPERVISOR::save_pid_def_to_json(const char* path)
         return ESP_ERR_INVALID_ARG;
     }
 
-    cJSON*                rootArray = cJSON_CreateArray();
-    auto&                 obd2      = OBD2::getInstance();
-    std::vector<uint16_t> pid_keys  = obd2.getPIDs();
+    cJSON* rootArray = cJSON_CreateArray();
+    if (rootArray == nullptr)
+        return ESP_ERR_NO_MEM;
 
-    for (const auto& pid : pid_keys)
+    auto& obd2 = OBD2::getInstance();
+    std::vector<PIDDefinitionData> definitions;
+    esp_err_t snapshotErr = obd2.getDefinitionSnapshot(definitions);
+    if (snapshotErr != ESP_OK)
     {
-        PIDDefinitionData def  = {};
-        cJSON*            item = cJSON_CreateObject();
+        cJSON_Delete(rootArray);
+        return snapshotErr;
+    }
 
-        obd2.getDef(pid, def);
-
+    for (const auto& def : definitions)
+    {
+        cJSON* item = cJSON_CreateObject();
+        if (item == nullptr)
+        {
+            cJSON_Delete(rootArray);
+            return ESP_ERR_NO_MEM;
+        }
         cJSON_AddNumberToObject(item, "id", def.id);
         cJSON_AddNumberToObject(item, "mode", def.mode);
         cJSON_AddNumberToObject(item, "pid", def.pid);
@@ -607,7 +618,6 @@ esp_err_t SUPERVISOR::save_pid_def_to_json(const char* path)
         cJSON_AddNumberToObject(item, "interval", def.updateInterval_ms);
         cJSON_AddNumberToObject(item, "color", def.color);
         cJSON_AddStringToObject(item, "icon", def.icon.c_str());
-
         cJSON_AddItemToArray(rootArray, item);
     }
 
@@ -706,115 +716,24 @@ esp_err_t SUPERVISOR::load_pid_def_from_json(const char* path)
         return ESP_ERR_INVALID_ARG;
     }
 
-    auto&     obd2        = OBD2::getInstance();
-    cJSON*    item        = nullptr;
-    esp_err_t add_pid_err = ESP_OK;
-
-    std::vector<uint16_t> pid_keys = obd2.getPIDs();
-
-    for (const auto& pid : pid_keys)
-    {
-        esp_err_t ret = obd2.removePID(pid);
-        if (ret != ESP_OK)
-        {
-            ESP_LOGE(TAG, "Failed to remove PID: %u - %s", pid, esp_err_to_name(ret));
-            return ret;
-        }
-    }
-
-    cJSON_ArrayForEach(item, rootArray)
-    {
-        if (!cJSON_IsObject(item))
-            continue;
-
-        cJSON* id       = cJSON_GetObjectItem(item, "id");
-        cJSON* mode     = cJSON_GetObjectItem(item, "mode");
-        cJSON* pid      = cJSON_GetObjectItem(item, "pid");
-        cJSON* name     = cJSON_GetObjectItem(item, "name");
-        cJSON* formula  = cJSON_GetObjectItem(item, "formula");
-        cJSON* interval = cJSON_GetObjectItem(item, "interval");
-
-        if (!cJSON_IsNumber(id) || !cJSON_IsNumber(mode) || !cJSON_IsNumber(pid) || !cJSON_IsString(name) ||
-            !cJSON_IsString(formula) || !cJSON_IsNumber(interval))
-        {
-            ESP_LOGW(TAG, "Skipping malformed PID entry in JSON");
-            continue;
-        }
-
-        uint16_t parsed_pid = static_cast<uint16_t>(pid->valueint);
-
-        cJSON* len      = cJSON_GetObjectItem(item, "len");
-        cJSON* unit     = cJSON_GetObjectItem(item, "unit");
-        cJSON* desc     = cJSON_GetObjectItem(item, "desc");
-        cJSON* minV     = cJSON_GetObjectItem(item, "minV");
-        cJSON* maxV     = cJSON_GetObjectItem(item, "maxV");
-        cJSON* priority = cJSON_GetObjectItem(item, "priority");
-        cJSON* color    = cJSON_GetObjectItem(item, "color");
-        cJSON* icon     = cJSON_GetObjectItem(item, "icon");
-
-        uint8_t     parsed_len      = (parsed_pid > 0xFF) ? 3 : 2;
-        std::string parsed_unit     = "";
-        std::string parsed_desc     = "";
-        float       parsed_minV     = 0.0f;
-        float       parsed_maxV     = 0.0f;
-        uint8_t     parsed_priority = 0;
-        uint32_t    parsed_color    = 0x4EB31B;
-        std::string parsed_icon     = "";
-
-        if (cJSON_IsNumber(len))
-        {
-            parsed_len = static_cast<uint8_t>(len->valueint);
-        }
-        if (cJSON_IsString(unit))
-        {
-            parsed_unit = std::string(unit->valuestring);
-        }
-        if (cJSON_IsString(desc))
-        {
-            parsed_desc = std::string(desc->valuestring);
-        }
-        if (cJSON_IsNumber(minV))
-        {
-            parsed_minV = static_cast<float>(minV->valuedouble);
-        }
-        if (cJSON_IsNumber(maxV))
-        {
-            parsed_maxV = static_cast<float>(maxV->valuedouble);
-        }
-        if (cJSON_IsNumber(priority))
-        {
-            parsed_priority = static_cast<uint8_t>(priority->valueint);
-        }
-        if (cJSON_IsNumber(color))
-        {
-            parsed_color = static_cast<uint32_t>(color->valuedouble);
-        }
-        if (cJSON_IsString(icon))
-        {
-            parsed_icon = std::string(icon->valuestring);
-        }
-
-        esp_err_t ret = obd2.addPID(static_cast<uint32_t>(id->valuedouble), static_cast<uint8_t>(mode->valueint),
-                                    parsed_pid, parsed_len, std::string(name->valuestring), parsed_unit, parsed_desc,
-                                    std::string(formula->valuestring), parsed_minV, parsed_maxV, parsed_priority,
-                                    static_cast<uint16_t>(interval->valueint), parsed_color, parsed_icon);
-        if (ret != ESP_OK)
-        {
-            add_pid_err = ret;
-        }
-    }
-
+    int http_status = 200;
+    cJSON* error_response = m_pid_def_put(rootArray, &http_status);
+    bool success = error_response == nullptr && http_status == 204;
+    cJSON_Delete(error_response);
     cJSON_Delete(rootArray);
 
-    if (add_pid_err != ESP_OK)
+    if (!success)
     {
-        ESP_LOGW(TAG, "Loaded PID definitions from %s with errors: %s", path, esp_err_to_name(add_pid_err));
+        ESP_LOGW(TAG, "Failed to atomically load PID definitions from %s", path);
+        if (http_status == 500)
+            return ESP_ERR_NO_MEM;
+        if (http_status == 503)
+            return ESP_ERR_TIMEOUT;
+        return ESP_ERR_INVALID_ARG;
     }
-    else
-    {
-        ESP_LOGI(TAG, "Successfully loaded PID definitions from %s", path);
-    }
-    return add_pid_err;
+
+    ESP_LOGI(TAG, "Successfully loaded PID definitions from %s", path);
+    return ESP_OK;
 }
 
 esp_err_t SUPERVISOR::copy_file(const char* src_path, const char* dest_path)

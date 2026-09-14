@@ -19,7 +19,6 @@
 #include "middleware.hpp"
 #include "obd2.hpp"
 #include "sd_card.hpp"
-#include "wifi.hpp"
 
 struct RouteDef
 {
@@ -229,6 +228,63 @@ cJSON* get_validated_json_payload(httpd_req_t* req, size_t max_size)
     return root;
 }
 
+static cJSON* get_full_json_payload(httpd_req_t* req, size_t max_size)
+{
+    if (req->content_len <= 0)
+    {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Content-Length required");
+        return nullptr;
+    }
+
+    const size_t totalLength = (size_t)req->content_len;
+    if (totalLength > max_size)
+    {
+        httpd_resp_send_err(req, HTTPD_413_CONTENT_TOO_LARGE, "JSON too large");
+        return nullptr;
+    }
+
+    char* buffer = (char*)malloc(totalLength + 1);
+    if (buffer == nullptr)
+    {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Server OOM");
+        return nullptr;
+    }
+
+    size_t receivedTotal = 0;
+    while (receivedTotal < totalLength)
+    {
+        int received = httpd_req_recv(req, buffer + receivedTotal, totalLength - receivedTotal);
+        if (received == HTTPD_SOCK_ERR_TIMEOUT)
+            continue;
+        if (received <= 0)
+        {
+            free(buffer);
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Incomplete request body");
+            return nullptr;
+        }
+        receivedTotal += (size_t)received;
+    }
+    buffer[totalLength] = '\0';
+
+    const char* parseEnd = nullptr;
+    cJSON* root = cJSON_ParseWithLengthOpts(buffer, totalLength, &parseEnd, 0);
+    if (root != nullptr && parseEnd != nullptr)
+    {
+        while (*parseEnd != '\0' && std::isspace((unsigned char)*parseEnd))
+            ++parseEnd;
+        if (*parseEnd != '\0')
+        {
+            cJSON_Delete(root);
+            root = nullptr;
+        }
+    }
+    free(buffer);
+
+    if (root == nullptr)
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+    return root;
+}
+
 static void set_content_type_from_file(httpd_req_t* req, const char* filepath)
 {
     if (strstr(filepath, ".html"))
@@ -390,6 +446,33 @@ esp_err_t p_pid_def_index_handler(httpd_req_t* req, void* arg)
 
     cJSON* resp = m_pid_def_post(root);
     cJSON_Delete(root);
+    return send_json_response(req, resp);
+}
+
+esp_err_t put_pid_def_index_handler(httpd_req_t* req, void* arg)
+{
+    cJSON* root = get_full_json_payload(req, 64 * 1024);
+    if (root == nullptr)
+        return ESP_OK;
+
+    int status = 200;
+    cJSON* resp = m_pid_def_put(root, &status);
+    cJSON_Delete(root);
+
+    if (resp == nullptr && status == 204)
+    {
+        httpd_resp_set_status(req, "204 No Content");
+        return httpd_resp_send(req, nullptr, 0);
+    }
+
+    if (status == 400)
+        httpd_resp_set_status(req, "400 Bad Request");
+    else if (status == 422)
+        httpd_resp_set_status(req, "422 Unprocessable Entity");
+    else if (status == 503)
+        httpd_resp_set_status(req, "503 Service Unavailable");
+    else if (status == 500)
+        httpd_resp_set_status(req, "500 Internal Server Error");
     return send_json_response(req, resp);
 }
 
@@ -830,6 +913,7 @@ const RouteDef api_routes[] = {{"/", HTTP_GET, index_handler},
                                {"/api/v1/pid_def/*", HTTP_DELETE, d_pid_def_index_handler},
                                {"/api/v1/pid_def", HTTP_GET, g_pid_def_index_handler},
                                {"/api/v1/pid_def", HTTP_POST, p_pid_def_index_handler},
+                               {"/api/v1/pid_def", HTTP_PUT, put_pid_def_index_handler},
                                {"/api/v1/pid_def/save", HTTP_POST, p_pid_def_save_index_handler},
                                {"/api/v1/pid_def/load", HTTP_POST, p_pid_def_load_index_handler},
 

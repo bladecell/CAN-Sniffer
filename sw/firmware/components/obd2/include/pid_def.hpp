@@ -66,6 +66,10 @@ public:
     PIDDefinition(PIDDefinition&& other) noexcept;
 
     esp_err_t evaluate(const uint8_t* frameData, uint8_t len, float& result) const;
+    bool      formulaValid() const
+    {
+        return compiledFormula_ != nullptr;
+    }
 
     // Getters
     uint32_t id() const

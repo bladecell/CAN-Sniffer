@@ -269,10 +269,14 @@
               class="btn btn-remove"
               disabled={selectedCount === 0}
               onclick={async () => {
-                const pidsToRemove = selectedElements.map((row: any) =>
-                  parseInt(row.pid, 16),
+                const pidsToRemove = new Set(
+                  selectedElements.map((row: any) => parseInt(row.pid, 16)),
                 );
-                await canStore.deletePids(pidsToRemove);
+                const desiredRows = telemetryStore.local_piddef.filter(
+                  (row: any) =>
+                    row.loaded && !pidsToRemove.has(parseInt(row.pid, 16)),
+                );
+                await canStore.replacePids(desiredRows);
               }}
             >
               Remove {selectedCount > 0 ? selectedCount : ""} Selected
@@ -281,15 +285,7 @@
               class="btn btn-save"
               disabled={updateButtonDisabled}
               onclick={async () => {
-                let rowsToUpdate;
-                if (selectedCount > 0) {
-                  rowsToUpdate = selectedElements;
-                } else {
-                  rowsToUpdate = telemetryStore.local_piddef.filter(
-                    (r: any) => r.pendingChanges === "Yes",
-                  );
-                }
-                await canStore.updatePids(rowsToUpdate);
+                await canStore.updatePids(telemetryStore.local_piddef);
               }}
             >
               {updateButtonText}
@@ -297,7 +293,7 @@
             <button
               class="btn btn-save"
               onclick={async () => {
-                await canStore.savePids();
+                await canStore.savePids(telemetryStore.local_piddef);
               }}
               title="Save current PID map to ESP filesystem"
             >
@@ -507,14 +503,14 @@
               <input
                 type="number"
                 name="Priority"
-                placeholder="Priority (1-255)"
+                placeholder="Priority (0-255)"
                 aria-label="priority"
                 aria-describedby="priority-helper"
-                min="1"
+                min="0"
                 max="255"
                 bind:value={telemetryStore.priorityInput}
                 aria-invalid={telemetryStore.priorityInput !== undefined &&
-                (telemetryStore.priorityInput < 1 ||
+                (telemetryStore.priorityInput < 0 ||
                   telemetryStore.priorityInput > 255)
                   ? "true"
                   : undefined}
@@ -529,13 +525,13 @@
                 aria-label="update interval"
                 aria-describedby="interval-helper"
                 min="0"
-                max="4294967295"
+                max="65535"
                 bind:value={telemetryStore.updateIntervalInput}
                 aria-invalid={telemetryStore.updateIntervalInput !==
                   undefined &&
                 telemetryStore.updateIntervalInput !== 0 &&
                 (telemetryStore.updateIntervalInput < 16 ||
-                  telemetryStore.updateIntervalInput > 4294967295)
+                  telemetryStore.updateIntervalInput > 65535)
                   ? "true"
                   : undefined}
               />

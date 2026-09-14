@@ -13,6 +13,7 @@
 
 #include <sys/types.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -34,6 +35,8 @@
     (NO_MESSAGE_SENT_HEALTHCHECK_PING_PERIOD_MS - 1000) > 1000 ? (NO_MESSAGE_SENT_HEALTHCHECK_PING_PERIOD_MS - 1000) \
                                                                : 1000
 #define HEALTHCHECK_RESPONSE_TIMEOUT_MS 3000
+#define SUPPORTED_PID_RESPONSE_TIMEOUT_MS 500
+#define SUPPORTED_PID_RESPONSE_WINDOW_MS 50
 
 static const char* TAG = "OBD2";
 
@@ -105,6 +108,7 @@ public:
  */
 OBD2::OBD2()
     : continuousRunning(false),
+      configurationMtx_(xSemaphoreCreateMutex()),
       xPidConnectedSemaphore(nullptr),
       xBusConnectionSemaphore(nullptr),
       xBusArbitrationMutex(nullptr),
@@ -320,31 +324,194 @@ esp_err_t OBD2::init()
 
 void OBD2::requestSuppPids()
 {
-    xSemaphoreTake(xRequestNextPIDSemaphore, 0);
-    supportedPIDsGroup = {};
-    for (uint16_t pid_marker = 0; pid_marker <= PID_PIDS_SUPPORTED_C1_E0; pid_marker += 0x20)
+    esp_err_t resetResult = ESP_OK;
     {
-        req(OBD2_FUNCTIONAL_ID, MODE_CURRENT_DATA, pid_marker, 2, 0, 0);
-
-        if (xSemaphoreTake(xRequestNextPIDSemaphore, pdMS_TO_TICKS(500)) != pdTRUE)
+        MutexGuard configurationGuard(configurationMtx_, portMAX_DELAY);
+        if (!configurationGuard.isLocked())
+            resetResult = ESP_ERR_TIMEOUT;
+        else
         {
-            break;
+            resetResult = withPidMapLock(
+                [&]() -> esp_err_t
+                {
+                    pollQueue.clearRecurringMode(MODE_CURRENT_DATA);
+                    for (auto& [pid, definition] : PID_DEF)
+                    {
+                        if (definition.mode() != MODE_CURRENT_DATA)
+                            continue;
+                        _setDataField(pid, &PIDData_t::isSupported, false);
+                        _setDataField(pid, &PIDData_t::isValid, false);
+                        _setDataField(pid, &PIDData_t::id, definition.id());
+                    }
+                    supportedPIDsGroup = {};
+                    discoveryActive_ = false;
+                    discoveryFailed_ = false;
+                    discoveryExpectedGroup_ = 0xFF;
+                    discoverySeenGroups_ = 0;
+                    pidsInitialized = false;
+                    return ESP_OK;
+                });
         }
     }
 
-    supportedPIDsGroup.numberOfSupportedPIDs = 0;
-    for (const auto& group : supportedPIDsGroup.pidGroup)
+    while (xSemaphoreTake(xRequestNextPIDSemaphore, 0) == pdTRUE)
+        ;
+    while (xSemaphoreTake(xPidConnectedSemaphore, 0) == pdTRUE)
+        ;
+
+    if (resetResult != ESP_OK)
     {
-        supportedPIDsGroup.numberOfSupportedPIDs += __builtin_popcount(group);
+        pidsInitialized = false;
+        xSemaphoreGive(xPidConnectedSemaphore);
+        return;
     }
 
-    pidsInitialized = true;
+    bool terminalSuccess = false;
+    bool transitionFailed = false;
+
+    for (uint8_t group = 0; group < SUPPORTED_PIDS_GROUP_COUNT && !terminalSuccess; ++group)
+    {
+        while (xSemaphoreTake(xRequestNextPIDSemaphore, 0) == pdTRUE)
+            ;
+
+        bool opened = false;
+        {
+            MutexGuard configurationGuard(configurationMtx_, portMAX_DELAY);
+            if (!configurationGuard.isLocked())
+                transitionFailed = true;
+            else
+            {
+                // The active generation and its expected group are published
+                // together. Response waits never hold this lock.
+                discoveryActive_        = true;
+                discoveryExpectedGroup_ = group;
+                opened                  = true;
+            }
+        }
+
+        if (!opened)
+            break;
+
+        PollRequest probe         = {};
+        probe.id                  = OBD2_FUNCTIONAL_ID;
+        probe.isRaw               = true;
+        probe.payload.raw.data[0] = 0x02;
+        probe.payload.raw.data[1] = MODE_CURRENT_DATA;
+        probe.payload.raw.data[2] = (uint8_t)(group << 5);
+        probe.payload.raw.dlc     = 8;
+        probe.interval            = 0;
+        probe.nextWake            = xTaskGetTickCount();
+        probe.priority            = 0;
+        probe.isRecurring         = false;
+        probe.retries_left        = 1;
+
+        if (!pollQueue.push(probe))
+        {
+            ESP_LOGW(TAG, "Poll queue full; supported-PID probe group %u dropped", group);
+            bool closed = false;
+            MutexGuard configurationGuard(configurationMtx_, portMAX_DELAY);
+            if (configurationGuard.isLocked())
+            {
+                discoveryFailed_        = true;
+                discoveryActive_        = false;
+                discoveryExpectedGroup_ = 0xFF;
+                closed                  = true;
+            }
+            if (!closed)
+                transitionFailed = true;
+            break;
+        }
+
+        const bool receivedExpected =
+            xSemaphoreTake(xRequestNextPIDSemaphore, pdMS_TO_TICKS(SUPPORTED_PID_RESPONSE_TIMEOUT_MS)) == pdTRUE;
+        if (!receivedExpected)
+        {
+            bool closed = false;
+            MutexGuard configurationGuard(configurationMtx_, portMAX_DELAY);
+            if (configurationGuard.isLocked())
+            {
+                discoveryFailed_        = true;
+                discoveryActive_        = false;
+                discoveryExpectedGroup_ = 0xFF;
+                closed                  = true;
+            }
+            if (!closed)
+                transitionFailed = true;
+            break;
+        }
+
+        // Keep collecting valid responses for this group so multiple ECUs
+        // contribute to the union before the next raw probe is sent.
+        while (xSemaphoreTake(xRequestNextPIDSemaphore, pdMS_TO_TICKS(SUPPORTED_PID_RESPONSE_WINDOW_MS)) == pdTRUE)
+            ;
+
+        bool windowClosed    = false;
+        bool continueDiscovery = false;
+        {
+            MutexGuard configurationGuard(configurationMtx_, portMAX_DELAY);
+            if (configurationGuard.isLocked())
+            {
+                const bool groupSeen = (discoverySeenGroups_ & (1UL << group)) != 0;
+                const bool continuation = (supportedPIDsGroup.pidGroup[group] & 0x00000001UL) != 0;
+
+                if (!groupSeen)
+                    discoveryFailed_ = true;
+
+                // Close the response generation before deciding whether a
+                // subsequent group may be requested.
+                discoveryActive_        = false;
+                discoveryExpectedGroup_ = 0xFF;
+                continueDiscovery       = groupSeen && continuation && group + 1 < SUPPORTED_PIDS_GROUP_COUNT;
+                terminalSuccess         = groupSeen && (!continuation || group + 1 == SUPPORTED_PIDS_GROUP_COUNT);
+                windowClosed             = true;
+            }
+        }
+
+        if (!windowClosed)
+        {
+            transitionFailed = true;
+            break;
+        }
+
+        if (terminalSuccess || !continueDiscovery)
+            break;
+    }
+
+    {
+        MutexGuard configurationGuard(configurationMtx_, portMAX_DELAY);
+        if (configurationGuard.isLocked())
+        {
+            discoveryActive_        = false;
+            discoveryExpectedGroup_ = 0xFF;
+            supportedPIDsGroup.numberOfSupportedPIDs = 0;
+            for (const auto& group : supportedPIDsGroup.pidGroup)
+                supportedPIDsGroup.numberOfSupportedPIDs += __builtin_popcount(group);
+
+            if (transitionFailed)
+                discoveryFailed_ = true;
+
+            const bool complete = terminalSuccess && !discoveryFailed_;
+            pidsInitialized = complete;
+            if (!complete)
+                ESP_LOGW(TAG, "Supported-PID discovery incomplete (seen=0x%08lX)",
+                         (unsigned long)discoverySeenGroups_);
+        }
+        else
+        {
+            pidsInitialized = false;
+        }
+    }
+
+    // Wake the connection path on both complete and incomplete terminal
+    // outcomes; it must not wait indefinitely for discovery.
     xSemaphoreGive(xPidConnectedSemaphore);
 }
 
 void OBD2::getSupportedPids(supportedPIDsGroup_t& supportedPIDsGroup)
 {
-    supportedPIDsGroup = this->supportedPIDsGroup;
+    MutexGuard configurationGuard(configurationMtx_, pdMS_TO_TICKS(100));
+    if (configurationGuard.isLocked())
+        supportedPIDsGroup = this->supportedPIDsGroup;
 };
 
 /**
@@ -378,6 +545,10 @@ esp_err_t OBD2::addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std
                        std::string desc, std::string formula, float minV, float maxV, uint8_t priority,
                        uint16_t interval, uint32_t color, std::string icon)
 {
+    MutexGuard configurationGuard(configurationMtx_, pdMS_TO_TICKS(100));
+    if (!configurationGuard.isLocked())
+        return ESP_ERR_TIMEOUT;
+
     if (interval < MIN_TRANSMIT_PERIOD_MS)
     {
         ESP_LOGW(TAG, "Requested interval %d ms is too low, setting to minimum %d ms", interval,
@@ -413,7 +584,8 @@ esp_err_t OBD2::addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std
 
                 if (continuousRunning)
                 {
-                    req(id, mode, pid, len, interval, priority, true);
+                    PollRequest request = makePollRequest(id, mode, pid, len, interval, priority, true);
+                    enqueueDefinitionRequestLocked(request);
                 }
             }
         }
@@ -422,16 +594,98 @@ esp_err_t OBD2::addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std
     {
         if (continuousRunning)
         {
-            req(id, mode, pid, len, interval, priority, true);
+            PollRequest request = makePollRequest(id, mode, pid, len, interval, priority, true);
+            enqueueDefinitionRequestLocked(request);
         }
     }
 
     return ESP_OK;
 }
 
+esp_err_t OBD2::removePID(uint16_t pid)
+{
+    MutexGuard configurationGuard(configurationMtx_, pdMS_TO_TICKS(100));
+    if (!configurationGuard.isLocked())
+        return ESP_ERR_TIMEOUT;
+    return OBD2DataModel::removePID(pid);
+}
+
+PollRequest OBD2::makePollRequest(uint32_t id, uint8_t mode, uint32_t pid, uint8_t len, uint32_t interval,
+                                  uint8_t priority, bool isRecurring)
+{
+    static std::atomic<uint32_t> staggerOffsetMs{0};
+
+    PollRequest request = {};
+    request.isRaw       = false;
+    request.payload.obd.mode = mode;
+    request.payload.obd.pid  = (uint16_t)pid;
+    request.payload.obd.len  = len;
+    request.interval          = interval;
+    request.priority          = priority;
+    request.isRecurring       = isRecurring;
+    request.id                = id;
+    request.retries_left      = DEFAULT_NUMER_OF_RETRIES;
+
+    uint32_t maxDelay     = (interval > 0 && interval < 15) ? interval : 15;
+    uint32_t initialDelay = staggerOffsetMs.fetch_add(7, std::memory_order_relaxed) % maxDelay;
+    request.nextWake      = xTaskGetTickCount() + pdMS_TO_TICKS(initialDelay);
+    return request;
+}
+
+esp_err_t OBD2::replacePIDDefinitions(const std::vector<PIDDefinitionData>& definitions)
+{
+    MutexGuard configurationGuard(configurationMtx_, pdMS_TO_TICKS(100));
+    if (!configurationGuard.isLocked())
+        return ESP_ERR_TIMEOUT;
+
+    std::vector<PollRequest> recurringRequests;
+    std::vector<uint16_t> supportedCurrentPids;
+    recurringRequests.reserve(definitions.size());
+    supportedCurrentPids.reserve(definitions.size());
+    for (const auto& definition : definitions)
+    {
+        if (definition.mode == MODE_CURRENT_DATA && definition.pid > 0)
+        {
+            uint8_t groupIdx = ((definition.pid - 1) & 0xE0) >> 5;
+            if (groupIdx < SUPPORTED_PIDS_GROUP_COUNT)
+            {
+                uint8_t bitPos = 31 - ((definition.pid - 1) % 32);
+                if (supportedPIDsGroup.pidGroup[groupIdx] & (1UL << bitPos))
+                    supportedCurrentPids.push_back(definition.pid);
+            }
+        }
+
+        const bool supported =
+            definition.mode == MODE_READ_DATA_BY_IDENTIFIER || definition.mode == MODE_DERIVED_DATA ||
+            std::find(supportedCurrentPids.begin(), supportedCurrentPids.end(), definition.pid) !=
+                supportedCurrentPids.end();
+        if (continuousRunning && definition.updateInterval_ms != UPDATE_DISABLED && supported)
+        {
+            recurringRequests.push_back(makePollRequest(definition.id, definition.mode, definition.pid,
+                                                        definition.len, definition.updateInterval_ms,
+                                                        definition.priority, true));
+        }
+    }
+
+    esp_err_t result =
+        OBD2DataModel::replacePIDDefinitions(definitions, recurringRequests, supportedCurrentPids);
+    if (result == ESP_OK && derivedPidQueue_ != nullptr)
+    {
+        // The receive task takes the same configuration lock while evaluating
+        // derived jobs. Resetting here therefore cannot leave a queued job
+        // from the previous definition generation to run after the swap.
+        xQueueReset(derivedPidQueue_);
+    }
+    return result;
+}
+
 esp_err_t OBD2::requestPID(uint16_t pid)
 {
-    withPidMapLock(
+    MutexGuard configurationGuard(configurationMtx_, pdMS_TO_TICKS(100));
+    if (!configurationGuard.isLocked())
+        return ESP_ERR_TIMEOUT;
+
+    return withPidMapLock(
         [&]()
         {
             if (!_getDataField(pid, &PIDData_t::isSupported, false))
@@ -445,42 +699,35 @@ esp_err_t OBD2::requestPID(uint16_t pid)
             uint8_t  len      = _getDefField(pid, &PIDDefinition::len, (uint8_t)0);
             uint8_t  priority = _getDefField(pid, &PIDDefinition::priority, (uint8_t)0);
 
-            req(id, mode, pid, len, 0, priority);
-            return ESP_OK;
+            PollRequest request = makePollRequest(id, mode, pid, len, 0, priority, false);
+            return enqueueDefinitionRequestLocked(request);
         });
-
-    return ESP_OK;
 }
 
 void OBD2::req(uint32_t id, uint8_t mode, uint32_t pid, uint8_t len, uint32_t interval, uint8_t priority,
                bool isRecurring)
 {
-    static std::atomic<uint32_t> staggerOffsetMs{0};  // Offset so we don't send all requests at the same time
-
-    PollRequest r;
-    r.isRaw            = false;
-    r.payload.obd.mode = mode;
-    r.payload.obd.pid  = pid;
-    r.payload.obd.len  = len;
-    r.interval         = interval;
-    r.priority         = priority;
-    r.isRecurring      = isRecurring;
-    r.id               = id;
-    r.retries_left     = DEFAULT_NUMER_OF_RETRIES;
-
-    uint32_t maxDelay     = (interval > 0 && interval < 15) ? interval : 15;
-    uint32_t initialDelay = staggerOffsetMs.load() % maxDelay;
-
-    r.nextWake = xTaskGetTickCount() + pdMS_TO_TICKS(initialDelay);
-
-    staggerOffsetMs.fetch_add(7, std::memory_order_relaxed);
-
-    req(r);
+    PollRequest request = makePollRequest(id, mode, pid, len, interval, priority, isRecurring);
+    req(request);
 }
 
 void OBD2::req(PollRequest& req)
 {
+    if (!req.isRaw)
+    {
+        MutexGuard configurationGuard(configurationMtx_, pdMS_TO_TICKS(100));
+        if (!configurationGuard.isLocked())
+            return;
+        enqueueDefinitionRequestLocked(req);
+        return;
+    }
+
     pollQueue.push(req);
+}
+
+esp_err_t OBD2::enqueueDefinitionRequestLocked(const PollRequest& request)
+{
+    return pollQueue.push(request) ? ESP_OK : ESP_ERR_INVALID_SIZE;
 }
 
 esp_err_t OBD2::queryMsg(PollRequest& req)
@@ -590,15 +837,21 @@ bool OBD2::isContinuousRunning() const
 
 void OBD2::startContinuousMode()
 {
+    MutexGuard configurationGuard(configurationMtx_, pdMS_TO_TICKS(100));
+    if (!configurationGuard.isLocked())
+        return;
     if (continuousRunning)
         return;
 
     continuousRunning = true;
-    startPolling();
+    startPollingLocked();
 }
 
 void OBD2::stopContinuousMode()
 {
+    MutexGuard configurationGuard(configurationMtx_, pdMS_TO_TICKS(100));
+    if (!configurationGuard.isLocked())
+        return;
     if (!continuousRunning)
         return;
 
@@ -608,7 +861,14 @@ void OBD2::stopContinuousMode()
 
 void OBD2::startPolling()
 {
-    // pollQueue.clear();
+    MutexGuard configurationGuard(configurationMtx_, pdMS_TO_TICKS(100));
+    if (!configurationGuard.isLocked())
+        return;
+    startPollingLocked();
+}
+
+void OBD2::startPollingLocked()
+{
     std::set<uint32_t> RequestByDataIdentifierIds;
 
     withPidMapLock(
@@ -623,7 +883,9 @@ void OBD2::startPolling()
                 if (interval == 0)
                     continue;
 
-                req(info.id(), info.mode(), pid, info.len(), interval, info.priority(), true);
+                PollRequest request = makePollRequest(info.id(), info.mode(), pid, info.len(), interval,
+                                                      info.priority(), true);
+                enqueueDefinitionRequestLocked(request);
 
                 if (info.mode() == MODE_READ_DATA_BY_IDENTIFIER)
                 {
@@ -641,6 +903,10 @@ void OBD2::startPolling()
 
 void OBD2::pollRequestStaticPids()
 {
+    MutexGuard configurationGuard(configurationMtx_, pdMS_TO_TICKS(100));
+    if (!configurationGuard.isLocked())
+        return;
+
     std::set<uint32_t> RequestByDataIdentifierIds;
 
     withPidMapLock(
@@ -650,7 +916,9 @@ void OBD2::pollRequestStaticPids()
             {
                 if (def.updateInterval() == UPDATE_DISABLED)
                 {
-                    req(def.id(), def.mode(), pid, def.len(), def.updateInterval(), def.priority(), false);
+                    PollRequest request = makePollRequest(def.id(), def.mode(), pid, def.len(),
+                                                          def.updateInterval(), def.priority(), false);
+                    enqueueDefinitionRequestLocked(request);
                 }
 
                 if (def.mode() == MODE_READ_DATA_BY_IDENTIFIER)
@@ -685,14 +953,25 @@ void OBD2::pollTask()
 
         pollTaskUtilization = busTracker.updateAndGet();
 
-        if (pollQueue.isEmpty() || !canDriver.isBusConnected())
+        // Keep the lock order bus -> configuration -> PID map/queue. The
+        // non-blocking configuration attempt prevents a poll cycle from
+        // holding the bus while a replacement is waiting to commit.
+        MutexGuard busGuard(xBusArbitrationMutex, portMAX_DELAY);
+        if (!busGuard.isLocked())
+            continue;
+
+        MutexGuard configurationGuard(configurationMtx_, 0);
+        if (!configurationGuard.isLocked() || !canDriver.isBusConnected())
         {
-            ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(50));
+            // RAII releases configuration first, then bus arbitration, before
+            // the next iteration can pop any work.
             continue;
         }
 
         // 2. Take the most urgent appointment
-        PollRequest current = pollQueue.pop();
+        PollRequest current = {};
+        if (!pollQueue.tryPop(current))
+            continue;
 
         TickType_t now = xTaskGetTickCount();
 
@@ -737,13 +1016,21 @@ void OBD2::pollTask()
                 });
         }
 
+        bool scheduled = false;
+        auto schedule = [&](PollRequest& request, const char* reason)
+        {
+            if (!pollQueue.push(request))
+                ESP_LOGW(TAG, "Poll queue full; dropped %s PID 0x%04X", reason, request.payload.obd.pid);
+            scheduled = true;
+        };
+
         if (last_tx_time_per_ecu.count(current.id) > 0)
         {
             TickType_t time_since_last = now - last_tx_time_per_ecu[current.id];
             if (time_since_last < pdMS_TO_TICKS(30))
             {
                 current.nextWake = last_tx_time_per_ecu[current.id] + pdMS_TO_TICKS(30);
-                pollQueue.push(current);
+                schedule(current, "deferred");
                 continue;
             }
         }
@@ -755,8 +1042,6 @@ void OBD2::pollTask()
         }
         else
         {
-            xSemaphoreTake(xBusArbitrationMutex, portMAX_DELAY);
-
             esp_err_t err = queryMsg(current);
 
             if (err == ESP_OK)
@@ -770,18 +1055,21 @@ void OBD2::pollTask()
                 {
                     current.retries_left--;
                     current.nextWake = xTaskGetTickCount() + pdMS_TO_TICKS(current.interval);
-                    pollQueue.push(current);
+                    schedule(current, "retry");
+                }
+                else
+                {
+                    current.isRecurring = false;
                 }
             }
 
-            xSemaphoreGive(xBusArbitrationMutex);
         }
 
         // 4. Reschedule recurring tasks
-        if (current.isRecurring && continuousRunning)
+        if (!scheduled && current.isRecurring && continuousRunning)
         {
             current.nextWake = xTaskGetTickCount() + pdMS_TO_TICKS(current.interval);
-            pollQueue.push(current);
+            schedule(current, "recurring");
         }
 
         taskYIELD();
@@ -814,18 +1102,25 @@ void OBD2::receiveTask()
             continue;
         }
 
-        uint16_t derivedPid;
-
-        while (xQueueReceive(derivedPidQueue_, &derivedPid, 0) == pdTRUE)
+        // Definition-bound derived work is produced by the polling task and
+        // consumed here under the configuration lock. A replacement either
+        // waits for this whole drain/evaluation or resets the queue before
+        // this task can observe the new model.
         {
-            CanDriver::CanFrame f{};
-            f.header.id = OBD2_FUNCTIONAL_ID;
-            f.length    = 4;
-            f.data[0]   = 0x03;  // DLC
-            f.data[1]   = RESPONSE_MODE_DERIVED_DATA;
-            f.data[2]   = (derivedPid >> 8) & 0xFF;
-            f.data[3]   = derivedPid & 0xFF;
-            parseRecFrame(f);
+            MutexGuard configurationGuard(configurationMtx_, portMAX_DELAY);
+            uint16_t derivedPid;
+
+            while (xQueueReceive(derivedPidQueue_, &derivedPid, 0) == pdTRUE)
+            {
+                CanDriver::CanFrame f{};
+                f.header.id = OBD2_FUNCTIONAL_ID;
+                f.length    = 4;
+                f.data[0]   = 0x03;  // DLC
+                f.data[1]   = RESPONSE_MODE_DERIVED_DATA;
+                f.data[2]   = (derivedPid >> 8) & 0xFF;
+                f.data[3]   = derivedPid & 0xFF;
+                parseRecFrame(f);
+            }
         }
 
         CanDriver::CanFrame f{};
@@ -1030,6 +1325,9 @@ esp_err_t OBD2::parseCurrentData(const CanDriver::CanFrame& f)
             ret = updateData(f);
     }
 
+    if (ret == ESP_ERR_INVALID_STATE)
+        return ret;
+
     _setDataFieldWithLock(pid, &PIDData_t::isValid, ret == ESP_OK);
 
     runPidUpdateCallbacks(pid);
@@ -1210,37 +1508,93 @@ esp_err_t OBD2::parseSupportedPIDs(const CanDriver::CanFrame& f)
         return ESP_ERR_INVALID_ARG;
     }
 
+    const uint8_t groupIdx = pidGroup >> 5;
+    if (groupIdx >= SUPPORTED_PIDS_GROUP_COUNT)
+    {
+        ESP_LOGE(TAG, "Unsupported PID group: 0x%02X", pidGroup);
+        return ESP_ERR_INVALID_ARG;
+    }
+
     if (f.length < 7)
         return ESP_OK;
 
-    uint32_t supportedPIDs = (f.data[3] << 24) | (f.data[4] << 16) | (f.data[5] << 8) | (f.data[6]);
-    uint8_t  groupIdx      = (pidGroup >> 5);
+    uint32_t reportedPIDs = (f.data[3] << 24) | (f.data[4] << 16) | (f.data[5] << 8) | (f.data[6]);
 
-    supportedPIDsGroup.pidGroup[groupIdx] = supportedPIDs;
+    MutexGuard configurationGuard(configurationMtx_, portMAX_DELAY);
+    if (!configurationGuard.isLocked())
+        return ESP_ERR_TIMEOUT;
+
+    if (!discoveryActive_ || discoveryExpectedGroup_ != groupIdx)
+    {
+        // A late response must not mutate an inactive or different discovery
+        // generation. Health-check waiters may still use this valid frame.
+        if (healthCheckSemaphore != nullptr)
+            xSemaphoreGive(healthCheckSemaphore);
+        return ESP_OK;
+    }
+
+    PollRequest recurringRequests[32];
+    size_t      recurringCount = 0;
+    const uint16_t firstPID    = pidGroup + 1;
+    const uint16_t lastPID     = pidGroup + 32;
+    const uint32_t responderID = f.header.id - RESPONSE_ID_OFFSET;
+    const uint32_t mergedPIDs  = supportedPIDsGroup.pidGroup[groupIdx] | reportedPIDs;
 
     esp_err_t ret = withPidMapLock(
-        [&]()
+        [&]() -> esp_err_t
         {
-            for (uint8_t i = 0; i < 32; ++i)
+            // Stage all desired recurring work before changing support flags.
+            // The queue operation below is allocation-free and capacity
+            // checked, so a failure leaves both the queue and model unchanged.
+            for (const auto& [installedPID, definition] : PID_DEF)
             {
-                if (supportedPIDs & (1UL << (31 - i)))
+                if (definition.mode() != MODE_CURRENT_DATA || installedPID < firstPID || installedPID > lastPID)
+                    continue;
+
+                const uint8_t bit = (uint8_t)(installedPID - firstPID);
+                if (continuousRunning && (mergedPIDs & (1UL << (31 - bit))) &&
+                    definition.updateInterval() != UPDATE_DISABLED)
                 {
-                    uint16_t supportedPID = pidGroup + 1 + i;
-
-                    if (!_pidExists(supportedPID))
-                        continue;
-
-                    _setDataField(supportedPID, &PIDData_t::isSupported, true);
-                    _setDataField(supportedPID, &PIDData_t::id, f.header.id - RESPONSE_ID_OFFSET);
+                    recurringRequests[recurringCount++] =
+                        makePollRequest(definition.id(), definition.mode(), installedPID, definition.len(),
+                                        definition.updateInterval(), definition.priority(), true);
                 }
             }
+
+            if (!pollQueue.replaceRecurringPidRange(firstPID, lastPID, MODE_CURRENT_DATA, recurringRequests,
+                                                    recurringCount))
+            {
+                discoveryFailed_ = true;
+                return ESP_ERR_INVALID_SIZE;
+            }
+
+            for (const auto& [installedPID, definition] : PID_DEF)
+            {
+                if (definition.mode() != MODE_CURRENT_DATA || installedPID < firstPID || installedPID > lastPID)
+                    continue;
+
+                const bool supported = (mergedPIDs & (1UL << (31 - (installedPID - firstPID)))) != 0;
+                const bool wasSupported = _getDataField(installedPID, &PIDData_t::isSupported, false);
+                _setDataField(installedPID, &PIDData_t::isSupported, supported);
+                _setDataField(installedPID, &PIDData_t::isValid, false);
+                if (supported && !wasSupported)
+                    _setDataField(installedPID, &PIDData_t::id, responderID);
+                else if (!supported)
+                    _setDataField(installedPID, &PIDData_t::id, definition.id());
+            }
+
+            supportedPIDsGroup.pidGroup[groupIdx] = mergedPIDs;
+            discoverySeenGroups_ |= (1UL << groupIdx);
+            supportedPIDsGroup.numberOfSupportedPIDs = 0;
+            for (const auto& group : supportedPIDsGroup.pidGroup)
+                supportedPIDsGroup.numberOfSupportedPIDs += __builtin_popcount(group);
             return ESP_OK;
         });
 
-    if (supportedPIDs & 0x00000001)
-    {
-        xSemaphoreGive(xRequestNextPIDSemaphore);
-    }
+    if (ret != ESP_OK)
+        return ret;
+
+    xSemaphoreGive(xRequestNextPIDSemaphore);
 
     if (healthCheckSemaphore != nullptr)
     {

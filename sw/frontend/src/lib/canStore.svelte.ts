@@ -12,6 +12,36 @@ import type {
     SystemStatus,
     SDCardInfo
 } from "./types";
+import { validatePidDefinitionSet } from "./pidValidation";
+
+function normalizePidDefinition(def: any): PidDefinition {
+    if (!def || typeof def !== "object") {
+        throw new Error("Invalid PID definition");
+    }
+
+    const normalized = {
+        id: def.id,
+        mode: def.mode,
+        pid: def.pid,
+        length: def.length ?? def.len,
+        name: def.name,
+        unit: def.unit,
+        description: def.description ?? def.desc,
+        formula: def.formula,
+        minValue: def.minValue ?? def.minV,
+        maxValue: def.maxValue ?? def.maxV,
+        update_interval_ms: def.update_interval_ms ?? def.interval,
+        color: def.color,
+        priority: def.priority,
+        icon: def.icon,
+    };
+
+    if (Object.values(normalized).some((value) => value === undefined || value === null)) {
+        throw new Error("Incomplete PID definition");
+    }
+
+    return normalized;
+}
 
 export const COMMANDS = {
     START_LOG: 0xa0,
@@ -357,14 +387,24 @@ export class CanStore {
 
     pidDefinitions = $state<PidDefinition[]>([]);
 
-    async loadDefinitions() {
+    async loadDefinitions(): Promise<boolean> {
         try {
             const response = await fetch("/api/v1/pid_def");
+            if (!response.ok) {
+                throw new Error(`HTTP Error: ${response.status}`);
+            }
+
             const result = await response.json();
 
-            this.pidDefinitions = result.data;
+            if (!Array.isArray(result.data)) {
+                throw new Error("Invalid PID definition response");
+            }
+
+            this.pidDefinitions = result.data.map(normalizePidDefinition);
+            return true;
         } catch (e) {
             console.error("Failed to load PIDs", e);
+            return false;
         }
     }
 
@@ -582,7 +622,74 @@ export class CanStore {
             this.isClearing = false;
         }
     }
-    async savePids() {
+    serializePidDefinition(def: any) {
+        const normalized = normalizePidDefinition(def);
+
+        return {
+            id: normalized.id,
+            mode: normalized.mode,
+            pid: normalized.pid,
+            len: normalized.length,
+            name: normalized.name,
+            unit: normalized.unit,
+            desc: normalized.description,
+            formula: normalized.formula,
+            minV: normalized.minValue,
+            maxV: normalized.maxValue,
+            priority: normalized.priority,
+            interval: normalized.update_interval_ms,
+            color: normalized.color,
+            icon: normalized.icon,
+        };
+    }
+
+    async replacePids(rows: any[]): Promise<boolean> {
+        try {
+            const desiredDefinitions = rows
+                .filter((row) => row.loaded)
+                .map((row) => normalizePidDefinition(row.def));
+
+            const validationError = validatePidDefinitionSet(desiredDefinitions);
+            if (validationError) {
+                throw new Error(validationError);
+            }
+
+            const payload = desiredDefinitions.map((definition) =>
+                this.serializePidDefinition(definition),
+            );
+            const serializedPayload = JSON.stringify(payload);
+            const payloadBytes = new TextEncoder().encode(serializedPayload).byteLength;
+            if (payloadBytes > 64 * 1024) {
+                throw new Error("PID definitions payload exceeds 64 KiB (HTTP 413).");
+            }
+
+            const response = await fetch("/api/v1/pid_def", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: serializedPayload,
+            });
+
+            if (response.status !== 204) {
+                throw new Error(`Expected HTTP 204 from PID replacement, received ${response.status}.`);
+            }
+
+            if (!(await this.loadDefinitions())) {
+                alertStore.add("PIDs were replaced, but refreshing definitions failed.", "warning");
+            }
+            return true;
+        } catch (e) {
+            const reason = e instanceof Error ? e.message : "Unknown error";
+            console.error("Failed to replace PIDs:", e);
+            alertStore.add(`Failed to replace PIDs: ${reason}`, "error");
+            return false;
+        }
+    }
+
+    async savePids(rows: any[]) {
+        if (!(await this.replacePids(rows))) {
+            return;
+        }
+
         try {
             const response = await fetch('/api/v1/pid_def/save', {
                 method: 'POST'
@@ -605,124 +712,10 @@ export class CanStore {
     }
 
 
-    async deletePids(pids: number[]) {
-        let hasError = false;
-        for (const pid of pids) {
-            try {
-                const response = await fetch(`/api/v1/pid_def/${pid}`, {
-                    method: "DELETE"
-                });
-
-                if (!response.ok) {
-                    hasError = true;
-                    console.error(`Failed to delete PID ${pid}: ${response.status}`);
-                    continue;
-                }
-
-                const result = await response.json();
-                if (result.status !== "success") {
-                    hasError = true;
-                    console.error(`Failed to delete PID ${pid}: ${result.reason || 'Unknown error'}`);
-                    alertStore.add(`Failed to delete PID ${pid}: ${result.reason || 'Unknown error'}`, "error");
-                }
-            } catch (e) {
-                hasError = true;
-                console.error(`Exception deleting PID ${pid}:`, e);
-            }
-        }
-
-        await this.loadDefinitions();
-    }
-
-
     async updatePids(rows: any[]) {
-        let hasError = false;
-        const pidsToDelete: number[] = [];
-        const payloadsToPost: any[] = [];
-
-        for (const row of rows) {
-            const rawPid = parseInt(row.pid, 16);
-            const def = row.def;
-
-            if (!row.loaded) {
-                // User wants to remove this PID
-                pidsToDelete.push(rawPid);
-            } else {
-                // User wants to add or update this PID
-                const original = this.pidDefinitions.find((d: any) => Number(d.pid) === rawPid);
-                if (original) {
-                    pidsToDelete.push(rawPid);
-                }
-
-                payloadsToPost.push({
-                    id: def.id,
-                    mode: def.mode,
-                    pid: def.pid,
-                    len: def.length,
-                    name: def.name,
-                    unit: def.unit,
-                    desc: def.description,
-                    formula: def.formula,
-                    minV: def.minValue,
-                    maxV: def.maxValue,
-                    priority: def.priority,
-                    interval: def.update_interval_ms,
-                    color: def.color,
-                    icon: def.icon
-                });
-            }
-        }
-
-        // 1. Delete PIDs
-        if (pidsToDelete.length > 0) {
-            for (const pid of pidsToDelete) {
-                try {
-                    const response = await fetch(`/api/v1/pid_def/${pid}`, { method: "DELETE" });
-                    if (!response.ok) {
-                        hasError = true;
-                        continue;
-                    }
-                    const result = await response.json();
-                    if (result.status !== "success") hasError = true;
-                } catch (e) {
-                    hasError = true;
-                }
-            }
-        }
-
-        // 2. Post PIDs in batches of 5
-        if (payloadsToPost.length > 0) {
-            for (let i = 0; i < payloadsToPost.length; i += 5) {
-                const batch = payloadsToPost.slice(i, i + 5);
-                try {
-                    const response = await fetch("/api/v1/pid_def", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(batch)
-                    });
-
-                    if (!response.ok) {
-                        hasError = true;
-                        continue;
-                    }
-
-                    const result = await response.json();
-                    if (result.status !== "success") {
-                        hasError = true;
-                    }
-                } catch (e) {
-                    hasError = true;
-                }
-            }
-        }
-
-        if (hasError) {
-            alertStore.add("Some updates or deletions failed.", "error");
-        } else {
+        if (await this.replacePids(rows)) {
             alertStore.add("Successfully synced PIDs with device.", "success");
         }
-
-        await this.loadDefinitions();
     }
 
     isRecording = $state(false);

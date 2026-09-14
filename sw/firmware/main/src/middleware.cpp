@@ -2,10 +2,13 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "cJSON.h"
@@ -116,12 +119,31 @@ cJSON* m_pid_def_get(int filter_id)
     }
     else
     {
-        std::vector<uint16_t> pids = OBD2::getInstance().getPIDs();
-        for (const auto& pid : pids)
+        std::vector<PIDDefinitionData> definitions;
+        if (OBD2::getInstance().getDefinitionSnapshot(definitions) != ESP_OK)
         {
-            cJSON* item = single_pid_def_get(pid);
+            cJSON_Delete(root);
+            return nullptr;
+        }
+        for (const auto& definition : definitions)
+        {
+            cJSON* item = cJSON_CreateObject();
             if (item != nullptr)
             {
+                cJSON_AddNumberToObject(item, "pid", definition.pid);
+                cJSON_AddNumberToObject(item, "mode", definition.mode);
+                cJSON_AddNumberToObject(item, "id", definition.id);
+                cJSON_AddNumberToObject(item, "length", definition.len);
+                cJSON_AddStringToObject(item, "name", definition.name.c_str());
+                cJSON_AddStringToObject(item, "unit", definition.unit.c_str());
+                cJSON_AddStringToObject(item, "description", definition.description.c_str());
+                cJSON_AddNumberToObject(item, "minValue", definition.minValue);
+                cJSON_AddNumberToObject(item, "maxValue", definition.maxValue);
+                cJSON_AddNumberToObject(item, "priority", definition.priority);
+                cJSON_AddNumberToObject(item, "update_interval_ms", definition.updateInterval_ms);
+                cJSON_AddNumberToObject(item, "color", definition.color);
+                cJSON_AddStringToObject(item, "icon", definition.icon.c_str());
+                cJSON_AddStringToObject(item, "formula", definition.formula.c_str());
                 cJSON_AddItemToArray(data_array, item);
                 count++;
             }
@@ -163,12 +185,24 @@ cJSON* m_pid_data_get(int filter_id)
     }
     else
     {
-        std::vector<uint16_t> pids = OBD2::getInstance().getPIDs();
-        for (const auto& pid : pids)
+        std::vector<std::pair<uint16_t, PIDData_t>> data;
+        if (OBD2::getInstance().getDataSnapshot(data) != ESP_OK)
         {
-            cJSON* item = single_pid_data_get(pid);
+            cJSON_Delete(root);
+            return nullptr;
+        }
+        for (const auto& [pid, snapshot] : data)
+        {
+            cJSON* item = cJSON_CreateObject();
             if (item != nullptr)
             {
+                cJSON_AddNumberToObject(item, "id", snapshot.id);
+                cJSON_AddNumberToObject(item, "pid", pid);
+                cJSON_AddNumberToObject(item, "value", snapshot.value);
+                cJSON_AddNumberToObject(item, "lastUpdated", snapshot.lastUpdated);
+                cJSON_AddBoolToObject(item, "isSupported", snapshot.isSupported);
+                cJSON_AddBoolToObject(item, "isValid", snapshot.isValid);
+                cJSON_AddNumberToObject(item, "update_interval_ms", snapshot.updateInterval_ms);
                 cJSON_AddItemToArray(data_array, item);
                 count++;
             }
@@ -757,6 +791,174 @@ cJSON* m_pid_def_delete(int filter_id)
     }
 
     return root;
+}
+
+namespace
+{
+constexpr size_t PID_NAME_MAX     = 64;
+constexpr size_t PID_UNIT_MAX     = 32;
+constexpr size_t PID_DESC_MAX     = 256;
+constexpr size_t PID_FORMULA_MAX  = 1024;
+constexpr size_t PID_ICON_MAX     = 64;
+
+static cJSON* pid_put_error(const char* reason, int status)
+{
+    (void)status;
+    cJSON* root = cJSON_CreateObject();
+    if (root != nullptr)
+    {
+        cJSON_AddStringToObject(root, "status", "error");
+        cJSON_AddStringToObject(root, "reason", reason);
+    }
+    return root;
+}
+
+template <typename T>
+static bool json_integer(cJSON* object, const char* key, T minValue, T maxValue, T& output)
+{
+    cJSON* value = cJSON_GetObjectItemCaseSensitive(object, key);
+    if (!cJSON_IsNumber(value) || !std::isfinite(value->valuedouble) ||
+        std::floor(value->valuedouble) != value->valuedouble || value->valuedouble < (double)minValue ||
+        value->valuedouble > (double)maxValue)
+        return false;
+    output = static_cast<T>(value->valuedouble);
+    return true;
+}
+
+static bool json_float(cJSON* object, const char* key, float& output)
+{
+    cJSON* value = cJSON_GetObjectItemCaseSensitive(object, key);
+    if (!cJSON_IsNumber(value) || !std::isfinite(value->valuedouble) ||
+        value->valuedouble < -std::numeric_limits<float>::max() ||
+        value->valuedouble > std::numeric_limits<float>::max())
+        return false;
+    output = static_cast<float>(value->valuedouble);
+    return std::isfinite(output);
+}
+
+static bool json_string(cJSON* object, const char* key, size_t maxLength, std::string& output)
+{
+    cJSON* value = cJSON_GetObjectItemCaseSensitive(object, key);
+    if (!cJSON_IsString(value) || value->valuestring == nullptr)
+        return false;
+    if (strlen(value->valuestring) > maxLength)
+        return false;
+    output = value->valuestring;
+    return true;
+}
+
+} // namespace
+
+cJSON* m_pid_def_put(cJSON* data, int* http_status)
+{
+    if (http_status != nullptr)
+        *http_status = 204;
+
+    if (data == nullptr || !cJSON_IsArray(data))
+    {
+        if (http_status != nullptr)
+            *http_status = 400;
+        return pid_put_error("Payload must be a JSON array", 400);
+    }
+
+    const int itemCount = cJSON_GetArraySize(data);
+    if (itemCount < 0 || itemCount > NUMBER_OF_ITEMS)
+    {
+        if (http_status != nullptr)
+            *http_status = 422;
+        return pid_put_error("PID definition count exceeds capacity", 422);
+    }
+
+    std::vector<PIDDefinitionData> definitions;
+    std::unordered_set<uint16_t> pids;
+    definitions.reserve((size_t)itemCount);
+    pids.reserve((size_t)itemCount);
+
+    cJSON* item = nullptr;
+    cJSON_ArrayForEach(item, data)
+    {
+        if (!cJSON_IsObject(item))
+        {
+            if (http_status != nullptr)
+                *http_status = 400;
+            return pid_put_error("Each PID definition must be a JSON object", 400);
+        }
+
+        PIDDefinitionData definition = {};
+        uint32_t id = 0, color = 0;
+        uint8_t mode = 0, len = 0, priority = 0;
+        uint16_t pid = 0, interval = 0;
+        if (!json_integer(item, "id", uint32_t(0), uint32_t(0x7FF), id) ||
+            !json_integer(item, "mode", uint8_t(0), std::numeric_limits<uint8_t>::max(), mode) ||
+            !json_integer(item, "pid", uint16_t(0), std::numeric_limits<uint16_t>::max(), pid) ||
+            !json_integer(item, "len", uint8_t(0), uint8_t(PID_DATA_LENGTH), len) ||
+            !json_integer(item, "priority", uint8_t(0), std::numeric_limits<uint8_t>::max(), priority) ||
+            !json_integer(item, "interval", uint16_t(0), std::numeric_limits<uint16_t>::max(), interval) ||
+            !json_integer(item, "color", uint32_t(0), uint32_t(0xFFFFFF), color) ||
+            !json_string(item, "name", PID_NAME_MAX, definition.name) ||
+            !json_string(item, "unit", PID_UNIT_MAX, definition.unit) ||
+            !json_string(item, "desc", PID_DESC_MAX, definition.description) ||
+            !json_string(item, "formula", PID_FORMULA_MAX, definition.formula) ||
+            !json_string(item, "icon", PID_ICON_MAX, definition.icon))
+        {
+            if (http_status != nullptr)
+                *http_status = 422;
+            return pid_put_error("Missing or invalid PID definition field", 422);
+        }
+
+        const bool validModeAndPayload =
+            (mode == MODE_CURRENT_DATA && pid >= 1 && pid <= 0xFF && len == 2) ||
+            (mode == MODE_READ_DATA_BY_IDENTIFIER && len == 3) ||
+            (mode == MODE_DERIVED_DATA && len == 0);
+        if ((interval != 0 && interval < MIN_TRANSMIT_PERIOD_MS) || !validModeAndPayload ||
+            definition.formula.empty())
+        {
+            if (http_status != nullptr)
+                *http_status = 422;
+            return pid_put_error("Invalid PID interval, mode, PID, or length", 422);
+        }
+
+        if (!json_float(item, "minV", definition.minValue) || !json_float(item, "maxV", definition.maxValue) ||
+            definition.minValue > definition.maxValue)
+        {
+            if (http_status != nullptr)
+                *http_status = 422;
+            return pid_put_error("Invalid PID value range", 422);
+        }
+
+        if (!pids.insert(pid).second)
+        {
+            if (http_status != nullptr)
+                *http_status = 422;
+            return pid_put_error("Duplicate PID definition", 422);
+        }
+
+        definition.id                = id;
+        definition.mode              = mode;
+        definition.pid               = pid;
+        definition.len               = len;
+        definition.priority          = priority;
+        definition.updateInterval_ms = interval;
+        definition.color             = color;
+        definitions.push_back(std::move(definition));
+    }
+
+    esp_err_t result = OBD2::getInstance().replacePIDDefinitions(definitions);
+    if (result != ESP_OK)
+    {
+        const int status = result == ESP_ERR_INVALID_ARG       ? 422
+                           : result == ESP_ERR_INVALID_SIZE || result == ESP_ERR_TIMEOUT ? 503
+                                                                                         : 500;
+        if (http_status != nullptr)
+            *http_status = status;
+        return pid_put_error(esp_err_to_name(result), status);
+    }
+
+    // There is deliberately no success JSON tree. The model commit is the
+    // final fallible operation performed by this path.
+    if (http_status != nullptr)
+        *http_status = 204;
+    return nullptr;
 }
 
 cJSON* m_pid_def_post(cJSON* data)

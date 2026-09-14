@@ -1,6 +1,14 @@
 import type { Column } from "$lib/types";
 import { canStore } from "$lib/canStore.svelte";
 import { getModeLabel } from "$lib/pidHelpers.svelte.ts";
+import {
+  MAX_PID_FORMULA_LENGTH,
+  MAX_PID_INTERVAL,
+  MAX_PID_NAME_LENGTH,
+  MAX_PID_PRIORITY,
+  MIN_PID_INTERVAL,
+  MIN_PID_PRIORITY,
+} from "$lib/pidValidation";
 
 export class TelemetryStore {
   constructor() {
@@ -79,8 +87,10 @@ export class TelemetryStore {
   validationErrors = $derived.by(() => {
     let errors: string[] = [];
     if (this.pidInput && !isValidHex(this.pidInput)) errors.push("PID must be a valid hex format (e.g., 0x0C).");
-    if (this.nameInput && !isValidName(this.nameInput)) errors.push("Name can only contain letters, numbers, and basic symbols.");
+    if (this.nameInput && !isValidName(this.nameInput)) errors.push("Name can only contain letters, numbers, and basic symbols (maximum 64 characters).");
     if (this.descInput && !isValidDescription(this.descInput)) errors.push("Description contains invalid characters.");
+    if (this.formulaInput.length > MAX_PID_FORMULA_LENGTH) errors.push(`Formula must be at most ${MAX_PID_FORMULA_LENGTH} characters.`);
+    if ((this.minInput !== undefined && !Number.isFinite(this.minInput)) || (this.maxInput !== undefined && !Number.isFinite(this.maxInput))) errors.push("Minimum and maximum values must be finite numbers.");
     if (this.minInput !== undefined && this.maxInput !== undefined && this.minInput > this.maxInput) errors.push("Minimum value cannot be greater than maximum value.");
     if (this.pidInput && this.modeInput && !isModeValidForPid(this.pidInput, this.modeInput)) errors.push("Mode is invalid for this PID (PIDs 0x00-0xFF require 'Current Data').");
     if (this.formulaInput && !isValidFormula(this.modeInput, this.formulaInput)) {
@@ -89,8 +99,8 @@ export class TelemetryStore {
     }
     if (this.lengthInput !== undefined && this.pidInput && !isLengthValidForPid(this.pidInput, this.lengthInput, this.modeInput)) errors.push("Length is invalid (PIDs <= 0xFF require 2 bytes, others require 3 bytes).");
     if (this.idInput && this.modeInput && !isIdValidForMode(this.modeInput, this.idInput)) errors.push("CAN ID is invalid for the selected mode (Current/Derived require 0x7DF, Read By Identifier requires 0x700-0x7FF).");
-    if (this.priorityInput !== undefined && (this.priorityInput < 1 || this.priorityInput > 255)) errors.push("Priority must be between 1 and 255.");
-    if (this.updateIntervalInput !== undefined && this.updateIntervalInput !== 0 && (this.updateIntervalInput < 16 || this.updateIntervalInput > 4294967295)) errors.push("Update Interval must be at least 16ms (or 0 to disable).");
+    if (this.priorityInput !== undefined && (!Number.isFinite(this.priorityInput) || !Number.isInteger(this.priorityInput) || this.priorityInput < MIN_PID_PRIORITY || this.priorityInput > MAX_PID_PRIORITY)) errors.push(`Priority must be an integer between ${MIN_PID_PRIORITY} and ${MAX_PID_PRIORITY}.`);
+    if (this.updateIntervalInput !== undefined && (!Number.isFinite(this.updateIntervalInput) || !Number.isInteger(this.updateIntervalInput) || this.updateIntervalInput < 0 || this.updateIntervalInput > MAX_PID_INTERVAL || (this.updateIntervalInput !== 0 && this.updateIntervalInput < MIN_PID_INTERVAL))) errors.push(`Update Interval must be an integer from ${MIN_PID_INTERVAL} to ${MAX_PID_INTERVAL}ms (or 0 to disable).`);
     return errors;
   });
 
@@ -102,7 +112,7 @@ export class TelemetryStore {
     if (!isValidFormula(this.modeInput, this.formulaInput)) return false;
     if (this.modeInput !== "0x45" && !isLengthValidForPid(this.pidInput, this.lengthInput, this.modeInput)) return false;
     if (!isIdValidForMode(this.modeInput, this.idInput)) return false;
-    if (this.priorityInput === undefined || this.priorityInput < 1 || this.priorityInput > 255) return false;
+    if (this.priorityInput === undefined || !Number.isFinite(this.priorityInput) || !Number.isInteger(this.priorityInput) || this.priorityInput < MIN_PID_PRIORITY || this.priorityInput > MAX_PID_PRIORITY) return false;
     if (this.updateIntervalInput === undefined) return false;
     return true;
   });
@@ -191,7 +201,7 @@ export function isValidHex(input: string): boolean {
 
 export function isValidName(input: string): boolean {
   if (!input) return false;
-  if (input.length > 128) return false;
+  if (input.length > MAX_PID_NAME_LENGTH) return false;
   return /^[0-9A-Za-z\-\(\)_.,\/*+ ]+$/.test(input);
 }
 
@@ -252,6 +262,7 @@ export function isIdValidForMode(modeInput: string, idInput: string): boolean {
 
 export function isValidFormula(modeInput: string, formula: string): boolean {
   if (!formula) return false;
+  if (formula.length > MAX_PID_FORMULA_LENGTH) return false;
 
   // Default to standard math validation if mode is not yet selected
   if (!modeInput || modeInput === "0x01" || modeInput === "0x22") {
@@ -565,4 +576,3 @@ export const units = [
   "L/h",
   "L",
 ];
-

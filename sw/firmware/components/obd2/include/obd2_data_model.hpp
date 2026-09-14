@@ -7,6 +7,7 @@
 #include <functional>
 #include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "can_driver.hpp"
@@ -94,6 +95,8 @@ public:
     }
     // PIDDefinition *getDef(uint16_t pid) const;
     esp_err_t getDef(uint16_t pid, PIDDefinitionData& outDef) const;
+    esp_err_t getDefinitionSnapshot(std::vector<PIDDefinitionData>& out) const;
+    esp_err_t getDataSnapshot(std::vector<std::pair<uint16_t, PIDData_t>>& out) const;
 
     // Special Getters
     std::string              getVIN() const;
@@ -151,19 +154,17 @@ public:
         return dtcData;
     }
 
-    uint32_t getPIDDataSize() const
-    {
-        return pidData.size();
-    }
+    uint32_t getPIDDataSize() const;
 
-    uint32_t getPIDDEFSize() const
-    {
-        return PID_DEF.size();
-    }
+    uint32_t getPIDDEFSize() const;
 
     virtual esp_err_t addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std::string name, std::string unit,
                              std::string desc, std::string formula, float minV, float maxV, uint8_t priority,
                              uint16_t interval, uint32_t color, std::string icon);
+
+    esp_err_t replacePIDDefinitions(const std::vector<PIDDefinitionData>& definitions,
+                                    const std::vector<PollRequest>& recurringRequests,
+                                    const std::vector<uint16_t>& supportedCurrentPids);
 
     esp_err_t removePID(uint16_t pid);
 

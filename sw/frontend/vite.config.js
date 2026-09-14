@@ -30,11 +30,9 @@ export default defineConfig({
 		proxy: {
 			'/api': {
 				target: 'http://can-sniffer.local',
-				changeOrigin: true,
 			},
 			'/ws': {
 				target: 'ws://can-sniffer.local',
-				changeOrigin: true,
 				ws: true,
 				secure: false,
 			}

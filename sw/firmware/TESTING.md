@@ -4,13 +4,13 @@ Install the test dependencies and run the read-only integration suite:
 
 ```sh
 python -m pip install -r requirements-test.txt
-pytest -m "integration and not sd_write and not sd_mutating_security"
+pytest -m "integration and not sd_write and not sd_mutating_security and not pid_def_write"
 ```
 
 The target defaults to `http://can-sniffer.local`. Override it when needed:
 
 ```sh
-CAN_SNIFFER_URL=http://192.168.4.1 pytest -m "integration and not sd_write and not sd_mutating_security"
+CAN_SNIFFER_URL=http://192.168.4.1 pytest -m "integration and not sd_write and not sd_mutating_security and not pid_def_write"
 ```
 
 Tests skip clearly when the device or SD card is unavailable. Every request has
@@ -25,6 +25,15 @@ directory, verifies one file, and removes both in a `finally` block:
 
 ```sh
 CAN_SNIFFER_ENABLE_SD_WRITE=1 pytest --run-sd-write -m sd_write
+```
+
+The PID-definition replacement test is separately double-gated. It snapshots
+the complete current definition set, temporarily clears it, and restores the
+snapshot in a `finally` block. This briefly changes live PID behavior and must
+only be run against a device where that interruption is acceptable:
+
+```sh
+CAN_SNIFFER_ENABLE_PID_DEF_WRITE=1 pytest --run-pid-def-write -m pid_def_write
 ```
 
 GET-only path-security checks run by default and continue to require HTTP 400.
