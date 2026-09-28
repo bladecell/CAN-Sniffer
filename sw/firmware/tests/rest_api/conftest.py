@@ -1,5 +1,7 @@
 import http.client
 import os
+import socket
+import ssl
 import threading
 import time
 from dataclasses import dataclass
@@ -124,6 +126,108 @@ def raw_request(base_url: str, method: str, target: str, limiter: RateLimiter, b
         connection.close()
 
 
+def raw_request_with_headers(
+    base_url: str, method: str, target: str, limiter: RateLimiter, headers: tuple[str, ...], body: bytes = b""
+) -> RawResponse:
+    """Send exact header lines, including deliberately absent or malformed fields."""
+    parsed = urlsplit(base_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError(f"Unsupported CAN_SNIFFER_URL: {base_url!r}")
+    if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
+        raise ValueError("CAN_SNIFFER_URL must contain only scheme and authority")
+    if not target.startswith("/"):
+        raise ValueError("raw request target must start with '/'")
+
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    limiter.wait()
+    sock = socket.create_connection((parsed.hostname, port), timeout=CONNECT_TIMEOUT)
+    try:
+        sock.settimeout(READ_TIMEOUT)
+        if parsed.scheme == "https":
+            context = ssl.create_default_context()
+            sock = context.wrap_socket(sock, server_hostname=parsed.hostname)
+            sock.settimeout(READ_TIMEOUT)
+
+        host = parsed.hostname
+        if ":" in host and not host.startswith("["):
+            host = f"[{host}]"
+        if parsed.port:
+            host = f"{host}:{parsed.port}"
+        request = (
+            f"{method} {target} HTTP/1.1\r\n"
+            f"Host: {host}\r\n"
+            + "".join(f"{header}\r\n" for header in headers)
+            + "Connection: close\r\n\r\n"
+        ).encode("ascii")
+        sock.sendall(request + body)
+
+        response = http.client.HTTPResponse(sock)
+        response.begin()
+        result = RawResponse(response.status, tuple(response.getheaders()), response.read(64 * 1024))
+        if result.status == 429:
+            retry_after = dict(result.headers).get("Retry-After", "not provided")
+            raise RuntimeError(f"firmware rate limit returned HTTP 429 (Retry-After: {retry_after})")
+        return result
+    finally:
+        sock.close()
+
+
+def fragmented_raw_request(
+    base_url: str, method: str, target: str, limiter: RateLimiter, body: bytes
+) -> RawResponse:
+    """Send the request body in several deliberate TCP writes."""
+    parsed = urlsplit(base_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError(f"Unsupported CAN_SNIFFER_URL: {base_url!r}")
+    if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
+        raise ValueError("CAN_SNIFFER_URL must contain only scheme and authority")
+    if not target.startswith("/"):
+        raise ValueError("raw request target must start with '/'")
+
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    limiter.wait()
+    sock = socket.create_connection((parsed.hostname, port), timeout=CONNECT_TIMEOUT)
+    try:
+        sock.settimeout(READ_TIMEOUT)
+        if parsed.scheme == "https":
+            context = ssl.create_default_context()
+            sock = context.wrap_socket(sock, server_hostname=parsed.hostname)
+            sock.settimeout(READ_TIMEOUT)
+
+        host = parsed.hostname
+        if ":" in host and not host.startswith("["):
+            host = f"[{host}]"
+        if parsed.port:
+            host = f"{host}:{parsed.port}"
+        headers = (
+            f"{method} {target} HTTP/1.1\r\n"
+            f"Host: {host}\r\n"
+            f"Content-Length: {len(body)}\r\n"
+            "Content-Type: application/json\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+        ).encode("ascii")
+        sock.sendall(headers)
+
+        split_one = max(1, len(body) // 3)
+        split_two = max(split_one + 1, (2 * len(body)) // 3)
+        chunks = (body[:split_one], body[split_one:split_two], body[split_two:])
+        for chunk in chunks:
+            if chunk:
+                sock.sendall(chunk)
+                time.sleep(0.02)
+
+        response = http.client.HTTPResponse(sock)
+        response.begin()
+        result = RawResponse(response.status, tuple(response.getheaders()), response.read(64 * 1024))
+        if result.status == 429:
+            retry_after = dict(result.headers).get("Retry-After", "not provided")
+            raise RuntimeError(f"firmware rate limit returned HTTP 429 (Retry-After: {retry_after})")
+        return result
+    finally:
+        sock.close()
+
+
 @pytest.fixture(scope="session")
 def base_url():
     return os.environ.get("CAN_SNIFFER_URL", "http://can-sniffer.local").rstrip("/")
@@ -144,6 +248,20 @@ def api(base_url, request_limiter):
 @pytest.fixture(scope="session")
 def raw_http(base_url, request_limiter):
     return lambda method, target, body=b"": raw_request(base_url, method, target, request_limiter, body)
+
+
+@pytest.fixture(scope="session")
+def raw_http_headers(base_url, request_limiter):
+    return lambda method, target, headers, body=b"": raw_request_with_headers(
+        base_url, method, target, request_limiter, headers, body
+    )
+
+
+@pytest.fixture(scope="session")
+def fragmented_raw_http(base_url, request_limiter):
+    return lambda method, target, body=b"": fragmented_raw_request(
+        base_url, method, target, request_limiter, body
+    )
 
 
 @pytest.fixture

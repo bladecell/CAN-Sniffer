@@ -2,6 +2,7 @@
   import { canStore } from "$lib/canStore.svelte";
   import { alertStore } from "$lib/alertStore.svelte";
   import { telemetryStore } from "$lib/telemetryStore.svelte";
+  import { parseJsonResponse, sdCardFileEndpoint } from "$lib/api";
   import FileTree from "./FileTree.svelte";
 
   interface Props {
@@ -25,12 +26,10 @@
     loadingTree = true;
     try {
       const response = await fetch("/api/v1/sd_card/tree");
-      const result = await response.json();
-      if (result.status === "success") {
-        tree = result;
-      }
+      tree = await parseJsonResponse(response);
     } catch (e) {
-      alertStore.add("Failed to fetch SD card tree", "error");
+      const reason = e instanceof Error ? `: ${e.message}` : "";
+      alertStore.add(`Failed to fetch SD card tree${reason}`, "error");
     } finally {
       loadingTree = false;
     }
@@ -44,8 +43,7 @@
 
     fetchingFile = true;
     try {
-      const endpoint =
-        "/api/v1/sd_card/file" + (path.startsWith("/") ? path : "/" + path);
+      const endpoint = sdCardFileEndpoint(path);
       console.log("Fetching SD card file from:", endpoint);
       const response = await fetch(endpoint);
       if (!response.ok) {

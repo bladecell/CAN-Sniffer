@@ -13,6 +13,7 @@ import type {
     SDCardInfo
 } from "./types";
 import { validatePidDefinitionSet } from "./pidValidation";
+import { parseJsonResponse, parseJsonResponseAllowEmpty } from "./api";
 
 function normalizePidDefinition(def: any): PidDefinition {
     if (!def || typeof def !== "object") {
@@ -326,8 +327,8 @@ export class CanStore {
 
         const time = view.getUint32(10, true);
         const rate = view.getUint32(14, true);
-        const isValid = view.getUint8(18) !== 0;
-        const isSupported = view.getUint8(19) !== 0;
+        const isSupported = view.getUint8(18) !== 0;
+        const isValid = view.getUint8(19) !== 0;
 
         const existing = this.pids.get(fullPid);
 
@@ -359,12 +360,21 @@ export class CanStore {
         }
     }
 
-    system = $state<SystemStatus[]>([]);
+    system = $state<SystemStatus>({
+        app_version: "",
+        uptime_s: 0,
+        restart_reason: "",
+        mac: "",
+        state: 0,
+        battery_voltage: 0,
+        sd_card_detected: false,
+        component_status: [],
+    });
 
     async requestSystem() {
         try {
             const response = await fetch("/api/v1/system");
-            const result = await response.json();
+            const result = await parseJsonResponse<SystemStatus>(response);
 
             this.system = result;
         } catch (e) {
@@ -377,7 +387,7 @@ export class CanStore {
     async requestSDInfo() {
         try {
             const response = await fetch("/api/v1/sd_card/info");
-            const result = await response.json();
+            const result = await parseJsonResponse<SDCardInfo>(response);
 
             this.sdInfo = result;
         } catch (e) {
@@ -390,11 +400,7 @@ export class CanStore {
     async loadDefinitions(): Promise<boolean> {
         try {
             const response = await fetch("/api/v1/pid_def");
-            if (!response.ok) {
-                throw new Error(`HTTP Error: ${response.status}`);
-            }
-
-            const result = await response.json();
+            const result = await parseJsonResponse<{ data: unknown }>(response);
 
             if (!Array.isArray(result.data)) {
                 throw new Error("Invalid PID definition response");
@@ -414,9 +420,7 @@ export class CanStore {
     async getCanStatus() {
         try {
             const response = await fetch("/api/v1/can_bus");
-            if (!response.ok) throw new Error(response.statusText);
-
-            const result = await response.json();
+            const result = await parseJsonResponse(response);
             this.canStatus = result;
         } catch (e) {
             console.error("Failed to load CAN status", e);
@@ -428,7 +432,7 @@ export class CanStore {
     async getObd2Status() {
         try {
             const response = await fetch("/api/v1/obd2");
-            const result = await response.json();
+            const result = await parseJsonResponse<any>(response);
 
             const supportedGroupsMap = new SvelteMap<number, boolean>();
 
@@ -468,9 +472,14 @@ export class CanStore {
 
     async setContinuousPolling(running: boolean) {
         try {
-            await fetch(`/api/v1/req/pid_poll?running=${running}`, {
+            const response = await fetch(`/api/v1/req/pid_poll?running=${running}`, {
                 method: "POST",
             });
+            if (response.status === 201) {
+                await parseJsonResponseAllowEmpty(response);
+            } else {
+                await parseJsonResponse(response);
+            }
 
             this.getObd2Status();
         } catch (e) {
@@ -483,7 +492,7 @@ export class CanStore {
     async getVin() {
         try {
             const response = await fetch("/api/v1/vin");
-            const result = await response.json();
+            const result = await parseJsonResponse<{ vin: string }>(response);
 
             this.vin = result.vin;
         } catch (e) {
@@ -496,12 +505,8 @@ export class CanStore {
             const response = await fetch("/api/v1/req/vin", {
                 method: "POST",
             });
-
-            const result = await response.json();
-
-            if (result.status === "success") {
-                this.getVin();
-            }
+            await parseJsonResponse(response);
+            this.getVin();
         } catch (e) {
             console.error("Failed to request VIN", e);
         }
@@ -510,14 +515,23 @@ export class CanStore {
     dtc = $state<DtcData>({
         confirmed: { mode: 3, dtc_count: 0, dtc: [] },
         pending: { mode: 7, dtc_count: 0, dtc: [] },
+        permanent: { mode: 10, dtc_count: 0, dtc: [] },
     });
     totalDTCs = $state(0);
 
     async getDTC() {
         try {
             const response = await fetch("/api/v1/dtc");
-            const result = await response.json();
+            const result = await parseJsonResponse<any>(response);
             const rawDtcs = result.dtcs || [];
+
+            // The response may omit an empty mode. Reset all groups first so a
+            // later response cannot leave stale codes in the store.
+            this.dtc = {
+                confirmed: { mode: 3, dtc_count: 0, dtc: [] },
+                pending: { mode: 7, dtc_count: 0, dtc: [] },
+                permanent: { mode: 10, dtc_count: 0, dtc: [] },
+            };
 
             const uniqueCodes = new Set<string>();
             for (const group of rawDtcs) {
@@ -536,9 +550,7 @@ export class CanStore {
 
                 try {
                     const descResponse = await fetch(`/api/v1/dtc?codes=${codesParam}`);
-                    if (!descResponse.ok) throw new Error(`HTTP Error: ${descResponse.status}`);
-
-                    const descResult = await descResponse.json();
+                    const descResult = await parseJsonResponse<any>(descResponse);
 
                     if (descResult.status === 'success' && Array.isArray(descResult.dtcs)) {
                         for (const item of descResult.dtcs) {
@@ -571,11 +583,20 @@ export class CanStore {
                             dtc_count: group.dtc_count,
                             dtc: mappedDtcs,
                         };
+                    } else if (group.mode === 10) {
+                        this.dtc.permanent = {
+                            mode: group.mode,
+                            dtc_count: group.dtc_count,
+                            dtc: mappedDtcs,
+                        };
                     }
                 }
             }
 
-            this.totalDTCs = this.dtc.confirmed.dtc_count;
+            this.totalDTCs =
+                this.dtc.confirmed.dtc_count +
+                this.dtc.pending.dtc_count +
+                this.dtc.permanent.dtc_count;
         } catch (e) {
             console.error("Failed to load DTC", e);
         }
@@ -588,14 +609,16 @@ export class CanStore {
             const response = await fetch(request_url, {
                 method: "POST",
             });
+            const result = await parseJsonResponse<{ status?: string; reason?: string }>(response);
+            await this.getDTC();
 
-            const result = await response.json();
-
-            if (result.status === "success") {
-                this.getDTC();
+            if (mode === -1 && result.status === "partial_success") {
+                alertStore.add(result.reason || "DTC refresh incomplete.", "warning");
             }
         } catch (e) {
             console.error("Failed to request DTC", e);
+            const reason = e instanceof Error ? `: ${e.message}` : "";
+            alertStore.add(`Failed to request DTCs${reason}`, "error");
         }
     }
 
@@ -608,16 +631,14 @@ export class CanStore {
             const response = await fetch("/api/v1/req/clear_dtc", {
                 method: "POST",
             });
-
-            if (!response.ok) {
-                throw new Error(`HTTP Error: ${response.status}`);
-            }
+            await parseJsonResponse(response);
 
             await this.requestDTC();
 
         } catch (e) {
             console.error("Failed to clear DTCs:", e);
-            alertStore.add("Failed to clear DTCs.", "error");
+            const reason = e instanceof Error ? `: ${e.message}` : "";
+            alertStore.add(`Failed to clear DTCs.${reason}`, "error");
         } finally {
             this.isClearing = false;
         }
@@ -629,7 +650,7 @@ export class CanStore {
             id: normalized.id,
             mode: normalized.mode,
             pid: normalized.pid,
-            len: normalized.length,
+            length: normalized.length,
             name: normalized.name,
             unit: normalized.unit,
             desc: normalized.description,
@@ -695,11 +716,7 @@ export class CanStore {
                 method: 'POST'
             });
 
-            if (!response.ok) {
-                throw new Error(`HTTP Error: ${response.status}`);
-            }
-
-            const result = await response.json();
+            const result = await parseJsonResponse<{ status?: string; reason?: string }>(response);
             if (result.status === "success") {
                 alertStore.add("PIDs saved successfully to FS.", "success");
             } else {

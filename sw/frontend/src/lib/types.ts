@@ -57,6 +57,7 @@ export type DashboardItem = PidGridItem | BatteryGridItem | DtcGridItem | Overvi
 export interface DtcData {
   confirmed: DtcModeData;
   pending: DtcModeData;
+  permanent: DtcModeData;
 }
 
 export interface DtcModeData {
@@ -87,19 +88,27 @@ export interface WsCanStatus {
 }
 
 export interface SystemStatus {
-  app_version: number;
+  app_version: string;
   uptime_s: number;
   restart_reason: string;
   mac: string;
+  state: number;
   battery_voltage: number;
-  sd_dard_detected: boolean;
+  sd_card_detected: boolean;
+  component_status: ComponentStatus[];
+}
+
+export interface ComponentStatus {
+  name: string;
+  status: string;
 }
 
 export interface SDCardInfo {
   name: string;
   mount_path: string;
   capacity: number;
-  used_space: number;
+  used_space_mb: number;
+  max_freq_mhz: number;
   is_sdio: boolean;
   is_mmc: boolean;
   is_mounted: boolean;

@@ -25,6 +25,7 @@
   const status = $derived.by((): "healthy" | "warn" | "malfunction" => {
     if (confirmedCodes.dtc_count > 0) return "malfunction";
     if (pendingCodes.dtc_count > 0) return "warn";
+    if (permanentCodes.dtc_count > 0) return "warn";
     return "healthy";
   });
 
@@ -40,7 +41,9 @@
     status === "healthy"
       ? "POWERTRAIN SYSTEMS HEALTHY"
       : status === "warn"
-        ? `${pendingCodes.dtc_count} PENDING FAULT${pendingCodes.dtc_count > 1 ? "S" : ""}`
+        ? pendingCodes.dtc_count > 0
+          ? `${pendingCodes.dtc_count} PENDING FAULT${pendingCodes.dtc_count > 1 ? "S" : ""}`
+          : `${permanentCodes.dtc_count} PERMANENT FAULT${permanentCodes.dtc_count > 1 ? "S" : ""}`
         : `${confirmedCodes.dtc_count} ACTIVE FAULT${confirmedCodes.dtc_count > 1 ? "S" : ""}`,
   );
 </script>
@@ -101,37 +104,37 @@
           </div>
         </div>
 
-        <!-- <div
+        <div
           class="code-column"
-          class:empty-column={permanentCodes.length === 0}
+          class:empty-column={permanentCodes.dtc_count === 0}
         >
           <div class="group-header permanent-text">
             <Icon name="lock" size={14} />
-            {permanentCodes.length} Permanent
+            {permanentCodes.dtc_count} Permanent
           </div>
           <div class="column-viewport">
             <div
               class="chips-flex"
-              class:marquee-active={permanentCodes.length > 3}
-              style="--item-count: {permanentCodes.length};"
+              class:marquee-active={permanentCodes.dtc_count > 3}
+              style="--item-count: {permanentCodes.dtc_count};"
             >
-              {#each permanentCodes as code}
-                <span class="dtc-chip permanent-chip">{code}</span>
+              {#each permanentCodes.dtc as code}
+                <span class="dtc-chip permanent-chip">{code.dtc}</span>
               {:else}
                 <span class="column-placeholder">—</span>
               {/each}
 
-              {#if permanentCodes.length > 3}
-                {#each permanentCodes as code}
+              {#if permanentCodes.dtc_count > 3}
+                {#each permanentCodes.dtc as code}
                   <span
                     class="dtc-chip permanent-chip duplicate-tag"
-                    aria-hidden="true">{code}</span
+                    aria-hidden="true">{code.dtc}</span
                   >
                 {/each}
               {/if}
             </div>
           </div>
-        </div> -->
+        </div>
 
         <div
           class="code-column"
@@ -204,7 +207,7 @@
 
   .codes-list-container {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 12px;
     width: 100%;
     height: 100%;
@@ -340,6 +343,12 @@
     }
     .marquee-active {
       animation: none;
+    }
+  }
+
+  @media (min-width: 501px) and (max-width: 800px) {
+    .codes-list-container {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
 </style>

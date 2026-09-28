@@ -27,15 +27,30 @@ def test_index(api, device_reachable):
 
 def test_system_schema(api, device_reachable):
     payload = get_json(api, "/api/v1/system")
-    required = {"app_version", "uptime_s", "restart_reason", "mac", "state", "battery_voltage",
-                "sd_card_detected", "component_status"}
-    assert required <= payload.keys()
+    assert set(payload) == {
+        "app_version",
+        "uptime_s",
+        "restart_reason",
+        "mac",
+        "state",
+        "battery_voltage",
+        "sd_card_detected",
+        "component_status",
+    }
     assert isinstance(payload["app_version"], str)
+    assert isinstance(payload["uptime_s"], int)
+    assert isinstance(payload["restart_reason"], str)
+    assert isinstance(payload["mac"], str)
+    assert isinstance(payload["state"], int)
+    assert isinstance(payload["battery_voltage"], (int, float))
+    assert not isinstance(payload["battery_voltage"], bool)
+    assert isinstance(payload["sd_card_detected"], bool)
     assert isinstance(payload["component_status"], list)
     for component in payload["component_status"]:
         assert isinstance(component, dict)
-        assert isinstance(component.get("name"), str)
-        assert isinstance(component.get("status"), str)
+        assert set(component) == {"name", "status"}
+        assert isinstance(component["name"], str)
+        assert isinstance(component["status"], str)
 
 
 def test_can_bus_schema(api, device_reachable):
@@ -59,13 +74,37 @@ def test_pid_collection_schema(api, device_reachable, path):
     assert_collection(get_json(api, path))
 
 
+def test_pid_definition_get_uses_canonical_length(api, device_reachable):
+    payload = get_json(api, "/api/v1/pid_def")
+    for definition in payload["data"]:
+        assert "length" in definition
+        assert "len" not in definition
+        assert isinstance(definition["length"], int)
+
+
 def test_dtc_schema(api, device_reachable):
     payload = get_json(api, "/api/v1/dtc")
     assert isinstance(payload, dict)
-    assert isinstance(payload.get("dtcs"), list)
-    assert isinstance(payload.get("count"), int)
+    assert set(payload) == {"dtcs", "count", "status"}
+    assert isinstance(payload["dtcs"], list)
+    assert isinstance(payload["count"], int)
     assert payload["count"] == len(payload["dtcs"])
-    assert isinstance(payload.get("status"), str)
+    assert payload["status"] == "success"
+
+    expected_sections = {
+        3: "confirmed_dtcs",
+        7: "pending_dtcs",
+        10: "permanent_dtcs",
+    }
+    assert {section["mode"] for section in payload["dtcs"]} == set(expected_sections)
+    for section in payload["dtcs"]:
+        assert set(section) == {"mode", "type", "dtc", "dtc_count"}
+        assert isinstance(section["mode"], int)
+        assert section["type"] == expected_sections[section["mode"]]
+        assert isinstance(section["dtc"], list)
+        assert isinstance(section["dtc_count"], int)
+        assert section["dtc_count"] == len(section["dtc"])
+        assert all(isinstance(code, str) for code in section["dtc"])
 
 
 def test_settings_schema(api, device_reachable):
@@ -78,9 +117,24 @@ def test_settings_schema(api, device_reachable):
 
 
 def test_sd_info_schema(sd_info):
-    required = {"name", "mount_path", "capacity", "used_space_mb", "max_freq_mhz", "is_sdio", "is_mmc",
-                "is_mounted", "is_present"}
-    assert required <= sd_info.keys()
+    assert set(sd_info) == {
+        "name",
+        "mount_path",
+        "capacity",
+        "used_space_mb",
+        "max_freq_mhz",
+        "is_sdio",
+        "is_mmc",
+        "is_mounted",
+        "is_present",
+    }
+    assert isinstance(sd_info["name"], str)
+    assert isinstance(sd_info["mount_path"], str)
+    for field in ("capacity", "used_space_mb", "max_freq_mhz"):
+        assert isinstance(sd_info[field], (int, float))
+        assert not isinstance(sd_info[field], bool)
+    assert isinstance(sd_info["is_sdio"], bool)
+    assert isinstance(sd_info["is_mmc"], bool)
     assert isinstance(sd_info["is_mounted"], bool)
     assert isinstance(sd_info["is_present"], bool)
 

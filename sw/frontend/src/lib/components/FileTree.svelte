@@ -2,6 +2,7 @@
   import FileTree from "./FileTree.svelte";
   import { alertStore } from "$lib/alertStore.svelte";
   import Icon from "$lib/Icon.svelte";
+  import { parseJsonResponse, sdCardFileEndpoint } from "$lib/api";
 
   interface FileNode {
     name?: string;
@@ -52,9 +53,9 @@
     confirmDeletePath = null;
 
     try {
-      const endpoint = "/api/v1/sd_card/file" + (path.startsWith('/') ? path : '/' + path) + (isFolder ? '/' : '');
+      const endpoint = sdCardFileEndpoint(path, isFolder);
       const response = await fetch(endpoint, { method: "DELETE" });
-      if (!response.ok) throw new Error("Delete failed: " + response.statusText);
+      await parseJsonResponse(response);
       
       alertStore.add(`Successfully deleted ${path}`, "success");
       if (onUploadSuccess) onUploadSuccess();
@@ -96,10 +97,9 @@
       if (!base.startsWith("/")) base = "/" + base;
       if (!base.endsWith("/")) base += "/";
       
-      const endpoint = "/api/v1/sd_card/file" + base + name + "/";
+      const endpoint = sdCardFileEndpoint(base + name, true);
       const response = await fetch(endpoint, { method: "POST", body: "" });
-      
-      if (!response.ok) throw new Error("Failed to create folder: " + response.statusText);
+      await parseJsonResponse(response);
       
       alertStore.add(`Folder created successfully`, "success");
       if (onUploadSuccess) onUploadSuccess();
@@ -139,7 +139,7 @@
     try {
       const folder = uploadTargetFolder.endsWith("/") ? uploadTargetFolder : uploadTargetFolder + "/";
       const fullPath = folder + file.name;
-      const endpoint = "/api/v1/sd_card/file" + fullPath;
+      const endpoint = sdCardFileEndpoint(fullPath);
       
       const response = await fetch(endpoint, {
         method: "POST",
@@ -149,7 +149,7 @@
         }
       });
       
-      if (!response.ok) throw new Error("Upload failed: " + response.statusText);
+      await parseJsonResponse(response);
       
       alertStore.add("File uploaded successfully to " + fullPath, "success");
       if (onUploadSuccess) onUploadSuccess();

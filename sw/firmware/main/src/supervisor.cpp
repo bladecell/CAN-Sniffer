@@ -2,7 +2,11 @@
 
 #include "supervisor.hpp"
 
+#include <cctype>
+#include <cerrno>
 #include <cstring>
+#include <limits>
+#include <sys/stat.h>
 
 #include "async_web_server.hpp"
 #include "battery.hpp"
@@ -27,6 +31,47 @@
 static const char* TAG = "SUPERVISOR";
 
 #define MOUNT_POINT "/sdcard"
+
+namespace
+{
+constexpr TickType_t SD_OPERATION_TIMEOUT_TICKS = pdMS_TO_TICKS(5000);
+
+// SDCard accepts either leading-slash form for a relative path and one trailing
+// slash.  Normalize those accepted spellings before comparing copy endpoints.
+bool canonical_sd_relative_path(const char* path, std::string& canonical_path)
+{
+    if (!SDCard::is_path_under(path, MOUNT_POINT))
+        return false;
+
+    const char* relative_path = path + strlen(MOUNT_POINT);
+    if (SDCard::validate_relative_path(relative_path, true) != ESP_OK)
+        return false;
+
+    if (*relative_path == '/')
+        ++relative_path;
+
+    canonical_path = relative_path;
+    if (!canonical_path.empty() && canonical_path.back() == '/')
+        canonical_path.pop_back();
+
+    // FAT filename matching is case-insensitive for ASCII characters.  Do the
+    // fold locally instead of using locale-sensitive ctype helpers or probing
+    // the filesystem (which could race with the subsequent copy).
+    for (char& character : canonical_path)
+    {
+        const unsigned char byte = static_cast<unsigned char>(character);
+        if (byte >= static_cast<unsigned char>('a') && byte <= static_cast<unsigned char>('z'))
+            character = static_cast<char>(byte - ('a' - 'A'));
+    }
+
+    return true;
+}
+
+bool is_confirmed_missing_errno(int error_number)
+{
+    return error_number == ENOENT || error_number == ENOTDIR;
+}
+}
 
 SUPERVISOR::SUPERVISOR()
 {
@@ -417,18 +462,15 @@ esp_err_t SUPERVISOR::setup_obd()
                 ESP_LOGW("SUPERVISOR", "VIN request failed: %s", esp_err_to_name(err));
             }
 
-            err = obd2.requestDTC(MODE_DTCS);
-            if (err == ESP_OK)
-                err = obd2.requestDTC(MODE_PENDING_DTCS);
-            // if (err == ESP_OK)
-            //     err = obd2.requestDTC(MODE_PERMANENT_DTCS);
+            const uint8_t dtc_modes[] = {MODE_DTCS, MODE_PENDING_DTCS, MODE_PERMANENT_DTCS};
+            for (const uint8_t mode : dtc_modes)
+            {
+                err = obd2.requestDTC(mode);
+                if (err != ESP_OK)
+                    ESP_LOGW("SUPERVISOR", "DTC mode 0x%02X request failed: %s", mode, esp_err_to_name(err));
+            }
 
             ESP_LOGI("SUPERVISOR", "DTC request sent, waiting for response...");
-
-            if (err != ESP_OK)
-            {
-                ESP_LOGW("SUPERVISOR", "DTC request failed: %s", esp_err_to_name(err));
-            }
         });
 
     // Supervisor state on disconnect
@@ -575,17 +617,17 @@ float SUPERVISOR::get_battery_voltage() const
     return battery_read();
 }
 
-esp_err_t SUPERVISOR::save_pid_def_to_json(const char* path)
+SUPERVISOR::PidDefinitionSaveResult SUPERVISOR::save_pid_def_to_json(const char* path)
 {
     if (path == nullptr || !SDCard::is_path_under(path, "/sdcard"))
     {
         ESP_LOGE(TAG, "Refusing to write PID definitions outside /sdcard");
-        return ESP_ERR_INVALID_ARG;
+        return {ESP_ERR_INVALID_ARG, false};
     }
 
     cJSON* rootArray = cJSON_CreateArray();
     if (rootArray == nullptr)
-        return ESP_ERR_NO_MEM;
+        return {ESP_ERR_NO_MEM, false};
 
     auto& obd2 = OBD2::getInstance();
     std::vector<PIDDefinitionData> definitions;
@@ -593,7 +635,7 @@ esp_err_t SUPERVISOR::save_pid_def_to_json(const char* path)
     if (snapshotErr != ESP_OK)
     {
         cJSON_Delete(rootArray);
-        return snapshotErr;
+        return {snapshotErr, false};
     }
 
     for (const auto& def : definitions)
@@ -602,12 +644,12 @@ esp_err_t SUPERVISOR::save_pid_def_to_json(const char* path)
         if (item == nullptr)
         {
             cJSON_Delete(rootArray);
-            return ESP_ERR_NO_MEM;
+            return {ESP_ERR_NO_MEM, false};
         }
         cJSON_AddNumberToObject(item, "id", def.id);
         cJSON_AddNumberToObject(item, "mode", def.mode);
         cJSON_AddNumberToObject(item, "pid", def.pid);
-        cJSON_AddNumberToObject(item, "len", def.len);
+        cJSON_AddNumberToObject(item, "length", def.len);
         cJSON_AddStringToObject(item, "name", def.name.c_str());
         cJSON_AddStringToObject(item, "unit", def.unit.c_str());
         cJSON_AddStringToObject(item, "desc", def.description.c_str());
@@ -626,31 +668,47 @@ esp_err_t SUPERVISOR::save_pid_def_to_json(const char* path)
 
     if (jsonString == nullptr)
     {
-        return ESP_ERR_NO_MEM;
+        return {ESP_ERR_NO_MEM, false};
     }
 
-    FILE* f = fopen(path, "w");
-    if (f == nullptr)
+    const size_t len = strlen(jsonString);
+    esp_err_t    ret = ESP_OK;
+
     {
-        ESP_LOGE(TAG, "Failed to open file for writing: %s", path);
-        free(jsonString);
-        return ESP_FAIL;
-    }
+        auto operation = SDCard::getInstance().acquire_operation(SD_OPERATION_TIMEOUT_TICKS, true);
+        if (!operation)
+        {
+            free(jsonString);
+            return {operation.status(), operation.status() == ESP_ERR_TIMEOUT};
+        }
 
-    size_t len     = strlen(jsonString);
-    size_t written = fwrite(jsonString, 1, len, f);
-    fclose(f);
+        FILE* f = fopen(path, "w");
+        if (f == nullptr)
+        {
+            ESP_LOGE(TAG, "Failed to open file for writing: %s", path);
+            ret = ESP_FAIL;
+        }
+        else
+        {
+            const size_t written = fwrite(jsonString, 1, len, f);
+            const int    flush   = fflush(f);
+            const int    close   = fclose(f);
+
+            if (written != len || flush != 0 || close != 0)
+            {
+                ESP_LOGE(TAG, "Failed to write complete JSON to %s", path);
+                ret = ESP_FAIL;
+            }
+        }
+    }
 
     free(jsonString);
 
-    if (written != len)
-    {
-        ESP_LOGE(TAG, "Failed to write complete JSON to %s", path);
-        return ESP_FAIL;
-    }
+    if (ret != ESP_OK)
+        return {ret, false};
 
     ESP_LOGI(TAG, "Successfully saved PID definitions to %s", path);
-    return ESP_OK;
+    return {ESP_OK, false};
 }
 
 esp_err_t SUPERVISOR::load_pid_def_from_json(const char* path)
@@ -661,57 +719,126 @@ esp_err_t SUPERVISOR::load_pid_def_from_json(const char* path)
         return ESP_ERR_INVALID_ARG;
     }
 
-    struct stat st;
-    if (stat(path, &st) != 0)
-    {
-        ESP_LOGW(TAG, "JSON file not found (expected on first boot or missing): %s", path);
-        return ESP_ERR_NOT_FOUND;
-    }
+    char*  buffer     = nullptr;
+    size_t bytes_read = 0;
 
-    size_t file_size = st.st_size;
-    if (file_size == 0)
     {
-        ESP_LOGW(TAG, "JSON file is empty: %s", path);
-        return ESP_OK;
-    }
+        auto operation = SDCard::getInstance().acquire_operation(SD_OPERATION_TIMEOUT_TICKS, true);
+        if (!operation)
+            return operation.status();
 
-    char* buffer = (char*)heap_caps_malloc(file_size + 1, MALLOC_CAP_SPIRAM);
-    if (buffer == nullptr)
-    {
-        buffer = (char*)malloc(file_size + 1);
-        if (buffer == nullptr)
+        struct stat st;
+        if (stat(path, &st) != 0)
         {
-            ESP_LOGE(TAG, "Failed to allocate %zu bytes for JSON file", file_size + 1);
+            const int stat_errno = errno;
+            if (is_confirmed_missing_errno(stat_errno))
+            {
+                ESP_LOGW(TAG, "JSON file not found (expected on first boot or missing): %s", path);
+                return ESP_ERR_NOT_FOUND;
+            }
+
+            ESP_LOGE(TAG, "Failed to inspect JSON file %s (errno %d)", path, stat_errno);
+            return ESP_FAIL;
+        }
+
+        if (st.st_size <= 0)
+        {
+            ESP_LOGW(TAG, "JSON file is empty or invalid: %s", path);
+            return ESP_ERR_INVALID_ARG;
+        }
+
+        if (static_cast<uintmax_t>(st.st_size) >= std::numeric_limits<size_t>::max())
+        {
+            ESP_LOGE(TAG, "JSON file is too large to load: %s", path);
             return ESP_ERR_NO_MEM;
         }
-    }
 
-    FILE* f = fopen(path, "r");
-    if (f == nullptr)
-    {
-        ESP_LOGE(TAG, "Failed to open file for reading: %s", path);
-        free(buffer);
-        return ESP_FAIL;
-    }
+        const size_t file_size = static_cast<size_t>(st.st_size);
 
-    size_t bytes_read = fread(buffer, 1, file_size, f);
-    fclose(f);
+        buffer = (char*)heap_caps_malloc(file_size + 1, MALLOC_CAP_SPIRAM);
+        if (buffer == nullptr)
+        {
+            buffer = (char*)malloc(file_size + 1);
+            if (buffer == nullptr)
+            {
+                ESP_LOGE(TAG, "Failed to allocate %zu bytes for JSON file", file_size + 1);
+                return ESP_ERR_NO_MEM;
+            }
+        }
 
-    if (bytes_read == 0 && file_size > 0)
-    {
-        ESP_LOGE(TAG, "Failed to read data from %s", path);
-        free(buffer);
-        return ESP_FAIL;
+        FILE* f = fopen(path, "r");
+        if (f == nullptr)
+        {
+            const int open_errno = errno;
+            ESP_LOGE(TAG, "Failed to open file for reading: %s (errno %d)", path, open_errno);
+            free(buffer);
+            return is_confirmed_missing_errno(open_errno) ? ESP_ERR_NOT_FOUND : ESP_FAIL;
+        }
+
+        errno      = 0;
+        bytes_read = fread(buffer, 1, file_size, f);
+        bool read_complete = bytes_read == file_size && ferror(f) == 0;
+
+        // A successful fixed-size fread alone does not prove that the source
+        // did not grow after stat().  Require EOF and an unchanged file size.
+        if (read_complete)
+        {
+            errno = 0;
+            if (fgetc(f) != EOF)
+                read_complete = false;
+        }
+        if (ferror(f) != 0)
+            read_complete = false;
+
+        struct stat after_read;
+        errno             = 0;
+        const int fstat_ret = fstat(fileno(f), &after_read);
+        if (fstat_ret != 0)
+        {
+            read_complete = false;
+        }
+        else if (after_read.st_size != st.st_size)
+        {
+            read_complete = false;
+        }
+
+        const int close = fclose(f);
+
+        if (!read_complete || close != 0)
+        {
+            ESP_LOGE(TAG, "Failed to read a complete, consistent JSON file from %s", path);
+            free(buffer);
+            return ESP_FAIL;
+        }
     }
 
     buffer[bytes_read] = '\0';
 
-    cJSON* rootArray = cJSON_Parse(buffer);
+    const char* parse_end = nullptr;
+    cJSON* rootArray = cJSON_ParseWithLengthOpts(buffer, bytes_read, &parse_end, 0);
+
+    if (rootArray != nullptr && parse_end != nullptr && parse_end >= buffer && parse_end <= buffer + bytes_read)
+    {
+        while (parse_end < buffer + bytes_read && std::isspace(static_cast<unsigned char>(*parse_end)))
+            ++parse_end;
+
+        if (parse_end != buffer + bytes_read)
+        {
+            cJSON_Delete(rootArray);
+            rootArray = nullptr;
+        }
+    }
+    else
+    {
+        cJSON_Delete(rootArray);
+        rootArray = nullptr;
+    }
+
     free(buffer);
 
     if (rootArray == nullptr || !cJSON_IsArray(rootArray))
     {
-        ESP_LOGE(TAG, "Failed to parse JSON, or root is not an array");
+        ESP_LOGE(TAG, "Failed to parse complete JSON, or root is not an array");
         cJSON_Delete(rootArray);
         return ESP_ERR_INVALID_ARG;
     }
@@ -743,25 +870,19 @@ esp_err_t SUPERVISOR::copy_file(const char* src_path, const char* dest_path)
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (!SDCard::is_path_under(src_path, "/sdcard") || !SDCard::is_path_under(dest_path, "/sdcard"))
+    std::string canonical_source;
+    std::string canonical_destination;
+    if (!canonical_sd_relative_path(src_path, canonical_source) ||
+        !canonical_sd_relative_path(dest_path, canonical_destination))
     {
         ESP_LOGE("FileOps", "Refusing file copy outside /sdcard: %s -> %s", src_path, dest_path);
         return ESP_ERR_INVALID_ARG;
     }
 
-    FILE* f_src = fopen(src_path, "rb");
-    if (f_src == nullptr)
+    if (canonical_source == canonical_destination)
     {
-        ESP_LOGE("FileOps", "Failed to open source file: %s", src_path);
-        return ESP_FAIL;
-    }
-
-    FILE* f_dest = fopen(dest_path, "wb");
-    if (f_dest == nullptr)
-    {
-        ESP_LOGE("FileOps", "Failed to open destination file: %s", dest_path);
-        fclose(f_src);
-        return ESP_FAIL;
+        ESP_LOGE("FileOps", "Refusing to copy a file onto itself: %s -> %s", src_path, dest_path);
+        return ESP_ERR_INVALID_ARG;
     }
 
     const size_t chunk_size = 2048;
@@ -769,35 +890,65 @@ esp_err_t SUPERVISOR::copy_file(const char* src_path, const char* dest_path)
     if (buffer == nullptr)
     {
         ESP_LOGE("FileOps", "Failed to allocate memory for file copy buffer");
-        fclose(f_src);
-        fclose(f_dest);
         return ESP_ERR_NO_MEM;
     }
 
-    size_t    bytes_read = 0;
-    esp_err_t ret        = ESP_OK;
-
-    while ((bytes_read = fread(buffer, 1, chunk_size, f_src)) > 0)
     {
-        size_t bytes_written = fwrite(buffer, 1, bytes_read, f_dest);
-        if (bytes_written != bytes_read)
+        auto operation = SDCard::getInstance().acquire_operation(SD_OPERATION_TIMEOUT_TICKS, true);
+        if (!operation)
         {
-            ESP_LOGE("FileOps", "Write error to %s (Disk full?)", dest_path);
-            ret = ESP_FAIL;
-            break;
+            free(buffer);
+            return operation.status();
         }
+
+        FILE* f_src = fopen(src_path, "rb");
+        if (f_src == nullptr)
+        {
+            ESP_LOGE("FileOps", "Failed to open source file: %s", src_path);
+            free(buffer);
+            return ESP_FAIL;
+        }
+
+        FILE* f_dest = fopen(dest_path, "wb");
+        if (f_dest == nullptr)
+        {
+            ESP_LOGE("FileOps", "Failed to open destination file: %s", dest_path);
+            fclose(f_src);
+            free(buffer);
+            return ESP_FAIL;
+        }
+
+        size_t    bytes_read = 0;
+        esp_err_t ret        = ESP_OK;
+
+        while ((bytes_read = fread(buffer, 1, chunk_size, f_src)) > 0)
+        {
+            const size_t bytes_written = fwrite(buffer, 1, bytes_read, f_dest);
+            if (bytes_written != bytes_read)
+            {
+                ESP_LOGE("FileOps", "Write error to %s (Disk full?)", dest_path);
+                ret = ESP_FAIL;
+                break;
+            }
+        }
+
+        if (ferror(f_src) != 0)
+            ret = ESP_FAIL;
+        if (fflush(f_dest) != 0)
+            ret = ESP_FAIL;
+
+        free(buffer);
+        const int src_close  = fclose(f_src);
+        const int dest_close = fclose(f_dest);
+        if (src_close != 0 || dest_close != 0)
+            ret = ESP_FAIL;
+
+        if (ret != ESP_OK)
+            return ret;
     }
 
-    free(buffer);
-    fclose(f_src);
-    fclose(f_dest);
-
-    if (ret == ESP_OK)
-    {
-        ESP_LOGI("FileOps", "Successfully copied %s to %s", src_path, dest_path);
-    }
-
-    return ret;
+    ESP_LOGI("FileOps", "Successfully copied %s to %s", src_path, dest_path);
+    return ESP_OK;
 }
 
 esp_err_t SUPERVISOR::load_config_from_nvs()

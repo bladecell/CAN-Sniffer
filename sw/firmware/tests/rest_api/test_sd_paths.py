@@ -9,6 +9,52 @@ FILE_ROUTE = "/api/v1/sd_card/file"
 NONEXISTENT = f"__pytest_path_guard_{uuid.uuid4().hex}__"
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        pytest.param("", id="absent"),
+        pytest.param("?download=true", id="true"),
+        pytest.param("?download=false", id="false"),
+        pytest.param("?download=1", id="one"),
+        pytest.param("?download=0", id="zero"),
+    ],
+)
+def test_file_read_accepts_canonical_download_queries(raw_http, device_reachable, query):
+    response = raw_http("GET", f"{FILE_ROUTE}/{NONEXISTENT}{query}")
+
+    # The target deliberately does not exist. Any result other than 400 proves
+    # the query passed validation without creating or changing SD-card data.
+    assert response.status != 400, (query, response.status, response.body)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        pytest.param("?", id="empty-query"),
+        pytest.param("?download", id="missing-equals"),
+        pytest.param("?download=", id="empty-value"),
+        pytest.param("?download=true&", id="trailing-ampersand"),
+        pytest.param("?&download=true", id="leading-empty-component"),
+        pytest.param("?download=true&&", id="empty-component"),
+        pytest.param("?download=true&download=false", id="duplicate-key"),
+        pytest.param("?preview=true", id="unknown-key"),
+        pytest.param("?download=true&preview=false", id="mixed-known-and-unknown-keys"),
+        pytest.param("?Download=true", id="case-variant-key"),
+        pytest.param("?download=True", id="case-variant-value"),
+        pytest.param("?download=01", id="malformed-value"),
+        pytest.param("?download=%74rue", id="encoded-value"),
+        pytest.param("?download=true=false", id="extra-equals-in-value"),
+    ],
+)
+def test_file_read_rejects_noncanonical_download_queries_before_sd_access(
+    raw_http, device_reachable, query
+):
+    response = raw_http("GET", f"{FILE_ROUTE}/{NONEXISTENT}{query}")
+
+    assert response.status == 400, (query, response.status, response.body)
+    assert "application/json" in dict(response.headers).get("Content-Type", "")
+
+
 @pytest.mark.parametrize("suffix", ["/", "/.", "/..", "/%2e", "/%2e%2e"])
 def test_file_root_and_normalized_roots_are_rejected_by_get(raw_http, device_reachable, suffix):
     response = raw_http("GET", FILE_ROUTE + suffix)

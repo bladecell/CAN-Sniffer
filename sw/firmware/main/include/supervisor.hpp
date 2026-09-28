@@ -18,6 +18,13 @@
 class SUPERVISOR
 {
 public:
+    struct PidDefinitionSaveResult
+    {
+        // Set only when the bounded SD operation lease could not be acquired.
+        esp_err_t error;
+        bool      sd_card_busy;
+    };
+
     struct Config
     {
         std::string pid_def_path  = PID_DEF_DB_PATH;
@@ -105,7 +112,7 @@ public:
     }
 
     esp_err_t load_config_from_nvs();
-    esp_err_t save_pid_def_to_json(const char* path);
+    PidDefinitionSaveResult save_pid_def_to_json(const char* path);
     esp_err_t load_pid_def_from_json(const char* path);
     esp_err_t copy_file(const char* src_path, const char* dest_path);
 

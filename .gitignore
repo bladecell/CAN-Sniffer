@@ -11,3 +11,4 @@ sw/firmware/~$OBDII-PIDs.xlsx
 sw/firmware/main/include/secrets.h
 sw/firmware/main/main.cpp.disabled_sd
 sw/firmware/asd.json
+.slim/deepwork/

@@ -10,6 +10,10 @@
 
   const pendingCodes = $derived(canStore?.dtc?.pending || {}) as DtcModeData;
 
+  const permanentCodes = $derived(
+    canStore?.dtc?.permanent || {},
+  ) as DtcModeData;
+
   const activeFaults = $derived.by((): DTCFaultProps[] => {
     const confirmed = confirmedCodes.dtc.map((code: singleDtc) => ({
       code: code.dtc,
@@ -23,12 +27,19 @@
       mode: 7,
     }));
 
-    return [...confirmed, ...pending];
+    const permanent = permanentCodes.dtc.map((code: singleDtc) => ({
+      code: code.dtc,
+      description: code.description || "No description provided",
+      mode: code.mode || 10,
+    }));
+
+    return [...confirmed, ...pending, ...permanent];
   });
 
   const status = $derived.by((): "healthy" | "warn" | "malfunction" => {
     if (confirmedCodes.dtc_count > 0) return "malfunction";
     if (pendingCodes.dtc_count > 0) return "warn";
+    if (permanentCodes.dtc_count > 0) return "warn";
     return "healthy";
   });
 
@@ -44,7 +55,9 @@
     status === "healthy"
       ? "POWERTRAIN SYSTEMS HEALTHY"
       : status === "warn"
-        ? `${pendingCodes.dtc_count} PENDING FAULT${pendingCodes.dtc_count > 1 ? "S" : ""}`
+        ? pendingCodes.dtc_count > 0
+          ? `${pendingCodes.dtc_count} PENDING FAULT${pendingCodes.dtc_count > 1 ? "S" : ""}`
+          : `${permanentCodes.dtc_count} PERMANENT FAULT${permanentCodes.dtc_count > 1 ? "S" : ""}`
         : `${confirmedCodes.dtc_count} ACTIVE FAULT${confirmedCodes.dtc_count > 1 ? "S" : ""}`,
   );
 </script>
