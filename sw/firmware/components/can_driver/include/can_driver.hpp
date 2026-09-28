@@ -8,7 +8,10 @@
 #include "esp_twai_onchip.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
+
+struct CanDriverLifecycleTestAccess;
 
 #define HEALTH_CHECK_TASK_PRIO 3  // Periodic monitoring
 #define TX_TASK_PRIO 4            // Periodic monitoring
@@ -122,7 +125,9 @@ public:
 
     // Connection Change Callback
     typedef void (*ConnectionChangeCallback_t)(void* arg, bool connected);
-    void setConnectionChangeCallback(ConnectionChangeCallback_t callback, void* arg);
+    esp_err_t setConnectionChangeCallback(ConnectionChangeCallback_t callback, void* arg,
+                                          TickType_t waitTicks = portMAX_DELAY);
+    bool isConnectionChangeCallbackTask() const;
 
     // RX Callback
     typedef void (*RxCallback_t)(void* arg);
@@ -145,6 +150,8 @@ public:
     }
 
 private:
+    friend struct CanDriverLifecycleTestAccess;
+
     CanDriver(const CanDriver&)            = delete;
     CanDriver& operator=(const CanDriver&) = delete;
     // Callbacks
@@ -162,6 +169,8 @@ private:
     void                       connectionChangeCb(bool connected);
     ConnectionChangeCallback_t connectionChangeCallback    = nullptr;
     void*                      connectionChangeCallbackArg = nullptr;
+    SemaphoreHandle_t          connectionChangeCallbackFence = nullptr;
+    std::atomic<TaskHandle_t>   connectionChangeCallbackTask{nullptr};
 
     // RX Callback
     void         rxCb();

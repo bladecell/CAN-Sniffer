@@ -15,20 +15,10 @@
 
 static const char* TAG = "OBD2DataModel";
 
-void OBD2DataModel::initDef()
+esp_err_t OBD2DataModel::initDef()
 {
-    memset(vinData.vin, 0, sizeof(vinData.vin));
-    vinData.lastUpdated = 0;
-    vinData.isValid     = false;
-
-    dtcData.confirmed.clear();
-    dtcData.pending.clear();
-    dtcData.permanent.clear();
-
     if (vinData.vinReadySemaphore == nullptr)
         vinData.vinReadySemaphore = xSemaphoreCreateBinary();
-    if (vinData.mtx_ == nullptr)
-        vinData.mtx_ = xSemaphoreCreateMutex();
 
     if (dtcData.confirmedReadySemaphore == nullptr)
         dtcData.confirmedReadySemaphore = xSemaphoreCreateBinary();
@@ -38,14 +28,27 @@ void OBD2DataModel::initDef()
         dtcData.permanentReadySemaphore = xSemaphoreCreateBinary();
     if (dtcData.clearReadySemaphore == nullptr)
         dtcData.clearReadySemaphore = xSemaphoreCreateBinary();
-    if (dtcData.mtx_ == nullptr)
-        dtcData.mtx_ = xSemaphoreCreateMutex();
-
-    if (pidMapMtx == nullptr)
-        pidMapMtx = xSemaphoreCreateMutex();
-
-    if (subscribers_mtx_ == nullptr)
-        subscribers_mtx_ = xSemaphoreCreateMutex();
+    const bool allocated = vinData.vinReadySemaphore && vinData.mtx_ && dtcData.confirmedReadySemaphore &&
+                   dtcData.pendingReadySemaphore && dtcData.permanentReadySemaphore && dtcData.clearReadySemaphore &&
+                   dtcData.mtx_ && pidMapMtx && subscribers_mtx_;
+    if (!allocated) return ESP_ERR_NO_MEM;
+    if (xSemaphoreTake(vinData.mtx_, pdMS_TO_TICKS(100)) != pdTRUE) return ESP_ERR_TIMEOUT;
+    if (xSemaphoreTake(dtcData.mtx_, pdMS_TO_TICKS(100)) != pdTRUE) {
+        xSemaphoreGive(vinData.mtx_);
+        return ESP_ERR_TIMEOUT;
+    }
+    memset(vinData.vin, 0, sizeof(vinData.vin));
+    vinData.lastUpdated = 0;
+    vinData.isValid = false;
+    dtcData.confirmed.clear(); dtcData.pending.clear(); dtcData.permanent.clear();
+    xSemaphoreGive(dtcData.mtx_);
+    xSemaphoreGive(vinData.mtx_);
+    while (xSemaphoreTake(vinData.vinReadySemaphore, 0) == pdTRUE) {}
+    while (xSemaphoreTake(dtcData.confirmedReadySemaphore, 0) == pdTRUE) {}
+    while (xSemaphoreTake(dtcData.pendingReadySemaphore, 0) == pdTRUE) {}
+    while (xSemaphoreTake(dtcData.permanentReadySemaphore, 0) == pdTRUE) {}
+    while (xSemaphoreTake(dtcData.clearReadySemaphore, 0) == pdTRUE) {}
+    return ESP_OK;
 };
 
 esp_err_t OBD2DataModel::addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std::string name,
@@ -483,7 +486,7 @@ uint8_t OBD2DataModel::getRawDataByteUnsafe(uint16_t pid, uint8_t idx) const
 
 std::string OBD2DataModel::getVIN() const
 {
-    if (xSemaphoreTake(vinData.mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
+    if (!vinData.mtx_ || xSemaphoreTake(vinData.mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
     {
         return "";
     }
@@ -506,7 +509,7 @@ esp_err_t OBD2DataModel::_setDTC(uint16_t rawDTC, uint8_t mode)
         return ESP_OK;
     }
 
-    if (xSemaphoreTake(dtcData.mtx_, pdMS_TO_TICKS(100)) != pdTRUE)
+    if (!dtcData.mtx_ || xSemaphoreTake(dtcData.mtx_, pdMS_TO_TICKS(100)) != pdTRUE)
     {
         return ESP_ERR_TIMEOUT;
     }
@@ -544,7 +547,7 @@ esp_err_t OBD2DataModel::_setDTC(uint16_t rawDTC, uint8_t mode)
 
 esp_err_t OBD2DataModel::clearDTC(uint8_t mode)
 {
-    if (xSemaphoreTake(dtcData.mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
+    if (!dtcData.mtx_ || xSemaphoreTake(dtcData.mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
     {
         return ESP_ERR_TIMEOUT;
     }
@@ -610,7 +613,7 @@ std::vector<std::string> OBD2DataModel::getDTC(uint8_t mode) const
 {
     std::vector<std::string> result;
 
-    if (xSemaphoreTake(dtcData.mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
+    if (!dtcData.mtx_ || xSemaphoreTake(dtcData.mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
     {
         ESP_LOGW(TAG, "Failed to get dtc");
         return result;
@@ -638,13 +641,16 @@ std::vector<std::string> OBD2DataModel::getDTC(uint8_t mode) const
 
 void OBD2DataModel::subscribe(PidUpdateCallback cb)
 {
-    bool locked = (subscribers_mtx_ != nullptr) && (xSemaphoreTake(subscribers_mtx_, portMAX_DELAY) == pdTRUE);
+    if (!subscribers_mtx_ || xSemaphoreTake(subscribers_mtx_, portMAX_DELAY) != pdTRUE)
+    {
+        ESP_LOGE(TAG, "PID subscriber lock unavailable; subscription rejected");
+        return;
+    }
     subscribers_.push_back(std::move(cb));
-    if (locked)
-        xSemaphoreGive(subscribers_mtx_);
+    xSemaphoreGive(subscribers_mtx_);
 }
 
-void OBD2DataModel::runPidUpdateCallbacks(uint16_t pid)
+void OBD2DataModel::runPidUpdateCallbacks(uint16_t pid, const std::atomic<bool>* stopRequested)
 {
     std::vector<PidUpdateCallback> callbacks;
 
@@ -656,6 +662,7 @@ void OBD2DataModel::runPidUpdateCallbacks(uint16_t pid)
 
     for (const auto& cb : callbacks)
     {
+        if (stopRequested && stopRequested->load()) break;
         cb(pid);
     }
 }

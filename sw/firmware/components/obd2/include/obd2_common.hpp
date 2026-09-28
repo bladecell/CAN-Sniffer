@@ -181,9 +181,30 @@ struct PollRequest
         {
             return priority < other.priority;
         }
-        return nextWake < other.nextWake;
+        // Scheduling is only defined within a horizon shorter than half the
+        // TickType_t range. Modular comparison avoids signed subtraction.
+        return static_cast<TickType_t>(nextWake - other.nextWake) >
+               (static_cast<TickType_t>(~static_cast<TickType_t>(0)) / 2);
     }
 };
+
+// Wrap-safe tick helpers. Deadlines must be scheduled less than half a tick
+// range into the future (and compared requests must share that horizon).
+inline bool tickDeadlineDue(TickType_t deadline, TickType_t now)
+{
+    const TickType_t elapsed = static_cast<TickType_t>(now - deadline);
+    return elapsed <= static_cast<TickType_t>(~static_cast<TickType_t>(0)) / 2;
+}
+
+inline TickType_t ticksUntilDeadline(TickType_t deadline, TickType_t now)
+{
+    return tickDeadlineDue(deadline, now) ? 0 : static_cast<TickType_t>(deadline - now);
+}
+
+inline TickType_t tickDeadlineLatency(TickType_t deadline, TickType_t now)
+{
+    return tickDeadlineDue(deadline, now) ? static_cast<TickType_t>(now - deadline) : 0;
+}
 
 typedef struct
 {

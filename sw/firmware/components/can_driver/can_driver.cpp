@@ -22,6 +22,7 @@ CanDriver::CanDriver()
     nodeHdl               = NULL;
     txTaskHandle          = nullptr;
     txQueue               = nullptr;
+    connectionChangeCallbackFence = xSemaphoreCreateMutex();
 }
 
 CanDriver::~CanDriver()
@@ -166,8 +167,23 @@ esp_err_t CanDriver::init(const Config& config)
 
 esp_err_t CanDriver::deinit()
 {
+    if (isConnectionChangeCallbackTask())
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (connectionChangeCallbackFence == nullptr ||
+        xSemaphoreTake(connectionChangeCallbackFence, pdMS_TO_TICKS(5000)) != pdTRUE)
+    {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    connectionChangeCallback    = nullptr;
+    connectionChangeCallbackArg = nullptr;
+
     if (!isInitialized())
     {
+        xSemaphoreGive(connectionChangeCallbackFence);
         return ESP_OK;
     }
 
@@ -206,12 +222,14 @@ esp_err_t CanDriver::deinit()
     if (ret != ESP_OK)
     {
         ESP_LOGE(TAG, "Deleting TWAI Controller instance failed: %s", esp_err_to_name(ret));
+        xSemaphoreGive(connectionChangeCallbackFence);
         return ret;
     }
 
     if (simStop_)
         simStop_();
     canState.store(STATE::NOT_INITIALIZED);
+    xSemaphoreGive(connectionChangeCallbackFence);
     return ESP_OK;
 }
 
@@ -584,18 +602,46 @@ void CanDriver::healthCheckTask()
     vTaskDelete(NULL);
 }
 
-void CanDriver::setConnectionChangeCallback(ConnectionChangeCallback_t callback, void* arg)
+esp_err_t CanDriver::setConnectionChangeCallback(ConnectionChangeCallback_t callback, void* arg, TickType_t waitTicks)
 {
+    if (isConnectionChangeCallbackTask())
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (connectionChangeCallbackFence == nullptr)
+    {
+        return ESP_ERR_NO_MEM;
+    }
+    if (xSemaphoreTake(connectionChangeCallbackFence, waitTicks) != pdTRUE)
+    {
+        return ESP_ERR_TIMEOUT;
+    }
     connectionChangeCallback    = callback;
     connectionChangeCallbackArg = arg;
+    xSemaphoreGive(connectionChangeCallbackFence);
+    return ESP_OK;
+}
+
+bool CanDriver::isConnectionChangeCallbackTask() const
+{
+    const TaskHandle_t executingTask = connectionChangeCallbackTask.load(std::memory_order_acquire);
+    return executingTask != nullptr && executingTask == xTaskGetCurrentTaskHandle();
 }
 
 void CanDriver::connectionChangeCb(bool connected)
 {
+    if (connectionChangeCallbackFence == nullptr ||
+        xSemaphoreTake(connectionChangeCallbackFence, portMAX_DELAY) != pdTRUE)
+    {
+        return;
+    }
     if (connectionChangeCallback != nullptr)
     {
+        connectionChangeCallbackTask.store(xTaskGetCurrentTaskHandle(), std::memory_order_release);
         connectionChangeCallback(connectionChangeCallbackArg, connected);
+        connectionChangeCallbackTask.store(nullptr, std::memory_order_release);
     }
+    xSemaphoreGive(connectionChangeCallbackFence);
 }
 
 void CanDriver::setRxCallback(RxCallback_t callback, void* arg)

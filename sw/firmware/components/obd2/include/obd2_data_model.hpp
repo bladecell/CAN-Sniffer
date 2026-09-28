@@ -4,6 +4,7 @@
 #include <math.h>
 
 #include <cstdint>
+#include <atomic>
 #include <functional>
 #include <map>
 #include <string>
@@ -26,7 +27,7 @@ struct NRCRecord
 class OBD2DataModel
 {
 public:
-    void initDef();
+    esp_err_t initDef();
     bool pidExists(uint16_t pid) const;
     // PID_DEF Getters
     inline uint32_t getId_Def(uint16_t pid) const
@@ -142,7 +143,7 @@ public:
     void                           subscribe(PidUpdateCallback cb);
     std::vector<PidUpdateCallback> subscribers_;
 
-    void runPidUpdateCallbacks(uint16_t pid);
+    void runPidUpdateCallbacks(uint16_t pid, const std::atomic<bool>* stopRequested = nullptr);
 
     const VINData_t& getVinData() const
     {
@@ -171,7 +172,7 @@ public:
     // PID Definitions and Data Storage
     std::map<uint16_t, PIDDefinition> PID_DEF;
     std::map<uint16_t, PIDData_t>     pidData;
-    VINData_t                         vinData;
+    VINData_t                         vinData{};
     DTCData_t                         dtcData;
 
     NRCRecord nrc_list[MAX_NRC_LIST_SIZE];

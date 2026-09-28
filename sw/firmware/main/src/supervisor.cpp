@@ -213,9 +213,19 @@ void SUPERVISOR::task()
 
                 // Deinit components
                 stop_web_server();
-                OBD2::getInstance().deinit();
+                esp_err_t obdStop = OBD2::getInstance().deinit();
+                if (obdStop != ESP_OK)
+                {
+                    ESP_LOGE(TAG, "OBD2 shutdown incomplete (%s); retrying before CAN shutdown", esp_err_to_name(obdStop));
+                    break;
+                }
                 WIFI::getInstance().deinit();
-                CanDriver::getInstance().deinit();
+                obdStop = CanDriver::getInstance().deinit();
+                if (obdStop != ESP_OK)
+                {
+                    ESP_LOGE(TAG, "CAN shutdown failed: %s", esp_err_to_name(obdStop));
+                    break;
+                }
 
                 // 4. Put CAN transceiver into Standby Mode
                 gpio_set_level(CAN_RS_GPIO, 1);
@@ -261,15 +271,44 @@ void SUPERVISOR::task()
 
                 gpio_set_level(CAN_RS_GPIO, 0);
 
-                setup_can();
+                esp_err_t startupErr = setup_can();
+                if (startupErr != ESP_OK)
+                {
+                    ESP_LOGE(TAG, "CAN startup after wake failed: %s; entering ERROR", esp_err_to_name(startupErr));
+                    eState = State::ERROR;
+                    break;
+                }
 
                 if (CanDriver::getInstance().quickCheckBus())
                 {
                     ESP_LOGI(TAG, "Bus is ALIVE! Starting full system...");
 
-                    setup_obd();
-                    setup_wifi();
-                    setup_webserver();
+                    startupErr = setup_obd();
+                    if (startupErr != ESP_OK)
+                    {
+                        ESP_LOGE(TAG, "OBD startup after wake failed: %s; retrying ordered shutdown",
+                                 esp_err_to_name(startupErr));
+                        eState = State::STOPPING;
+                        break;
+                    }
+
+                    startupErr = setup_wifi();
+                    if (startupErr != ESP_OK)
+                    {
+                        ESP_LOGE(TAG, "Wi-Fi startup after wake failed: %s; retrying ordered shutdown",
+                                 esp_err_to_name(startupErr));
+                        eState = State::STOPPING;
+                        break;
+                    }
+
+                    startupErr = setup_webserver();
+                    if (startupErr != ESP_OK)
+                    {
+                        ESP_LOGE(TAG, "Web server startup after wake failed: %s; retrying ordered shutdown",
+                                 esp_err_to_name(startupErr));
+                        eState = State::STOPPING;
+                        break;
+                    }
 
                     eState = State::NOT_CONNECTED;
                 }
@@ -278,7 +317,14 @@ void SUPERVISOR::task()
                     ESP_LOGI(TAG, "Bus is dead. Going back to sleep.");
 
                     stop_web_server();
-                    CanDriver::getInstance().deinit();
+                    esp_err_t canStop = CanDriver::getInstance().deinit();
+                    if (canStop != ESP_OK)
+                    {
+                        ESP_LOGE(TAG, "CAN shutdown after dead-bus check failed: %s; retrying ordered shutdown",
+                                 esp_err_to_name(canStop));
+                        eState = State::STOPPING;
+                        break;
+                    }
                     gpio_set_level(CAN_RS_GPIO, 1);
                 }
                 break;

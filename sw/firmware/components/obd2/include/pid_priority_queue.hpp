@@ -15,6 +15,13 @@ private:
     PollRequest       heap[NUMBER_OF_ITEMS];  // Adjust size as needed
     int               size = 0;
     SemaphoreHandle_t lock;
+    TaskHandle_t      attachedConsumerTask = nullptr;
+
+    void notifyConsumerLocked()
+    {
+        if (attachedConsumerTask != nullptr)
+            xTaskNotifyGive(attachedConsumerTask);
+    }
 
     void swap(int i, int j)
     {
@@ -24,10 +31,30 @@ private:
     }
 
 public:
+    // Deprecated compatibility mirror only. Callers must migrate to
+    // setConsumerTask()/getConsumerTask(); direct writes are not synchronized.
     TaskHandle_t consumerTask = nullptr;
     PIDPriorityQueue()
     {
         lock = xSemaphoreCreateMutex();
+    }
+
+    void setConsumerTask(TaskHandle_t task)
+    {
+        xSemaphoreTake(lock, portMAX_DELAY);
+        attachedConsumerTask = task;
+        consumerTask = task; // compatibility mirror; notification uses attachedConsumerTask
+        if (task != nullptr)
+            notifyConsumerLocked();
+        xSemaphoreGive(lock);
+    }
+
+    TaskHandle_t getConsumerTask()
+    {
+        xSemaphoreTake(lock, portMAX_DELAY);
+        TaskHandle_t task = attachedConsumerTask;
+        xSemaphoreGive(lock);
+        return task;
     }
 
     float getFillFactor()
@@ -46,9 +73,9 @@ public:
             xSemaphoreGive(lock);
             return 0;
         }
-        int32_t diff = (int32_t)xTaskGetTickCount() - (int32_t)heap[0].nextWake;
+        TickType_t diff = tickDeadlineLatency(heap[0].nextWake, xTaskGetTickCount());
         xSemaphoreGive(lock);
-        return (diff > 0) ? diff : 0;
+        return static_cast<int32_t>(diff);
     }
 
     void clear()
@@ -56,6 +83,7 @@ public:
         if (xSemaphoreTake(lock, portMAX_DELAY))
         {
             size = 0;
+            notifyConsumerLocked();
             xSemaphoreGive(lock);
         }
     }
@@ -72,6 +100,7 @@ public:
             }
             size = newSize;
             heapify();
+            notifyConsumerLocked();
 
             xSemaphoreGive(lock);
         }
@@ -92,11 +121,8 @@ public:
             swap(i, (i - 1) / 2);
             i = (i - 1) / 2;
         }
+        notifyConsumerLocked();
         xSemaphoreGive(lock);
-        if (consumerTask != NULL)
-        {
-            xTaskNotifyGive(consumerTask);  // Wake the sleeping giant
-        }
         return true;
     }
 
@@ -126,6 +152,21 @@ public:
             else
                 break;
         }
+        xSemaphoreGive(lock);
+        return true;
+    }
+
+    bool tryPopDue(PollRequest& root)
+    {
+        xSemaphoreTake(lock, portMAX_DELAY);
+        if (size == 0 || !tickDeadlineDue(heap[0].nextWake, xTaskGetTickCount()))
+        {
+            xSemaphoreGive(lock);
+            return false;
+        }
+        root = heap[0];
+        heap[0] = heap[--size];
+        siftDown(0);
         xSemaphoreGive(lock);
         return true;
     }
@@ -173,10 +214,8 @@ public:
             heap[nextSize++] = requests[i];
         size = (int)nextSize;
         heapify();
+        notifyConsumerLocked();
         xSemaphoreGive(lock);
-
-        if (consumerTask != nullptr && requestCount != 0)
-            xTaskNotifyGive(consumerTask);
         return true;
     }
 
@@ -210,7 +249,7 @@ public:
                 }
             }
             bool desired = false;
-            for (size_t j = 0; j < requestCount; ++j)
+            for (size_t j = 0; !heap[i].isRaw && j < requestCount; ++j)
             {
                 if (requests[j].payload.obd.mode == mode && requests[j].payload.obd.pid == heap[i].payload.obd.pid)
                 {
@@ -320,10 +359,9 @@ public:
         }
         size = (int)nextSize;
         heapify();
+        if (additions != 0 || requestCount != 0)
+            notifyConsumerLocked();
         xSemaphoreGive(lock);
-
-        if (consumerTask != nullptr && additions != 0)
-            xTaskNotifyGive(consumerTask);
         return true;
     }
 
@@ -342,6 +380,7 @@ public:
         }
         size = (int)nextSize;
         heapify();
+        notifyConsumerLocked();
         xSemaphoreGive(lock);
     }
 
@@ -349,52 +388,17 @@ public:
     {
         if (xSemaphoreTake(lock, portMAX_DELAY))
         {
+            int nextSize = 0;
             for (int i = 0; i < size; i++)
             {
-                if (heap[i].payload.obd.pid == targetPid)
-                {
-                    PollRequest movedItem = heap[size - 1];
-                    heap[i]               = movedItem;
-                    size--;
-
-                    if (size == 0 || i == size)
-                    {
-                        break;
-                    }
-
-                    // 2. Repair Down (Sift Down)
-                    int  current     = i;
-                    bool shiftedDown = false;
-                    while (true)
-                    {
-                        int small = current, l = 2 * current + 1, r = 2 * current + 2;
-                        if (l < size && heap[l] < heap[small])
-                            small = l;
-                        if (r < size && heap[r] < heap[small])
-                            small = r;
-
-                        if (small != current)
-                        {
-                            swap(current, small);
-                            current     = small;
-                            shiftedDown = true;
-                        }
-                        else
-                            break;
-                    }
-
-                    if (!shiftedDown)
-                    {
-                        int up = i;
-                        while (up != 0 && heap[up] < heap[(up - 1) / 2])
-                        {
-                            swap(up, (up - 1) / 2);
-                            up = (up - 1) / 2;
-                        }
-                    }
-
-                    break;
-                }
+                if (heap[i].isRaw || heap[i].payload.obd.pid != targetPid)
+                    heap[nextSize++] = heap[i];
+            }
+            if (nextSize != size)
+            {
+                size = nextSize;
+                heapify();
+                notifyConsumerLocked();
             }
             xSemaphoreGive(lock);
         }
@@ -409,7 +413,7 @@ public:
             return pdMS_TO_TICKS(100);
         }
         TickType_t now = xTaskGetTickCount();
-        TickType_t result = (heap[0].nextWake > now) ? (heap[0].nextWake - now) : 0;
+        TickType_t result = ticksUntilDeadline(heap[0].nextWake, now);
         xSemaphoreGive(lock);
         return result;
     }
@@ -440,6 +444,19 @@ private:
                 swap(current, small);
                 current = small;
             }
+        }
+    }
+
+    void siftDown(int i)
+    {
+        while (true)
+        {
+            int small = i, l = 2 * i + 1, r = 2 * i + 2;
+            if (l < size && heap[l] < heap[small]) small = l;
+            if (r < size && heap[r] < heap[small]) small = r;
+            if (small == i) return;
+            swap(i, small);
+            i = small;
         }
     }
 };

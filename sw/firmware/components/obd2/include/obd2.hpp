@@ -22,6 +22,7 @@
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "freertos/event_groups.h"
 #include "obd2_data_model.hpp"
 #include "obd2_common.hpp"
 
@@ -41,7 +42,7 @@ public:
     }
 
     esp_err_t init();
-    void      deinit();
+    esp_err_t deinit();
 
     bool isPidInit() const;
 
@@ -65,9 +66,9 @@ public:
     void      pollRequestStaticPids();
     void      requestDefaultDiagnosticSession(uint32_t id, bool isRecurring = false);
 
-    void req(uint32_t id, uint8_t mode, uint32_t pid, uint8_t len, uint32_t interval, uint8_t priority,
+    esp_err_t req(uint32_t id, uint8_t mode, uint32_t pid, uint8_t len, uint32_t interval, uint8_t priority,
              bool isRecurring = false);
-    void req(PollRequest& req);
+    esp_err_t req(PollRequest& req);
 
     float getPollTaskUtilization() const
     {
@@ -78,6 +79,23 @@ public:
     void connected_subscribe(OBDIIConnectedCallback cb);
 
 private:
+    friend struct OBD2LifecycleTestAccess;
+    enum class LifecycleState : uint8_t { Stopped, Starting, Running, Stopping };
+    enum : EventBits_t { STARTUP_GATE = 1u << 0, RECEIVE_EXIT = 1u << 1, POLL_EXIT = 1u << 2, CALLBACK_EXIT = 1u << 3 };
+    SemaphoreHandle_t lifecycleOperationMtx_ = nullptr;
+    SemaphoreHandle_t admissionMtx_ = nullptr;
+    EventGroupHandle_t lifecycleEvents_ = nullptr;
+    LifecycleState lifecycleState_ = LifecycleState::Stopped;
+    uint32_t activeOperations_ = 0;
+    uint8_t createdWorkers_ = 0;
+    bool canCallbackInstalled_ = false;
+    SemaphoreHandle_t discoveryMtx_ = nullptr;
+    SemaphoreHandle_t diagnosticRequestMtx_ = nullptr;
+    std::atomic<bool> stopRequested_{false};
+    bool busMutexOwnedByReceive_ = false;
+    uint16_t multiframe_totalLength_ = 0, multiframe_consecutiveFrameIndex_ = 0,
+             multiframe_consecutiveFramesNeeded_ = 0;
+    std::vector<CanDriver::CanFrame> multiFrameBuffer_;
     OBD2(const OBD2&)                 = delete;
     OBD2&      operator=(const OBD2&) = delete;
     CanDriver& canDriver              = CanDriver::getInstance();
@@ -108,6 +126,24 @@ private:
     uint32_t last_multiframe_received = 0;
 
     void multiframe_watchdog();
+    void resetMultiFrame();
+    bool admitOperation();
+    void releaseOperation();
+    struct OperationGuard {
+        OBD2* owner;
+        explicit OperationGuard(OBD2* instance) : owner(instance && instance->admitOperation() ? instance : nullptr) {}
+        ~OperationGuard() { if (owner) owner->releaseOperation(); }
+        bool admitted() const { return owner != nullptr; }
+    };
+    struct DiagnosticRequestGuard {
+        OBD2* owner;
+        explicit DiagnosticRequestGuard(OBD2* instance)
+            : owner(instance && instance->lockDiagnosticRequest() ? instance : nullptr) {}
+        ~DiagnosticRequestGuard() { if (owner) xSemaphoreGive(owner->diagnosticRequestMtx_); }
+        bool locked() const { return owner != nullptr; }
+    };
+    void workerExit(EventBits_t bit);
+    esp_err_t stopInternal(bool fromInitFailure);
 
     esp_err_t queryMsg(PollRequest& req);
 
@@ -133,6 +169,9 @@ private:
     // Handle connection events
     void handleCanConnected();
     void handleCanDisconnected();
+    void requestSuppPidsInternal();
+    bool lockDiscovery();
+    bool lockDiagnosticRequest();
 
     // Frame Parsing
     esp_err_t parseCurrentData(const CanDriver::CanFrame& f);
@@ -167,6 +206,11 @@ private:
 
     void        callbackWorkerTask();
     static void callbackWorkerTaskWrapper(void* param);
+
+public:
+    void subscribe(PidUpdateCallback cb);
+
+private:
 
     QueueHandle_t event_queue = nullptr;
 };
