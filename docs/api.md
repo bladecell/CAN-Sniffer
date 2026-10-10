@@ -10,7 +10,7 @@ Source of truth in the firmware: the route table `api_routes` in `sw/firmware/ma
 - Format: JSON, `Content-Type: application/json`, unless noted. Numbers that are NaN or infinite are serialized by cJSON as `null`.
 - Requests are queued to 6 worker tasks. The server rate limit is global, not per client: more than 50 requests in a one-second window get `429`.
 - Request body limits: 2048 bytes for JSON bodies, except `PUT /pid_def` (64 KiB), the two PID file calls (256 bytes), and SD upload (16 MiB). JSON bodies need a `Content-Length` header; chunked bodies are rejected with 400.
-- Versioning: none. There is no API version field. `GET /api/v1/system` returns `app_version` (`APP_VERSION_STRING`, currently `"0.5.0"`), which is the only thing the frontend could compare.
+- Versioning: none. There is no API version field. `GET /api/v1/system` returns `app_version` (`APP_VERSION_STRING`, built from `APP_VERSION_MAJOR/MINOR/PATCH` in `utilities.h`; `"1.2.4"` when checked), which is the only thing the frontend could compare.
 
 ### Error shapes
 Three shapes occur. The frontend (`lib/api.ts`) treats a non-2xx status or a body with `"status":"error"` as an error and shows `reason`.
