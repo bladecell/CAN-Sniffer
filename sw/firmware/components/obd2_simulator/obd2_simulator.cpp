@@ -130,6 +130,49 @@ void dataSimTask(CanDriver& canDriver)
                 }
                 break;
             }
+            case MODE_READ_DATA_BY_IDENTIFIER:
+            {
+                // Request {03, 22, pidHi, pidLo}; the ISR passes pidHi in the low byte and pidLo in bits 16-23.
+                const uint16_t rdbiPid = (uint16_t)((requested_pid << 8) | ((sd >> 16) & 0xFF));
+                const uint32_t tNow    = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+                CanDriver::CanFrame response_frame = {};
+                response_frame.header.id           = OBD2_RESPONSE_BASE_ID;
+                response_frame.data[1]             = RESPONSE_READ_DATA_BY_IDENTIFIER;
+                response_frame.data[2]             = (rdbiPid >> 8) & 0xFF;
+                response_frame.data[3]             = rdbiPid & 0xFF;
+                response_frame.length              = PID_DATA_LENGTH;
+
+                switch (rdbiPid)
+                {
+                    case 0x2203:  // Odometer: ((A*256)+B)*10 km, fixed 123450 km
+                        response_frame.data[0] = 0x05;
+                        response_frame.data[4] = 0x30;
+                        response_frame.data[5] = 0x39;  // 0x3039 = 12345
+                        break;
+                    case 0x2613:  // Interior temp: ((A*256)+B)*0.1 C, swings between 15.0 and 30.0
+                    {
+                        const uint32_t raw     = 150 + sinDataSim(tNow, 0.02f, 150);
+                        response_frame.data[0] = 0x05;
+                        response_frame.data[4] = (raw >> 8) & 0xFF;
+                        response_frame.data[5] = raw & 0xFF;
+                        break;
+                    }
+                    case 0x2206:  // Fuel amount: A litres, 0..50
+                        response_frame.data[0] = 0x04;
+                        response_frame.data[4] = (uint8_t)sinDataSim(tNow, 0.005f, 50);
+                        break;
+                    default:
+                        ESP_LOGW(TAG, "RDBI PID 0x%04X not simulated.", rdbiPid);
+                        continue;
+                }
+
+                if (xQueueSend(canDriver.getRxQueueHandle(), &response_frame, 0) != pdTRUE)
+                {
+                    ESP_LOGW(TAG, "Failed to inject simulated frame.");
+                }
+                break;
+            }
             case MODE_CLEAR_DTCS:
             {
                 CanDriver::CanFrame response_frame = {};

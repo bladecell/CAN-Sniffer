@@ -315,7 +315,12 @@ bool IRAM_ATTR CanDriver::twai_rx_cb(twai_node_handle_t handle, const twai_rx_do
             }
             if (driver->simNotify_)
             {
+                // Low 16 bits: mode and first PID byte. Mode 0x22 carries a 16-bit PID, so its low byte goes in bits 16-23.
                 uint32_t sd = (frame.data[1] << 8) | frame.data[2];
+                if (frame.data[1] == 0x22)  // OBD mode 0x22 (read data by identifier)
+                {
+                    sd |= (uint32_t)frame.data[3] << 16;
+                }
                 driver->simNotify_(sd, &woken);
             }
         }
