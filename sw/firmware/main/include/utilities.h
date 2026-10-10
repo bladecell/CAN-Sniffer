@@ -3,9 +3,9 @@
 
 #define DEBUG_MODE 1
 
-#define APP_VERSION_MAJOR 0
-#define APP_VERSION_MINOR 5
-#define APP_VERSION_PATCH 0
+#define APP_VERSION_MAJOR 1
+#define APP_VERSION_MINOR 2
+#define APP_VERSION_PATCH 4
 
 #define STR_(x) #x
 #define STR(x) STR_(x)
