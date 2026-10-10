@@ -1,6 +1,6 @@
 # Hardware
 
-Pick the board in menuconfig (`CAN Sniffer` > `Hardware revision`) or in `sdkconfig.defaults`: `CONFIG_SNIFFER_HW_REV_V1_1`, `CONFIG_SNIFFER_HW_REV_V1_2` (default, the current board) or `CONFIG_SNIFFER_HW_REV_V2`. `sw/firmware/main/include/utilities.h` maps the choice to a pin set. v1.1 and v1.2 differ only in a few pin assignments, so the same firmware runs on both once the choice matches the board. v2 has no pin set yet: selecting it stops the build with `#error`.
+Pick the board in menuconfig (`CAN Sniffer` > `Hardware revision`) or in `sdkconfig.defaults`: `CONFIG_SNIFFER_HW_REV_V1_1`, `CONFIG_SNIFFER_HW_REV_V1_2` (default, the current board) or `CONFIG_SNIFFER_HW_REV_V2`. `sw/firmware/main/include/utilities.h` maps the choice to a pin set. v1.1 and v1.2 differ only in a few pin assignments, so the same firmware runs on both once the choice matches the board. To flash a board that is not the default, build with an untracked overlay instead of editing the tracked files: `idf.py -C sw/firmware -B build_v11 -D SDKCONFIG=build_v11/sdkconfig -D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;/path/hw.defaults" -p /dev/ttyACM0 flash`, where `hw.defaults` holds `CONFIG_SNIFFER_HW_REV_V1_1=y`. A v1.1 board running the V1_2 build reads the wrong card-detect pin and reports "SD Card removed". v2 has no pin set yet: selecting it stops the build with `#error`.
 
 ## Revisions
 | Feature | v1.2 | v2 |
