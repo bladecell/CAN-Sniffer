@@ -2,11 +2,15 @@
 #pragma once
 
 #define DEBUG_MODE 1
+
 #define APP_VERSION_MAJOR 0
 #define APP_VERSION_MINOR 5
 #define APP_VERSION_PATCH 0
 
-#define APP_VERSION_STRING "0.5.0"
+#define STR_(x) #x
+#define STR(x) STR_(x)
+
+#define APP_VERSION_STRING STR(APP_VERSION_MAJOR) "." STR(APP_VERSION_MINOR) "." STR(APP_VERSION_PATCH)
 
 #include "sdkconfig.h"
 

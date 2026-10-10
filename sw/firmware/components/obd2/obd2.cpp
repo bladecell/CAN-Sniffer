@@ -10,6 +10,7 @@
  */
 
 #include "obd2.hpp"
+#include "obd2_frame.hpp"
 
 #include <sys/types.h>
 
@@ -1834,23 +1835,27 @@ void OBD2::receiveTask()
 
 esp_err_t OBD2::parseRecFrame(const CanDriver::CanFrame& f)
 {
-    if (f.length < 3)
+    esp_err_t       ret = ESP_OK;
+    obd2frame::IsoTp frame_type = obd2frame::IsoTp::Single;
+    ret                         = obd2frame::frameType(f.data, f.length, frame_type);
+    if (ret != ESP_OK)
     {
-        return ESP_ERR_INVALID_SIZE;
-    }
-
-    esp_err_t ret = ESP_OK;
-    uint8_t   frame_type =
-        (f.data[0] >> 4) &
-        0x0F;  // High Nibble - 0 - Sigle Frame, 1 - First Frame, 2 - Consecutive Frame (3 - Flow Control)
-
-    if (frame_type > 0)
-    {
-        ret = captureMultiFrame(f);
         return ret;
     }
 
-    uint8_t mode = f.data[1];
+    if (frame_type != obd2frame::IsoTp::Single)
+    {
+        return captureMultiFrame(f);
+    }
+
+    obd2frame::SingleFrameInfo info;
+    ret = obd2frame::parseSingleFrame(f.data, f.length, info);
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
+
+    uint8_t mode = info.mode;
 
     switch (mode)
     {
@@ -2048,74 +2053,39 @@ esp_err_t OBD2::parseDTCs(std::vector<CanDriver::CanFrame>& frames, uint8_t mode
         return ESP_ERR_INVALID_ARG;
     }
 
-    uint8_t   dtc_rem = 0, hi_half = 0, idx = 0;
-    bool      halved = false;
-    esp_err_t ret    = ESP_OK;
-    uint16_t  rawDTC;
-
+    std::vector<obd2frame::RawFrame> raw;
+    raw.reserve(frames.size());
     for (const auto& frame : frames)
     {
-        uint8_t frame_type = (frame.data[0] >> 4) & 0x0F;
-        switch (frame_type)
+        if (frame.length > obd2frame::CAN_DATA_MAX)
         {
-            case 0:  // Single Frame (SF)
-            {
-                // Lower nibble of Byte 0 is the total payload length
-                uint8_t payload_len = frame.data[0] & 0x0F;
-
-                // Subtract 1 for the '0x43' Service ID byte, then divide by 2 bytes per DTC
-                dtc_rem = (payload_len - 1) / 2;
-                idx     = 2;  // data[0]=PCI, data[1]=0x43, First DTC starts at data[2]!
-                break;
-            }
-            case 1:  // First Frame (FF) of a multi-frame stream
-            {
-                // 12-bit payload length across Byte 0 and Byte 1
-                uint16_t payload_len = ((frame.data[0] & 0x0F) << 8) | frame.data[1];
-
-                dtc_rem = (payload_len - 1) / 2;
-                idx     = 3;  // data[0..1]=PCI_Len, data[2]=0x43, First DTC starts at data[3]!
-                break;
-            }
-            case 2:  // Consecutive Frame (CF)
-            {
-                // data[0] is sequence number (0x20-0x2F), payload starts instantly at data[1]
-                idx = 1;
-                break;
-            }
-            default:
-                return ESP_ERR_INVALID_RESPONSE;
+            return ESP_ERR_INVALID_SIZE;
         }
+        obd2frame::RawFrame r = {};
+        memcpy(r.data, frame.data, sizeof(r.data));
+        r.length = frame.length;
+        raw.push_back(r);
+    }
 
-        while (dtc_rem > 0 && idx < frame.length)
-        {
-            if (halved)
-            {
-                rawDTC = (hi_half << 8) | frame.data[idx++];
-                ERR_ACCUMULATE(ret, _setDTC(rawDTC, mode));
-                dtc_rem--;
-                halved = false;
-            }
-            if (frame.length - idx == 1)
-            {
-                hi_half = frame.data[idx++];
-                halved  = true;
-                break;
-            }
+    std::vector<uint8_t>  payload;
+    std::vector<uint16_t> rawDtcs;
+    esp_err_t             ret = obd2frame::reassemble(raw.data(), raw.size(), payload);
+    if (ret == ESP_OK && (payload.empty() || payload[0] != mode))
+    {
+        ret = ESP_ERR_INVALID_RESPONSE;
+    }
+    if (ret == ESP_OK)
+    {
+        ret = obd2frame::extractDtcs(payload, rawDtcs);
+    }
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
 
-            if (frame.length - idx >= 2)
-            {
-                uint8_t  dtc_high = frame.data[idx++];
-                uint16_t rawDTC   = (dtc_high << 8) | frame.data[idx++];
-                ERR_ACCUMULATE(ret, _setDTC(rawDTC, mode));
-                dtc_rem--;
-            }
-        }
-
-        if (dtc_rem == 0)
-        {
-            break;
-        }
+    for (const uint16_t rawDTC : rawDtcs)
+    {
+        ERR_ACCUMULATE(ret, _setDTC(rawDTC, mode));
     }
 
     switch (mode)
@@ -2503,8 +2473,13 @@ void OBD2::resetMultiFrame()
 esp_err_t OBD2::captureMultiFrame(const CanDriver::CanFrame& f)
 {
     uint8_t                                 frameType;
-    constexpr uint8_t                       CONSECUTIVE_FRAME_DATA_BYTES = 7, FIRST_FRAME_DATA_BYTES = 6;
     esp_err_t                               ret = ESP_OK;
+
+    if (f.length == 0 || f.length > obd2frame::CAN_DATA_MAX)
+    {
+        resetMultiFrame();
+        return ESP_ERR_INVALID_SIZE;
+    }
 
     last_multiframe_received = xTaskGetTickCount();
 
@@ -2528,12 +2503,13 @@ esp_err_t OBD2::captureMultiFrame(const CanDriver::CanFrame& f)
         }
         case 0:  // First Frame
         {
-            frameType               = (f.data[0] >> 4) & 0x0F;  // High nibble = 1
-            uint8_t lengthHigh      = f.data[0] & 0x0F;         // Low nibble = 0
-            uint8_t lengthLow       = f.data[1];
-            multiframe_totalLength_             = (lengthHigh << 8) | lengthLow;
-            multiframe_consecutiveFramesNeeded_ = (multiframe_totalLength_ - FIRST_FRAME_DATA_BYTES + CONSECUTIVE_FRAME_DATA_BYTES - 1) /
-                                      CONSECUTIVE_FRAME_DATA_BYTES;
+            const esp_err_t ffErr = obd2frame::parseFirstFrame(f.data, f.length, multiframe_totalLength_,
+                                                               multiframe_consecutiveFramesNeeded_);
+            if (ffErr != ESP_OK)
+            {
+                resetMultiFrame();
+                return ffErr;
+            }
             multiframe_consecutiveFrameIndex_   = 0;
             multiFrameBuffer_.clear();
             multiFrameBuffer_.push_back(f);
@@ -2548,12 +2524,10 @@ esp_err_t OBD2::captureMultiFrame(const CanDriver::CanFrame& f)
         case 1:  // Consecutive Frames
         {
             multiframe_consecutiveFrameIndex_++;
-            frameType        = (f.data[0] >> 4) & 0x0F;
-            uint8_t sequence = f.data[0] & 0x0F;
-            if (frameType != 2 || sequence != multiframe_consecutiveFrameIndex_)
+            if (!obd2frame::consecutiveSequenceOk(f.data, f.length, multiframe_consecutiveFrameIndex_))
             {
-                ESP_LOGW(TAG, "Unexpected consecutive frame. Expected seq: %d, got: %d", multiframe_consecutiveFrameIndex_ & 0x0F,
-                         sequence);
+                ESP_LOGW(TAG, "Unexpected consecutive frame. Expected seq: %d, got: 0x%02X",
+                         multiframe_consecutiveFrameIndex_ & 0x0F, f.data[0]);
                 resetMultiFrame();
                 return ESP_ERR_INVALID_RESPONSE;
             }
@@ -2664,18 +2638,30 @@ esp_err_t OBD2::parseVINMultiFrame(std::vector<CanDriver::CanFrame>& frames)
         return ESP_ERR_INVALID_ARG;
     }
 
-    esp_err_t ret = ESP_OK;
-
-    uint8_t vinBuffer[VIN_LENGTH] = {0};
-    size_t  vinIndex              = 0;
-
+    std::vector<obd2frame::RawFrame> raw;
+    raw.reserve(frames.size());
     for (const auto& frame : frames)
     {
-        uint8_t startIdx = (frame.data[0] >> 4) == 1 ? 5 : 1;  // First frame starts data at index 5
-        for (uint8_t i = startIdx; i < frame.length && vinIndex < VIN_LENGTH; i++)
+        if (frame.length > obd2frame::CAN_DATA_MAX)
         {
-            vinBuffer[vinIndex++] = frame.data[i];
+            return ESP_ERR_INVALID_SIZE;
         }
+        obd2frame::RawFrame r = {};
+        memcpy(r.data, frame.data, sizeof(r.data));
+        r.length = frame.length;
+        raw.push_back(r);
+    }
+
+    char                 vinBuffer[VIN_LENGTH] = {0};
+    std::vector<uint8_t> payload;
+    esp_err_t            ret = obd2frame::reassemble(raw.data(), raw.size(), payload);
+    if (ret == ESP_OK && (payload.size() < 2 || payload[0] != RESPONSE_VEHICLE_INFO || payload[1] != PID_VIN))
+    {
+        ret = ESP_ERR_INVALID_RESPONSE;
+    }
+    if (ret == ESP_OK)
+    {
+        ret = obd2frame::extractVin(payload, vinBuffer);
     }
 
     if (xSemaphoreTake(vinData.mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
@@ -2684,7 +2670,7 @@ esp_err_t OBD2::parseVINMultiFrame(std::vector<CanDriver::CanFrame>& frames)
         return ESP_ERR_TIMEOUT;
     }
 
-    if (vinIndex == VIN_LENGTH)
+    if (ret == ESP_OK)
     {
         memcpy(vinData.vin, vinBuffer, VIN_LENGTH);
         vinData.isValid = true;
@@ -2692,7 +2678,6 @@ esp_err_t OBD2::parseVINMultiFrame(std::vector<CanDriver::CanFrame>& frames)
     else
     {
         vinData.isValid = false;
-        ret             = ESP_ERR_INVALID_SIZE;
     }
 
     vinData.lastUpdated = xTaskGetTickCount() * portTICK_PERIOD_MS;

@@ -11,6 +11,7 @@
 #include "esp_log.h"
 #include "freertos/idf_additions.h"
 #include "obd2_common.hpp"
+#include "obd2_frame.hpp"
 #include "pid_def.hpp"
 
 static const char* TAG = "OBD2DataModel";
@@ -117,10 +118,14 @@ esp_err_t OBD2DataModel::removePID(uint16_t pid)
 
 esp_err_t OBD2DataModel::updateData(const CanDriver::CanFrame& frame)
 {
-    const uint8_t  mode          = frame.data[1];
-    const bool     isRDBI        = (mode == RESPONSE_READ_DATA_BY_IDENTIFIER);
-    const uint16_t pid           = isRDBI ? (uint16_t)(frame.data[2] << 8) | frame.data[3] : frame.data[2];
-    const uint8_t  payloadOffset = isRDBI ? 4 : 3;
+    obd2frame::SingleFrameInfo info;
+    esp_err_t                  parseErr = obd2frame::parseSingleFrame(frame.data, frame.length, info);
+    if (parseErr != ESP_OK)
+    {
+        return parseErr;
+    }
+    const uint16_t pid           = info.pid;
+    const uint8_t  payloadOffset = info.payloadOffset;
 
     return withPidMapLock(
         [&]() -> esp_err_t
@@ -137,8 +142,13 @@ esp_err_t OBD2DataModel::updateData(const CanDriver::CanFrame& frame)
                 return ESP_ERR_NOT_FOUND;
             }
 
+            if (info.payloadLength < pdef->requiredBytes())
+            {
+                return ESP_ERR_INVALID_SIZE;  // the formula reads bytes this frame does not carry
+            }
+
             float     val = 0.f;
-            esp_err_t ret = pdef->evaluate(&frame.data[payloadOffset], frame.length - payloadOffset, val);
+            esp_err_t ret = pdef->evaluate(&frame.data[payloadOffset], info.payloadLength, val);
 
             if (ret == ESP_OK)
             {

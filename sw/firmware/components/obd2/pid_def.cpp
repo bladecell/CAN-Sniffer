@@ -1,6 +1,10 @@
 // pid_def.cpp
 #include "pid_def.hpp"
 
+#include <algorithm>
+#include <cctype>
+#include <cmath>
+
 #include "tinyexpr.h"
 #include "tinyexpr_helpers.h"  // safe here - no cycle, obd2.hpp fully visible
 
@@ -29,6 +33,28 @@ PIDDefinition::PIDDefinition(uint32_t id, uint8_t mode, uint16_t pid, uint8_t le
         {"getBit", (void*)get_bit, TE_FUNCTION2, 0},       {"bitMask", (void*)bit_mask, TE_FUNCTION3, 0},
         {"getPID", (void*)get_pid_value, TE_FUNCTION1, 0}, {"getPIDRaw", (void*)get_pid_raw, TE_FUNCTION2, 0},
     };
+
+    // Scan for the single-letter variables A-D (whole identifiers only, so getBit's "B" does not count).
+    for (size_t i = 0; i < formula_.size();)
+    {
+        if (std::isalpha((unsigned char)formula_[i]) || formula_[i] == '_')
+        {
+            size_t j = i + 1;
+            while (j < formula_.size() && (std::isalnum((unsigned char)formula_[j]) || formula_[j] == '_'))
+            {
+                j++;
+            }
+            if (j - i == 1 && formula_[i] >= 'A' && formula_[i] <= 'D')
+            {
+                requiredBytes_ = std::max<uint8_t>(requiredBytes_, (uint8_t)(formula_[i] - 'A' + 1));
+            }
+            i = j;
+        }
+        else
+        {
+            i++;
+        }
+    }
 
     int err;
     compiledFormula_ = te_compile(formula_.c_str(), te_vars, 8, &err);
@@ -64,6 +90,7 @@ PIDDefinition::PIDDefinition(PIDDefinition&& other) noexcept
       compiledFormula_(other.compiledFormula_),
       instance_mutex_(other.instance_mutex_)
 {
+    requiredBytes_         = other.requiredBytes_;
     other.compiledFormula_ = nullptr;
     other.instance_mutex_  = nullptr;
     for (int i = 0; i < 4; i++)
@@ -85,12 +112,20 @@ esp_err_t PIDDefinition::evaluate(const uint8_t* frameData, uint8_t len, float& 
         PIDDefinition* mutable_this = const_cast<PIDDefinition*>(this);
         for (int i = 0; i < 4; i++)
         {
-            mutable_this->vars_storage_[i] = (i < len) ? (double)frameData[i] : 0.0;
+            mutable_this->vars_storage_[i] = (frameData != nullptr && i < len) ? (double)frameData[i] : 0.0;
         }
 
-        result = (float)te_eval(compiledFormula_);
+        const double raw = te_eval(compiledFormula_);
 
         xSemaphoreGive(instance_mutex_);
+
+        // NaN, inf, division by zero and values that overflow float mark the PID invalid; result stays untouched.
+        const float value = (float)raw;
+        if (!std::isfinite(raw) || !std::isfinite(value))
+        {
+            return ESP_ERR_INVALID_RESPONSE;
+        }
+        result = value;
         return ESP_OK;
     }
     return ESP_ERR_TIMEOUT;

@@ -33,7 +33,9 @@ Mode 0x01 PIDs are polled only when the ECU's supported-PID bitmaps (PIDs 0x00, 
 Derived (mode 0x45) PIDs are evaluated locally. The poll task queues them like any other PID; the receive task then evaluates the formula with A–D set to 0 and stores the result with `id` = 0x7DF.
 
 ## Validation
-Applied to the whole array by `PUT /api/v1/pid_def`, `POST /api/v1/pid_def/load` and the boot-time file load. Any failure rejects the entire set:
+A received frame is rejected (value not stored, PID marked invalid) if it carries fewer data bytes than the formula reads: the highest of `A`..`D` used in the formula sets the minimum.
+
+Implemented in `components/obd2/pid_json.cpp` (host-tested). JSON nesting deeper than 32 levels is a parse error (`CONFIG_CJSON_NESTING_LIMIT`). A formula result that is NaN, inf (division by zero) or overflows float marks that reading invalid and the value is not stored; a formula that does not compile is rejected when the set is loaded. Applied to the whole array by `PUT /api/v1/pid_def`, `POST /api/v1/pid_def/load` and the boot-time file load. Any failure rejects the entire set:
 - the root is a JSON array of at most 256 objects, no trailing data after the JSON;
 - required on every item: `id`, `mode`, `pid`, `length` (or `len`), `priority`, `interval`, `color`, `minV`, `maxV`, and the strings `name`, `unit`, `desc`, `formula`, `icon` (empty strings are allowed except `formula`); keys the firmware does not know are ignored;
 - numbers must be finite integers within the ranges above (floats for `minV`, `maxV`);

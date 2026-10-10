@@ -22,3 +22,6 @@ Decided by the user. `CONFIG_SNIFFER_HW_REV_V2` exists so the choice is complete
 ## 2026-10-10: cert-err33-c is on
 Write paths check `fflush`, `fsync` and `fclose` and return `ESP_FAIL` (`SDCard::write_file`, `create_file`). Read-only `fclose` and sized `snprintf` are cast to `(void)` with the reason in a comment where it isn't obvious.
 
+## 2026-10-10: Parsing code lives in hardware-free files, tested on the host
+`obd2_frame.cpp` (single frame, ISO-TP first and consecutive frames, DTC and VIN extraction) and `pid_json.cpp` (PID JSON) hold the logic the OBD2 class and the middleware used to inline. The OBD2 class calls them; host tests (`test/host/`) cover them without CAN hardware. Reassembled ISO-TP payloads are capped at 512 bytes, and `CONFIG_CJSON_NESTING_LIMIT` is 32 (the default 1000 overflowed a small task stack in a host test).
+

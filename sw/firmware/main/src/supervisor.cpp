@@ -21,6 +21,7 @@
 #include "led_status.hpp"
 #include "middleware.hpp"
 #include "obd2.hpp"
+#include "pid_json.hpp"
 #include "obd2_simulator.hpp"
 #include "sd_card.hpp"
 #include "settings.hpp"
@@ -166,6 +167,10 @@ void SUPERVISOR::task()
                             critical_failed = true;
                             break;
                         }
+                    }
+                    else
+                    {
+                        ESP_LOGI(TAG, "Module %s: OK", step.name);
                     }
                 }
 
@@ -693,44 +698,18 @@ SUPERVISOR::PidDefinitionSaveResult SUPERVISOR::save_pid_def_to_json(const char*
         return {ESP_ERR_INVALID_ARG, false};
     }
 
-    cJSON* rootArray = cJSON_CreateArray();
-    if (rootArray == nullptr)
-    {
-        return {ESP_ERR_NO_MEM, false};
-    }
-
     auto& obd2 = OBD2::getInstance();
     std::vector<PIDDefinitionData> definitions;
     esp_err_t snapshotErr = obd2.getDefinitionSnapshot(definitions);
     if (snapshotErr != ESP_OK)
     {
-        cJSON_Delete(rootArray);
         return {snapshotErr, false};
     }
 
-    for (const auto& def : definitions)
+    cJSON* rootArray = pidjson::serialize(definitions);
+    if (rootArray == nullptr)
     {
-        cJSON* item = cJSON_CreateObject();
-        if (item == nullptr)
-        {
-            cJSON_Delete(rootArray);
-            return {ESP_ERR_NO_MEM, false};
-        }
-        cJSON_AddNumberToObject(item, "id", def.id);
-        cJSON_AddNumberToObject(item, "mode", def.mode);
-        cJSON_AddNumberToObject(item, "pid", def.pid);
-        cJSON_AddNumberToObject(item, "length", def.len);
-        cJSON_AddStringToObject(item, "name", def.name.c_str());
-        cJSON_AddStringToObject(item, "unit", def.unit.c_str());
-        cJSON_AddStringToObject(item, "desc", def.description.c_str());
-        cJSON_AddStringToObject(item, "formula", def.formula.c_str());
-        cJSON_AddNumberToObject(item, "minV", def.minValue);
-        cJSON_AddNumberToObject(item, "maxV", def.maxValue);
-        cJSON_AddNumberToObject(item, "priority", def.priority);
-        cJSON_AddNumberToObject(item, "interval", def.updateInterval_ms);
-        cJSON_AddNumberToObject(item, "color", def.color);
-        cJSON_AddStringToObject(item, "icon", def.icon.c_str());
-        cJSON_AddItemToArray(rootArray, item);
+        return {ESP_ERR_NO_MEM, false};
     }
 
     char* jsonString = cJSON_PrintUnformatted(rootArray);

@@ -206,16 +206,16 @@ inline TickType_t tickDeadlineLatency(TickType_t deadline, TickType_t now)
     return tickDeadlineDue(deadline, now) ? static_cast<TickType_t>(now - deadline) : 0;
 }
 
-typedef struct
+struct VINData_t
 {
     char              vin[18];
     uint32_t          lastUpdated;
     bool              isValid;
     SemaphoreHandle_t vinReadySemaphore = nullptr;
     SemaphoreHandle_t mtx_              = nullptr;
-} VINData_t;
+};
 
-typedef struct
+struct DTCData_t
 {
     std::vector<std::string> confirmed;
     std::vector<std::string> pending;
@@ -225,7 +225,7 @@ typedef struct
     SemaphoreHandle_t        permanentReadySemaphore = nullptr;
     SemaphoreHandle_t        clearReadySemaphore     = nullptr;
     SemaphoreHandle_t        mtx_                    = nullptr;
-} DTCData_t;
+};
 
 class MutexGuard
 {

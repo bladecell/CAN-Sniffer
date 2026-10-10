@@ -49,6 +49,7 @@ public:
 
     te_expr*                  compiledFormula_ = nullptr;
     mutable double            vars_storage_[4] = {0, 0, 0, 0};
+    uint8_t                   requiredBytes_   = 0;  // highest frame byte (A=1 .. D=4) the formula reads
     mutable SemaphoreHandle_t instance_mutex_  = nullptr;
 
 public:
@@ -66,7 +67,12 @@ public:
     PIDDefinition(PIDDefinition&& other) noexcept;
 
     esp_err_t evaluate(const uint8_t* frameData, uint8_t len, float& result) const;
-    bool      formulaValid() const
+    // Frame data bytes the formula reads; a frame carrying fewer must not be evaluated.
+    uint8_t requiredBytes() const
+    {
+        return requiredBytes_;
+    }
+    bool formulaValid() const
     {
         return compiledFormula_ != nullptr;
     }

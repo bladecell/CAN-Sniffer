@@ -10,7 +10,7 @@ All paths are relative to `sw/firmware/`. Dependencies are the `REQUIRES` / `PRI
 | main (app) | `main/` | `app_main`, then the pieces below that have no component of their own: Supervisor (`src/supervisor.cpp`), Settings (NVS, `src/settings.cpp`), Battery ADC (`src/battery.cpp`), LED (`include/led_status.hpp`), Web server routes and WebSocket (`src/webserver.cpp`), Middleware (`src/middleware.cpp`) | driver, can_driver, obd2, obd2_simulator, wifi, async_web_server, esp_http_server, esp_adc, sd_card; private: json (`espressif/cjson`); managed: `joltwallet/littlefs` |
 | Supervisor | `main/src/supervisor.cpp` | Runs the init steps in order, owns the state machine, sleep and wake (`power.md`), loads and saves the PID JSON on the SD card, file copy | Settings, SD card, CAN driver, OBD2, WiFi, web server, Battery, LED, middleware (`m_pid_def_put`) |
 | CAN driver | `components/can_driver/` | TWAI node, RX and TX queues, TX task, bus health check task, connected/disconnected callback, loopback/debug mode, `isBusConnected()`, `quickCheckBus()` | esp_driver_twai, driver |
-| OBD2 | `components/obd2/` | PID database (`obd2_data_model.cpp`), formulas (`pid_def.cpp`), poll scheduler (`include/pid_priority_queue.hpp`), receive task, ISO-TP multi-frame (DTC, VIN), supported-PID discovery, DTC and VIN requests | can_driver, tinyexpr. It does not touch the SD card; the supervisor does the JSON file I/O |
+| OBD2 | `components/obd2/` | PID database (`obd2_data_model.cpp`), formulas (`pid_def.cpp`), hardware-free frame parsing and ISO-TP reassembly (`obd2_frame.cpp`), PID JSON validation and serialization (`pid_json.cpp`), poll scheduler (`include/pid_priority_queue.hpp`), receive task, ISO-TP multi-frame (DTC, VIN), supported-PID discovery, DTC and VIN requests | can_driver, tinyexpr. It does not touch the SD card; the supervisor does the JSON file I/O |
 | TinyExpr | `components/tinyexpr/` | Vendored expression parser (compiled with `-w`) | – |
 | OBD2 simulator | `components/obd2_simulator/` | Answers requests with synthetic frames when the CAN config has `debug=true` | can_driver, obd2 |
 | SD card | `components/sd_card/` | SDMMC mount, hot-plug via the card-detect pin, task-affine operation lease (recursive mutex), file ops, path validation | driver, fatfs, freertos, sdmmc; private: json |
@@ -99,3 +99,7 @@ There is no Recorder. Nothing writes to the SD card besides the PID JSON save, f
 
 ## Sleep and power
 The supervisor puts the device into automatic light sleep when the bus stays down. See `power.md`.
+
+## Host tests
+`sw/firmware/test/host/` is an IDF project for the linux target (`tools/ci.sh --host`). It compiles `pid_def.cpp`, `obd2_data_model.cpp`, `obd2_frame.cpp` and `pid_json.cpp` straight from `components/obd2/`, plus `tinyexpr` and cJSON. `components/can_driver/` there is a stub header (CAN frame type only), so parsing, formulas, the PID database and the PID JSON build without hardware. Code that talks to the bus (the OBD2 class, tasks, queues) is not host-tested; keep new parsing logic in the pure files. The host build needs `sw/firmware/managed_components/` (run a firmware build first on a fresh clone).
+

@@ -22,6 +22,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "obd2.hpp"
+#include "pid_json.hpp"
 #include "sd_card.hpp"
 #include "settings.hpp"
 #include "string"
@@ -1150,17 +1151,8 @@ MiddlewareJsonResult m_pid_def_delete(int filter_id)
     return json_result(root, err == ESP_OK ? 200 : status_for_error(err, 404));
 }
 
-namespace
+static cJSON* pid_put_error(const char* reason)
 {
-constexpr size_t PID_NAME_MAX    = 64;
-constexpr size_t PID_UNIT_MAX    = 32;
-constexpr size_t PID_DESC_MAX    = 256;
-constexpr size_t PID_FORMULA_MAX = 1024;
-constexpr size_t PID_ICON_MAX    = 64;
-
-static cJSON* pid_put_error(const char* reason, int status)
-{
-    (void)status;
     cJSON* root = cJSON_CreateObject();
     if (root != nullptr)
     {
@@ -1170,83 +1162,6 @@ static cJSON* pid_put_error(const char* reason, int status)
     return root;
 }
 
-template <typename T>
-static bool json_integer(cJSON* object, const char* key, T minValue, T maxValue, T& output)
-{
-    cJSON* value = cJSON_GetObjectItemCaseSensitive(object, key);
-    if (!cJSON_IsNumber(value) || !std::isfinite(value->valuedouble) ||
-        std::floor(value->valuedouble) != value->valuedouble || value->valuedouble < (double)minValue ||
-        value->valuedouble > (double)maxValue)
-    {
-        return false;
-    }
-    output = static_cast<T>(value->valuedouble);
-    return true;
-}
-
-// "length" is the canonical wire/storage name.  Keep accepting "len" for
-// old clients and files, but never allow the aliases to describe different
-// definitions when both are supplied.
-static bool json_pid_length(cJSON* object, uint8_t& output, bool required)
-{
-    cJSON* length = cJSON_GetObjectItemCaseSensitive(object, "length");
-    cJSON* len    = cJSON_GetObjectItemCaseSensitive(object, "len");
-
-    if (length == nullptr && len == nullptr)
-    {
-        return !required;
-    }
-
-    uint8_t parsed_length = 0;
-    uint8_t parsed_len    = 0;
-    if (length != nullptr && !json_integer(object, "length", uint8_t(0), uint8_t(PID_DATA_LENGTH), parsed_length))
-    {
-        return false;
-    }
-    if (len != nullptr && !json_integer(object, "len", uint8_t(0), uint8_t(PID_DATA_LENGTH), parsed_len))
-    {
-        return false;
-    }
-
-    if (length != nullptr && len != nullptr && parsed_length != parsed_len)
-    {
-        return false;
-    }
-
-    output = length != nullptr ? parsed_length : parsed_len;
-    return true;
-}
-
-static bool json_float(cJSON* object, const char* key, float& output)
-{
-    cJSON* value = cJSON_GetObjectItemCaseSensitive(object, key);
-    if (!cJSON_IsNumber(value) || !std::isfinite(value->valuedouble) ||
-        value->valuedouble < -std::numeric_limits<float>::max() ||
-        value->valuedouble > std::numeric_limits<float>::max())
-    {
-        return false;
-    }
-    output = static_cast<float>(value->valuedouble);
-    return std::isfinite(output);
-}
-
-static bool json_string(cJSON* object, const char* key, size_t maxLength, std::string& output)
-{
-    cJSON* value = cJSON_GetObjectItemCaseSensitive(object, key);
-    if (!cJSON_IsString(value) || value->valuestring == nullptr)
-    {
-        return false;
-    }
-    if (strlen(value->valuestring) > maxLength)
-    {
-        return false;
-    }
-    output = value->valuestring;
-    return true;
-}
-
-}  // namespace
-
 cJSON* m_pid_def_put(cJSON* data, int* http_status)
 {
     if (http_status != nullptr)
@@ -1254,105 +1169,15 @@ cJSON* m_pid_def_put(cJSON* data, int* http_status)
         *http_status = 204;
     }
 
-    if (data == nullptr || !cJSON_IsArray(data))
-    {
-        if (http_status != nullptr)
-        {
-            *http_status = 400;
-        }
-        return pid_put_error("Payload must be a JSON array", 400);
-    }
-
-    const int itemCount = cJSON_GetArraySize(data);
-    if (itemCount < 0 || itemCount > NUMBER_OF_ITEMS)
-    {
-        if (http_status != nullptr)
-        {
-            *http_status = 422;
-        }
-        return pid_put_error("PID definition count exceeds capacity", 422);
-    }
-
     std::vector<PIDDefinitionData> definitions;
-    std::unordered_set<uint16_t>   pids;
-    definitions.reserve((size_t)itemCount);
-    pids.reserve((size_t)itemCount);
-
-    cJSON* item = nullptr;
-    cJSON_ArrayForEach(item, data)
+    const pidjson::ParseResult     parsed = pidjson::parse(data, definitions);
+    if (!parsed.ok)
     {
-        if (!cJSON_IsObject(item))
+        if (http_status != nullptr)
         {
-            if (http_status != nullptr)
-            {
-                *http_status = 400;
-            }
-            return pid_put_error("Each PID definition must be a JSON object", 400);
+            *http_status = parsed.httpStatus;
         }
-
-        PIDDefinitionData definition = {};
-        uint32_t          id = 0, color = 0;
-        uint8_t           mode = 0, length = 0, priority = 0;
-        uint16_t          pid = 0, interval = 0;
-        if (!json_integer(item, "id", uint32_t(0), uint32_t(0x7FF), id) ||
-            !json_integer(item, "mode", uint8_t(0), std::numeric_limits<uint8_t>::max(), mode) ||
-            !json_integer(item, "pid", uint16_t(0), std::numeric_limits<uint16_t>::max(), pid) ||
-            !json_pid_length(item, length, true) ||
-            !json_integer(item, "priority", uint8_t(0), std::numeric_limits<uint8_t>::max(), priority) ||
-            !json_integer(item, "interval", uint16_t(0), std::numeric_limits<uint16_t>::max(), interval) ||
-            !json_integer(item, "color", uint32_t(0), uint32_t(0xFFFFFF), color) ||
-            !json_string(item, "name", PID_NAME_MAX, definition.name) ||
-            !json_string(item, "unit", PID_UNIT_MAX, definition.unit) ||
-            !json_string(item, "desc", PID_DESC_MAX, definition.description) ||
-            !json_string(item, "formula", PID_FORMULA_MAX, definition.formula) ||
-            !json_string(item, "icon", PID_ICON_MAX, definition.icon))
-        {
-            if (http_status != nullptr)
-            {
-                *http_status = 422;
-            }
-            return pid_put_error("Missing or invalid PID definition field", 422);
-        }
-
-        const bool validModeAndPayload = (mode == MODE_CURRENT_DATA && pid >= 1 && pid <= 0xFF && length == 2) ||
-                                         (mode == MODE_READ_DATA_BY_IDENTIFIER && length == 3) ||
-                                         (mode == MODE_DERIVED_DATA && length == 0);
-        if ((interval != 0 && interval < MIN_TRANSMIT_PERIOD_MS) || !validModeAndPayload || definition.formula.empty())
-        {
-            if (http_status != nullptr)
-            {
-                *http_status = 422;
-            }
-            return pid_put_error("Invalid PID interval, mode, PID, or length", 422);
-        }
-
-        if (!json_float(item, "minV", definition.minValue) || !json_float(item, "maxV", definition.maxValue) ||
-            definition.minValue > definition.maxValue)
-        {
-            if (http_status != nullptr)
-            {
-                *http_status = 422;
-            }
-            return pid_put_error("Invalid PID value range", 422);
-        }
-
-        if (!pids.insert(pid).second)
-        {
-            if (http_status != nullptr)
-            {
-                *http_status = 422;
-            }
-            return pid_put_error("Duplicate PID definition", 422);
-        }
-
-        definition.id                = id;
-        definition.mode              = mode;
-        definition.pid               = pid;
-        definition.len               = length;
-        definition.priority          = priority;
-        definition.updateInterval_ms = interval;
-        definition.color             = color;
-        definitions.push_back(std::move(definition));
+        return pid_put_error(parsed.reason);
     }
 
     esp_err_t result = OBD2::getInstance().replacePIDDefinitions(definitions);
@@ -1365,7 +1190,7 @@ cJSON* m_pid_def_put(cJSON* data, int* http_status)
         {
             *http_status = status;
         }
-        return pid_put_error(esp_err_to_name(result), status);
+        return pid_put_error(esp_err_to_name(result));
     }
 
     // There is deliberately no success JSON tree. The model commit is the
@@ -1465,7 +1290,7 @@ MiddlewareJsonResult m_pid_def_post(cJSON* data)
         uint32_t    parsed_color    = 0x4EB31B;
         std::string parsed_icon     = "";
 
-        if (!json_pid_length(item, parsed_len, false))
+        if (!pidjson::lengthFromJson(item, parsed_len, false))
         {
             cJSON* fail_obj = cJSON_CreateObject();
             cJSON_AddNumberToObject(fail_obj, "pid", parsed_pid);

@@ -1,6 +1,6 @@
 idf_component_register(
-    SRCS "test_main.c" "test_tinyexpr.c"
-    PRIV_REQUIRES unity tinyexpr
+    SRCS "test_main.c" "test_tinyexpr.c" "test_pid_def.cpp" "test_obd2_frame.cpp" "test_obd2_model.cpp" "test_pid_json.cpp"
+    PRIV_REQUIRES unity tinyexpr obd2_core
 )
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -Wall -Wextra -Werror)
