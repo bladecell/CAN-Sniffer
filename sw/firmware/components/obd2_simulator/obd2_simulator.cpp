@@ -306,7 +306,7 @@ void dataSimTask(CanDriver& canDriver)
                     consecutiveFrame2.data[4]             = vin[13];
                     consecutiveFrame2.data[5]             = vin[14];
                     consecutiveFrame2.data[6]             = vin[15];
-                    consecutiveFrame1.data[7]             = vin[16];
+                    consecutiveFrame2.data[7]             = vin[16];
                     consecutiveFrame2.length              = PID_DATA_LENGTH;  // Max length for CAN 2.0A
 
                     if (xQueueSend(canDriver.getRxQueueHandle(), &consecutiveFrame2, 0) != pdTRUE)
