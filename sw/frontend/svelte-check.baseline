@@ -1,0 +1,32 @@
+4	src/CanLogging.svelte	Object literal may only specify known properties, and 'width' does not exist in type 'Column'.
+1	src/CanLogging.svelte	Parameter 'pidData' implicitly has an 'any' type.
+1	src/CanLogging.svelte	Property 'item' is missing in type '{}' but required in type 'Props'.
+1	src/CanLogging.svelte	Property 'timestamp' does not exist on type 'PidValue'.
+1	src/CanLogging.svelte	Type '\"text\"' is not assignable to type 'ColumnType'.
+2	src/Dashboard.svelte	'item' is possibly 'undefined'.
+1	src/Dashboard.svelte	Parameter 'e' implicitly has an 'any' type.
+1	src/Dashboard.svelte	Parameter 'id' implicitly has an 'any' type.
+1	src/lib/components/DTCCard.svelte	'\"$lib/types\"' has no exported member named 'SpecialGridItem'. Did you mean 'PidGridItem'?
+1	src/lib/components/DashboardCardWrapper.svelte	'\"$lib/types\"' has no exported member named 'SpecialGridItem'. Did you mean 'PidGridItem'?
+1	src/lib/components/DataTable.svelte	Argument of type 'number' is not assignable to parameter of type 'string'.
+2	src/lib/components/DataTable.svelte	Parameter 'e' implicitly has an 'any' type.
+1	src/lib/components/DataTable.svelte	Type '{ checked: any; onclick: (e: any) => any; }' is not assignable to type '{ checked?: any; disabled?: boolean | undefined; onchange: any; } & Record<string, any>'.   Property 'onchange' is missing in type '{ checked: any; onclick: (e: any) => any; }' but required in type '{ checked?: any; disabled?: boolean | undefined; onchange: any; }'.
+3	src/lib/components/PIDBar.svelte	Property 'max' does not exist on type 'PidDataMetrics'.
+4	src/lib/components/PIDBar.svelte	Property 'min' does not exist on type 'PidDataMetrics'.
+1	src/lib/components/PIDCard.svelte	Property 'max' does not exist on type 'PidDataMetrics'.
+2	src/lib/components/PIDCard.svelte	Property 'min' does not exist on type 'PidDataMetrics'.
+1	src/lib/components/PIDChart.svelte	Property 'max' does not exist on type 'PidDataMetrics'.
+1	src/lib/components/PIDChart.svelte	Property 'min' does not exist on type 'PidDataMetrics'.
+1	src/lib/components/PIDChart.svelte	Type '{ date: Date; value: number | null; }[]' is not assignable to type '{ date: Date; value: number; }[]'.   Type '{ date: Date; value: number | null; }' is not assignable to type '{ date: Date; value: number; }'.     Types of property 'value' are incompatible.       Type 'number | null' is not assignable to type 'number'.         Type 'null' is not assignable to type 'number'.
+1	src/lib/components/PIDGauge.svelte	Parameter 't' implicitly has an 'any' type.
+9	src/lib/components/PIDGauge.svelte	Property 'max' does not exist on type 'PidDataMetrics'.
+7	src/lib/components/PIDGauge.svelte	Property 'min' does not exist on type 'PidDataMetrics'.
+1	src/lib/components/PIDSettingsModal.svelte	'\"$lib/types\"' has no exported member named 'SpecialGridItem'. Did you mean 'PidGridItem'?
+1	src/lib/components/ToastContainer.svelte	Parameter 'type' implicitly has an 'any' type.
+1	src/lib/pidHelpers.svelte.ts	'PidDataMetrics' is a type and must be imported using a type-only import when 'verbatimModuleSyntax' is enabled.
+1	src/lib/pidHelpers.svelte.ts	Argument of type 'string | number' is not assignable to parameter of type 'number'.   Type 'string' is not assignable to type 'number'.
+1	src/lib/pidHelpers.svelte.ts	Type 'number | \"\"' is not assignable to type 'string'.   Type 'number' is not assignable to type 'string'.
+13	src/lib/telemetryStore.svelte.ts	'original' is possibly 'undefined'.
+1	src/lib/telemetryStore.svelte.ts	Type '\"text\"' is not assignable to type 'ColumnType'.
+1	src/main.js	Type 'HTMLElement | null' is not assignable to type 'Document | Element | ShadowRoot'.   Type 'null' is not assignable to type 'Document | Element | ShadowRoot'.
+1	src/main.js	Type 'string' is not assignable to type '`${string}-${string}-${string}-${string}-${string}`'.

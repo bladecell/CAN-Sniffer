@@ -41,12 +41,16 @@ void CanDriver::setDebugMode(bool enable)
     if (enable)
     {
         if (simStart_)
+        {
             simStart_(this);
+        }
     }
     else
     {
         if (simStop_)
+        {
             simStop_();
+        }
     }
 }
 
@@ -227,7 +231,9 @@ esp_err_t CanDriver::deinit()
     }
 
     if (simStop_)
+    {
         simStop_();
+    }
     canState.store(STATE::NOT_INITIALIZED);
     xSemaphoreGive(connectionChangeCallbackFence);
     return ESP_OK;
@@ -388,15 +394,25 @@ bool IRAM_ATTR CanDriver::twai_bus_err_cb(twai_node_handle_t handle, const twai_
 
     // Log specific errors (your existing code)
     if (edata->err_flags.arb_lost)
+    {
         ESP_EARLY_LOGD(TAG, "Arbitration lost");
+    }
     if (edata->err_flags.bit_err)
+    {
         ESP_EARLY_LOGD(TAG, "Bit error");
+    }
     if (edata->err_flags.form_err)
+    {
         ESP_EARLY_LOGD(TAG, "Frame format error");
+    }
     if (edata->err_flags.stuff_err)
+    {
         ESP_EARLY_LOGD(TAG, "Bit stuffing error");
+    }
     if (edata->err_flags.ack_err)
+    {
         ESP_EARLY_LOGD(TAG, "No acknowledgment");
+    }
 
     // Stuff errors = likely floating lines (no bus connected)
     if (edata->err_flags.stuff_err)

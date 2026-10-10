@@ -8,11 +8,10 @@
 
 #define APP_VERSION_STRING "0.5.0"
 
-#define VERSION_1_1
-// #define VERSION_1_2
+#include "sdkconfig.h"
 
 // Pin configuration
-#ifdef VERSION_1_1
+#if defined(CONFIG_SNIFFER_HW_REV_V1_1)
 #define CAN_RX_GPIO GPIO_NUM_4
 #define CAN_TX_GPIO GPIO_NUM_5
 #define CAN_LBK_GPIO GPIO_NUM_6
@@ -23,7 +22,7 @@
 #define SCLK GPIO_NUM_11
 #define CS GPIO_NUM_13
 #define SD_DETECT GPIO_NUM_9
-#elif defined(VERSION_1_2)
+#elif defined(CONFIG_SNIFFER_HW_REV_V1_2)
 #define SD_DETECT GPIO_NUM_13
 #define CAN_RX_GPIO GPIO_NUM_4
 #define CAN_TX_GPIO GPIO_NUM_5
@@ -34,4 +33,8 @@
 #define MOSI GPIO_NUM_10
 #define SCLK GPIO_NUM_11
 #define CS GPIO_NUM_9
+#elif defined(CONFIG_SNIFFER_HW_REV_V2)
+#error "HW v2 pin map is not defined yet (see docs/hardware.md)"
+#else
+#error "No hardware revision selected (CONFIG_SNIFFER_HW_REV_*)"
 #endif

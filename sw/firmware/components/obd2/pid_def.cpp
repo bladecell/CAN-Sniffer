@@ -37,9 +37,13 @@ PIDDefinition::PIDDefinition(uint32_t id, uint8_t mode, uint16_t pid, uint8_t le
 PIDDefinition::~PIDDefinition()
 {
     if (compiledFormula_)
+    {
         te_free(compiledFormula_);
+    }
     if (instance_mutex_)
+    {
         vSemaphoreDelete(instance_mutex_);
+    }
 }
 
 PIDDefinition::PIDDefinition(PIDDefinition&& other) noexcept
@@ -63,13 +67,17 @@ PIDDefinition::PIDDefinition(PIDDefinition&& other) noexcept
     other.compiledFormula_ = nullptr;
     other.instance_mutex_  = nullptr;
     for (int i = 0; i < 4; i++)
+    {
         vars_storage_[i] = other.vars_storage_[i];
+    }
 }
 
 esp_err_t PIDDefinition::evaluate(const uint8_t* frameData, uint8_t len, float& result) const
 {
     if (!compiledFormula_ || !instance_mutex_)
+    {
         return ESP_ERR_INVALID_STATE;
+    }
 
     if (xSemaphoreTake(instance_mutex_, pdMS_TO_TICKS(10)) == pdTRUE)
     {

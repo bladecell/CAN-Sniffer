@@ -211,7 +211,9 @@ void dataSimTask(CanDriver& canDriver)
                         }
                     }
                     if (!found)
+                    {
                         continue;
+                    }
 
                     uint8_t bts_idx = 4;
                     uint8_t cf_idx  = 1;
@@ -274,7 +276,9 @@ void dataSimTask(CanDriver& canDriver)
                         }
                     }
                     if (!found)
+                    {
                         continue;
+                    }
 
                     CanDriver::CanFrame consecutiveFrame1 = {};
                     consecutiveFrame1.header.id           = OBD2_RESPONSE_BASE_ID;

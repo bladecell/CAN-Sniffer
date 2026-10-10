@@ -1,7 +1,9 @@
-# Name,   Type, SubType, Offset,  Size,    Flags
-nvs,      data, nvs,     ,        0x6000,
-otadata,  data, ota,     ,        0x2000,
-phy_init, data, phy,     ,        0x1000,
-ota_0,    app,  ota_0,   ,        1536K,
-ota_1,    app,  ota_1,   ,        1536K,
-www,      data, spiffs,  ,        896K,
+# Name,   Type, SubType,  Offset,   Size,   Flags
+# 16 MB flash (verified on device with esptool flash_id). 0x520000..0x1000000 is unallocated.
+nvs,      data, nvs,      0x9000,   24K,
+otadata,  data, ota,      0xf000,   8K,
+phy_init, data, phy,      0x11000,  4K,
+ota_0,    app,  ota_0,    0x20000,  2M,
+ota_1,    app,  ota_1,    0x220000, 2M,
+www,      data, spiffs,   0x420000, 1M,
+coredump, data, coredump, 0x520000, 256K,

@@ -1,0 +1,18 @@
+---
+# Gate: tools/clang-tidy.sh (called by tools/ci.sh). Any finding fails the gate.
+# Disabled checks (revisit when the noise is worth the churn):
+#   bugprone-easily-swappable-parameters  signature style, no defect signal
+#   performance-enum-size                 would change enum base types across public headers and CAN code
+#   bugprone-narrowing-conversions        32-bit target; remaining hits are benign (uint64->double, size_t->ssize_t)
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+  cert-*,
+  performance-*,
+  -performance-enum-size,
+  readability-braces-*
+WarningsAsErrors: 'bugprone-*,cert-*,performance-*,readability-braces-*'
+HeaderFilterRegex: 'sw/firmware/(main|components)/.*'
+ExcludeHeaderFilterRegex: 'components/tinyexpr/.*'

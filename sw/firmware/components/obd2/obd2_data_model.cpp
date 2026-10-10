@@ -18,21 +18,37 @@ static const char* TAG = "OBD2DataModel";
 esp_err_t OBD2DataModel::initDef()
 {
     if (vinData.vinReadySemaphore == nullptr)
+    {
         vinData.vinReadySemaphore = xSemaphoreCreateBinary();
+    }
 
     if (dtcData.confirmedReadySemaphore == nullptr)
+    {
         dtcData.confirmedReadySemaphore = xSemaphoreCreateBinary();
+    }
     if (dtcData.pendingReadySemaphore == nullptr)
+    {
         dtcData.pendingReadySemaphore = xSemaphoreCreateBinary();
+    }
     if (dtcData.permanentReadySemaphore == nullptr)
+    {
         dtcData.permanentReadySemaphore = xSemaphoreCreateBinary();
+    }
     if (dtcData.clearReadySemaphore == nullptr)
+    {
         dtcData.clearReadySemaphore = xSemaphoreCreateBinary();
+    }
     const bool allocated = vinData.vinReadySemaphore && vinData.mtx_ && dtcData.confirmedReadySemaphore &&
                    dtcData.pendingReadySemaphore && dtcData.permanentReadySemaphore && dtcData.clearReadySemaphore &&
                    dtcData.mtx_ && pidMapMtx && subscribers_mtx_;
-    if (!allocated) return ESP_ERR_NO_MEM;
-    if (xSemaphoreTake(vinData.mtx_, pdMS_TO_TICKS(100)) != pdTRUE) return ESP_ERR_TIMEOUT;
+    if (!allocated)
+    {
+        return ESP_ERR_NO_MEM;
+    }
+    if (xSemaphoreTake(vinData.mtx_, pdMS_TO_TICKS(100)) != pdTRUE)
+    {
+        return ESP_ERR_TIMEOUT;
+    }
     if (xSemaphoreTake(dtcData.mtx_, pdMS_TO_TICKS(100)) != pdTRUE) {
         xSemaphoreGive(vinData.mtx_);
         return ESP_ERR_TIMEOUT;
@@ -113,9 +129,13 @@ esp_err_t OBD2DataModel::updateData(const CanDriver::CanFrame& frame)
             const PIDDefinition* pdef = nullptr;
 
             if (_getData(pid, pdat) != ESP_OK || pdat == nullptr)
+            {
                 return ESP_ERR_NOT_FOUND;
+            }
             if (_getDef(pid, pdef) != ESP_OK || pdef == nullptr)
+            {
                 return ESP_ERR_NOT_FOUND;
+            }
 
             float     val = 0.f;
             esp_err_t ret = pdef->evaluate(&frame.data[payloadOffset], frame.length - payloadOffset, val);
@@ -264,7 +284,9 @@ esp_err_t OBD2DataModel::getDataSnapshot(std::vector<std::pair<uint16_t, PIDData
             out.clear();
             out.reserve(pidData.size());
             for (const auto& [pid, data] : pidData)
+            {
                 out.emplace_back(pid, data);
+            }
             return ESP_OK;
         });
 }
@@ -298,7 +320,9 @@ esp_err_t OBD2DataModel::replacePIDDefinitions(const std::vector<PIDDefinitionDa
                                                const std::vector<uint16_t>& supportedCurrentPids)
 {
     if (definitions.size() > NUMBER_OF_ITEMS || recurringRequests.size() > NUMBER_OF_ITEMS)
+    {
         return ESP_ERR_INVALID_SIZE;
+    }
 
     std::map<uint16_t, PIDDefinition> stagedDefinitions;
     std::map<uint16_t, PIDData_t> stagedData;
@@ -312,7 +336,9 @@ esp_err_t OBD2DataModel::replacePIDDefinitions(const std::vector<PIDDefinitionDa
                                   definition.maxValue, definition.priority, definition.updateInterval_ms,
                                   definition.color, definition.icon));
         if (!result.second || !result.first->second.formulaValid())
+        {
             return ESP_ERR_INVALID_ARG;
+        }
 
         const bool currentSupported =
             definition.mode == MODE_CURRENT_DATA &&
@@ -333,7 +359,9 @@ esp_err_t OBD2DataModel::replacePIDDefinitions(const std::vector<PIDDefinitionDa
             // is touched. A failed capacity check therefore leaves both the
             // old maps and the old queue intact.
             if (!pollQueue.replaceRecurring(recurringRequests.data(), recurringRequests.size()))
+            {
                 return ESP_ERR_INVALID_SIZE;
+            }
 
             // Responder ownership is the only telemetry state that survives
             // a complete definition replacement. Carry it only when the same
@@ -344,17 +372,23 @@ esp_err_t OBD2DataModel::replacePIDDefinitions(const std::vector<PIDDefinitionDa
                 if (definition.mode != MODE_CURRENT_DATA ||
                     std::find(supportedCurrentPids.begin(), supportedCurrentPids.end(), definition.pid) ==
                         supportedCurrentPids.end())
+                {
                     continue;
+                }
 
                 const auto oldDefinition = PID_DEF.find(definition.pid);
                 const auto oldData       = pidData.find(definition.pid);
                 if (oldDefinition == PID_DEF.end() || oldData == pidData.end() ||
                     oldDefinition->second.mode() != MODE_CURRENT_DATA || !oldData->second.isSupported)
+                {
                     continue;
+                }
 
                 auto staged = stagedData.find(definition.pid);
                 if (staged != stagedData.end())
+                {
                     staged->second.id = oldData->second.id;
+                }
             }
 
             PID_DEF.swap(stagedDefinitions);
@@ -438,7 +472,9 @@ esp_err_t OBD2DataModel::_getRawData(uint16_t pid, uint8_t* outData) const
 esp_err_t OBD2DataModel::getRawData(uint16_t pid, uint8_t* outData) const
 {
     if (outData == nullptr)
+    {
         return ESP_ERR_INVALID_ARG;
+    }
 
     return withPidMapLock(
         [&]()
@@ -566,6 +602,8 @@ esp_err_t OBD2DataModel::clearDTC(uint8_t mode)
         case RESPONSE_PERMANENT_DTCS:
             dtcData.permanent.clear();
             break;
+        default:
+            break;
     }
     xSemaphoreGive(dtcData.mtx_);
     return ESP_OK;
@@ -604,7 +642,7 @@ std::string OBD2DataModel::decodeDTC(uint16_t rawDTC)
     }
 
     // Format the DTC string: Letter + 4 digits
-    snprintf(dtc, sizeof(dtc), "%c%01X%03X", prefix, first_digit, last_digits);
+    (void)snprintf(dtc, sizeof(dtc), "%c%01X%03X", prefix, first_digit, last_digits);
 
     return std::string(dtc);
 }
@@ -632,6 +670,8 @@ std::vector<std::string> OBD2DataModel::getDTC(uint8_t mode) const
         case MODE_PERMANENT_DTCS:
         case RESPONSE_PERMANENT_DTCS:
             result = dtcData.permanent;
+            break;
+        default:
             break;
     }
 
@@ -662,7 +702,10 @@ void OBD2DataModel::runPidUpdateCallbacks(uint16_t pid, const std::atomic<bool>*
 
     for (const auto& cb : callbacks)
     {
-        if (stopRequested && stopRequested->load()) break;
+        if (stopRequested && stopRequested->load())
+        {
+            break;
+        }
         cb(pid);
     }
 }

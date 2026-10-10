@@ -40,10 +40,10 @@ struct RouteDef
 
 static const char* TAG = "WEB_SERVER";
 
-static constexpr int64_t JSON_PAYLOAD_RECEIVE_DEADLINE_US = 5 * 1000 * 1000;
+static constexpr int64_t JSON_PAYLOAD_RECEIVE_DEADLINE_US = 5LL * 1000 * 1000;
 static constexpr size_t  MAX_UPLOAD_CONTENT_LENGTH        = 16 * 1024 * 1024;
-static constexpr int64_t UPLOAD_NO_PROGRESS_DEADLINE_US   = 5 * 1000 * 1000;
-static constexpr int64_t UPLOAD_ABSOLUTE_DEADLINE_US      = 60 * 1000 * 1000;
+static constexpr int64_t UPLOAD_NO_PROGRESS_DEADLINE_US   = 5LL * 1000 * 1000;
+static constexpr int64_t UPLOAD_ABSOLUTE_DEADLINE_US      = 60LL * 1000 * 1000;
 static constexpr TickType_t UPLOAD_OPERATION_TIMEOUT       = pdMS_TO_TICKS(250);
 static constexpr TickType_t SD_FILE_READ_OPERATION_TIMEOUT = pdMS_TO_TICKS(250);
 
@@ -65,15 +65,21 @@ static esp_err_t get_sd_rest_path(httpd_req_t* req, const char* api_route, char*
                                   bool allow_root)
 {
     if (req == nullptr || api_route == nullptr || out == nullptr || out_size == 0)
+    {
         return ESP_ERR_INVALID_ARG;
+    }
 
     const size_t route_len = strlen(api_route);
     if (strncmp(req->uri, api_route, route_len) != 0)
+    {
         return ESP_ERR_INVALID_ARG;
+    }
 
     const char* read = req->uri + route_len;
     if (*read != '\0' && *read != '/' && *read != '?')
+    {
         return ESP_ERR_INVALID_ARG;
+    }
 
     char*       write = out;
     char*       end   = out + out_size - 1;
@@ -85,14 +91,18 @@ static esp_err_t get_sd_rest_path(httpd_req_t* req, const char* api_route, char*
         {
             if (read[1] == '\0' || read[2] == '\0' || !std::isxdigit((unsigned char)read[1]) ||
                 !std::isxdigit((unsigned char)read[2]))
+            {
                 return ESP_ERR_INVALID_ARG;
+            }
 
             char hex[3] = {read[1], read[2], '\0'};
             decoded     = (unsigned char)std::strtol(hex, NULL, 16);
             read += 3;
 
             if (decoded == '/' || decoded == '\\' || decoded == '?' || decoded == '#')
+            {
                 return ESP_ERR_INVALID_ARG;
+            }
         }
         else
         {
@@ -100,16 +110,22 @@ static esp_err_t get_sd_rest_path(httpd_req_t* req, const char* api_route, char*
         }
 
         if (decoded == 0 || decoded < 0x20 || decoded == 0x7f || decoded == '\\' || decoded == '#')
+        {
             return ESP_ERR_INVALID_ARG;
+        }
         if (write == end)
+        {
             return ESP_ERR_NO_MEM;
+        }
         *write++ = (char)decoded;
     }
 
     // URI fragments are not valid in HTTP requests. Reject them even after a
     // legitimate query delimiter rather than allowing parser disagreement.
     if (strchr(read, '#') != nullptr)
+    {
         return ESP_ERR_INVALID_ARG;
+    }
 
     *write = '\0';
     return SDCard::validate_relative_path(out, allow_root);
@@ -156,14 +172,20 @@ static const char* json_error_body(int status)
 static esp_err_t send_json_error_response(httpd_req_t* req, int status)
 {
     if (http_status_text(status) == nullptr)
+    {
         status = 500;
+    }
 
     esp_err_t ret = httpd_resp_set_status(req, http_status_text(status));
     if (ret != ESP_OK)
+    {
         return ret;
+    }
     ret = httpd_resp_set_type(req, "application/json");
     if (ret != ESP_OK)
+    {
         return ret;
+    }
     return httpd_resp_send(req, json_error_body(status), HTTPD_RESP_USE_STRLEN);
 }
 
@@ -207,10 +229,14 @@ static MiddlewareJsonResult make_upload_result(const char* status, const char* r
 {
     cJSON* root = cJSON_CreateObject();
     if (root == nullptr)
+    {
         return {nullptr, 500};
+    }
     cJSON_AddStringToObject(root, "status", status);
     if (reason != nullptr)
+    {
         cJSON_AddStringToObject(root, "reason", reason);
+    }
     return {root, http_status};
 }
 
@@ -220,15 +246,21 @@ static MiddlewareJsonResult make_upload_result(const char* status, const char* r
 static bool get_validated_upload_content_length(httpd_req_t* req, size_t* content_length)
 {
     if (req == nullptr || content_length == nullptr)
+    {
         return false;
+    }
 
     const size_t header_length = httpd_req_get_hdr_value_len(req, "Content-Length");
     if (header_length == 0 || header_length >= CONFIG_HTTPD_MAX_REQ_HDR_LEN)
+    {
         return false;
+    }
 
     char header_value[CONFIG_HTTPD_MAX_REQ_HDR_LEN];
     if (httpd_req_get_hdr_value_str(req, "Content-Length", header_value, sizeof(header_value)) != ESP_OK)
+    {
         return false;
+    }
 
     bool   saw_digit          = false;
     bool   trailing_whitespace = false;
@@ -239,22 +271,30 @@ static bool get_validated_upload_content_length(httpd_req_t* req, size_t* conten
         if (*value >= '0' && *value <= '9')
         {
             if (trailing_whitespace)
+            {
                 return false;
+            }
 
             saw_digit = true;
             const size_t digit = (size_t)(*value - '0');
             if (!exceeds_size_limit)
             {
                 if (parsed_length > (MAX_UPLOAD_CONTENT_LENGTH - digit) / 10)
+                {
                     exceeds_size_limit = true;
+                }
                 else
+                {
                     parsed_length = (parsed_length * 10) + digit;
+                }
             }
         }
         else if (*value == ' ' || *value == '\t')
         {
             if (saw_digit)
+            {
                 trailing_whitespace = true;
+            }
         }
         else
         {
@@ -263,7 +303,9 @@ static bool get_validated_upload_content_length(httpd_req_t* req, size_t* conten
     }
 
     if (!saw_digit)
+    {
         return false;
+    }
 
     if (exceeds_size_limit)
     {
@@ -274,7 +316,9 @@ static bool get_validated_upload_content_length(httpd_req_t* req, size_t* conten
     // In addition to syntactic validation, require the parsed header to agree
     // with the HTTP server's framing value before trusting it for the upload.
     if (parsed_length != req->content_len)
+    {
         return false;
+    }
 
     *content_length = parsed_length;
     return true;
@@ -284,10 +328,14 @@ static bool get_query_str(httpd_req_t* req, const char* key, char* out_val, size
 {
     size_t len = httpd_req_get_url_query_len(req) + 1;
     if (len <= 1)
+    {
         return false;
+    }
 
     if (len > CONFIG_HTTPD_MAX_URI_LEN + 1)
+    {
         return false;
+    }
 
     char buf[CONFIG_HTTPD_MAX_URI_LEN + 1];
     httpd_req_get_url_query_str(req, buf, len);
@@ -305,7 +353,9 @@ static esp_err_t get_query_int(httpd_req_t* req, const char* key, int* value)
         errno     = 0;
         long parsed = std::strtol(val, &end, 10);
         if (end == val || *end != '\0' || errno == ERANGE || parsed < INT_MIN || parsed > INT_MAX)
+        {
             return ESP_ERR_INVALID_ARG;
+        }
         *value = static_cast<int>(parsed);
         return ESP_OK;
     }
@@ -315,18 +365,26 @@ static esp_err_t get_query_int(httpd_req_t* req, const char* key, int* value)
 static int hex_nibble(char value)
 {
     if (value >= '0' && value <= '9')
+    {
         return value - '0';
+    }
     if (value >= 'A' && value <= 'F')
+    {
         return value - 'A' + 10;
+    }
     if (value >= 'a' && value <= 'f')
+    {
         return value - 'a' + 10;
+    }
     return -1;
 }
 
 static bool percent_decode_dtc_codes(const char* encoded, char* decoded, size_t decoded_size)
 {
     if (encoded == nullptr || decoded == nullptr || decoded_size == 0)
+    {
         return false;
+    }
 
     char*       write = decoded;
     const char* read  = encoded;
@@ -337,12 +395,16 @@ static bool percent_decode_dtc_codes(const char* encoded, char* decoded, size_t 
         if (*read == '%')
         {
             if (read[1] == '\0' || read[2] == '\0')
+            {
                 return false;
+            }
 
             const int high_nibble = hex_nibble(read[1]);
             const int low_nibble  = hex_nibble(read[2]);
             if (high_nibble < 0 || low_nibble < 0)
+            {
                 return false;
+            }
 
             value = (unsigned char)((high_nibble << 4) | low_nibble);
             read += 3;
@@ -353,7 +415,9 @@ static bool percent_decode_dtc_codes(const char* encoded, char* decoded, size_t 
         }
 
         if (value == '\0' || write == end)
+        {
             return false;
+        }
         *write++ = (char)value;
     }
 
@@ -372,22 +436,30 @@ static esp_err_t get_dtc_code_list(httpd_req_t* req, char* scratch_buf, size_t s
         return ESP_ERR_NOT_FOUND;
     }
     if (!percent_decode_dtc_codes(encoded_codes, scratch_buf, scratch_len))
+    {
         return ESP_ERR_INVALID_ARG;
+    }
 
     char* token = scratch_buf;
     while (true)
     {
         if (*token == '\0')
+        {
             return ESP_ERR_INVALID_ARG;
+        }
         if (*out_count == max_ptrs)
+        {
             return ESP_ERR_INVALID_SIZE;
+        }
 
         out_ptrs[*out_count] = token;
         (*out_count)++;
 
         char* separator = strchr(token, ',');
         if (separator == nullptr)
+        {
             return ESP_OK;
+        }
 
         *separator = '\0';
         token      = separator + 1;
@@ -397,18 +469,26 @@ static esp_err_t get_dtc_code_list(httpd_req_t* req, char* scratch_buf, size_t s
 static bool is_valid_dtc_code(const char* code)
 {
     if (strlen(code) != 5)
+    {
         return false;
+    }
 
     const char system = code[0];
     if (system != 'P' && system != 'B' && system != 'C' && system != 'U')
+    {
         return false;
+    }
     if (code[1] < '0' || code[1] > '3')
+    {
         return false;
+    }
 
     for (size_t i = 2; i < 5; ++i)
     {
         if (!((code[i] >= '0' && code[i] <= '9') || (code[i] >= 'A' && code[i] <= 'F')))
+        {
             return false;
+        }
     }
 
     return true;
@@ -418,17 +498,23 @@ static esp_err_t get_path_pid(httpd_req_t* req, const char* route, int* value)
 {
     const size_t route_len = strlen(route);
     if (strncmp(req->uri, route, route_len) != 0)
+    {
         return ESP_ERR_NOT_FOUND;
+    }
 
     const char* suffix = req->uri + route_len;
     if (*suffix == '\0' || *suffix == '?')
+    {
         return ESP_ERR_INVALID_ARG;
+    }
 
     char* end = nullptr;
     errno     = 0;
     long parsed = std::strtol(suffix, &end, 10);
     if (end == suffix || (*end != '\0' && *end != '?') || errno == ERANGE || parsed < INT_MIN || parsed > INT_MAX)
+    {
         return ESP_ERR_INVALID_ARG;
+    }
 
     *value = static_cast<int>(parsed);
     return ESP_OK;
@@ -448,29 +534,41 @@ static esp_err_t get_query_bool(httpd_req_t* req, const char* key, bool* value)
 static esp_err_t get_download_query(httpd_req_t* req, bool* download)
 {
     if (req == nullptr || download == nullptr)
+    {
         return ESP_ERR_INVALID_ARG;
+    }
 
     const size_t query_length = httpd_req_get_url_query_len(req);
     const char*  query_start  = strchr(req->uri, '?');
     if (query_start == nullptr)
+    {
         return ESP_ERR_NOT_FOUND;
+    }
     if (query_length == 0 || query_length > CONFIG_HTTPD_MAX_URI_LEN)
+    {
         return ESP_ERR_INVALID_ARG;
+    }
 
     char query[CONFIG_HTTPD_MAX_URI_LEN + 1];
     if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK)
+    {
         return ESP_ERR_INVALID_ARG;
+    }
 
     // This endpoint accepts no query or one literal download=value component.
     // Do not use httpd_query_key_value here: it accepts unrelated parameters,
     // duplicate keys, and decoded aliases that make the request ambiguous.
     if (strchr(query, '&') != nullptr)
+    {
         return ESP_ERR_INVALID_ARG;
+    }
 
     static constexpr char download_key[] = "download=";
     constexpr size_t      download_key_length = sizeof(download_key) - 1;
     if (strncmp(query, download_key, download_key_length) != 0)
+    {
         return ESP_ERR_INVALID_ARG;
+    }
 
     const char* value = query + download_key_length;
     if (strcmp(value, "true") == 0 || strcmp(value, "1") == 0)
@@ -525,7 +623,9 @@ cJSON* get_validated_json_payload(httpd_req_t* req, size_t max_size)
         if (ret == HTTPD_SOCK_ERR_TIMEOUT)
         {
             if (esp_timer_get_time() < deadline)
+            {
                 continue;
+            }
 
             free(buf);
             httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Incomplete request body");
@@ -546,7 +646,9 @@ cJSON* get_validated_json_payload(httpd_req_t* req, size_t max_size)
     if (root != nullptr && parse_end != nullptr && parse_end >= buf && parse_end <= (buf + total_len))
     {
         while (parse_end < (buf + total_len) && std::isspace((unsigned char)*parse_end))
+        {
             ++parse_end;
+        }
 
         if (parse_end != (buf + total_len))
         {
@@ -562,7 +664,9 @@ cJSON* get_validated_json_payload(httpd_req_t* req, size_t max_size)
     free(buf);
 
     if (root == nullptr)
+    {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+    }
 
     return root;
 }
@@ -594,7 +698,9 @@ static cJSON* get_full_json_payload(httpd_req_t* req, size_t max_size)
     {
         int received = httpd_req_recv(req, buffer + receivedTotal, totalLength - receivedTotal);
         if (received == HTTPD_SOCK_ERR_TIMEOUT)
+        {
             continue;
+        }
         if (received <= 0)
         {
             free(buffer);
@@ -610,7 +716,9 @@ static cJSON* get_full_json_payload(httpd_req_t* req, size_t max_size)
     if (root != nullptr && parseEnd != nullptr)
     {
         while (*parseEnd != '\0' && std::isspace((unsigned char)*parseEnd))
+        {
             ++parseEnd;
+        }
         if (*parseEnd != '\0')
         {
             cJSON_Delete(root);
@@ -620,7 +728,9 @@ static cJSON* get_full_json_payload(httpd_req_t* req, size_t max_size)
     free(buffer);
 
     if (root == nullptr)
+    {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+    }
     return root;
 }
 
@@ -633,12 +743,16 @@ static bool has_ascii_case_insensitive_extension(const char* basename, const cha
 {
     const char* actual_extension = strrchr(basename, '.');
     if (actual_extension == nullptr)
+    {
         return false;
+    }
 
     while (*actual_extension != '\0' && *extension != '\0')
     {
         if (ascii_to_lower(*actual_extension) != ascii_to_lower(*extension))
+        {
             return false;
+        }
         ++actual_extension;
         ++extension;
     }
@@ -650,16 +764,26 @@ static const char* sd_file_content_type(const char* basename, bool* inline_allow
 {
     *inline_allowed = true;
     if (has_ascii_case_insensitive_extension(basename, ".txt"))
+    {
         return "text/plain";
+    }
     if (has_ascii_case_insensitive_extension(basename, ".csv"))
+    {
         return "text/csv";
+    }
     if (has_ascii_case_insensitive_extension(basename, ".json"))
+    {
         return "application/json";
+    }
     if (has_ascii_case_insensitive_extension(basename, ".png"))
+    {
         return "image/png";
+    }
     if (has_ascii_case_insensitive_extension(basename, ".jpg") ||
         has_ascii_case_insensitive_extension(basename, ".jpeg"))
+    {
         return "image/jpeg";
+    }
 
     *inline_allowed = false;
     return "application/octet-stream";
@@ -668,7 +792,9 @@ static const char* sd_file_content_type(const char* basename, bool* inline_allow
 static void make_safe_download_filename(const char* basename, char* output, size_t output_size)
 {
     if (output == nullptr || output_size == 0)
+    {
         return;
+    }
 
     size_t written = 0;
     if (basename != nullptr)
@@ -698,7 +824,9 @@ static esp_err_t set_sd_file_response_headers(httpd_req_t* req, const char* cont
 {
     esp_err_t err = httpd_resp_set_type(req, content_type);
     if (err != ESP_OK)
+    {
         return err;
+    }
 
     return httpd_resp_set_hdr(req, "Content-Disposition", content_disposition);
 }
@@ -726,12 +854,12 @@ esp_err_t index_handler(httpd_req_t* req, void* arg)
     {
         if (httpd_resp_send_chunk(req, chunk, chunksize) != ESP_OK)
         {
-            fclose(f);
+            (void)fclose(f);
             return ESP_FAIL;
         }
     }
 
-    fclose(f);
+    (void)fclose(f);
 
     return httpd_resp_send_chunk(req, nullptr, 0);
 }
@@ -750,7 +878,9 @@ esp_err_t p_system_copy_file_index_handler(httpd_req_t* req, void* arg)
 {
     cJSON* root = get_validated_json_payload(req, 2048);
     if (root == nullptr)
+    {
         return ESP_OK;
+    }
 
     MiddlewareJsonResult resp = m_system_copy_file(root);
     cJSON_Delete(root);
@@ -789,7 +919,9 @@ esp_err_t g_dtc_index_handler(httpd_req_t* req, void* arg)
     if (get_query_str(req, "mode", mode_text, sizeof(mode_text)))
     {
         if (get_query_int(req, "mode", &mode) != ESP_OK)
+        {
             return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid DTC mode");
+        }
         MiddlewareJsonResult data = m_dtc_get(mode);
         return send_json_response(req, data);
     }
@@ -803,7 +935,9 @@ esp_err_t g_dtc_index_handler(httpd_req_t* req, void* arg)
         for (size_t i = 0; i < count; ++i)
         {
             if (!is_valid_dtc_code(codes[i]))
+            {
                 return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid DTC code");
+            }
         }
         MiddlewareJsonResult data = m_dtc_description_get(codes, count);
         return send_json_response(req, data);
@@ -832,7 +966,9 @@ esp_err_t g_pid_def_index_handler(httpd_req_t* req, void* arg)
     int target_pid = -1;
     esp_err_t pid_path = get_path_pid(req, "/api/v1/pid_def/", &target_pid);
     if (pid_path == ESP_ERR_INVALID_ARG)
+    {
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid PID requested");
+    }
     if (pid_path == ESP_OK)
     {
         if (target_pid < 0 || target_pid > 0xFFFF)
@@ -847,7 +983,9 @@ esp_err_t p_pid_def_index_handler(httpd_req_t* req, void* arg)
 {
     cJSON* root = get_validated_json_payload(req, 2048);
     if (root == nullptr)
+    {
         return ESP_OK;  // response already sent
+    }
 
     MiddlewareJsonResult resp = m_pid_def_post(root);
     cJSON_Delete(root);
@@ -858,7 +996,9 @@ esp_err_t put_pid_def_index_handler(httpd_req_t* req, void* arg)
 {
     cJSON* root = get_full_json_payload(req, 64 * 1024);
     if (root == nullptr)
+    {
         return ESP_OK;
+    }
 
     int status = 200;
     cJSON* resp = m_pid_def_put(root, &status);
@@ -879,7 +1019,9 @@ esp_err_t p_pid_def_save_index_handler(httpd_req_t* req, void* arg)
     {
         cJSON* root = get_validated_json_payload(req, 256);
         if (root == nullptr)
+        {
             return ESP_OK;
+        }
 
         MiddlewareJsonResult resp = m_pid_def_save(root);
         cJSON_Delete(root);
@@ -898,7 +1040,9 @@ esp_err_t p_pid_def_load_index_handler(httpd_req_t* req, void* arg)
     {
         cJSON* root = get_validated_json_payload(req, 256);
         if (root == nullptr)
+        {
             return ESP_OK;
+        }
 
         MiddlewareJsonResult resp = m_pid_def_load(root);
         cJSON_Delete(root);
@@ -916,7 +1060,9 @@ esp_err_t d_pid_def_index_handler(httpd_req_t* req, void* arg)
     int target_pid = -1;
     esp_err_t pid_path = get_path_pid(req, "/api/v1/pid_def/", &target_pid);
     if (pid_path == ESP_ERR_INVALID_ARG)
+    {
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid PID requested");
+    }
     if (pid_path == ESP_OK)
     {
         if (target_pid < 0 || target_pid > 0xFFFF)
@@ -932,7 +1078,9 @@ esp_err_t g_pid_data_index_handler(httpd_req_t* req, void* arg)
     int target_pid = -1;
     esp_err_t pid_path = get_path_pid(req, "/api/v1/pid_data/", &target_pid);
     if (pid_path == ESP_ERR_INVALID_ARG)
+    {
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid PID requested");
+    }
     if (pid_path == ESP_OK)
     {
         if (target_pid < 0 || target_pid > 0xFFFF)
@@ -970,7 +1118,9 @@ esp_err_t p_settings_index_handler(httpd_req_t* req, void* arg)
 {
     cJSON* root = get_validated_json_payload(req, 2048);
     if (root == nullptr)
+    {
         return ESP_OK;
+    }
 
     MiddlewareJsonResult resp = m_settings_set(root);
     cJSON_Delete(root);
@@ -992,7 +1142,9 @@ esp_err_t g_sd_card_file_tree_handler(httpd_req_t* req, void* arg)
     const char* api_route = "/api/v1/sd_card/tree";
     char        path_buf[CONFIG_HTTPD_MAX_URI_LEN + 1];
     if (get_sd_rest_path(req, api_route, path_buf, sizeof(path_buf), true) != ESP_OK)
+    {
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid SD card path");
+    }
 
     return send_json_response(req, m_sdcard_file_tree_get(path_buf));
 }
@@ -1004,46 +1156,66 @@ esp_err_t g_sd_card_file_read_handler(httpd_req_t* req, void* arg)
     bool download = false;
     if (httpd_resp_set_hdr(req, "X-Content-Type-Options", "nosniff") != ESP_OK ||
         httpd_resp_set_hdr(req, "Cache-Control", "no-store") != ESP_OK)
+    {
         return ESP_FAIL;
+    }
 
     const esp_err_t download_query = get_download_query(req, &download);
     if (download_query != ESP_OK && download_query != ESP_ERR_NOT_FOUND)
+    {
         return send_json_error_response(req, 400);
+    }
 
     char path_buf[CONFIG_HTTPD_MAX_URI_LEN + 1];
     if (get_sd_rest_path(req, api_route, path_buf, sizeof(path_buf), false) != ESP_OK)
+    {
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid SD card path");
+    }
 
     // Keep this bounded lease through stat, open, every read/send, and close.
     // SDCard's lower-level calls take the same recursive mutex, so another SD
     // request cannot unmount or mutate the file while its response is active.
     SDCard::Operation operation = SDCard::getInstance().acquire_operation(SD_FILE_READ_OPERATION_TIMEOUT, true);
     if (!operation)
+    {
         return send_json_error_response(req, 503);
+    }
 
     struct stat file_stat;
     const esp_err_t stat_err = SDCard::getInstance().get_file_stat(path_buf, &file_stat);
     if (stat_err != ESP_OK)
     {
         if (stat_err == ESP_ERR_INVALID_STATE)
+        {
             return send_json_error_response(req, 503);
+        }
         if (stat_err == ESP_ERR_NOT_FOUND)
+        {
             return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File not found");
+        }
         return send_json_error_response(req, 500);
     }
     if (!S_ISREG(file_stat.st_mode))
+    {
         return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File not found");
+    }
 
     FILE*           fd       = nullptr;
     const esp_err_t open_err = SDCard::getInstance().open_file(path_buf, "rb", fd);
     if (open_err != ESP_OK || fd == nullptr)
     {
         if (fd != nullptr)
+        {
             SDCard::getInstance().close_file(fd);
+        }
         if (open_err == ESP_ERR_INVALID_STATE)
+        {
             return send_json_error_response(req, 503);
+        }
         if (open_err == ESP_ERR_NOT_FOUND)
+        {
             return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File not found");
+        }
         return send_json_error_response(req, 500);
     }
 
@@ -1083,11 +1255,15 @@ esp_err_t g_sd_card_file_read_handler(httpd_req_t* req, void* arg)
             const esp_err_t close_err = SDCard::getInstance().close_file(fd);
             fd                        = nullptr;
             if (close_err != ESP_OK)
+            {
                 ESP_LOGE(TAG, "Failed to close SD file after read error: %s", esp_err_to_name(close_err));
+            }
             return bytes_sent ? ESP_FAIL : send_json_error_response(req, 500);
         }
         if (read_bytes == 0)
+        {
             break;
+        }
 
         if (!response_headers_set)
         {
@@ -1118,7 +1294,9 @@ esp_err_t g_sd_card_file_read_handler(httpd_req_t* req, void* arg)
     const esp_err_t close_err = SDCard::getInstance().close_file(fd);
     fd                        = nullptr;
     if (close_err != ESP_OK)
+    {
         ESP_LOGE(TAG, "Failed to close SD file: %s", esp_err_to_name(close_err));
+    }
 
     // The response is committed once its stream terminator is attempted. Do
     // not try to append a JSON error after any response bytes were sent.
@@ -1129,24 +1307,32 @@ esp_err_t p_file_upload_handler(httpd_req_t* req, void* arg)
 {
     size_t content_length = 0;
     if (!get_validated_upload_content_length(req, &content_length))
+    {
         return send_json_response(req, make_upload_result("error", "Invalid Content-Length", 400));
+    }
 
     const char* api_route = "/api/v1/sd_card/file";
     char        path_buf[CONFIG_HTTPD_MAX_URI_LEN + 1];
     if (get_sd_rest_path(req, api_route, path_buf, sizeof(path_buf), false) != ESP_OK)
+    {
         return send_json_response(req, make_upload_result("error", "Invalid SD card path", 400));
+    }
 
     const char* relative_path = path_buf;
     size_t      path_len      = strlen(relative_path);
 
     if (content_length > MAX_UPLOAD_CONTENT_LENGTH)
+    {
         return send_json_response(req, make_upload_result("error", "Content too large", 413));
+    }
 
     // If the path ends with '/', treat it as a directory creation request
     if (path_len > 0 && relative_path[path_len - 1] == '/')
     {
         if (content_length != 0)
+        {
             return send_json_response(req, make_upload_result("error", "Directory upload body must be empty", 400));
+        }
 
         int         response_status = 200;
         const char* response_reason = nullptr;
@@ -1211,14 +1397,18 @@ esp_err_t p_file_upload_handler(httpd_req_t* req, void* arg)
                     {
                         const esp_err_t close_err = SDCard::getInstance().close_file(fd);
                         if (close_err != ESP_OK)
+                        {
                             ESP_LOGE(TAG, "Failed to close upload target: %s", esp_err_to_name(close_err));
+                        }
                     }
                     if (!target_existed)
                     {
                         const esp_err_t delete_err = SDCard::getInstance().delete_file(relative_path);
                         if (delete_err != ESP_OK && delete_err != ESP_ERR_NOT_FOUND)
+                        {
                             ESP_LOGE(TAG, "Failed to remove failed upload %s: %s", relative_path,
                                      esp_err_to_name(delete_err));
+                        }
                     }
                     response_status = open_err == ESP_ERR_INVALID_STATE ? 503 : 500;
                     response_reason = "Storage error or file already exists";
@@ -1251,7 +1441,9 @@ esp_err_t p_file_upload_handler(httpd_req_t* req, void* arg)
 
                         const int received = httpd_req_recv(req, chunk, MIN(remaining, sizeof(chunk)));
                         if (received == HTTPD_SOCK_ERR_TIMEOUT)
+                        {
                             continue;
+                        }
 
                         if (received <= 0 || (size_t)received > remaining)
                         {
@@ -1308,8 +1500,10 @@ esp_err_t p_file_upload_handler(httpd_req_t* req, void* arg)
                     {
                         const esp_err_t delete_err = SDCard::getInstance().delete_file(relative_path);
                         if (delete_err != ESP_OK && delete_err != ESP_ERR_NOT_FOUND)
+                        {
                             ESP_LOGE(TAG, "Failed to remove partial upload %s: %s", relative_path,
                                      esp_err_to_name(delete_err));
+                        }
                     }
                 }
             }
@@ -1317,10 +1511,14 @@ esp_err_t p_file_upload_handler(httpd_req_t* req, void* arg)
     }
 
     if (!send_response)
+    {
         return ESP_FAIL;
+    }
 
     if (response_status != 200)
+    {
         return send_json_response(req, make_upload_result("error", response_reason, response_status));
+    }
     return send_json_response(req, make_upload_result("success", nullptr, 200));
 }
 
@@ -1329,7 +1527,9 @@ esp_err_t d_file_delete_handler(httpd_req_t* req, void* arg)
     const char* api_route = "/api/v1/sd_card/file";
     char        path_buf[CONFIG_HTTPD_MAX_URI_LEN + 1];
     if (get_sd_rest_path(req, api_route, path_buf, sizeof(path_buf), false) != ESP_OK)
+    {
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid SD card path");
+    }
 
     return send_json_response(req, m_sdcard_file_delete_delete(path_buf));
 }
@@ -1366,7 +1566,9 @@ esp_err_t ws_socket_handler(httpd_req_t* req)
 
     esp_err_t ret = httpd_ws_recv_frame(req, &ws_pkt, 0);
     if (ret != ESP_OK)
+    {
         return ret;
+    }
 
     if (ws_pkt.type == HTTPD_WS_TYPE_CLOSE)
     {
@@ -1383,7 +1585,9 @@ esp_err_t ws_socket_handler(httpd_req_t* req)
     {
         uint8_t* buf = (uint8_t*)malloc(ws_pkt.len + 1);
         if (!buf)
+        {
             return ESP_ERR_NO_MEM;
+        }
 
         ws_pkt.payload = buf;
         ret            = httpd_ws_recv_frame(req, &ws_pkt, ws_pkt.len);
@@ -1423,7 +1627,9 @@ esp_err_t ws_socket_handler(httpd_req_t* req)
 void pid_stream_callback(uint16_t pid)
 {
     if (!b_pid_stream_enabled.load())
+    {
         return;
+    }
 
     static uint8_t packet[PID_STREAM_PACKET_SIZE];
     esp_err_t      err = pid_stream_packet_get(pid, packet);

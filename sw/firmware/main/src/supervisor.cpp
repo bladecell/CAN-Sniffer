@@ -41,18 +41,26 @@ constexpr TickType_t SD_OPERATION_TIMEOUT_TICKS = pdMS_TO_TICKS(5000);
 bool canonical_sd_relative_path(const char* path, std::string& canonical_path)
 {
     if (!SDCard::is_path_under(path, MOUNT_POINT))
+    {
         return false;
+    }
 
     const char* relative_path = path + strlen(MOUNT_POINT);
     if (SDCard::validate_relative_path(relative_path, true) != ESP_OK)
+    {
         return false;
+    }
 
     if (*relative_path == '/')
+    {
         ++relative_path;
+    }
 
     canonical_path = relative_path;
     if (!canonical_path.empty() && canonical_path.back() == '/')
+    {
         canonical_path.pop_back();
+    }
 
     // FAT filename matching is case-insensitive for ASCII characters.  Do the
     // fold locally instead of using locale-sensitive ctype helpers or probing
@@ -61,7 +69,9 @@ bool canonical_sd_relative_path(const char* path, std::string& canonical_path)
     {
         const unsigned char byte = static_cast<unsigned char>(character);
         if (byte >= static_cast<unsigned char>('a') && byte <= static_cast<unsigned char>('z'))
+        {
             character = static_cast<char>(byte - ('a' - 'A'));
+        }
     }
 
     return true;
@@ -252,7 +262,9 @@ void SUPERVISOR::task()
 
                 // Release the lock to allow Automatic Light Sleep
                 if (pm_lock_)
+                {
                     esp_pm_lock_release(pm_lock_);
+                }
 
                 // 1. Configure wakeup timer
                 esp_sleep_enable_timer_wakeup(sleep_time_us);
@@ -263,7 +275,9 @@ void SUPERVISOR::task()
 #ifdef CONFIG_PM_ENABLE
                 // Re-acquire the lock to prevent sleep during operation
                 if (pm_lock_)
+                {
                     esp_pm_lock_acquire(pm_lock_);
+                }
 #endif
 
                 ESP_LOGI(TAG, "Woke up. Target sleep duration achieved.");
@@ -471,9 +485,13 @@ esp_err_t SUPERVISOR::setup_can()
     }
 
     if (config.debug)
+    {
         CanDriver::getInstance().setSimHooks(start_sim_task, stop_sim_task, sim_notify);
+    }
     else
+    {
         CanDriver::getInstance().setSimHooks(nullptr, nullptr, nullptr);
+    }
 
     esp_err_t ret = CanDriver::getInstance().init(config);
     CanDriver::getInstance().setRxCallback(LedStatus::staticBlink, nullptr);
@@ -498,7 +516,9 @@ esp_err_t SUPERVISOR::setup_obd()
         [](bool connected)
         {
             if (!connected)
+            {
                 return;
+            }
 
             auto& obd2 = OBD2::getInstance();
 
@@ -513,7 +533,9 @@ esp_err_t SUPERVISOR::setup_obd()
             {
                 err = obd2.requestDTC(mode);
                 if (err != ESP_OK)
+                {
                     ESP_LOGW("SUPERVISOR", "DTC mode 0x%02X request failed: %s", mode, esp_err_to_name(err));
+                }
             }
 
             ESP_LOGI("SUPERVISOR", "DTC request sent, waiting for response...");
@@ -648,7 +670,7 @@ std::string SUPERVISOR::get_MAC_address() const
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
 
     char buf[18];
-    snprintf(buf, sizeof(buf), "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    (void)snprintf(buf, sizeof(buf), "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
     return std::string(buf);
 }
@@ -673,7 +695,9 @@ SUPERVISOR::PidDefinitionSaveResult SUPERVISOR::save_pid_def_to_json(const char*
 
     cJSON* rootArray = cJSON_CreateArray();
     if (rootArray == nullptr)
+    {
         return {ESP_ERR_NO_MEM, false};
+    }
 
     auto& obd2 = OBD2::getInstance();
     std::vector<PIDDefinitionData> definitions;
@@ -751,7 +775,9 @@ SUPERVISOR::PidDefinitionSaveResult SUPERVISOR::save_pid_def_to_json(const char*
     free(jsonString);
 
     if (ret != ESP_OK)
+    {
         return {ret, false};
+    }
 
     ESP_LOGI(TAG, "Successfully saved PID definitions to %s", path);
     return {ESP_OK, false};
@@ -771,7 +797,9 @@ esp_err_t SUPERVISOR::load_pid_def_from_json(const char* path)
     {
         auto operation = SDCard::getInstance().acquire_operation(SD_OPERATION_TIMEOUT_TICKS, true);
         if (!operation)
+        {
             return operation.status();
+        }
 
         struct stat st;
         if (stat(path, &st) != 0)
@@ -831,19 +859,19 @@ esp_err_t SUPERVISOR::load_pid_def_from_json(const char* path)
         {
             errno = 0;
             if (fgetc(f) != EOF)
+            {
                 read_complete = false;
+            }
         }
         if (ferror(f) != 0)
+        {
             read_complete = false;
+        }
 
         struct stat after_read;
         errno             = 0;
         const int fstat_ret = fstat(fileno(f), &after_read);
-        if (fstat_ret != 0)
-        {
-            read_complete = false;
-        }
-        else if (after_read.st_size != st.st_size)
+        if (fstat_ret != 0 || after_read.st_size != st.st_size)
         {
             read_complete = false;
         }
@@ -866,7 +894,9 @@ esp_err_t SUPERVISOR::load_pid_def_from_json(const char* path)
     if (rootArray != nullptr && parse_end != nullptr && parse_end >= buffer && parse_end <= buffer + bytes_read)
     {
         while (parse_end < buffer + bytes_read && std::isspace(static_cast<unsigned char>(*parse_end)))
+        {
             ++parse_end;
+        }
 
         if (parse_end != buffer + bytes_read)
         {
@@ -899,9 +929,13 @@ esp_err_t SUPERVISOR::load_pid_def_from_json(const char* path)
     {
         ESP_LOGW(TAG, "Failed to atomically load PID definitions from %s", path);
         if (http_status == 500)
+        {
             return ESP_ERR_NO_MEM;
+        }
         if (http_status == 503)
+        {
             return ESP_ERR_TIMEOUT;
+        }
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -959,7 +993,7 @@ esp_err_t SUPERVISOR::copy_file(const char* src_path, const char* dest_path)
         if (f_dest == nullptr)
         {
             ESP_LOGE("FileOps", "Failed to open destination file: %s", dest_path);
-            fclose(f_src);
+            (void)fclose(f_src);
             free(buffer);
             return ESP_FAIL;
         }
@@ -979,18 +1013,26 @@ esp_err_t SUPERVISOR::copy_file(const char* src_path, const char* dest_path)
         }
 
         if (ferror(f_src) != 0)
+        {
             ret = ESP_FAIL;
+        }
         if (fflush(f_dest) != 0)
+        {
             ret = ESP_FAIL;
+        }
 
         free(buffer);
         const int src_close  = fclose(f_src);
         const int dest_close = fclose(f_dest);
         if (src_close != 0 || dest_close != 0)
+        {
             ret = ESP_FAIL;
+        }
 
         if (ret != ESP_OK)
+        {
             return ret;
+        }
     }
 
     ESP_LOGI("FileOps", "Successfully copied %s to %s", src_path, dest_path);

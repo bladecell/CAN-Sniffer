@@ -132,14 +132,24 @@ private:
     struct OperationGuard {
         OBD2* owner;
         explicit OperationGuard(OBD2* instance) : owner(instance && instance->admitOperation() ? instance : nullptr) {}
-        ~OperationGuard() { if (owner) owner->releaseOperation(); }
+        ~OperationGuard() {
+            if (owner)
+            {
+                owner->releaseOperation();
+            }
+        }
         bool admitted() const { return owner != nullptr; }
     };
     struct DiagnosticRequestGuard {
         OBD2* owner;
         explicit DiagnosticRequestGuard(OBD2* instance)
             : owner(instance && instance->lockDiagnosticRequest() ? instance : nullptr) {}
-        ~DiagnosticRequestGuard() { if (owner) xSemaphoreGive(owner->diagnosticRequestMtx_); }
+        ~DiagnosticRequestGuard() {
+            if (owner)
+            {
+                xSemaphoreGive(owner->diagnosticRequestMtx_);
+            }
+        }
         bool locked() const { return owner != nullptr; }
     };
     void workerExit(EventBits_t bit);

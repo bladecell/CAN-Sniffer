@@ -1,0 +1,17 @@
+menu "CAN Sniffer"
+
+    choice SNIFFER_HW_REV
+        prompt "Hardware revision"
+        default SNIFFER_HW_REV_V1_2
+        help
+            Selects the board pin map in main/include/utilities.h.
+
+        config SNIFFER_HW_REV_V1_1
+            bool "HW v1.1"
+        config SNIFFER_HW_REV_V1_2
+            bool "HW v1.2"
+        config SNIFFER_HW_REV_V2
+            bool "HW v2 (LTE modem, GNSS, ignition sense; pin map not defined yet)"
+    endchoice
+
+endmenu

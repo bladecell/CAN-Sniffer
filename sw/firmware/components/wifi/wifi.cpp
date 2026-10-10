@@ -231,7 +231,9 @@ esp_err_t WIFI::start_mdns_service()
         return ESP_OK;
     }
     if (err != ESP_OK)
+    {
         return err;
+    }
 
     mdns_hostname_set(HOSTNAME);
     mdns_instance_name_set(MDNS_INSTANCE);
@@ -244,7 +246,9 @@ esp_err_t WIFI::start_mdns_service()
 esp_err_t WIFI::stop()
 {
     if (getState() == State::UNINITIALIZED)
+    {
         return ESP_ERR_INVALID_STATE;
+    }
 
     setState(State::STOPPING);
 
@@ -261,7 +265,9 @@ esp_err_t WIFI::stop()
 void WIFI::deinit()
 {
     if (getState() != State::UNINITIALIZED && getState() != State::INITIALIZED)
+    {
         stop();
+    }
 
     if (getState() != State::UNINITIALIZED)
     {
@@ -351,7 +357,9 @@ void WIFI::handleClientConnected(wifi_event_ap_staconnected_t* event)
 
     auto callbacks = m_connect_callbacks;
     for (auto& cb : callbacks)
+    {
         cb(event->mac, event->aid);
+    }
 }
 
 void WIFI::handleClientDisconnected(wifi_event_ap_stadisconnected_t* event)
@@ -361,7 +369,9 @@ void WIFI::handleClientDisconnected(wifi_event_ap_stadisconnected_t* event)
 
     auto callbacks = m_disconnect_callbacks;
     for (auto& cb : callbacks)
+    {
         cb(event->mac, event->aid);
+    }
 }
 
 void WIFI::handleAPStart()
@@ -369,7 +379,9 @@ void WIFI::handleAPStart()
     ESP_LOGI(TAG, "AP Interface Started");
     auto callbacks = m_start_callbacks;
     for (auto& cb : callbacks)
+    {
         cb();
+    }
 }
 
 void WIFI::handleAPStop()
@@ -396,7 +408,9 @@ void WIFI::handleStaGotIP(ip_event_got_ip_t* event)
     xSemaphoreGive(m_mutex);
 
     for (auto& cb : callbacks)
+    {
         cb(std::string(ip_str));
+    }
 }
 
 void WIFI::handleStaDisconnected(wifi_event_sta_disconnected_t* event)
@@ -405,7 +419,9 @@ void WIFI::handleStaDisconnected(wifi_event_sta_disconnected_t* event)
     setState(State::STA_DISCONNECTED);
 
     for (auto& cb : m_sta_disconnected_callbacks)
+    {
         cb();
+    }
 
     if (m_retry_count < m_config.sta_max_retry)
     {
@@ -463,23 +479,23 @@ err:
     return ESP_FAIL;
 }
 
-void WIFI::onClientConnected(ClientConnectCallback callback)
+void WIFI::onClientConnected(const ClientConnectCallback& callback)
 {
     m_connect_callbacks.push_back(callback);
 }
-void WIFI::onClientDisconnected(ClientDisconnectCallback callback)
+void WIFI::onClientDisconnected(const ClientDisconnectCallback& callback)
 {
     m_disconnect_callbacks.push_back(callback);
 }
-void WIFI::onAPStarted(APStartCallback callback)
+void WIFI::onAPStarted(const APStartCallback& callback)
 {
     m_start_callbacks.push_back(callback);
 }
-void WIFI::onStaConnected(StaConnectedCallback callback)
+void WIFI::onStaConnected(const StaConnectedCallback& callback)
 {
     m_sta_connected_callbacks.push_back(callback);
 }
-void WIFI::onStaDisconnected(StaDisconnectedCallback callback)
+void WIFI::onStaDisconnected(const StaDisconnectedCallback& callback)
 {
     m_sta_disconnected_callbacks.push_back(callback);
 }
@@ -543,7 +559,7 @@ std::string WIFI::getApIP() const
         esp_netif_ip_info_t ip_info;
         esp_netif_get_ip_info(m_netif_ap, &ip_info);
         char ip_str[16];
-        snprintf(ip_str, sizeof(ip_str), IPSTR, IP2STR(&ip_info.ip));
+        (void)snprintf(ip_str, sizeof(ip_str), IPSTR, IP2STR(&ip_info.ip));
         return std::string(ip_str);
     }
     return "";
@@ -556,7 +572,7 @@ std::string WIFI::getStaIP() const
         esp_netif_ip_info_t ip_info;
         esp_netif_get_ip_info(m_netif_sta, &ip_info);
         char ip_str[16];
-        snprintf(ip_str, sizeof(ip_str), IPSTR, IP2STR(&ip_info.ip));
+        (void)snprintf(ip_str, sizeof(ip_str), IPSTR, IP2STR(&ip_info.ip));
         return std::string(ip_str);
     }
     return "";

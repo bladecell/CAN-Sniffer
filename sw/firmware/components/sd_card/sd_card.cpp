@@ -43,14 +43,20 @@ esp_err_t directory_errno_to_error(int error)
 esp_err_t SDCard::validate_relative_path(const char* path, bool allow_root)
 {
     if (path == nullptr)
+    {
         return ESP_ERR_INVALID_ARG;
+    }
 
     const char* p = path;
     if (*p == '/')
+    {
         p++;
+    }
 
     if (*p == '\0')
+    {
         return allow_root ? ESP_OK : ESP_ERR_INVALID_ARG;
+    }
 
     while (*p != '\0')
     {
@@ -59,14 +65,17 @@ esp_err_t SDCard::validate_relative_path(const char* path, bool allow_root)
         {
             const unsigned char c = (unsigned char)*p;
             if (c < 0x20 || c == 0x7f || c == '\\' || c == '?' || c == '#' || c == '"')
+            {
                 return ESP_ERR_INVALID_ARG;
+            }
             p++;
         }
 
         size_t len = (size_t)(p - start);
-        if (len == 0 || (len == 1 && start[0] == '.') ||
-            (len == 2 && start[0] == '.' && start[1] == '.'))
+        if (len == 0 || (len == 1 && start[0] == '.') || (len == 2 && start[0] == '.' && start[1] == '.'))
+        {
             return ESP_ERR_INVALID_ARG;
+        }
 
         if (*p == '/')
         {
@@ -74,7 +83,9 @@ esp_err_t SDCard::validate_relative_path(const char* path, bool allow_root)
             // A single trailing slash is meaningful to the REST API. Empty
             // components in the middle (or repeated trailing slashes) are not.
             if (*p == '/')
+            {
                 return ESP_ERR_INVALID_ARG;
+            }
         }
     }
 
@@ -140,7 +151,9 @@ SDCard::Operation::Operation(Operation&& other) noexcept
 SDCard::Operation& SDCard::Operation::operator=(Operation&& other) noexcept
 {
     if (this == &other)
+    {
         return *this;
+    }
 
     const TaskHandle_t current_task = xTaskGetCurrentTaskHandle();
 
@@ -219,17 +232,23 @@ void SDCard::Operation::release()
 bool SDCard::ensure_operation_mutex()
 {
     if (operation_mutex == nullptr)
+    {
         operation_mutex = xSemaphoreCreateRecursiveMutex();
+    }
     return operation_mutex != nullptr;
 }
 
 SDCard::Operation SDCard::acquire_operation(TickType_t timeout, bool require_mounted)
 {
     if (!ensure_operation_mutex())
+    {
         return Operation(nullptr, nullptr, ESP_ERR_NO_MEM, false);
+    }
 
     if (xSemaphoreTakeRecursive(operation_mutex, timeout) != pdTRUE)
+    {
         return Operation(nullptr, nullptr, ESP_ERR_TIMEOUT, false);
+    }
 
     const bool mounted = card != nullptr;
     if (require_mounted && !mounted)
@@ -246,11 +265,15 @@ SDCard::Operation SDCard::acquire_operation(TickType_t timeout, bool require_mou
 esp_err_t SDCard::init(const SDCard::Config& config)
 {
     if (!ensure_operation_mutex())
+    {
         return ESP_ERR_NO_MEM;
+    }
 
     Operation operation = acquire_operation(portMAX_DELAY);
     if (!operation)
+    {
         return operation.status();
+    }
 
     mount_path = config.base_path;
 
@@ -302,7 +325,9 @@ bool SDCard::card_present()
 {
     Operation operation = acquire_operation(portMAX_DELAY);
     if (!operation)
+    {
         return false;
+    }
 
     return (gpio_get_level(cd_pin) == 0);
 }
@@ -311,7 +336,9 @@ void SDCard::update_card_status()
 {
     Operation operation = acquire_operation(portMAX_DELAY);
     if (!operation)
+    {
         return;
+    }
 
     bool current_raw = card_present();
 
@@ -342,7 +369,9 @@ esp_err_t SDCard::mount_sdcard()
 {
     Operation operation = acquire_operation(portMAX_DELAY);
     if (!operation)
+    {
         return operation.status();
+    }
 
     if (card != nullptr)
     {
@@ -357,7 +386,9 @@ esp_err_t SDCard::mount_sdcard()
     }
 
     if (mount_callback)
+    {
         mount_callback();
+    }
 
     return ret;
 }
@@ -366,7 +397,9 @@ esp_err_t SDCard::unmount_sdcard()
 {
     Operation operation = acquire_operation(portMAX_DELAY);
     if (!operation)
+    {
         return operation.status();
+    }
 
     if (card == nullptr)
     {
@@ -383,7 +416,9 @@ esp_err_t SDCard::unmount_sdcard()
     card = nullptr;
 
     if (unmount_callback)
+    {
         unmount_callback();
+    }
 
     return ESP_OK;
 }
@@ -392,7 +427,9 @@ esp_err_t SDCard::format_sdcard()
 {
     Operation operation = acquire_operation(portMAX_DELAY);
     if (!operation)
+    {
         return operation.status();
+    }
 
     esp_err_t ret = mount_sdcard();
     if (ret != ESP_OK)
@@ -417,7 +454,9 @@ bool SDCard::is_mounted()
 {
     Operation operation = acquire_operation(portMAX_DELAY);
     if (!operation)
+    {
         return false;
+    }
 
     return card != nullptr;
 }
@@ -426,7 +465,9 @@ void SDCard::get_sd_info(SDCard::SDInfo& sd_info)
 {
     Operation operation = acquire_operation(portMAX_DELAY);
     if (!operation)
+    {
         return;
+    }
 
     sd_info.is_mounted = is_mounted();
     sd_info.is_present = card_present();
@@ -445,14 +486,14 @@ void SDCard::get_sd_info(SDCard::SDInfo& sd_info)
         sd_info.mount_path[0] = '\0';
     }
 
-    sd_info.used_space_mb = (total_bytes >= free_bytes) ? ((total_bytes - free_bytes) / (1024 * 1024)) : 0;
+    sd_info.used_space_mb = (total_bytes >= free_bytes) ? ((total_bytes - free_bytes) / (1024ULL * 1024)) : 0;
 
     if (card != nullptr)
     {
         strncpy(sd_info.name, card->cid.name, sizeof(sd_info.name) - 1);
         sd_info.name[sizeof(sd_info.name) - 1] = '\0';
 
-        sd_info.capacity_mb  = ((uint64_t)card->csd.capacity * card->csd.sector_size) / (1024 * 1024);
+        sd_info.capacity_mb  = ((uint64_t)card->csd.capacity * card->csd.sector_size) / (1024ULL * 1024);
         sd_info.max_freq_mhz = card->max_freq_khz / 1000;
         sd_info.is_sdio      = card->is_sdio;
         sd_info.is_mmc       = card->is_mmc;
@@ -471,7 +512,9 @@ void SDCard::print_card_status()
 {
     Operation operation = acquire_operation(portMAX_DELAY);
     if (!operation)
+    {
         return;
+    }
 
     SDCard::SDInfo sd_info;
 
@@ -494,7 +537,9 @@ void SDCard::on_mount(Callback cb)
 {
     Operation operation = acquire_operation(portMAX_DELAY);
     if (!operation)
+    {
         return;
+    }
 
     mount_callback = std::move(cb);
 }
@@ -503,7 +548,9 @@ void SDCard::on_unmount(Callback cb)
 {
     Operation operation = acquire_operation(portMAX_DELAY);
     if (!operation)
+    {
         return;
+    }
 
     unmount_callback = std::move(cb);
 }
@@ -514,7 +561,9 @@ void SDCard::get_stat(const char* path, struct stat* st)
 {
     Operation operation = acquire_operation(portMAX_DELAY);
     if (!operation)
+    {
         return;
+    }
 
     stat(path, st);
 }
@@ -523,7 +572,9 @@ bool SDCard::exists(const char* path)
 {
     Operation operation = acquire_operation(portMAX_DELAY);
     if (!operation)
+    {
         return false;
+    }
 
     struct stat st;
     return (stat(path, &st) == 0);
@@ -533,7 +584,9 @@ bool SDCard::is_file(struct stat* st)
 {
     Operation operation = acquire_operation(portMAX_DELAY);
     if (!operation)
+    {
         return false;
+    }
 
     if (st == nullptr)
     {
@@ -546,7 +599,9 @@ bool SDCard::is_directory(struct stat* st)
 {
     Operation operation = acquire_operation(portMAX_DELAY);
     if (!operation)
+    {
         return false;
+    }
 
     if (st == nullptr)
     {
@@ -559,7 +614,9 @@ esp_err_t SDCard::create_file(const char* relative_path)
 {
     Operation operation = acquire_operation(portMAX_DELAY);
     if (!operation)
+    {
         return operation.status();
+    }
 
     const size_t buffer_size = PATH_MAX;
     auto         filepath    = std::make_unique<char[]>(buffer_size);
@@ -583,7 +640,11 @@ esp_err_t SDCard::create_file(const char* relative_path)
         ESP_LOGE(TAG, "Failed to create file %s: %s", filepath.get(), strerror(errno));
         return ESP_FAIL;
     }
-    fclose(f);
+    if (fclose(f) != 0)
+    {
+        ESP_LOGE(TAG, "Failed to close new file %s: %s", filepath.get(), strerror(errno));
+        return ESP_FAIL;
+    }
     return ESP_OK;
 }
 
@@ -591,7 +652,9 @@ esp_err_t SDCard::create_directory(const char* relative_path)
 {
     Operation operation = acquire_operation(portMAX_DELAY);
     if (!operation)
+    {
         return operation.status();
+    }
 
     const size_t buffer_size = PATH_MAX;
     auto         filepath    = std::make_unique<char[]>(buffer_size);
@@ -608,7 +671,9 @@ esp_err_t SDCard::create_directory(const char* relative_path)
     if (stat(filepath.get(), &st) == 0)
     {
         if (S_ISDIR(st.st_mode))
+        {
             return ESP_OK;  // Already exists
+        }
     }
 
     if (mkdir(filepath.get(), 0777) != 0)
@@ -623,7 +688,9 @@ esp_err_t SDCard::delete_file(const char* relative_path)
 {
     Operation operation = acquire_operation(portMAX_DELAY);
     if (!operation)
+    {
         return operation.status();
+    }
 
     const size_t buffer_size = PATH_MAX;
     auto         filepath    = std::make_unique<char[]>(buffer_size);
@@ -660,12 +727,16 @@ esp_err_t SDCard::delete_directory(const char* relative_path)
 {
     Operation operation = acquire_operation(portMAX_DELAY);
     if (!operation)
+    {
         return operation.status();
+    }
 
     // Deleting the mount point is never a valid directory operation. This
     // guard is deliberately below the REST layer as a final safety boundary.
     if (validate_relative_path(relative_path, false) != ESP_OK)
+    {
         return ESP_ERR_INVALID_ARG;
+    }
 
     const size_t buffer_size = PATH_MAX;
     auto         filepath    = std::make_unique<char[]>(buffer_size);
@@ -768,7 +839,9 @@ esp_err_t SDCard::write_file(const char* relative_path, const void* data, size_t
 {
     Operation operation = acquire_operation(portMAX_DELAY);
     if (!operation)
+    {
         return operation.status();
+    }
 
     const size_t buffer_size = PATH_MAX;
     auto         filepath    = std::make_unique<char[]>(buffer_size);
@@ -781,7 +854,9 @@ esp_err_t SDCard::write_file(const char* relative_path, const void* data, size_t
     }
 
     if (data == nullptr || size == 0)
+    {
         return ESP_ERR_INVALID_ARG;
+    }
 
     const char* mode = append ? "a" : "w";
 
@@ -794,17 +869,29 @@ esp_err_t SDCard::write_file(const char* relative_path, const void* data, size_t
 
     size_t written = fwrite(data, 1, size, f);
 
-    fflush(f);
+    bool flushed = (fflush(f) == 0);
+    if (!flushed)
+    {
+        ESP_LOGE(TAG, "Flush failed for %s: %s", filepath.get(), strerror(errno));
+    }
     if (fsync(fileno(f)) != 0)
     {
         ESP_LOGE(TAG, "Hardware sync failed for %s!", filepath.get());
+        flushed = false;
     }
-
-    fclose(f);
+    const bool closed = (fclose(f) == 0);
+    if (!closed)
+    {
+        ESP_LOGE(TAG, "Close failed for %s: %s", filepath.get(), strerror(errno));
+    }
 
     if (written != size)
     {
         ESP_LOGE(TAG, "Write incomplete! Wrote %zu/%zu bytes to %s", written, size, filepath.get());
+        return ESP_FAIL;
+    }
+    if (!flushed || !closed)
+    {
         return ESP_FAIL;
     }
 
@@ -816,7 +903,9 @@ esp_err_t SDCard::read_file(const char* relative_path, void* buffer, size_t max_
 {
     Operation operation = acquire_operation(portMAX_DELAY);
     if (!operation)
+    {
         return operation.status();
+    }
 
     const size_t buffer_size = PATH_MAX;
     auto         filepath    = std::make_unique<char[]>(buffer_size);
@@ -829,7 +918,9 @@ esp_err_t SDCard::read_file(const char* relative_path, void* buffer, size_t max_
     }
 
     if (buffer == nullptr || max_size == 0)
+    {
         return ESP_ERR_INVALID_ARG;
+    }
 
     FILE* f = fopen(filepath.get(), "r");
     if (f == nullptr)
@@ -840,7 +931,7 @@ esp_err_t SDCard::read_file(const char* relative_path, void* buffer, size_t max_
 
     size_t read_len = fread(buffer, 1, max_size, f);
 
-    fclose(f);
+    (void)fclose(f);  // read-only handle, nothing to lose on close failure
 
     if (bytes_read != nullptr)
     {
@@ -855,7 +946,9 @@ cJSON* SDCard::scan_directory(const char* relative_path, int depth)
 {
     cJSON* tree = nullptr;
     if (get_file_tree(relative_path, depth, tree) != ESP_OK)
+    {
         return nullptr;
+    }
     return tree;
 }
 
@@ -865,7 +958,9 @@ esp_err_t SDCard::get_file_tree(const char* relative_path, int depth, cJSON*& tr
 
     Operation operation = acquire_operation(portMAX_DELAY);
     if (!operation)
+    {
         return operation.status();
+    }
 
     return scan_directory_locked(relative_path, depth, tree);
 }
@@ -875,7 +970,9 @@ esp_err_t SDCard::scan_directory_locked(const char* relative_path, int depth, cJ
     tree = nullptr;
 
     if (depth > SCAN_DEPTH_LIMIT)
+    {
         return ESP_ERR_INVALID_SIZE;
+    }
 
     struct ScanBuffers
     {
@@ -949,17 +1046,23 @@ esp_err_t SDCard::scan_directory_locked(const char* relative_path, int depth, cJ
         }
 
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+        {
             continue;
+        }
 
         const size_t relative_len = strlen(relative_path);
         const char*  separator = (relative_len > 0 && relative_path[relative_len - 1] == '/') ? "" : "/";
         int next_rel_len = snprintf(bufs->next_rel, sizeof(bufs->next_rel), "%s%s%s", relative_path, separator,
                                     entry->d_name);
         if (next_rel_len < 0 || (size_t)next_rel_len >= sizeof(bufs->next_rel))
+        {
             continue;
+        }
 
         if (get_absolute_path(bufs->next_rel, bufs->next_full, sizeof(bufs->next_full)) != ESP_OK)
+        {
             continue;
+        }
 
         struct stat st;
         if (stat(bufs->next_full, &st) != 0)
@@ -1031,10 +1134,14 @@ esp_err_t SDCard::get_absolute_path(const char* relative_path, char* out_buf, si
 {
     Operation operation = acquire_operation(portMAX_DELAY);
     if (!operation)
+    {
         return operation.status();
+    }
 
     if (relative_path == nullptr || mount_path == nullptr || out_buf == nullptr || out_size == 0)
+    {
         return ESP_ERR_INVALID_ARG;
+    }
 
     if (validate_relative_path(relative_path, true) != ESP_OK)
     {
@@ -1068,15 +1175,21 @@ esp_err_t SDCard::get_absolute_path(const char* relative_path, char* out_buf, si
 bool SDCard::is_path_under(const char* path, const char* root)
 {
     if (path == nullptr || root == nullptr)
+    {
         return false;
+    }
 
     if (validate_relative_path(path, true) != ESP_OK)
+    {
         return false;
+    }
 
     size_t root_len = strlen(root);
 
     if (strncmp(path, root, root_len) != 0)
+    {
         return false;
+    }
 
     return (path[root_len] == '\0' || path[root_len] == '/');
 }
@@ -1085,10 +1198,14 @@ esp_err_t SDCard::open_file(const char* relative_path, const char* mode, FILE*& 
 {
     Operation operation = acquire_operation(portMAX_DELAY);
     if (!operation)
+    {
         return operation.status();
+    }
 
     if (mode == nullptr || relative_path == nullptr)
+    {
         return ESP_ERR_INVALID_ARG;
+    }
 
     if (!is_mounted())
     {
@@ -1126,7 +1243,9 @@ esp_err_t SDCard::close_file(FILE* fd)
 {
     Operation operation = acquire_operation(portMAX_DELAY);
     if (!operation)
+    {
         return operation.status();
+    }
 
     if (fd != nullptr)
     {
@@ -1139,10 +1258,14 @@ esp_err_t SDCard::file_write_chunk(FILE* fd, const char* chunk, size_t len)
 {
     Operation operation = acquire_operation(portMAX_DELAY);
     if (!operation)
+    {
         return operation.status();
+    }
 
     if (fd == nullptr)
+    {
         return ESP_FAIL;
+    }
 
     if (fwrite(chunk, 1, len, fd) != len)
     {
@@ -1156,10 +1279,14 @@ size_t SDCard::file_read_chunk(FILE* fd, char* chunk, size_t max_len)
 {
     Operation operation = acquire_operation(portMAX_DELAY);
     if (!operation)
+    {
         return 0;
+    }
 
     if (fd == nullptr)
+    {
         return 0;
+    }
 
     return fread(chunk, 1, max_len, fd);
 }
@@ -1168,7 +1295,9 @@ esp_err_t SDCard::get_file_stat(const char* relative_path, struct stat* st)
 {
     Operation operation = acquire_operation(portMAX_DELAY);
     if (!operation)
+    {
         return operation.status();
+    }
 
     const size_t buffer_size = PATH_MAX;
     auto         filepath    = std::make_unique<char[]>(buffer_size);

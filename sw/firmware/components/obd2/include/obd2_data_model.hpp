@@ -223,7 +223,9 @@ protected:
     {
         PIDData_t* pd = nullptr;
         if (_getData(pid, pd) == ESP_OK && pd != nullptr)
+        {
             return pd->*field;
+        }
         return defaultValue;
     }
 
@@ -266,7 +268,9 @@ protected:
         PIDData_t* pd  = nullptr;
         esp_err_t  ret = _getData(pid, pd);
         if (ret != ESP_OK || pd == nullptr)
+        {
             return ret;
+        }
 
         pd->*field = static_cast<T>(value);
         return ESP_OK;

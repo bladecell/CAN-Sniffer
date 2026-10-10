@@ -9,7 +9,9 @@ inline double get_bit(double val, double bit_idx)
     uint32_t byte = (uint32_t)val;
     uint32_t bit  = (uint32_t)bit_idx;
     if (bit > 31)
+    {
         return 0.0;
+    }
     return (byte & (1UL << bit)) ? 1.0 : 0.0;
 }
 
@@ -19,7 +21,9 @@ inline double bit_mask(double val, double start, double len)
     uint32_t s = (uint32_t)start;
     uint32_t l = (uint32_t)len;
     if (s > 31 || l == 0)
+    {
         return 0.0;
+    }
 
     uint32_t mask = (1UL << l) - 1;
     return (double)((v >> s) & mask);

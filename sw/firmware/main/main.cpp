@@ -1,6 +1,7 @@
 // main.cpp
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "led_status.hpp"
@@ -9,9 +10,35 @@
 
 static const char* TAG = "APP_MAIN";
 
+static const char* resetReasonName(esp_reset_reason_t r)
+{
+    switch (r)
+    {
+        case ESP_RST_POWERON:   return "POWERON";
+        case ESP_RST_EXT:       return "EXT";
+        case ESP_RST_SW:        return "SW";
+        case ESP_RST_PANIC:     return "PANIC";
+        case ESP_RST_INT_WDT:   return "INT_WDT";
+        case ESP_RST_TASK_WDT:  return "TASK_WDT";
+        case ESP_RST_WDT:       return "WDT";
+        case ESP_RST_DEEPSLEEP: return "DEEPSLEEP";
+        case ESP_RST_BROWNOUT:  return "BROWNOUT";
+        case ESP_RST_SDIO:      return "SDIO";
+        case ESP_RST_USB:       return "USB";
+        case ESP_RST_JTAG:      return "JTAG";
+        case ESP_RST_EFUSE:     return "EFUSE";
+        case ESP_RST_PWR_GLITCH: return "PWR_GLITCH";
+        case ESP_RST_CPU_LOCKUP: return "CPU_LOCKUP";
+        default:                return "UNKNOWN";
+    }
+}
+
 // ----- app_main --------------------------------------------------------------
 extern "C" void app_main(void)
 {
+    const esp_reset_reason_t reason = esp_reset_reason();
+    ESP_LOGI(TAG, "Reset reason: %s (%d), free heap %u, min free heap %u", resetReasonName(reason), (int)reason,
+             (unsigned)esp_get_free_heap_size(), (unsigned)esp_get_minimum_free_heap_size());
     esp_log_level_set("CAN_DRIVER", ESP_LOG_DEBUG);
     LedStatus& led = LedStatus::getInstance();
     led.init(LED_GPIO);

@@ -1,8 +1,9 @@
 idf_component_register(
     SRCS "tinyexpr.c"
     INCLUDE_DIRS "include"
-    REQUIRES
 )
 
-# Optional: If you want to suppress warnings from this library during build
-set_source_files_properties(tinyexpr.c PROPERTIES COMPILE_FLAGS -w)
+target_compile_options(${COMPONENT_LIB} PRIVATE -Wall -Wextra -Werror)
+# Vendored library: new_expr() deliberately allocates one pointer less than sizeof(te_expr)
+# for leaf nodes, which trips GCC's -Warray-bounds false positive.
+target_compile_options(${COMPONENT_LIB} PRIVATE -Wno-array-bounds)

@@ -94,7 +94,9 @@ public:
     void blink(uint32_t count, uint32_t on_time_ms, uint32_t off_time_ms)
     {
         if (state_.load() == State::BLINK)
+        {
             return;
+        }
         state_.store(State::BLINK);
         on_time_.store(pdMS_TO_TICKS(on_time_ms));
         off_time_.store(pdMS_TO_TICKS(off_time_ms));
@@ -192,7 +194,7 @@ private:
         }
     }
 
-    gpio_num_t              pin_;
+    gpio_num_t              pin_ = GPIO_NUM_NC;
     uint32_t                active_low_  = 0;
     std::atomic<uint32_t>   ledState_    = 0;
     std::atomic<State>      state_       = State::NOT_INITIALIZED;

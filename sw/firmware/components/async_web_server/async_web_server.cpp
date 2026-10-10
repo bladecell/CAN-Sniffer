@@ -45,7 +45,9 @@ esp_err_t AsyncWebServer::start(Config config)
 
     shutdown_sem_ = xSemaphoreCreateCounting(config.async_worker_task_num, 0);
     if (!shutdown_sem_)
+    {
         return ESP_FAIL;
+    }
 
     worker_handles.reserve(config.async_worker_task_num);
     start_workers(config.async_worker_task_num, config.async_worker_stack_size, config.async_worker_task_priority,
@@ -73,13 +75,17 @@ esp_err_t AsyncWebServer::stop()
     {
         AsyncRequest poison = {};
         for (size_t i = 0; i < worker_handles.size(); i++)
+        {
             xQueueSend(request_queue, &poison, pdMS_TO_TICKS(100));
+        }
     }
 
     if (shutdown_sem_)
     {
         for (size_t i = 0; i < worker_handles.size(); i++)
+        {
             xSemaphoreTake(shutdown_sem_, portMAX_DELAY);
+        }
     }
 
     // Now safe to stop the httpd server: no worker is touching its data.
@@ -103,7 +109,9 @@ esp_err_t AsyncWebServer::stop()
     }
 
     for (RouteContext* ctx : route_contexts)
+    {
         delete ctx;
+    }
     route_contexts.clear();
 
     return ESP_OK;
@@ -164,7 +172,9 @@ esp_err_t AsyncWebServer::queue_request(httpd_req_t* req)
 
     // 1. Detach the request first
     if (httpd_req_async_handler_begin(req, &copy) != ESP_OK)
+    {
         return ESP_FAIL;
+    }
 
     int64_t now = esp_timer_get_time();
     if (now - window_start_us_ >= 1000000)
@@ -212,10 +222,14 @@ void AsyncWebServer::worker_task()
     while (running_)
     {
         if (xQueueReceive(request_queue, &async_req, portMAX_DELAY) != pdTRUE)
+        {
             continue;
+        }
 
         if (!async_req.handler && !async_req.req)
+        {
             break;  // poison pill — exit loop
+        }
 
         if (async_req.handler && async_req.req)
         {
@@ -231,7 +245,9 @@ void AsyncWebServer::worker_task()
             {
                 esp_err_t err = httpd_req_async_handler_complete(async_req.req);
                 if (err != ESP_OK)
+                {
                     ESP_LOGE(TAG, "failed to complete async req: %s", esp_err_to_name(err));
+                }
             }
             else
             {
@@ -326,7 +342,9 @@ void AsyncWebServer::registerSocketRoute(const char* uri, esp_err_t (*handler)(h
 void AsyncWebServer::wsBroadcast(httpd_ws_frame_t* ws_pkt)
 {
     if (!server_ || !ws_pkt || !ws_pkt->payload || ws_pkt->len == 0)
+    {
         return;
+    }
 
     static const size_t MAX_CLIENTS = 20;
     int                 client_fds[MAX_CLIENTS];

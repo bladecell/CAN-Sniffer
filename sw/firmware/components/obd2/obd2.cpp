@@ -90,7 +90,9 @@ public:
             }
 
             if (instant_slice_util > 1.0f)
+            {
                 instant_slice_util = 1.0f;
+            }
 
             current_ema_utilization = (instant_slice_util * ALPHA) + (current_ema_utilization * (1.0f - ALPHA));
 
@@ -137,29 +139,56 @@ OBD2::~OBD2()
 
 bool OBD2::admitOperation()
 {
-    if (!admissionMtx_ || xSemaphoreTake(admissionMtx_, portMAX_DELAY) != pdTRUE) return false;
+    if (!admissionMtx_ || xSemaphoreTake(admissionMtx_, portMAX_DELAY) != pdTRUE)
+    {
+        return false;
+    }
     bool admitted = lifecycleState_ == LifecycleState::Running;
-    if (admitted) ++activeOperations_;
+    if (admitted)
+    {
+        ++activeOperations_;
+    }
     xSemaphoreGive(admissionMtx_);
     return admitted;
 }
 
 void OBD2::releaseOperation()
 {
-    if (!admissionMtx_ || xSemaphoreTake(admissionMtx_, portMAX_DELAY) != pdTRUE) return;
-    if (activeOperations_) --activeOperations_;
+    if (!admissionMtx_ || xSemaphoreTake(admissionMtx_, portMAX_DELAY) != pdTRUE)
+    {
+        return;
+    }
+    if (activeOperations_)
+    {
+        --activeOperations_;
+    }
     xSemaphoreGive(admissionMtx_);
 }
 
 void OBD2::workerExit(EventBits_t bit)
 {
     if (!admissionMtx_) { vTaskDelete(nullptr); return; }
-    while (xSemaphoreTake(admissionMtx_, portMAX_DELAY) != pdTRUE) taskYIELD();
-    if (bit == RECEIVE_EXIT) ReceiveTaskHandle = nullptr;
-    else if (bit == POLL_EXIT) PollTaskHandle = nullptr;
-    else if (bit == CALLBACK_EXIT) callbackWorkerTaskHandle = nullptr;
+    while (xSemaphoreTake(admissionMtx_, portMAX_DELAY) != pdTRUE)
+    {
+        taskYIELD();
+    }
+    if (bit == RECEIVE_EXIT)
+    {
+        ReceiveTaskHandle = nullptr;
+    }
+    else if (bit == POLL_EXIT)
+    {
+        PollTaskHandle = nullptr;
+    }
+    else if (bit == CALLBACK_EXIT)
+    {
+        callbackWorkerTaskHandle = nullptr;
+    }
     xSemaphoreGive(admissionMtx_);
-    if (lifecycleEvents_) xEventGroupSetBits(lifecycleEvents_, bit);
+    if (lifecycleEvents_)
+    {
+        xEventGroupSetBits(lifecycleEvents_, bit);
+    }
     vTaskDelete(nullptr);
 }
 
@@ -173,9 +202,13 @@ esp_err_t OBD2::deinit()
         xSemaphoreGive(admissionMtx_);
     }
     if (canDriver.isConnectionChangeCallbackTask() || isOwnWorker)
+    {
         return ESP_ERR_INVALID_STATE;
+    }
     if (!lifecycleOperationMtx_ || xSemaphoreTake(lifecycleOperationMtx_, 0) != pdTRUE)
+    {
         return ESP_ERR_INVALID_STATE;
+    }
     esp_err_t result = stopInternal(false);
     xSemaphoreGive(lifecycleOperationMtx_);
     return result;
@@ -192,13 +225,28 @@ esp_err_t OBD2::stopInternal(bool)
         stopRequested_ = true;
         continuousRunning = false;
         pidsInitialized = false;
-        if (PollTaskHandle) xTaskNotifyGive(PollTaskHandle);
+        if (PollTaskHandle)
+        {
+            xTaskNotifyGive(PollTaskHandle);
+        }
         xSemaphoreGive(admissionMtx_);
     }
-    if (xBusConnectionSemaphore) xSemaphoreGive(xBusConnectionSemaphore);
-    if (xPidConnectedSemaphore) xSemaphoreGive(xPidConnectedSemaphore);
-    if (xRequestNextPIDSemaphore) xSemaphoreGive(xRequestNextPIDSemaphore);
-    if (healthCheckSemaphore) xSemaphoreGive(healthCheckSemaphore);
+    if (xBusConnectionSemaphore)
+    {
+        xSemaphoreGive(xBusConnectionSemaphore);
+    }
+    if (xPidConnectedSemaphore)
+    {
+        xSemaphoreGive(xPidConnectedSemaphore);
+    }
+    if (xRequestNextPIDSemaphore)
+    {
+        xSemaphoreGive(xRequestNextPIDSemaphore);
+    }
+    if (healthCheckSemaphore)
+    {
+        xSemaphoreGive(healthCheckSemaphore);
+    }
     if (event_queue) { bool dummy = false; xQueueSend(event_queue, &dummy, 0); }
     bool callbackInstalled = false;
     if (admissionMtx_ && xSemaphoreTake(admissionMtx_, portMAX_DELAY) == pdTRUE) {
@@ -207,9 +255,15 @@ esp_err_t OBD2::stopInternal(bool)
     }
     if (callbackInstalled) {
         const TickType_t remaining = remainingTicks();
-        if (remaining == 0) return ESP_ERR_TIMEOUT;
+        if (remaining == 0)
+        {
+            return ESP_ERR_TIMEOUT;
+        }
         esp_err_t callbackFence = canDriver.setConnectionChangeCallback(nullptr, nullptr, remaining);
-        if (callbackFence != ESP_OK) return callbackFence;
+        if (callbackFence != ESP_OK)
+        {
+            return callbackFence;
+        }
         if (admissionMtx_ && xSemaphoreTake(admissionMtx_, portMAX_DELAY) == pdTRUE) {
             canCallbackInstalled_ = false;
             xSemaphoreGive(admissionMtx_);
@@ -221,13 +275,28 @@ esp_err_t OBD2::stopInternal(bool)
         if (admissionMtx_ && xSemaphoreTake(admissionMtx_, portMAX_DELAY) == pdTRUE)
         { active = activeOperations_; xSemaphoreGive(admissionMtx_); }
         EventBits_t required = 0;
-        if (createdWorkers_ & 1) required |= RECEIVE_EXIT;
-        if (createdWorkers_ & 2) required |= POLL_EXIT;
-        if (createdWorkers_ & 4) required |= CALLBACK_EXIT;
+        if (createdWorkers_ & 1)
+        {
+            required |= RECEIVE_EXIT;
+        }
+        if (createdWorkers_ & 2)
+        {
+            required |= POLL_EXIT;
+        }
+        if (createdWorkers_ & 4)
+        {
+            required |= CALLBACK_EXIT;
+        }
         EventBits_t got = lifecycleEvents_ ? xEventGroupGetBits(lifecycleEvents_) : 0;
-        if ((got & required) == required && active == 0) break;
+        if ((got & required) == required && active == 0)
+        {
+            break;
+        }
         const TickType_t remaining = remainingTicks();
-        if (remaining == 0) return ESP_ERR_TIMEOUT;
+        if (remaining == 0)
+        {
+            return ESP_ERR_TIMEOUT;
+        }
         vTaskDelay(std::min<TickType_t>(1, remaining));
     }
 
@@ -236,7 +305,9 @@ esp_err_t OBD2::stopInternal(bool)
     pollQueue.setConsumerTask(nullptr);
     TickType_t remaining = remainingTicks();
     if (!configurationMtx_ || remaining == 0 || xSemaphoreTake(configurationMtx_, remaining) != pdTRUE)
+    {
         return ESP_ERR_TIMEOUT;
+    }
     pollQueue.clear();
     supportedPIDsGroup = {};
     discoveryActive_ = false;
@@ -265,7 +336,9 @@ esp_err_t OBD2::stopInternal(bool)
 
     remaining = remainingTicks();
     if (!vinData.mtx_ || remaining == 0 || xSemaphoreTake(vinData.mtx_, remaining) != pdTRUE)
+    {
         return ESP_ERR_TIMEOUT;
+    }
     memset(vinData.vin, 0, sizeof(vinData.vin));
     vinData.lastUpdated = 0;
     vinData.isValid = false;
@@ -273,7 +346,9 @@ esp_err_t OBD2::stopInternal(bool)
 
     remaining = remainingTicks();
     if (!dtcData.mtx_ || remaining == 0 || xSemaphoreTake(dtcData.mtx_, remaining) != pdTRUE)
+    {
         return ESP_ERR_TIMEOUT;
+    }
     dtcData.confirmed.clear();
     dtcData.pending.clear();
     dtcData.permanent.clear();
@@ -281,14 +356,18 @@ esp_err_t OBD2::stopInternal(bool)
 
     remaining = remainingTicks();
     if (!subscribers_mtx_ || remaining == 0 || xSemaphoreTake(subscribers_mtx_, remaining) != pdTRUE)
+    {
         return ESP_ERR_TIMEOUT;
+    }
     subscribers_.clear();
     xSemaphoreGive(subscribers_mtx_);
 
     remaining = remainingTicks();
     if (!connected_subscribers_mtx_ || remaining == 0 ||
         xSemaphoreTake(connected_subscribers_mtx_, remaining) != pdTRUE)
+    {
         return ESP_ERR_TIMEOUT;
+    }
     connected_subscribers_.clear();
     xSemaphoreGive(connected_subscribers_mtx_);
 
@@ -297,16 +376,64 @@ esp_err_t OBD2::stopInternal(bool)
     pollTaskUtilization = 0.0f;
     nrc_list_size = 0;
     memset(nrc_list, 0, sizeof(nrc_list));
-    if (vinData.vinReadySemaphore) while (xSemaphoreTake(vinData.vinReadySemaphore, 0) == pdTRUE) {}
-    if (dtcData.confirmedReadySemaphore) while (xSemaphoreTake(dtcData.confirmedReadySemaphore, 0) == pdTRUE) {}
-    if (dtcData.pendingReadySemaphore) while (xSemaphoreTake(dtcData.pendingReadySemaphore, 0) == pdTRUE) {}
-    if (dtcData.permanentReadySemaphore) while (xSemaphoreTake(dtcData.permanentReadySemaphore, 0) == pdTRUE) {}
-    if (dtcData.clearReadySemaphore) while (xSemaphoreTake(dtcData.clearReadySemaphore, 0) == pdTRUE) {}
-    if (xPidConnectedSemaphore) while (xSemaphoreTake(xPidConnectedSemaphore, 0) == pdTRUE) {}
-    if (xBusConnectionSemaphore) while (xSemaphoreTake(xBusConnectionSemaphore, 0) == pdTRUE) {}
-    if (xRequestNextPIDSemaphore) while (xSemaphoreTake(xRequestNextPIDSemaphore, 0) == pdTRUE) {}
-    if (healthCheckSemaphore) while (xSemaphoreTake(healthCheckSemaphore, 0) == pdTRUE) {}
-    if (event_queue) xQueueReset(event_queue);
+    if (vinData.vinReadySemaphore)
+    {
+        while (xSemaphoreTake(vinData.vinReadySemaphore, 0) == pdTRUE)
+        {
+        }
+    }
+    if (dtcData.confirmedReadySemaphore)
+    {
+        while (xSemaphoreTake(dtcData.confirmedReadySemaphore, 0) == pdTRUE)
+        {
+        }
+    }
+    if (dtcData.pendingReadySemaphore)
+    {
+        while (xSemaphoreTake(dtcData.pendingReadySemaphore, 0) == pdTRUE)
+        {
+        }
+    }
+    if (dtcData.permanentReadySemaphore)
+    {
+        while (xSemaphoreTake(dtcData.permanentReadySemaphore, 0) == pdTRUE)
+        {
+        }
+    }
+    if (dtcData.clearReadySemaphore)
+    {
+        while (xSemaphoreTake(dtcData.clearReadySemaphore, 0) == pdTRUE)
+        {
+        }
+    }
+    if (xPidConnectedSemaphore)
+    {
+        while (xSemaphoreTake(xPidConnectedSemaphore, 0) == pdTRUE)
+        {
+        }
+    }
+    if (xBusConnectionSemaphore)
+    {
+        while (xSemaphoreTake(xBusConnectionSemaphore, 0) == pdTRUE)
+        {
+        }
+    }
+    if (xRequestNextPIDSemaphore)
+    {
+        while (xSemaphoreTake(xRequestNextPIDSemaphore, 0) == pdTRUE)
+        {
+        }
+    }
+    if (healthCheckSemaphore)
+    {
+        while (xSemaphoreTake(healthCheckSemaphore, 0) == pdTRUE)
+        {
+        }
+    }
+    if (event_queue)
+    {
+        xQueueReset(event_queue);
+    }
 
     if (xPidConnectedSemaphore)
     {
@@ -346,7 +473,10 @@ esp_err_t OBD2::stopInternal(bool)
 
     pidsInitialized = false;
     multiframe_state = 99; busMutexOwnedByReceive_ = false;
-    if (lifecycleEvents_) xEventGroupClearBits(lifecycleEvents_, STARTUP_GATE | RECEIVE_EXIT | POLL_EXIT | CALLBACK_EXIT);
+    if (lifecycleEvents_)
+    {
+        xEventGroupClearBits(lifecycleEvents_, STARTUP_GATE | RECEIVE_EXIT | POLL_EXIT | CALLBACK_EXIT);
+    }
     stopRequested_ = false;
     if (admissionMtx_ && xSemaphoreTake(admissionMtx_, portMAX_DELAY) == pdTRUE) {
         createdWorkers_ = 0;
@@ -364,21 +494,34 @@ esp_err_t OBD2::stopInternal(bool)
 esp_err_t OBD2::init()
 {
     if (!lifecycleOperationMtx_ || xSemaphoreTake(lifecycleOperationMtx_, 0) != pdTRUE)
+    {
         return ESP_ERR_INVALID_STATE;
+    }
     auto finish = [&](esp_err_t err) { xSemaphoreGive(lifecycleOperationMtx_); return err; };
     if (!admissionMtx_ || !lifecycleEvents_ || !configurationMtx_ || !discoveryMtx_ || !diagnosticRequestMtx_ ||
         !connected_subscribers_mtx_ || !pidMapMtx || !subscribers_mtx_ || !vinData.mtx_ || !dtcData.mtx_)
+    {
         return finish(ESP_ERR_NO_MEM);
-    if (!canDriver.isInitialized()) return finish(ESP_FAIL);
+    }
+    if (!canDriver.isInitialized())
+    {
+        return finish(ESP_FAIL);
+    }
 
-    if (xSemaphoreTake(admissionMtx_, portMAX_DELAY) != pdTRUE) return finish(ESP_ERR_INVALID_STATE);
+    if (xSemaphoreTake(admissionMtx_, portMAX_DELAY) != pdTRUE)
+    {
+        return finish(ESP_ERR_INVALID_STATE);
+    }
     bool isStopped = lifecycleState_ == LifecycleState::Stopped;
     if (isStopped) {
         lifecycleState_ = LifecycleState::Starting;
         stopRequested_ = false;
     }
     xSemaphoreGive(admissionMtx_);
-    if (!isStopped) return finish(ESP_ERR_INVALID_STATE);
+    if (!isStopped)
+    {
+        return finish(ESP_ERR_INVALID_STATE);
+    }
 
     xEventGroupClearBits(lifecycleEvents_, STARTUP_GATE | RECEIVE_EXIT | POLL_EXIT | CALLBACK_EXIT);
     xSemaphoreTake(admissionMtx_, portMAX_DELAY);
@@ -398,25 +541,57 @@ esp_err_t OBD2::init()
         return cleanupError == ESP_OK ? originalError : cleanupError;
     };
 
-    if (!xPidConnectedSemaphore) xPidConnectedSemaphore = xSemaphoreCreateBinary();
-    if (!xBusArbitrationMutex) xBusArbitrationMutex = xSemaphoreCreateMutex();
-    if (!xBusConnectionSemaphore) xBusConnectionSemaphore = xSemaphoreCreateBinary();
-    if (!xRequestNextPIDSemaphore) xRequestNextPIDSemaphore = xSemaphoreCreateBinary();
-    if (!healthCheckSemaphore) healthCheckSemaphore = xSemaphoreCreateBinary();
-    if (!derivedPidQueue_) derivedPidQueue_ = xQueueCreate(10, sizeof(uint16_t));
+    if (!xPidConnectedSemaphore)
+    {
+        xPidConnectedSemaphore = xSemaphoreCreateBinary();
+    }
+    if (!xBusArbitrationMutex)
+    {
+        xBusArbitrationMutex = xSemaphoreCreateMutex();
+    }
+    if (!xBusConnectionSemaphore)
+    {
+        xBusConnectionSemaphore = xSemaphoreCreateBinary();
+    }
+    if (!xRequestNextPIDSemaphore)
+    {
+        xRequestNextPIDSemaphore = xSemaphoreCreateBinary();
+    }
+    if (!healthCheckSemaphore)
+    {
+        healthCheckSemaphore = xSemaphoreCreateBinary();
+    }
+    if (!derivedPidQueue_)
+    {
+        derivedPidQueue_ = xQueueCreate(10, sizeof(uint16_t));
+    }
     esp_err_t initDataError = initDef();
     if (!configurationMtx_ || !xPidConnectedSemaphore || !xBusArbitrationMutex || !xBusConnectionSemaphore ||
         !xRequestNextPIDSemaphore || !healthCheckSemaphore || !derivedPidQueue_)
+    {
         return failInit(ESP_ERR_NO_MEM);
-    if (initDataError != ESP_OK) return failInit(initDataError);
+    }
+    if (initDataError != ESP_OK)
+    {
+        return failInit(initDataError);
+    }
 
-    if (!event_queue) event_queue = xQueueCreate(5, sizeof(bool));
-    if (!event_queue) return failInit(ESP_ERR_NO_MEM);
+    if (!event_queue)
+    {
+        event_queue = xQueueCreate(5, sizeof(bool));
+    }
+    if (!event_queue)
+    {
+        return failInit(ESP_ERR_NO_MEM);
+    }
 
     TaskHandle_t createdHandle = nullptr;
     BaseType_t taskCreated = xTaskCreatePinnedToCore(callbackWorkerTaskWrapper, "OBD_Connection_callback_task", 4096,
                                                      this, tskIDLE_PRIORITY, &createdHandle, CORE_ID_CAN_TASKS);
-    if (taskCreated != pdPASS) return failInit(ESP_ERR_NO_MEM);
+    if (taskCreated != pdPASS)
+    {
+        return failInit(ESP_ERR_NO_MEM);
+    }
     xSemaphoreTake(admissionMtx_, portMAX_DELAY);
     callbackWorkerTaskHandle = createdHandle;
     createdWorkers_ |= 4;
@@ -425,7 +600,10 @@ esp_err_t OBD2::init()
     createdHandle = nullptr;
     taskCreated = xTaskCreatePinnedToCore(receiveTaskWrapper, "OBD2_receive_task", 8192, this,
                                           tskIDLE_PRIORITY + 2, &createdHandle, CORE_ID_CAN_TASKS);
-    if (taskCreated != pdPASS) return failInit(ESP_ERR_NO_MEM);
+    if (taskCreated != pdPASS)
+    {
+        return failInit(ESP_ERR_NO_MEM);
+    }
     xSemaphoreTake(admissionMtx_, portMAX_DELAY);
     ReceiveTaskHandle = createdHandle;
     createdWorkers_ |= 1;
@@ -434,7 +612,10 @@ esp_err_t OBD2::init()
     createdHandle = nullptr;
     taskCreated = xTaskCreatePinnedToCore(pollTaskWrapper, "OBD2_PollTask", 8192, this,
                                           tskIDLE_PRIORITY + 1, &createdHandle, CORE_ID_CAN_TASKS);
-    if (taskCreated != pdPASS) return failInit(ESP_ERR_NO_MEM);
+    if (taskCreated != pdPASS)
+    {
+        return failInit(ESP_ERR_NO_MEM);
+    }
     xSemaphoreTake(admissionMtx_, portMAX_DELAY);
     PollTaskHandle = createdHandle;
     createdWorkers_ |= 2;
@@ -444,25 +625,37 @@ esp_err_t OBD2::init()
     xEventGroupSetBits(lifecycleEvents_, STARTUP_GATE);
 
     esp_err_t callbackError = canDriver.setConnectionChangeCallback(onCanStateChange, this, pdMS_TO_TICKS(1000));
-    if (callbackError != ESP_OK) return failInit(callbackError);
+    if (callbackError != ESP_OK)
+    {
+        return failInit(callbackError);
+    }
     xSemaphoreTake(admissionMtx_, portMAX_DELAY);
     canCallbackInstalled_ = true;
     xSemaphoreGive(admissionMtx_);
 
     // Register/fence first, then take the bus snapshot to avoid missing a transition.
-    if (canDriver.isBusConnected()) handleCanConnected();
+    if (canDriver.isBusConnected())
+    {
+        handleCanConnected();
+    }
     ESP_LOGI(TAG, "OBD-II interface initialized");
     return finish(ESP_OK);
 }
 
 bool OBD2::lockDiscovery()
 {
-    if (!discoveryMtx_) return false;
+    if (!discoveryMtx_)
+    {
+        return false;
+    }
     while (!stopRequested_)
     {
         if (xSemaphoreTake(discoveryMtx_, pdMS_TO_TICKS(50)) == pdTRUE)
         {
-            if (!stopRequested_) return true;
+            if (!stopRequested_)
+            {
+                return true;
+            }
             xSemaphoreGive(discoveryMtx_);
             return false;
         }
@@ -472,12 +665,18 @@ bool OBD2::lockDiscovery()
 
 bool OBD2::lockDiagnosticRequest()
 {
-    if (!diagnosticRequestMtx_) return false;
+    if (!diagnosticRequestMtx_)
+    {
+        return false;
+    }
     while (!stopRequested_)
     {
         if (xSemaphoreTake(diagnosticRequestMtx_, pdMS_TO_TICKS(50)) == pdTRUE)
         {
-            if (!stopRequested_) return true;
+            if (!stopRequested_)
+            {
+                return true;
+            }
             xSemaphoreGive(diagnosticRequestMtx_);
             return false;
         }
@@ -488,20 +687,31 @@ bool OBD2::lockDiagnosticRequest()
 void OBD2::requestSuppPids()
 {
     OperationGuard operation(this);
-    if (!operation.admitted()) return;
-    if (!lockDiscovery()) return;
+    if (!operation.admitted())
+    {
+        return;
+    }
+    if (!lockDiscovery())
+    {
+        return;
+    }
     requestSuppPidsInternal();
     xSemaphoreGive(discoveryMtx_);
 }
 
 void OBD2::requestSuppPidsInternal()
 {
-    if (stopRequested_ || !canDriver.isBusConnected()) return;
+    if (stopRequested_ || !canDriver.isBusConnected())
+    {
+        return;
+    }
     esp_err_t resetResult = ESP_OK;
     {
         MutexGuard configurationGuard(configurationMtx_, portMAX_DELAY);
         if (!configurationGuard.isLocked())
+        {
             resetResult = ESP_ERR_TIMEOUT;
+        }
         else
         {
             resetResult = withPidMapLock(
@@ -511,7 +721,9 @@ void OBD2::requestSuppPidsInternal()
                     for (auto& [pid, definition] : PID_DEF)
                     {
                         if (definition.mode() != MODE_CURRENT_DATA)
+                        {
                             continue;
+                        }
                         _setDataField(pid, &PIDData_t::isSupported, false);
                         _setDataField(pid, &PIDData_t::isValid, false);
                         _setDataField(pid, &PIDData_t::id, definition.id());
@@ -528,9 +740,13 @@ void OBD2::requestSuppPidsInternal()
     }
 
     while (xSemaphoreTake(xRequestNextPIDSemaphore, 0) == pdTRUE)
+    {
         ;
+    }
     while (xSemaphoreTake(xPidConnectedSemaphore, 0) == pdTRUE)
+    {
         ;
+    }
 
     if (resetResult != ESP_OK)
     {
@@ -546,13 +762,17 @@ void OBD2::requestSuppPidsInternal()
                            canDriver.isBusConnected(); ++group)
     {
         while (xSemaphoreTake(xRequestNextPIDSemaphore, 0) == pdTRUE)
+        {
             ;
+        }
 
         bool opened = false;
         {
             MutexGuard configurationGuard(configurationMtx_, portMAX_DELAY);
             if (!configurationGuard.isLocked())
+            {
                 transitionFailed = true;
+            }
             else
             {
                 // The active generation and its expected group are published
@@ -564,7 +784,9 @@ void OBD2::requestSuppPidsInternal()
         }
 
         if (!opened)
+        {
             break;
+        }
 
         PollRequest probe         = {};
         probe.id                  = OBD2_FUNCTIONAL_ID;
@@ -592,7 +814,9 @@ void OBD2::requestSuppPidsInternal()
                 closed                  = true;
             }
             if (!closed)
+            {
                 transitionFailed = true;
+            }
             break;
         }
         bool receivedExpected = false;
@@ -600,10 +824,16 @@ void OBD2::requestSuppPidsInternal()
         while (!stopRequested_ && canDriver.isBusConnected() && !receivedExpected)
         {
             TickType_t remaining = responseDeadline - xTaskGetTickCount();
-            if ((int32_t)remaining <= 0) break;
+            if ((int32_t)remaining <= 0)
+            {
+                break;
+            }
             receivedExpected = xSemaphoreTake(xRequestNextPIDSemaphore, std::min(remaining, pdMS_TO_TICKS(50))) == pdTRUE;
         }
-        if (stopRequested_ || !canDriver.isBusConnected()) break;
+        if (stopRequested_ || !canDriver.isBusConnected())
+        {
+            break;
+        }
         if (!receivedExpected)
         {
             bool closed = false;
@@ -616,7 +846,9 @@ void OBD2::requestSuppPidsInternal()
                 closed                  = true;
             }
             if (!closed)
+            {
                 transitionFailed = true;
+            }
             break;
         }
 
@@ -626,9 +858,15 @@ void OBD2::requestSuppPidsInternal()
         while (!stopRequested_ && canDriver.isBusConnected())
         {
             TickType_t remaining = windowDeadline - xTaskGetTickCount();
-            if ((int32_t)remaining <= 0 || xSemaphoreTake(xRequestNextPIDSemaphore, remaining) != pdTRUE) break;
+            if ((int32_t)remaining <= 0 || xSemaphoreTake(xRequestNextPIDSemaphore, remaining) != pdTRUE)
+            {
+                break;
+            }
         }
-        if (stopRequested_ || !canDriver.isBusConnected()) break;
+        if (stopRequested_ || !canDriver.isBusConnected())
+        {
+            break;
+        }
 
         bool windowClosed    = false;
         bool continueDiscovery = false;
@@ -640,7 +878,9 @@ void OBD2::requestSuppPidsInternal()
                 const bool continuation = (supportedPIDsGroup.pidGroup[group] & 0x00000001UL) != 0;
 
                 if (!groupSeen)
+                {
                     discoveryFailed_ = true;
+                }
 
                 // Close the response generation before deciding whether a
                 // subsequent group may be requested.
@@ -659,7 +899,9 @@ void OBD2::requestSuppPidsInternal()
         }
 
         if (terminalSuccess || !continueDiscovery)
+        {
             break;
+        }
     }
 
     {
@@ -670,17 +912,25 @@ void OBD2::requestSuppPidsInternal()
             discoveryExpectedGroup_ = 0xFF;
             supportedPIDsGroup.numberOfSupportedPIDs = 0;
             for (const auto& group : supportedPIDsGroup.pidGroup)
+            {
                 supportedPIDsGroup.numberOfSupportedPIDs += __builtin_popcount(group);
+            }
 
             if (transitionFailed)
+            {
                 discoveryFailed_ = true;
+            }
 
             const bool complete = terminalSuccess && !discoveryFailed_ && !stopRequested_ && canDriver.isBusConnected();
             pidsInitialized = complete;
-            if (stopRequested_ || !canDriver.isBusConnected()) pidsInitialized = false;
+            if (stopRequested_ || !canDriver.isBusConnected())
+            {
+                pidsInitialized = false;
+            }
             if (!complete)
-                ESP_LOGW(TAG, "Supported-PID discovery incomplete (seen=0x%08lX)",
-                         (unsigned long)discoverySeenGroups_);
+            {
+                ESP_LOGW(TAG, "Supported-PID discovery incomplete (seen=0x%08lX)", (unsigned long)discoverySeenGroups_);
+            }
         }
         else
         {
@@ -696,10 +946,15 @@ void OBD2::requestSuppPidsInternal()
 void OBD2::getSupportedPids(supportedPIDsGroup_t& supportedPIDsGroup)
 {
     OperationGuard operation(this);
-    if (!operation.admitted()) return;
+    if (!operation.admitted())
+    {
+        return;
+    }
     MutexGuard configurationGuard(configurationMtx_, pdMS_TO_TICKS(100));
     if (configurationGuard.isLocked())
+    {
         supportedPIDsGroup = this->supportedPIDsGroup;
+    }
 };
 
 /**
@@ -734,10 +989,15 @@ esp_err_t OBD2::addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std
                        uint16_t interval, uint32_t color, std::string icon)
 {
     OperationGuard operation(this);
-    if (!operation.admitted()) return ESP_ERR_INVALID_STATE;
+    if (!operation.admitted())
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
     MutexGuard configurationGuard(configurationMtx_, pdMS_TO_TICKS(100));
     if (!configurationGuard.isLocked())
+    {
         return ESP_ERR_TIMEOUT;
+    }
 
     if (interval < MIN_TRANSMIT_PERIOD_MS)
     {
@@ -756,7 +1016,9 @@ esp_err_t OBD2::addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std
     if (mode == MODE_CURRENT_DATA)
     {
         if (pid == 0)
+        {
             return ESP_ERR_INVALID_ARG;
+        }
 
         uint8_t groupIdx = ((pid - 1) & 0xE0) >> 5;
         if (groupIdx < SUPPORTED_PIDS_GROUP_COUNT)
@@ -777,7 +1039,10 @@ esp_err_t OBD2::addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std
                     PollRequest request = makePollRequest(id, mode, pid, len, interval, priority, true);
                     esp_err_t enqueueResult = enqueueDefinitionRequestLocked(request);
                     if (enqueueResult != ESP_OK)
-                        ESP_LOGW(TAG, "Failed to enqueue recurring PID 0x%04X: %s", pid, esp_err_to_name(enqueueResult));
+                    {
+                        ESP_LOGW(TAG, "Failed to enqueue recurring PID 0x%04X: %s", pid,
+                                 esp_err_to_name(enqueueResult));
+                    }
                 }
             }
         }
@@ -789,7 +1054,9 @@ esp_err_t OBD2::addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std
             PollRequest request = makePollRequest(id, mode, pid, len, interval, priority, true);
             esp_err_t enqueueResult = enqueueDefinitionRequestLocked(request);
             if (enqueueResult != ESP_OK)
+            {
                 ESP_LOGW(TAG, "Failed to enqueue recurring PID 0x%04X: %s", pid, esp_err_to_name(enqueueResult));
+            }
         }
     }
 
@@ -799,10 +1066,15 @@ esp_err_t OBD2::addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std
 esp_err_t OBD2::removePID(uint16_t pid)
 {
     OperationGuard operation(this);
-    if (!operation.admitted()) return ESP_ERR_INVALID_STATE;
+    if (!operation.admitted())
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
     MutexGuard configurationGuard(configurationMtx_, pdMS_TO_TICKS(100));
     if (!configurationGuard.isLocked())
+    {
         return ESP_ERR_TIMEOUT;
+    }
     return OBD2DataModel::removePID(pid);
 }
 
@@ -831,10 +1103,15 @@ PollRequest OBD2::makePollRequest(uint32_t id, uint8_t mode, uint32_t pid, uint8
 esp_err_t OBD2::replacePIDDefinitions(const std::vector<PIDDefinitionData>& definitions)
 {
     OperationGuard operation(this);
-    if (!operation.admitted()) return ESP_ERR_INVALID_STATE;
+    if (!operation.admitted())
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
     MutexGuard configurationGuard(configurationMtx_, pdMS_TO_TICKS(100));
     if (!configurationGuard.isLocked())
+    {
         return ESP_ERR_TIMEOUT;
+    }
 
     std::vector<PollRequest> recurringRequests;
     std::vector<uint16_t> supportedCurrentPids;
@@ -849,7 +1126,9 @@ esp_err_t OBD2::replacePIDDefinitions(const std::vector<PIDDefinitionData>& defi
             {
                 uint8_t bitPos = 31 - ((definition.pid - 1) % 32);
                 if (supportedPIDsGroup.pidGroup[groupIdx] & (1UL << bitPos))
+                {
                     supportedCurrentPids.push_back(definition.pid);
+                }
             }
         }
 
@@ -880,10 +1159,15 @@ esp_err_t OBD2::replacePIDDefinitions(const std::vector<PIDDefinitionData>& defi
 esp_err_t OBD2::requestPID(uint16_t pid)
 {
     OperationGuard operation(this);
-    if (!operation.admitted()) return ESP_ERR_INVALID_STATE;
+    if (!operation.admitted())
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
     MutexGuard configurationGuard(configurationMtx_, pdMS_TO_TICKS(100));
     if (!configurationGuard.isLocked())
+    {
         return ESP_ERR_TIMEOUT;
+    }
 
     return withPidMapLock(
         [&]()
@@ -913,14 +1197,20 @@ esp_err_t OBD2::req(uint32_t id, uint8_t mode, uint32_t pid, uint8_t len, uint32
 
 esp_err_t OBD2::req(PollRequest& req)
 {
-    if (!admitOperation()) return ESP_ERR_INVALID_STATE;
+    if (!admitOperation())
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
     esp_err_t result;
     if (!req.isRaw)
     {
         MutexGuard configurationGuard(configurationMtx_, pdMS_TO_TICKS(100));
         result = !configurationGuard.isLocked() ? ESP_ERR_TIMEOUT : enqueueDefinitionRequestLocked(req);
     }
-    else result = pollQueue.push(req) ? ESP_OK : ESP_ERR_INVALID_SIZE;
+    else
+    {
+        result = pollQueue.push(req) ? ESP_OK : ESP_ERR_INVALID_SIZE;
+    }
     releaseOperation();
     return result;
 }
@@ -1011,8 +1301,14 @@ void OBD2::onCanStateChange(void* arg, bool connected)
 void OBD2::handleCanConnected()
 {
     OperationGuard operation(this);
-    if (!operation.admitted() || stopRequested_) return;
-    if (!lockDiscovery()) return;
+    if (!operation.admitted() || stopRequested_)
+    {
+        return;
+    }
+    if (!lockDiscovery())
+    {
+        return;
+    }
     if (stopRequested_ || !canDriver.isBusConnected()) { xSemaphoreGive(discoveryMtx_); return; }
     ESP_LOGI(TAG, "CAN bus connected event received");
     xSemaphoreGive(xBusConnectionSemaphore);
@@ -1022,15 +1318,24 @@ void OBD2::handleCanConnected()
         requestSuppPidsInternal();
     }
 
-    if (!stopRequested_ && canDriver.isBusConnected()) runOBDIIConnectedCallbacks(true);
+    if (!stopRequested_ && canDriver.isBusConnected())
+    {
+        runOBDIIConnectedCallbacks(true);
+    }
     xSemaphoreGive(discoveryMtx_);
 }
 
 void OBD2::handleCanDisconnected()
 {
     OperationGuard operation(this);
-    if (!operation.admitted() || stopRequested_) return;
-    if (!lockDiscovery()) return;
+    if (!operation.admitted() || stopRequested_)
+    {
+        return;
+    }
+    if (!lockDiscovery())
+    {
+        return;
+    }
     if (stopRequested_ || canDriver.isBusConnected()) { xSemaphoreGive(discoveryMtx_); return; }
     ESP_LOGW(TAG, "CAN bus disconnected event received");
     pidsInitialized = false;
@@ -1046,12 +1351,19 @@ bool OBD2::isContinuousRunning() const
 void OBD2::startContinuousMode()
 {
     OperationGuard operation(this);
-    if (!operation.admitted()) return;
+    if (!operation.admitted())
+    {
+        return;
+    }
     MutexGuard configurationGuard(configurationMtx_, pdMS_TO_TICKS(100));
     if (!configurationGuard.isLocked() || stopRequested_)
+    {
         return;
+    }
     if (continuousRunning)
+    {
         return;
+    }
 
     continuousRunning = true;
     if (stopRequested_) { continuousRunning = false; return; }
@@ -1061,12 +1373,19 @@ void OBD2::startContinuousMode()
 void OBD2::stopContinuousMode()
 {
     OperationGuard operation(this);
-    if (!operation.admitted()) return;
+    if (!operation.admitted())
+    {
+        return;
+    }
     MutexGuard configurationGuard(configurationMtx_, pdMS_TO_TICKS(100));
     if (!configurationGuard.isLocked())
+    {
         return;
+    }
     if (!continuousRunning)
+    {
         return;
+    }
 
     continuousRunning = false;
     pollQueue.clearRecurring();
@@ -1075,10 +1394,15 @@ void OBD2::stopContinuousMode()
 void OBD2::startPolling()
 {
     OperationGuard operation(this);
-    if (!operation.admitted()) return;
+    if (!operation.admitted())
+    {
+        return;
+    }
     MutexGuard configurationGuard(configurationMtx_, pdMS_TO_TICKS(100));
     if (!configurationGuard.isLocked() || stopRequested_)
+    {
         return;
+    }
     startPollingLocked();
 }
 
@@ -1092,17 +1416,23 @@ void OBD2::startPollingLocked()
             for (const auto& [pid, info] : PID_DEF)
             {
                 if (!_getDataField(pid, &PIDData_t::isSupported, false))
+                {
                     continue;
+                }
 
                 uint32_t interval = info.updateInterval();
                 if (interval == 0)
+                {
                     continue;
+                }
 
                 PollRequest request = makePollRequest(info.id(), info.mode(), pid, info.len(), interval,
                                                       info.priority(), true);
                 esp_err_t enqueueResult = enqueueDefinitionRequestLocked(request);
                 if (enqueueResult != ESP_OK)
+                {
                     ESP_LOGW(TAG, "Failed to enqueue polling PID 0x%04X: %s", pid, esp_err_to_name(enqueueResult));
+                }
 
                 if (info.mode() == MODE_READ_DATA_BY_IDENTIFIER)
                 {
@@ -1112,7 +1442,9 @@ void OBD2::startPollingLocked()
             return ESP_OK;
         });
     if (scheduleResult != ESP_OK)
+    {
         ESP_LOGW(TAG, "Failed to schedule polling definitions: %s", esp_err_to_name(scheduleResult));
+    }
 
     // for (const uint32_t id : RequestByDataIdentifierIds)
     // {
@@ -1123,10 +1455,15 @@ void OBD2::startPollingLocked()
 void OBD2::pollRequestStaticPids()
 {
     OperationGuard operation(this);
-    if (!operation.admitted()) return;
+    if (!operation.admitted())
+    {
+        return;
+    }
     MutexGuard configurationGuard(configurationMtx_, pdMS_TO_TICKS(100));
     if (!configurationGuard.isLocked())
+    {
         return;
+    }
 
     std::set<uint32_t> RequestByDataIdentifierIds;
 
@@ -1141,7 +1478,9 @@ void OBD2::pollRequestStaticPids()
                                                           def.updateInterval(), def.priority(), false);
                     esp_err_t enqueueResult = enqueueDefinitionRequestLocked(request);
                     if (enqueueResult != ESP_OK)
+                    {
                         ESP_LOGW(TAG, "Failed to enqueue static PID 0x%04X: %s", pid, esp_err_to_name(enqueueResult));
+                    }
                 }
 
                 if (def.mode() == MODE_READ_DATA_BY_IDENTIFIER)
@@ -1152,7 +1491,9 @@ void OBD2::pollRequestStaticPids()
             return ESP_OK;
         });
     if (scheduleResult != ESP_OK)
+    {
         ESP_LOGW(TAG, "Failed to schedule static PID requests: %s", esp_err_to_name(scheduleResult));
+    }
 
     // for (const uint32_t id : RequestByDataIdentifierIds)
     // {
@@ -1173,12 +1514,18 @@ void OBD2::pollTask()
     CanLoadTracker                 busTracker;
     std::map<uint32_t, TickType_t> last_tx_time_per_ecu;
 
-    if (lifecycleEvents_) xEventGroupWaitBits(lifecycleEvents_, STARTUP_GATE, pdFALSE, pdTRUE, portMAX_DELAY);
+    if (lifecycleEvents_)
+    {
+        xEventGroupWaitBits(lifecycleEvents_, STARTUP_GATE, pdFALSE, pdTRUE, portMAX_DELAY);
+    }
     while (!stopRequested_)
     {
         TickType_t delay = pollQueue.getWait();
         ulTaskNotifyTake(pdTRUE, delay);
-        if (stopRequested_) break;
+        if (stopRequested_)
+        {
+            break;
+        }
 
         pollTaskUtilization = busTracker.updateAndGet();
 
@@ -1196,14 +1543,22 @@ void OBD2::pollTask()
             // Leave both RAII scopes before notification-aware backoff.
             goto poll_busy_backoff;
         }
-        if (stopRequested_) break;
+        if (stopRequested_)
+        {
+            break;
+        }
 
         // 2. Take the most urgent appointment
         PollRequest current = {};
         if (!pollQueue.tryPopDue(current))
+        {
             continue;
+        }
 
-        if (stopRequested_) break;
+        if (stopRequested_)
+        {
+            break;
+        }
 
         TickType_t now = xTaskGetTickCount();
 
@@ -1225,7 +1580,9 @@ void OBD2::pollTask()
 
                         uint32_t threshold = current.interval * 3;
                         if (threshold < 1000)
+                        {
                             threshold = 1000;
+                        }
 
                         if (last_updated == 0 || (now_ms - last_updated > threshold))
                         {
@@ -1249,10 +1606,12 @@ void OBD2::pollTask()
         }
 
         bool scheduled = false;
-        auto schedule = [&](PollRequest& request, const char* reason)
+        auto schedule  = [&](PollRequest& request, const char* reason)
         {
             if (!pollQueue.push(request))
+            {
                 ESP_LOGW(TAG, "Poll queue full; dropped %s PID 0x%04X", reason, request.payload.obd.pid);
+            }
             scheduled = true;
         };
 
@@ -1268,7 +1627,10 @@ void OBD2::pollTask()
         }
 
         // 3. Process based on the Mode stored in the request
-        if (stopRequested_) break;
+        if (stopRequested_)
+        {
+            break;
+        }
         if (!current.isRaw && current.payload.obd.mode == MODE_DERIVED_DATA)
         {
             xQueueSend(derivedPidQueue_, &current.payload.obd.pid, pdMS_TO_TICKS(10));
@@ -1310,7 +1672,10 @@ void OBD2::pollTask()
         continue;
 
     poll_busy_backoff:
-        if (!stopRequested_) ulTaskNotifyTake(pdTRUE, 1);
+        if (!stopRequested_)
+        {
+            ulTaskNotifyTake(pdTRUE, 1);
+        }
     }
 }
 
@@ -1324,7 +1689,10 @@ void OBD2::receiveTaskWrapper(void* param)
 
 void OBD2::receiveTask()
 {
-    if (lifecycleEvents_) xEventGroupWaitBits(lifecycleEvents_, STARTUP_GATE, pdFALSE, pdTRUE, portMAX_DELAY);
+    if (lifecycleEvents_)
+    {
+        xEventGroupWaitBits(lifecycleEvents_, STARTUP_GATE, pdFALSE, pdTRUE, portMAX_DELAY);
+    }
     TickType_t last_ping_ms      = 0;
     uint8_t    failed_pings      = 0;
     bool       awaiting_response = false;
@@ -1335,7 +1703,10 @@ void OBD2::receiveTask()
         if (!canDriver.isBusConnected())
         {
             xSemaphoreTake(xBusConnectionSemaphore, portMAX_DELAY);
-            if (stopRequested_) break;
+            if (stopRequested_)
+            {
+                break;
+            }
 
             // Reset health-check state on (re)connect.
             last_ping_ms      = xTaskGetTickCount();
@@ -1350,13 +1721,22 @@ void OBD2::receiveTask()
         // this task can observe the new model.
         {
             MutexGuard configurationGuard(configurationMtx_, portMAX_DELAY);
-            if (stopRequested_) break;
-            if (!configurationGuard.isLocked()) continue;
+            if (stopRequested_)
+            {
+                break;
+            }
+            if (!configurationGuard.isLocked())
+            {
+                continue;
+            }
             uint16_t derivedPid;
 
             while (!stopRequested_ && xQueueReceive(derivedPidQueue_, &derivedPid, 0) == pdTRUE)
             {
-                if (stopRequested_) break;
+                if (stopRequested_)
+                {
+                    break;
+                }
                 CanDriver::CanFrame f{};
                 f.header.id = OBD2_FUNCTIONAL_ID;
                 f.length    = 4;
@@ -1370,7 +1750,10 @@ void OBD2::receiveTask()
 
         CanDriver::CanFrame f{};
         esp_err_t           ret = canDriver.receive(f, 10);
-        if (stopRequested_) break;
+        if (stopRequested_)
+        {
+            break;
+        }
 
         if (ret == ESP_OK)
         {
@@ -1398,7 +1781,9 @@ void OBD2::receiveTask()
             last_ping_ms = now;
 
             while (xSemaphoreTake(healthCheckSemaphore, 0) == pdTRUE)
+            {
                 ;
+            }
 
             PollRequest r         = {};
             r.id                  = OBD2_FUNCTIONAL_ID;
@@ -1450,7 +1835,9 @@ void OBD2::receiveTask()
 esp_err_t OBD2::parseRecFrame(const CanDriver::CanFrame& f)
 {
     if (f.length < 3)
+    {
         return ESP_ERR_INVALID_SIZE;
+    }
 
     esp_err_t ret = ESP_OK;
     uint8_t   frame_type =
@@ -1574,7 +1961,9 @@ esp_err_t OBD2::parseCurrentData(const CanDriver::CanFrame& f)
     }
 
     if (ret == ESP_ERR_INVALID_STATE)
+    {
         return ret;
+    }
 
     _setDataFieldWithLock(pid, &PIDData_t::isValid, ret == ESP_OK);
 
@@ -1764,20 +2153,26 @@ esp_err_t OBD2::parseSupportedPIDs(const CanDriver::CanFrame& f)
     }
 
     if (f.length < 7)
+    {
         return ESP_OK;
+    }
 
     uint32_t reportedPIDs = (f.data[3] << 24) | (f.data[4] << 16) | (f.data[5] << 8) | (f.data[6]);
 
     MutexGuard configurationGuard(configurationMtx_, portMAX_DELAY);
     if (!configurationGuard.isLocked())
+    {
         return ESP_ERR_TIMEOUT;
+    }
 
     if (!discoveryActive_ || discoveryExpectedGroup_ != groupIdx)
     {
         // A late response must not mutate an inactive or different discovery
         // generation. Health-check waiters may still use this valid frame.
         if (healthCheckSemaphore != nullptr)
+        {
             xSemaphoreGive(healthCheckSemaphore);
+        }
         return ESP_OK;
     }
 
@@ -1797,7 +2192,9 @@ esp_err_t OBD2::parseSupportedPIDs(const CanDriver::CanFrame& f)
             for (const auto& [installedPID, definition] : PID_DEF)
             {
                 if (definition.mode() != MODE_CURRENT_DATA || installedPID < firstPID || installedPID > lastPID)
+                {
                     continue;
+                }
 
                 const uint8_t bit = (uint8_t)(installedPID - firstPID);
                 if (continuousRunning && (mergedPIDs & (1UL << (31 - bit))) &&
@@ -1819,28 +2216,38 @@ esp_err_t OBD2::parseSupportedPIDs(const CanDriver::CanFrame& f)
             for (const auto& [installedPID, definition] : PID_DEF)
             {
                 if (definition.mode() != MODE_CURRENT_DATA || installedPID < firstPID || installedPID > lastPID)
+                {
                     continue;
+                }
 
                 const bool supported = (mergedPIDs & (1UL << (31 - (installedPID - firstPID)))) != 0;
                 const bool wasSupported = _getDataField(installedPID, &PIDData_t::isSupported, false);
                 _setDataField(installedPID, &PIDData_t::isSupported, supported);
                 _setDataField(installedPID, &PIDData_t::isValid, false);
                 if (supported && !wasSupported)
+                {
                     _setDataField(installedPID, &PIDData_t::id, responderID);
+                }
                 else if (!supported)
+                {
                     _setDataField(installedPID, &PIDData_t::id, definition.id());
+                }
             }
 
             supportedPIDsGroup.pidGroup[groupIdx] = mergedPIDs;
             discoverySeenGroups_ |= (1UL << groupIdx);
             supportedPIDsGroup.numberOfSupportedPIDs = 0;
             for (const auto& group : supportedPIDsGroup.pidGroup)
+            {
                 supportedPIDsGroup.numberOfSupportedPIDs += __builtin_popcount(group);
+            }
             return ESP_OK;
         });
 
     if (ret != ESP_OK)
+    {
         return ret;
+    }
 
     xSemaphoreGive(xRequestNextPIDSemaphore);
 
@@ -1883,15 +2290,23 @@ void OBD2::requestDefaultDiagnosticSession(uint32_t id, bool isRecurring)
     r.retries_left        = DEFAULT_NUMER_OF_RETRIES;
     esp_err_t enqueueResult = req(r);
     if (enqueueResult != ESP_OK)
+    {
         ESP_LOGW(TAG, "Default diagnostic-session request failed: %s", esp_err_to_name(enqueueResult));
+    }
 }
 
 esp_err_t OBD2::requestVIN()
 {
     OperationGuard operation(this);
-    if (!operation.admitted()) return ESP_ERR_INVALID_STATE;
+    if (!operation.admitted())
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
     DiagnosticRequestGuard diagnostic(this);
-    if (!diagnostic.locked()) return ESP_ERR_INVALID_STATE;
+    if (!diagnostic.locked())
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
     if (vinData.vinReadySemaphore == NULL)
     {
         ESP_LOGE(TAG, "VIN semaphore not initialized");
@@ -1913,14 +2328,22 @@ esp_err_t OBD2::requestVIN()
 
     xSemaphoreTake(vinData.vinReadySemaphore, 0);
     esp_err_t enqueueResult = req(r);
-    if (enqueueResult != ESP_OK) return enqueueResult;
+    if (enqueueResult != ESP_OK)
+    {
+        return enqueueResult;
+    }
     TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(500);
     while (!stopRequested_)
     {
         TickType_t remaining = deadline - xTaskGetTickCount();
-        if ((int32_t)remaining <= 0) return ESP_ERR_TIMEOUT;
+        if ((int32_t)remaining <= 0)
+        {
+            return ESP_ERR_TIMEOUT;
+        }
         if (xSemaphoreTake(vinData.vinReadySemaphore, std::min(remaining, pdMS_TO_TICKS(50))) == pdTRUE)
+        {
             return stopRequested_ ? ESP_ERR_INVALID_STATE : ESP_OK;
+        }
     }
     return ESP_ERR_INVALID_STATE;
 }
@@ -1928,7 +2351,10 @@ esp_err_t OBD2::requestVIN()
 esp_err_t OBD2::requestDTC(uint8_t mode)
 {
     OperationGuard operation(this);
-    if (!operation.admitted()) return ESP_ERR_INVALID_STATE;
+    if (!operation.admitted())
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
     SemaphoreHandle_t* sem = NULL;
 
     switch (mode)
@@ -1947,7 +2373,10 @@ esp_err_t OBD2::requestDTC(uint8_t mode)
     }
 
     DiagnosticRequestGuard diagnostic(this);
-    if (!diagnostic.locked()) return ESP_ERR_INVALID_STATE;
+    if (!diagnostic.locked())
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
 
     if (*sem == NULL)
     {
@@ -1959,7 +2388,9 @@ esp_err_t OBD2::requestDTC(uint8_t mode)
 
     // Drain any stale tokens before requesting
     while (xSemaphoreTake(*sem, 0) == pdTRUE)
+    {
         ;
+    }
 
     PollRequest r         = {};
     r.id                  = OBD2_FUNCTIONAL_ID;
@@ -1974,14 +2405,19 @@ esp_err_t OBD2::requestDTC(uint8_t mode)
     r.retries_left        = DEFAULT_NUMER_OF_RETRIES;
 
     esp_err_t enqueueResult = req(r);
-    if (enqueueResult != ESP_OK) return enqueueResult;
+    if (enqueueResult != ESP_OK)
+    {
+        return enqueueResult;
+    }
     TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(500);
     while (!stopRequested_)
     {
         TickType_t remaining = deadline - xTaskGetTickCount();
         if ((int32_t)remaining <= 0) { ESP_LOGW(TAG, "DTC Request %s timed out", OBD2_MODE_TO_STR(mode)); return ESP_ERR_TIMEOUT; }
         if (xSemaphoreTake(*sem, std::min(remaining, pdMS_TO_TICKS(50))) == pdTRUE)
+        {
             return stopRequested_ ? ESP_ERR_INVALID_STATE : ESP_OK;
+        }
     }
     return ESP_ERR_INVALID_STATE;
 }
@@ -1989,9 +2425,15 @@ esp_err_t OBD2::requestDTC(uint8_t mode)
 esp_err_t OBD2::requestClearDTCs()
 {
     OperationGuard operation(this);
-    if (!operation.admitted()) return ESP_ERR_INVALID_STATE;
+    if (!operation.admitted())
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
     DiagnosticRequestGuard diagnostic(this);
-    if (!diagnostic.locked()) return ESP_ERR_INVALID_STATE;
+    if (!diagnostic.locked())
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
     if (dtcData.clearReadySemaphore == NULL)
     {
         ESP_LOGE(TAG, "Semaphore for clear DTCs not initialized!");
@@ -2000,7 +2442,9 @@ esp_err_t OBD2::requestClearDTCs()
 
     // Drain any stale tokens
     while (xSemaphoreTake(dtcData.clearReadySemaphore, 0) == pdTRUE)
+    {
         ;
+    }
 
     PollRequest r         = {};
     r.id                  = OBD2_FUNCTIONAL_ID;
@@ -2015,14 +2459,19 @@ esp_err_t OBD2::requestClearDTCs()
     r.retries_left        = DEFAULT_NUMER_OF_RETRIES;
 
     esp_err_t enqueueResult = req(r);
-    if (enqueueResult != ESP_OK) return enqueueResult;
+    if (enqueueResult != ESP_OK)
+    {
+        return enqueueResult;
+    }
     TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(500);
     while (!stopRequested_)
     {
         TickType_t remaining = deadline - xTaskGetTickCount();
         if ((int32_t)remaining <= 0) { ESP_LOGW(TAG, "Clear DTCs Request timed out"); return ESP_ERR_TIMEOUT; }
         if (xSemaphoreTake(dtcData.clearReadySemaphore, std::min(remaining, pdMS_TO_TICKS(50))) == pdTRUE)
+        {
             return stopRequested_ ? ESP_ERR_INVALID_STATE : ESP_OK;
+        }
     }
     return ESP_ERR_INVALID_STATE;
 }
@@ -2255,7 +2704,10 @@ esp_err_t OBD2::parseVINMultiFrame(std::vector<CanDriver::CanFrame>& frames)
 
 void OBD2::connected_subscribe(OBDIIConnectedCallback cb)
 {
-    if (!admissionMtx_ || xSemaphoreTake(admissionMtx_, portMAX_DELAY) != pdTRUE) return;
+    if (!admissionMtx_ || xSemaphoreTake(admissionMtx_, portMAX_DELAY) != pdTRUE)
+    {
+        return;
+    }
     const bool permitted = lifecycleState_ == LifecycleState::Stopped || lifecycleState_ == LifecycleState::Running;
     bool inserted = false;
     if (permitted && connected_subscribers_mtx_ &&
@@ -2266,12 +2718,18 @@ void OBD2::connected_subscribe(OBDIIConnectedCallback cb)
         xSemaphoreGive(connected_subscribers_mtx_);
     }
     xSemaphoreGive(admissionMtx_);
-    if (!inserted) ESP_LOGW(TAG, "Connection subscription rejected (state/lock unavailable)");
+    if (!inserted)
+    {
+        ESP_LOGW(TAG, "Connection subscription rejected (state/lock unavailable)");
+    }
 }
 
 void OBD2::subscribe(PidUpdateCallback cb)
 {
-    if (!admissionMtx_ || xSemaphoreTake(admissionMtx_, portMAX_DELAY) != pdTRUE) return;
+    if (!admissionMtx_ || xSemaphoreTake(admissionMtx_, portMAX_DELAY) != pdTRUE)
+    {
+        return;
+    }
     const bool permitted = lifecycleState_ == LifecycleState::Stopped || lifecycleState_ == LifecycleState::Running;
     bool inserted = false;
     if (permitted && subscribers_mtx_ && xSemaphoreTake(subscribers_mtx_, pdMS_TO_TICKS(100)) == pdTRUE)
@@ -2281,7 +2739,10 @@ void OBD2::subscribe(PidUpdateCallback cb)
         xSemaphoreGive(subscribers_mtx_);
     }
     xSemaphoreGive(admissionMtx_);
-    if (!inserted) ESP_LOGW(TAG, "PID subscription rejected (state/lock unavailable)");
+    if (!inserted)
+    {
+        ESP_LOGW(TAG, "PID subscription rejected (state/lock unavailable)");
+    }
 }
 
 void OBD2::runOBDIIConnectedCallbacks(bool connected)
@@ -2299,13 +2760,19 @@ void OBD2::callbackWorkerTaskWrapper(void* param)
 void OBD2::callbackWorkerTask()
 {
     bool is_connected;
-    if (lifecycleEvents_) xEventGroupWaitBits(lifecycleEvents_, STARTUP_GATE, pdFALSE, pdTRUE, portMAX_DELAY);
+    if (lifecycleEvents_)
+    {
+        xEventGroupWaitBits(lifecycleEvents_, STARTUP_GATE, pdFALSE, pdTRUE, portMAX_DELAY);
+    }
 
     while (!stopRequested_)
     {
         if (xQueueReceive(event_queue, &is_connected, pdMS_TO_TICKS(100)) == pdTRUE)
         {
-            if (stopRequested_) break;
+            if (stopRequested_)
+            {
+                break;
+            }
             std::vector<OBDIIConnectedCallback> callbacks;
 
             if (connected_subscribers_mtx_ != nullptr &&
@@ -2317,7 +2784,10 @@ void OBD2::callbackWorkerTask()
 
             for (const auto& cb : callbacks)
             {
-                if (stopRequested_) break;
+                if (stopRequested_)
+                {
+                    break;
+                }
                 cb(is_connected);
             }
         }

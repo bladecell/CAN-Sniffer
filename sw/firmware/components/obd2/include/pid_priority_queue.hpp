@@ -12,7 +12,7 @@
 class PIDPriorityQueue
 {
 private:
-    PollRequest       heap[NUMBER_OF_ITEMS];  // Adjust size as needed
+    PollRequest       heap[NUMBER_OF_ITEMS] = {};  // Adjust size as needed
     int               size = 0;
     SemaphoreHandle_t lock;
     TaskHandle_t      attachedConsumerTask = nullptr;
@@ -20,7 +20,9 @@ private:
     void notifyConsumerLocked()
     {
         if (attachedConsumerTask != nullptr)
+        {
             xTaskNotifyGive(attachedConsumerTask);
+        }
     }
 
     void swap(int i, int j)
@@ -45,7 +47,9 @@ public:
         attachedConsumerTask = task;
         consumerTask = task; // compatibility mirror; notification uses attachedConsumerTask
         if (task != nullptr)
+        {
             notifyConsumerLocked();
+        }
         xSemaphoreGive(lock);
     }
 
@@ -96,7 +100,9 @@ public:
             for (int i = 0; i < size; i++)
             {
                 if (!heap[i].isRecurring)
+                {
                     heap[newSize++] = heap[i];
+                }
             }
             size = newSize;
             heapify();
@@ -106,7 +112,7 @@ public:
         }
     }
 
-    bool push(PollRequest req)
+    bool push(const PollRequest& req)
     {
         xSemaphoreTake(lock, portMAX_DELAY);
         if (size >= NUMBER_OF_ITEMS)
@@ -141,16 +147,22 @@ public:
         {
             int small = i, l = 2 * i + 1, r = 2 * i + 2;
             if (l < size && heap[l] < heap[small])
+            {
                 small = l;
+            }
             if (r < size && heap[r] < heap[small])
+            {
                 small = r;
+            }
             if (small != i)
             {
                 swap(i, small);
                 i = small;
             }
             else
+            {
                 break;
+            }
         }
         xSemaphoreGive(lock);
         return true;
@@ -184,16 +196,22 @@ public:
     bool replaceRecurring(const PollRequest* requests, size_t requestCount)
     {
         if (requests == nullptr && requestCount != 0)
+        {
             return false;
+        }
 
         if (xSemaphoreTake(lock, portMAX_DELAY) != pdTRUE)
+        {
             return false;
+        }
 
         size_t rawRequests = 0;
         for (int i = 0; i < size; ++i)
         {
             if (heap[i].isRaw)
+            {
                 ++rawRequests;
+            }
         }
 
         if (rawRequests + requestCount > NUMBER_OF_ITEMS)
@@ -208,10 +226,14 @@ public:
         for (int i = 0; i < size; ++i)
         {
             if (heap[i].isRaw)
+            {
                 heap[nextSize++] = heap[i];
+            }
         }
         for (size_t i = 0; i < requestCount; ++i)
+        {
             heap[nextSize++] = requests[i];
+        }
         size = (int)nextSize;
         heapify();
         notifyConsumerLocked();
@@ -225,10 +247,14 @@ public:
                                   size_t requestCount)
     {
         if (requests == nullptr && requestCount != 0)
+        {
             return false;
+        }
 
         if (xSemaphoreTake(lock, portMAX_DELAY) != pdTRUE)
+        {
             return false;
+        }
 
         size_t retained = 0;
         for (int i = 0; i < size; ++i)
@@ -261,7 +287,9 @@ public:
                                 heap[i].payload.obd.pid >= firstPid && heap[i].payload.obd.pid <= lastPid &&
                                 (!desired || duplicate);
             if (!remove)
+            {
                 ++retained;
+            }
         }
 
         size_t additions = 0;
@@ -278,7 +306,9 @@ public:
                 }
             }
             if (!present)
+            {
                 ++additions;
+            }
         }
 
         if (retained + additions > NUMBER_OF_ITEMS)
@@ -292,9 +322,10 @@ public:
         for (int i = 0; i < size; ++i)
         {
             if (heap[i].isRaw || !heap[i].isRecurring || heap[i].payload.obd.mode != mode ||
-                heap[i].payload.obd.pid < firstPid ||
-                heap[i].payload.obd.pid > lastPid)
+                heap[i].payload.obd.pid < firstPid || heap[i].payload.obd.pid > lastPid)
+            {
                 continue;
+            }
             for (size_t j = 0; j < requestCount; ++j)
             {
                 if (requests[j].payload.obd.mode == mode && requests[j].payload.obd.pid == heap[i].payload.obd.pid)
@@ -340,7 +371,9 @@ public:
                                 heap[i].payload.obd.pid >= firstPid && heap[i].payload.obd.pid <= lastPid &&
                                 (!desired || duplicate);
             if (!remove)
+            {
                 heap[nextSize++] = heap[i];
+            }
         }
         for (size_t i = 0; i < requestCount; ++i)
         {
@@ -355,12 +388,16 @@ public:
                 }
             }
             if (!present)
+            {
                 heap[nextSize++] = requests[i];
+            }
         }
         size = (int)nextSize;
         heapify();
         if (additions != 0 || requestCount != 0)
+        {
             notifyConsumerLocked();
+        }
         xSemaphoreGive(lock);
         return true;
     }
@@ -370,12 +407,16 @@ public:
     void clearRecurringMode(uint8_t mode)
     {
         if (xSemaphoreTake(lock, portMAX_DELAY) != pdTRUE)
+        {
             return;
+        }
         size_t nextSize = 0;
         for (int i = 0; i < size; ++i)
         {
             if (!heap[i].isRaw && heap[i].isRecurring && heap[i].payload.obd.mode == mode)
+            {
                 continue;
+            }
             heap[nextSize++] = heap[i];
         }
         size = (int)nextSize;
@@ -392,7 +433,9 @@ public:
             for (int i = 0; i < size; i++)
             {
                 if (heap[i].isRaw || heap[i].payload.obd.pid != targetPid)
+                {
                     heap[nextSize++] = heap[i];
+                }
             }
             if (nextSize != size)
             {
@@ -436,11 +479,17 @@ private:
             {
                 int small = current, left = current * 2 + 1, right = current * 2 + 2;
                 if (left < size && heap[left] < heap[small])
+                {
                     small = left;
+                }
                 if (right < size && heap[right] < heap[small])
+                {
                     small = right;
+                }
                 if (small == current)
+                {
                     break;
+                }
                 swap(current, small);
                 current = small;
             }
@@ -452,9 +501,18 @@ private:
         while (true)
         {
             int small = i, l = 2 * i + 1, r = 2 * i + 2;
-            if (l < size && heap[l] < heap[small]) small = l;
-            if (r < size && heap[r] < heap[small]) small = r;
-            if (small == i) return;
+            if (l < size && heap[l] < heap[small])
+            {
+                small = l;
+            }
+            if (r < size && heap[r] < heap[small])
+            {
+                small = r;
+            }
+            if (small == i)
+            {
+                return;
+            }
             swap(i, small);
             i = small;
         }

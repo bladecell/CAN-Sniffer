@@ -45,7 +45,9 @@ static cJSON* json_error_body(const char* reason)
     {
         cJSON_AddStringToObject(root, "status", "error");
         if (reason != nullptr)
+        {
             cJSON_AddStringToObject(root, "reason", reason);
+        }
     }
     return root;
 }
@@ -53,15 +55,25 @@ static cJSON* json_error_body(const char* reason)
 static int status_for_error(esp_err_t err, int invalid_arg_status = 400)
 {
     if (err == ESP_ERR_INVALID_ARG)
+    {
         return invalid_arg_status;
+    }
     if (err == ESP_ERR_NOT_FOUND)
+    {
         return 404;
+    }
     if (err == ESP_ERR_TIMEOUT)
+    {
         return 504;
+    }
     if (err == ESP_ERR_INVALID_STATE || err == ESP_ERR_INVALID_SIZE)
+    {
         return 503;
+    }
     if (err == ESP_ERR_NO_MEM)
+    {
         return 500;
+    }
     return 500;
 }
 
@@ -70,7 +82,9 @@ static MiddlewareJsonResult sd_operation_error(esp_err_t err)
     // ESP_ERR_TIMEOUT returned by acquire_operation() means the SD operation
     // mutex is contended. It is not an ECU/request timeout.
     if (err == ESP_ERR_TIMEOUT)
+    {
         return json_result(json_error_body("SD card busy"), 503);
+    }
 
     return json_result(json_error_body(esp_err_to_name(err)), status_for_error(err));
 }
@@ -99,7 +113,9 @@ cJSON* single_pid_def_get(uint16_t pid, esp_err_t* operation_error)
 
     esp_err_t err = OBD2::getInstance().getDef(pid, def);
     if (operation_error != nullptr)
+    {
         *operation_error = err;
+    }
     if (err != ESP_OK)
     {
         return nullptr;
@@ -110,7 +126,9 @@ cJSON* single_pid_def_get(uint16_t pid, esp_err_t* operation_error)
     {
         ESP_LOGE(TAG, "OOM building PID definition");
         if (operation_error != nullptr)
+        {
             *operation_error = ESP_ERR_NO_MEM;
+        }
         return nullptr;
     }
 
@@ -139,7 +157,9 @@ cJSON* single_pid_data_get(uint16_t pid, esp_err_t* operation_error)
 
     esp_err_t err = OBD2::getInstance().getData(pid, data);
     if (operation_error != nullptr)
+    {
         *operation_error = err;
+    }
     if (err != ESP_OK)
     {
         return nullptr;
@@ -150,7 +170,9 @@ cJSON* single_pid_data_get(uint16_t pid, esp_err_t* operation_error)
     {
         ESP_LOGE(TAG, "OOM building PID data");
         if (operation_error != nullptr)
+        {
             *operation_error = ESP_ERR_NO_MEM;
+        }
         return nullptr;
     }
 
@@ -336,7 +358,9 @@ MiddlewareJsonResult m_can_bus_get()
 {
     cJSON* root = cJSON_CreateObject();
     if (root == nullptr)
+    {
         return json_result(nullptr, 500);
+    }
 
     const auto& nodeConfig = CanDriver::getInstance().getNodeConfig();
     const auto& config     = CanDriver::getInstance().getConfig();
@@ -370,7 +394,9 @@ MiddlewareJsonResult m_obdii_get()
 {
     cJSON* root = cJSON_CreateObject();
     if (root == nullptr)
+    {
         return json_result(nullptr, 500);
+    }
 
     // Add OBD-II information to the JSON object
     cJSON_AddBoolToObject(root, "continuous_running", OBD2::getInstance().isContinuousRunning());
@@ -407,14 +433,18 @@ MiddlewareJsonResult m_system_get()
     {
         auto operation = SDCard::getInstance().acquire_operation(SD_OPERATION_TIMEOUT);
         if (!operation)
+        {
             return sd_operation_error(operation.status());
+        }
 
         sd_card_detected = SDCard::getInstance().card_present();
     }
 
     cJSON* root = cJSON_CreateObject();
     if (root == nullptr)
+    {
         return json_result(nullptr, 500);
+    }
 
     cJSON_AddStringToObject(root, "app_version", APP_VERSION_STRING);
     cJSON_AddNumberToObject(root, "uptime_s", SUPERVISOR::getInstance().get_uptime_seconds());
@@ -472,7 +502,9 @@ MiddlewareJsonResult m_sdcard_info_get()
 {
     cJSON* root = cJSON_CreateObject();
     if (root == nullptr)
+    {
         return json_result(nullptr, 500);
+    }
 
     auto operation = SDCard::getInstance().acquire_operation(SD_OPERATION_TIMEOUT);
     if (!operation)
@@ -502,7 +534,9 @@ MiddlewareJsonResult m_sdcard_format_post()
 {
     cJSON* root = cJSON_CreateObject();
     if (root == nullptr)
+    {
         return json_result(nullptr, 500);
+    }
 
     auto operation = SDCard::getInstance().acquire_operation(SD_OPERATION_TIMEOUT);
     if (!operation)
@@ -556,7 +590,9 @@ MiddlewareJsonResult m_sdcard_file_tree_get(const char* path)
     }
 
     if (root == nullptr)
+    {
         return json_result(json_error_body(esp_err_to_name(ESP_ERR_NO_MEM)), 500);
+    }
 
     cJSON_AddStringToObject(root, "status", "success");
     return json_result(root);
@@ -567,14 +603,18 @@ MiddlewareJsonResult m_sdcard_file_delete_delete(const char* path)
     auto& sd        = SDCard::getInstance();
     auto  operation = sd.acquire_operation(SD_OPERATION_TIMEOUT, true);
     if (!operation)
+    {
         return sd_operation_error(operation.status());
+    }
 
     const size_t    path_len = strlen(path);
     const esp_err_t err = path_len > 0 && path[path_len - 1] == '/' ? sd.delete_directory(path) : sd.delete_file(path);
 
     cJSON* root = cJSON_CreateObject();
     if (root == nullptr)
+    {
         return json_result(nullptr, 500);
+    }
 
     if (err == ESP_OK)
     {
@@ -593,7 +633,9 @@ MiddlewareJsonResult m_vin_get()
 {
     cJSON* root = cJSON_CreateObject();
     if (root == nullptr)
+    {
         return json_result(nullptr, 500);
+    }
 
     cJSON_AddStringToObject(root, "vin", OBD2::getInstance().getVIN().c_str());
 
@@ -664,7 +706,9 @@ MiddlewareJsonResult m_dtc_get(int mode)
     cJSON_AddNumberToObject(root, "count", global_count);
     cJSON_AddStringToObject(root, "status", valid_mode ? "success" : "error");
     if (!valid_mode)
+    {
         cJSON_AddStringToObject(root, "reason", "Unsupported DTC mode");
+    }
 
     return json_result(root, valid_mode ? 200 : 422);
 }
@@ -790,9 +834,13 @@ MiddlewareJsonResult m_dtc_description_get(const char* target_codes[], size_t co
             }
 
             if (cmp < 0)
+            {
                 left = mid + 1;
+            }
             else
+            {
                 right = mid - 1;
+            }
         }
 
         if (!found)
@@ -821,7 +869,9 @@ MiddlewareJsonResult m_vin_request()
 {
     cJSON* root = cJSON_CreateObject();
     if (root == nullptr)
+    {
         return json_result(nullptr, 500);
+    }
     esp_err_t err = OBD2::getInstance().requestVIN();
 
     if (err == ESP_OK)
@@ -844,7 +894,9 @@ MiddlewareJsonResult m_dtc_request(int mode)
     {
         cJSON* root = cJSON_CreateObject();
         if (root == nullptr)
+        {
             return json_result(nullptr, 500);
+        }
 
         cJSON_AddStringToObject(root, "status", "error");
         cJSON_AddStringToObject(root, "reason", "Unsupported DTC mode");
@@ -857,7 +909,9 @@ MiddlewareJsonResult m_dtc_request(int mode)
 
         cJSON* root = cJSON_CreateObject();
         if (root == nullptr)
+        {
             return json_result(nullptr, 500);
+        }
         if (err == ESP_OK)
         {
             cJSON_AddStringToObject(root, "status", "success");
@@ -960,7 +1014,9 @@ MiddlewareJsonResult m_clear_dtc_request()
 {
     cJSON* root = cJSON_CreateObject();
     if (root == nullptr)
+    {
         return json_result(nullptr, 500);
+    }
     esp_err_t err = OBD2::getInstance().requestClearDTCs();
 
     if (err == ESP_OK)
@@ -1077,7 +1133,9 @@ MiddlewareJsonResult m_pid_def_delete(int filter_id)
     cJSON*    root = cJSON_CreateObject();
     esp_err_t err  = OBD2::getInstance().removePID(filter_id);
     if (root == nullptr)
+    {
         return json_result(nullptr, 500);
+    }
 
     if (err == ESP_OK)
     {
@@ -1119,7 +1177,9 @@ static bool json_integer(cJSON* object, const char* key, T minValue, T maxValue,
     if (!cJSON_IsNumber(value) || !std::isfinite(value->valuedouble) ||
         std::floor(value->valuedouble) != value->valuedouble || value->valuedouble < (double)minValue ||
         value->valuedouble > (double)maxValue)
+    {
         return false;
+    }
     output = static_cast<T>(value->valuedouble);
     return true;
 }
@@ -1133,17 +1193,25 @@ static bool json_pid_length(cJSON* object, uint8_t& output, bool required)
     cJSON* len    = cJSON_GetObjectItemCaseSensitive(object, "len");
 
     if (length == nullptr && len == nullptr)
+    {
         return !required;
+    }
 
     uint8_t parsed_length = 0;
     uint8_t parsed_len    = 0;
     if (length != nullptr && !json_integer(object, "length", uint8_t(0), uint8_t(PID_DATA_LENGTH), parsed_length))
+    {
         return false;
+    }
     if (len != nullptr && !json_integer(object, "len", uint8_t(0), uint8_t(PID_DATA_LENGTH), parsed_len))
+    {
         return false;
+    }
 
     if (length != nullptr && len != nullptr && parsed_length != parsed_len)
+    {
         return false;
+    }
 
     output = length != nullptr ? parsed_length : parsed_len;
     return true;
@@ -1155,7 +1223,9 @@ static bool json_float(cJSON* object, const char* key, float& output)
     if (!cJSON_IsNumber(value) || !std::isfinite(value->valuedouble) ||
         value->valuedouble < -std::numeric_limits<float>::max() ||
         value->valuedouble > std::numeric_limits<float>::max())
+    {
         return false;
+    }
     output = static_cast<float>(value->valuedouble);
     return std::isfinite(output);
 }
@@ -1164,9 +1234,13 @@ static bool json_string(cJSON* object, const char* key, size_t maxLength, std::s
 {
     cJSON* value = cJSON_GetObjectItemCaseSensitive(object, key);
     if (!cJSON_IsString(value) || value->valuestring == nullptr)
+    {
         return false;
+    }
     if (strlen(value->valuestring) > maxLength)
+    {
         return false;
+    }
     output = value->valuestring;
     return true;
 }
@@ -1176,12 +1250,16 @@ static bool json_string(cJSON* object, const char* key, size_t maxLength, std::s
 cJSON* m_pid_def_put(cJSON* data, int* http_status)
 {
     if (http_status != nullptr)
+    {
         *http_status = 204;
+    }
 
     if (data == nullptr || !cJSON_IsArray(data))
     {
         if (http_status != nullptr)
+        {
             *http_status = 400;
+        }
         return pid_put_error("Payload must be a JSON array", 400);
     }
 
@@ -1189,7 +1267,9 @@ cJSON* m_pid_def_put(cJSON* data, int* http_status)
     if (itemCount < 0 || itemCount > NUMBER_OF_ITEMS)
     {
         if (http_status != nullptr)
+        {
             *http_status = 422;
+        }
         return pid_put_error("PID definition count exceeds capacity", 422);
     }
 
@@ -1204,7 +1284,9 @@ cJSON* m_pid_def_put(cJSON* data, int* http_status)
         if (!cJSON_IsObject(item))
         {
             if (http_status != nullptr)
+            {
                 *http_status = 400;
+            }
             return pid_put_error("Each PID definition must be a JSON object", 400);
         }
 
@@ -1226,7 +1308,9 @@ cJSON* m_pid_def_put(cJSON* data, int* http_status)
             !json_string(item, "icon", PID_ICON_MAX, definition.icon))
         {
             if (http_status != nullptr)
+            {
                 *http_status = 422;
+            }
             return pid_put_error("Missing or invalid PID definition field", 422);
         }
 
@@ -1236,7 +1320,9 @@ cJSON* m_pid_def_put(cJSON* data, int* http_status)
         if ((interval != 0 && interval < MIN_TRANSMIT_PERIOD_MS) || !validModeAndPayload || definition.formula.empty())
         {
             if (http_status != nullptr)
+            {
                 *http_status = 422;
+            }
             return pid_put_error("Invalid PID interval, mode, PID, or length", 422);
         }
 
@@ -1244,14 +1330,18 @@ cJSON* m_pid_def_put(cJSON* data, int* http_status)
             definition.minValue > definition.maxValue)
         {
             if (http_status != nullptr)
+            {
                 *http_status = 422;
+            }
             return pid_put_error("Invalid PID value range", 422);
         }
 
         if (!pids.insert(pid).second)
         {
             if (http_status != nullptr)
+            {
                 *http_status = 422;
+            }
             return pid_put_error("Duplicate PID definition", 422);
         }
 
@@ -1272,14 +1362,18 @@ cJSON* m_pid_def_put(cJSON* data, int* http_status)
                            : result == ESP_ERR_INVALID_SIZE || result == ESP_ERR_TIMEOUT ? 503
                                                                                          : 500;
         if (http_status != nullptr)
+        {
             *http_status = status;
+        }
         return pid_put_error(esp_err_to_name(result), status);
     }
 
     // There is deliberately no success JSON tree. The model commit is the
     // final fallible operation performed by this path.
     if (http_status != nullptr)
+    {
         *http_status = 204;
+    }
     return nullptr;
 }
 
@@ -1428,7 +1522,9 @@ MiddlewareJsonResult m_pid_def_post(cJSON* data)
             error_count++;
             const int item_status = status_for_error(err, 422);
             if (item_status == 503 || item_status == 500)
+            {
                 failure_status = item_status;
+            }
         }
     }
 
@@ -1494,7 +1590,9 @@ MiddlewareJsonResult m_pid_def_save(cJSON* payload)
 
     cJSON* root = cJSON_CreateObject();
     if (root == nullptr)
+    {
         return json_result(nullptr, 500);
+    }
 
     if (result.error == ESP_OK)
     {
@@ -1545,7 +1643,9 @@ MiddlewareJsonResult m_pid_def_load(cJSON* payload)
 
     cJSON* root = cJSON_CreateObject();
     if (root == nullptr)
+    {
         return json_result(nullptr, 500);
+    }
 
     if (ret == ESP_OK)
     {
@@ -1595,14 +1695,18 @@ MiddlewareJsonResult m_system_copy_file(cJSON* payload)
         // to turn a later SD-lock contention into a generic 504 timeout.
         auto operation = SDCard::getInstance().acquire_operation(SD_OPERATION_TIMEOUT, true);
         if (!operation)
+        {
             return sd_operation_error(operation.status());
+        }
 
         struct stat source_stat;
         if (stat(src_path, &source_stat) != 0)
         {
             const int stat_errno = errno;
             if (is_confirmed_missing_errno(stat_errno))
+            {
                 return json_result(json_error_body("Source file not found"), 404);
+            }
             return json_result(json_error_body("Failed to inspect source file"), 500);
         }
 
@@ -1611,7 +1715,9 @@ MiddlewareJsonResult m_system_copy_file(cJSON* payload)
 
     cJSON* root = cJSON_CreateObject();
     if (root == nullptr)
+    {
         return json_result(nullptr, 500);
+    }
 
     if (err == ESP_OK)
     {
@@ -1631,7 +1737,9 @@ MiddlewareJsonResult m_settings_get()
 {
     cJSON* root = cJSON_CreateArray();
     if (root == nullptr)
+    {
         return json_result(nullptr, 500);
+    }
 
     esp_err_t read_error = ESP_OK;
 
@@ -1855,7 +1963,9 @@ static void process_single_setting_item(cJSON* item, esp_err_t& overall_err, std
         }
         no_fields = (apply_wifi_settings(settings_node, wifi_cfg) == 0);
         if (!no_fields)
+        {
             res = Settings::getInstance().setWifiConfig(wifi_cfg);
+        }
     }
     else if (name == "can")
     {
@@ -1869,7 +1979,9 @@ static void process_single_setting_item(cJSON* item, esp_err_t& overall_err, std
         }
         no_fields = (apply_can_settings(settings_node, can_cfg) == 0);
         if (!no_fields)
+        {
             res = Settings::getInstance().setCanConfig(can_cfg);
+        }
     }
     else if (name == "system")
     {
@@ -1883,7 +1995,9 @@ static void process_single_setting_item(cJSON* item, esp_err_t& overall_err, std
         }
         no_fields = (apply_system_settings(settings_node, sup_cfg) == 0);
         if (!no_fields)
+        {
             res = Settings::getInstance().setSupervisorConfig(sup_cfg);
+        }
     }
     else
     {
@@ -1936,7 +2050,9 @@ MiddlewareJsonResult m_settings_set(cJSON* payload)
 
     cJSON* root = cJSON_CreateObject();
     if (root == nullptr)
+    {
         return json_result(nullptr, 500);
+    }
     if (overall_err == ESP_OK)
     {
         cJSON_AddStringToObject(root, "status", "success");

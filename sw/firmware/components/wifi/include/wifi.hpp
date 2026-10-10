@@ -111,11 +111,11 @@ public:
     esp_err_t               disconnectClient(const uint8_t* mac);
 
     // Event callbacks
-    void onClientConnected(ClientConnectCallback callback);
-    void onClientDisconnected(ClientDisconnectCallback callback);
-    void onAPStarted(APStartCallback callback);
-    void onStaConnected(StaConnectedCallback callback);
-    void onStaDisconnected(StaDisconnectedCallback callback);
+    void onClientConnected(const ClientConnectCallback& callback);
+    void onClientDisconnected(const ClientDisconnectCallback& callback);
+    void onAPStarted(const APStartCallback& callback);
+    void onStaConnected(const StaConnectedCallback& callback);
+    void onStaDisconnected(const StaDisconnectedCallback& callback);
 
 private:
     WIFI(const WIFI&)            = delete;

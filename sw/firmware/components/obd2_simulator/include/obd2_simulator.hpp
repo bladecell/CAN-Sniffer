@@ -21,4 +21,4 @@ void sendVIN(bool multiframe_in_progress);
 uint32_t sinDataSim(uint32_t t_ms, float frequency, uint32_t size);
 
 // ISR-safe notify hook, called from CanDriver's RX ISR in debug mode.
-void IRAM_ATTR sim_notify(uint32_t data, BaseType_t* woken);
+void sim_notify(uint32_t data, BaseType_t* woken);
