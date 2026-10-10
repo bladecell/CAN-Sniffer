@@ -10,6 +10,7 @@
 #include <cstring>
 #include <limits>
 #include <memory>
+#include <new>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -18,6 +19,7 @@
 #include "esp_check.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -466,6 +468,32 @@ MiddlewareJsonResult m_system_get()
     }
 
     cJSON_AddItemToObject(root, "component_status", component_status);
+
+    // Read-only diagnostics: heap and the unused stack of every task (shrinks under load, never grows back).
+    cJSON_AddNumberToObject(root, "heap_free", esp_get_free_heap_size());
+    cJSON_AddNumberToObject(root, "heap_min_free", esp_get_minimum_free_heap_size());
+    const UBaseType_t              taskCapacity = uxTaskGetNumberOfTasks() + 4;
+    std::unique_ptr<TaskStatus_t[]> taskStatus(new (std::nothrow) TaskStatus_t[taskCapacity]);
+    cJSON*                         stacks = cJSON_CreateArray();
+    if (taskStatus != nullptr && stacks != nullptr)
+    {
+        const UBaseType_t count = uxTaskGetSystemState(taskStatus.get(), taskCapacity, nullptr);
+        for (UBaseType_t i = 0; i < count; i++)
+        {
+            cJSON* task = cJSON_CreateObject();
+            if (task == nullptr)
+            {
+                break;
+            }
+            cJSON_AddStringToObject(task, "name", taskStatus[i].pcTaskName);
+            cJSON_AddNumberToObject(task, "stack_free", taskStatus[i].usStackHighWaterMark);
+            cJSON_AddItemToArray(stacks, task);
+        }
+    }
+    if (stacks != nullptr)
+    {
+        cJSON_AddItemToObject(root, "tasks", stacks);
+    }
 
     return json_result(root);
 }
