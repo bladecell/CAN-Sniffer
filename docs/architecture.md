@@ -69,7 +69,7 @@ Task watchdog: enabled, 5 s timeout, panic on timeout is off, idle tasks of both
 | 1 | SETTINGS | `Settings::init()` (`nvs_flash_init`, erase and retry on `NO_FREE_PAGES` or `NEW_VERSION_FOUND`), then loads the supervisor config (PID and DTC file paths) from NVS | yes |
 | 2 | POWER_MANAGEMENT | `esp_pm_configure` max 240 MHz, min 40 MHz, automatic light sleep on. Creates and takes an `ESP_PM_NO_LIGHT_SLEEP` lock | yes |
 | 3 | FLASH_FILESYSTEM | Mounts the `www` partition read-only as LittleFS at `/www` (no format on failure) | yes |
-| 4 | SD_CARD | `SDCard::init` (SDMMC slot 1, 1-bit, card-detect GPIO). Returns OK even when no card is inserted. If a card is present it mounts it, and the mount callback creates `/config` and `/logs`. `format_if_mount_failed` is true | no |
+| 4 | SD_CARD | `SDCard::init` (SDMMC slot 1, 1-bit, card-detect GPIO). Returns OK even when no card is inserted. If a card is present it mounts it, and the mount callback creates `/config` and `/logs`. `format_if_mount_failed` is false (formatting is explicit only) | no |
 | 5 | BATTERY | ADC1 channel 1 oneshot | no |
 | 6 | CAN | Reads the CAN config from NVS (defaults on first boot), installs the simulator hooks if `debug`, `CanDriver::init` | no |
 | 7 | OBD | Registers the connected-callbacks, `OBD2::init()` (needs the CAN driver initialized), waits 1 s, loads the PID JSON from the SD card | no |

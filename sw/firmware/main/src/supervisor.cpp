@@ -595,7 +595,7 @@ esp_err_t SUPERVISOR::setup_sd_card()
     config.base_path              = MOUNT_POINT;
     config.slot                   = SDMMC_HOST_SLOT_1;
     config.max_files              = 5;
-    config.format_if_mount_failed = true;
+    config.format_if_mount_failed = false;
 
     SDCard::getInstance().on_mount(
         []()
@@ -619,7 +619,14 @@ esp_err_t SUPERVISOR::setup_sd_card()
         return ret;
     }
 
-    ESP_LOGI(TAG, "SD card initialized and mounted at %s", config.base_path);
+    if (SDCard::getInstance().is_mounted())
+    {
+        ESP_LOGI(TAG, "SD card initialized and mounted at %s", config.base_path);
+    }
+    else
+    {
+        ESP_LOGW(TAG, "SD card driver ready, no card mounted (insert a card; SD features disabled)");
+    }
 
     return ESP_OK;
 }

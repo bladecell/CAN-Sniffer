@@ -25,3 +25,6 @@ Write paths check `fflush`, `fsync` and `fclose` and return `ESP_FAIL` (`SDCard:
 ## 2026-10-10: Parsing code lives in hardware-free files, tested on the host
 `obd2_frame.cpp` (single frame, ISO-TP first and consecutive frames, DTC and VIN extraction) and `pid_json.cpp` (PID JSON) hold the logic the OBD2 class and the middleware used to inline. The OBD2 class calls them; host tests (`test/host/`) cover them without CAN hardware. Reassembled ISO-TP payloads are capped at 512 bytes, and `CONFIG_CJSON_NESTING_LIMIT` is 32 (the default 1000 overflowed a small task stack in a host test).
 
+
+## 2026-10-11: The SD card is never formatted automatically
+Decided by the user. `format_if_mount_failed` is false. A corrupt or foreign card stays untouched and is reported as not mounted; formatting happens only through `POST /api/v1/sd_card/format`. A boot without a card keeps running with no default PID set (B1 stays a no-card limitation by choice).
