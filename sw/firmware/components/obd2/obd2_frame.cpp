@@ -204,4 +204,35 @@ esp_err_t extractVin(const std::vector<uint8_t>& payload, char (&vin)[17])
     return ESP_OK;
 }
 
+esp_err_t decodeDtcResponse(const RawFrame* frames, size_t count, uint8_t mode, std::vector<uint16_t>& rawDtcs)
+{
+    rawDtcs.clear();
+    std::vector<uint8_t> payload;
+    esp_err_t            err = reassemble(frames, count, payload);
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+    if (payload.empty() || payload[0] != mode)
+    {
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+    return extractDtcs(payload, rawDtcs);
+}
+
+esp_err_t decodeVinResponse(const RawFrame* frames, size_t count, char (&vin)[17])
+{
+    std::vector<uint8_t> payload;
+    esp_err_t            err = reassemble(frames, count, payload);
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+    if (payload.size() < 2 || payload[0] != RESPONSE_VEHICLE_INFO || payload[1] != PID_VIN)
+    {
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+    return extractVin(payload, vin);
+}
+
 }  // namespace obd2frame

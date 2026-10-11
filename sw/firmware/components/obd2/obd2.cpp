@@ -2046,14 +2046,8 @@ esp_err_t OBD2::parseDerivedData(const CanDriver::CanFrame& f)
     return ret;
 }
 
-esp_err_t OBD2::parseDTCs(std::vector<CanDriver::CanFrame>& frames, uint8_t mode)
+static esp_err_t toRawFrames(const std::vector<CanDriver::CanFrame>& frames, std::vector<obd2frame::RawFrame>& raw)
 {
-    if (frames.empty())
-    {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    std::vector<obd2frame::RawFrame> raw;
     raw.reserve(frames.size());
     for (const auto& frame : frames)
     {
@@ -2066,18 +2060,21 @@ esp_err_t OBD2::parseDTCs(std::vector<CanDriver::CanFrame>& frames, uint8_t mode
         r.length = frame.length;
         raw.push_back(r);
     }
+    return ESP_OK;
+}
 
-    std::vector<uint8_t>  payload;
+esp_err_t OBD2::parseDTCs(std::vector<CanDriver::CanFrame>& frames, uint8_t mode)
+{
+    if (frames.empty())
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    std::vector<obd2frame::RawFrame> raw;
+    ESP_RETURN_ON_ERROR(toRawFrames(frames, raw), TAG, "bad frame length");
+
     std::vector<uint16_t> rawDtcs;
-    esp_err_t             ret = obd2frame::reassemble(raw.data(), raw.size(), payload);
-    if (ret == ESP_OK && (payload.empty() || payload[0] != mode))
-    {
-        ret = ESP_ERR_INVALID_RESPONSE;
-    }
-    if (ret == ESP_OK)
-    {
-        ret = obd2frame::extractDtcs(payload, rawDtcs);
-    }
+    esp_err_t             ret = obd2frame::decodeDtcResponse(raw.data(), raw.size(), mode, rawDtcs);
     if (ret != ESP_OK)
     {
         return ret;
@@ -2639,30 +2636,10 @@ esp_err_t OBD2::parseVINMultiFrame(std::vector<CanDriver::CanFrame>& frames)
     }
 
     std::vector<obd2frame::RawFrame> raw;
-    raw.reserve(frames.size());
-    for (const auto& frame : frames)
-    {
-        if (frame.length > obd2frame::CAN_DATA_MAX)
-        {
-            return ESP_ERR_INVALID_SIZE;
-        }
-        obd2frame::RawFrame r = {};
-        memcpy(r.data, frame.data, sizeof(r.data));
-        r.length = frame.length;
-        raw.push_back(r);
-    }
+    ESP_RETURN_ON_ERROR(toRawFrames(frames, raw), TAG, "bad frame length");
 
-    char                 vinBuffer[VIN_LENGTH] = {0};
-    std::vector<uint8_t> payload;
-    esp_err_t            ret = obd2frame::reassemble(raw.data(), raw.size(), payload);
-    if (ret == ESP_OK && (payload.size() < 2 || payload[0] != RESPONSE_VEHICLE_INFO || payload[1] != PID_VIN))
-    {
-        ret = ESP_ERR_INVALID_RESPONSE;
-    }
-    if (ret == ESP_OK)
-    {
-        ret = obd2frame::extractVin(payload, vinBuffer);
-    }
+    char      vinBuffer[VIN_LENGTH] = {0};
+    esp_err_t ret                   = obd2frame::decodeVinResponse(raw.data(), raw.size(), vinBuffer);
 
     if (xSemaphoreTake(vinData.mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
     {

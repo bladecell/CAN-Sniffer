@@ -224,6 +224,31 @@ static void test_dtcs_odd_payload_and_empty_response(void)
 }
 
 
+static void test_decode_dtc_response_checks_the_sid(void)
+{
+    RawFrame              f = frame({0x05, 0x43, 0x01, 0x33, 0x02, 0x44, 0x00, 0x00});
+    std::vector<uint16_t> dtcs;
+    TEST_ASSERT_EQUAL_INT(ESP_OK, decodeDtcResponse(&f, 1, 0x43, dtcs));
+    TEST_ASSERT_EQUAL_UINT32(2, dtcs.size());
+    TEST_ASSERT_EQUAL_INT(ESP_ERR_INVALID_RESPONSE, decodeDtcResponse(&f, 1, 0x47, dtcs));  // pending SID expected
+    TEST_ASSERT_TRUE(dtcs.empty());
+    TEST_ASSERT_NOT_EQUAL(ESP_OK, decodeDtcResponse(&f, 0, 0x43, dtcs));
+    TEST_ASSERT_NOT_EQUAL(ESP_OK, decodeDtcResponse(nullptr, 1, 0x43, dtcs));
+}
+
+static void test_decode_vin_response_checks_the_header(void)
+{
+    RawFrame f[3];
+    char     vin[17];
+    vinFrames(f);
+    TEST_ASSERT_EQUAL_INT(ESP_OK, decodeVinResponse(f, 3, vin));
+    TEST_ASSERT_EQUAL_MEMORY("WVWZZZ1KZ6W000001", vin, 17);
+    TEST_ASSERT_EQUAL_INT(ESP_ERR_INVALID_SIZE, decodeVinResponse(f, 2, vin));  // frame missing
+    vinFrames(f);
+    f[0].data[3] = 0x03;  // PID 0x03 instead of 0x02
+    TEST_ASSERT_EQUAL_INT(ESP_ERR_INVALID_RESPONSE, decodeVinResponse(f, 3, vin));
+}
+
 // ROB-1: exhaustive and seeded-random malformed input. Invariants: no crash, outputs stay in bounds.
 static void test_exhaustive_first_bytes_and_lengths(void)
 {
@@ -305,6 +330,8 @@ extern "C" void run_obd2_frame_tests(void)
     RUN_TEST(test_dtcs_single_frame);
     RUN_TEST(test_dtcs_multi_frame_pair_split_across_frames);
     RUN_TEST(test_dtcs_odd_payload_and_empty_response);
+    RUN_TEST(test_decode_dtc_response_checks_the_sid);
+    RUN_TEST(test_decode_vin_response_checks_the_header);
     RUN_TEST(test_exhaustive_first_bytes_and_lengths);
     RUN_TEST(test_random_frame_sequences_never_overrun);
 }

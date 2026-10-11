@@ -59,4 +59,12 @@ esp_err_t extractDtcs(const std::vector<uint8_t>& payload, std::vector<uint16_t>
 // Mode 09 PID 02 payload (0x49 0x02 count, then 17 ASCII chars) to the VIN.
 esp_err_t extractVin(const std::vector<uint8_t>& payload, char (&vin)[17]);
 
+// Reassembles `count` frames and checks the response SID equals `mode` (0x43 / 0x47 / 0x4A), then extracts raw DTCs.
+// ESP_ERR_INVALID_RESPONSE on a wrong SID. Clears `rawDtcs` on failure.
+esp_err_t decodeDtcResponse(const RawFrame* frames, size_t count, uint8_t mode, std::vector<uint16_t>& rawDtcs);
+
+// Reassembles `count` frames and checks the header is 0x49 0x02, then extracts the VIN.
+// ESP_ERR_INVALID_RESPONSE on a wrong header.
+esp_err_t decodeVinResponse(const RawFrame* frames, size_t count, char (&vin)[17]);
+
 }  // namespace obd2frame
