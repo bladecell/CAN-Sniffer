@@ -223,6 +223,71 @@ static void test_dtcs_odd_payload_and_empty_response(void)
     TEST_ASSERT_NOT_EQUAL(ESP_OK, extractDtcs(p, dtcs));
 }
 
+
+// ROB-1: exhaustive and seeded-random malformed input. Invariants: no crash, outputs stay in bounds.
+static void test_exhaustive_first_bytes_and_lengths(void)
+{
+    for (size_t len = 0; len <= CAN_DATA_MAX + 2; len++)
+    {
+        for (int b0 = 0; b0 < 256; b0++)
+        {
+            for (int b1 : {0x00, 0x41, 0x62, 0xFF})
+            {
+                uint8_t d[CAN_DATA_MAX + 2];
+                memset(d, 0xA5, sizeof(d));
+                d[0] = static_cast<uint8_t>(b0);
+                d[1] = static_cast<uint8_t>(b1);
+                SingleFrameInfo i;
+                if (parseSingleFrame(d, len, i) == ESP_OK)
+                {
+                    TEST_ASSERT_TRUE(len >= 2 && len <= CAN_DATA_MAX);
+                    TEST_ASSERT_TRUE(static_cast<size_t>(i.payloadOffset) + i.payloadLength <= len);
+                }
+                uint16_t total = 0, needed = 0;
+                if (parseFirstFrame(d, len, total, needed) == ESP_OK)
+                {
+                    TEST_ASSERT_TRUE(len >= 3 && len <= CAN_DATA_MAX);
+                    TEST_ASSERT_TRUE(total >= 8 && total <= MAX_ISOTP_LENGTH);
+                }
+                IsoTp t;
+                frameType(d, len, t);
+                consecutiveSequenceOk(d, len, 0xFFFF);
+            }
+        }
+    }
+}
+
+static void test_random_frame_sequences_never_overrun(void)
+{
+    uint32_t rng = 12345;
+    auto     next = [&rng]() { return rng = rng * 1664525u + 1013904223u; };
+    for (int iter = 0; iter < 20000; iter++)
+    {
+        RawFrame frames[80] = {};
+        size_t   count      = (next() >> 8) % 81;
+        for (size_t k = 0; k < count; k++)
+        {
+            for (auto& byte : frames[k].data) byte = static_cast<uint8_t>(next() >> 16);
+            frames[k].length = (next() >> 8) % (CAN_DATA_MAX + 2);
+            if (k == 0 && (next() & 1)) frames[k].data[0] = 0x10 | (frames[k].data[0] & 0x0F);
+            if (k > 0 && (next() & 3)) frames[k].data[0] = 0x20 | (k & 0x0F);
+        }
+        std::vector<uint8_t> payload;
+        if (reassemble(frames, count, payload) == ESP_OK)
+        {
+            TEST_ASSERT_TRUE(payload.size() <= MAX_ISOTP_LENGTH);
+        }
+        else
+        {
+            TEST_ASSERT_TRUE(payload.empty());
+        }
+        std::vector<uint16_t> dtcs;
+        extractDtcs(payload, dtcs);
+        char vin[17];
+        extractVin(payload, vin);
+    }
+}
+
 extern "C" void run_obd2_frame_tests(void)
 {
     RUN_TEST(test_single_frame_mode01);
@@ -240,4 +305,6 @@ extern "C" void run_obd2_frame_tests(void)
     RUN_TEST(test_dtcs_single_frame);
     RUN_TEST(test_dtcs_multi_frame_pair_split_across_frames);
     RUN_TEST(test_dtcs_odd_payload_and_empty_response);
+    RUN_TEST(test_exhaustive_first_bytes_and_lengths);
+    RUN_TEST(test_random_frame_sequences_never_overrun);
 }
