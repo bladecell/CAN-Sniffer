@@ -1,0 +1,7 @@
+# HW v2 overlay (ESP32-S3-MINI-1U-N4R2: 4 MB flash, 2 MB quad PSRAM). Layered after sdkconfig.defaults.
+# Select: -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.v2" (see docs/hardware.md).
+CONFIG_SNIFFER_HW_REV_V2=y
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_SPIRAM_MODE_QUAD=y
+CONFIG_SPIRAM_SPEED_80M=y
