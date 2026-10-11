@@ -64,6 +64,7 @@ idf.py -C "$FW" build
 
 step "Size"
 idf.py -C "$FW" size
+"$ROOT/tools/size-gate.sh" "$FW/build"
 
 # --- cppcheck on our sources only, from the compile database ---
 # Run from $FW: cppcheck matches --file-filter against project-relative paths.
