@@ -125,7 +125,12 @@ esp_err_t CanDriver::init(const Config& config)
     // Configure Mask Filter for OBD-II
     if (config.filter)
     {
-        ESP_ERROR_CHECK(twai_node_config_mask_filter(nodeHdl, 0, &config.mfilter_cfg));
+        ret = twai_node_config_mask_filter(nodeHdl, 0, &config.mfilter_cfg);
+        if (ret != ESP_OK)
+        {
+            ESP_LOGE(TAG, "Configuring TWAI filter failed: %s", esp_err_to_name(ret));
+            return ret;
+        }
     }
 
     // Start TWAI Instance

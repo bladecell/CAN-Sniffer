@@ -1,3 +1,4 @@
+#include <new>
 #include "async_web_server.hpp"
 
 #include "esp_check.h"
@@ -120,7 +121,12 @@ esp_err_t AsyncWebServer::stop()
 void AsyncWebServer::registerRoute(const char* uri, httpd_method_t method, AsyncHandler func, void* arg)
 {
     // 1. Allocate memory to hold the function pointer
-    RouteContext* ctx = new RouteContext;
+    RouteContext* ctx = new (std::nothrow) RouteContext;
+    if (!ctx)
+    {
+        ESP_LOGE(TAG, "Out of memory registering %s", uri);
+        return;
+    }
     ctx->handler      = func;
     ctx->arg          = arg;
 

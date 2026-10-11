@@ -17,7 +17,11 @@ esp_err_t Settings::init()
     {
         // NVS partition was truncated and needs to be erased
         // Retry nvs_flash_init
-        ESP_ERROR_CHECK(nvs_flash_erase());
+        err = nvs_flash_erase();
+        if (err != ESP_OK)
+        {
+            return err;
+        }
         err = nvs_flash_init();
     }
     return err;
