@@ -567,11 +567,17 @@ esp_err_t SUPERVISOR::setup_obd()
         return ret;
     }
 
+    if (!SDCard::getInstance().is_mounted())
+    {
+        ESP_LOGW(TAG, "No SD card mounted, OBD2 runs without PID definitions");
+        return ESP_OK;
+    }
+
     ret = SUPERVISOR::getInstance().load_pid_def_from_json(SUPERVISOR::getInstance().get_pid_def_path().c_str());
 
-    if (ret != ESP_OK && ret != ESP_ERR_NOT_FOUND)
+    if (ret != ESP_OK)
     {
-        ESP_LOGE(TAG, "Failed to initialize OBD2 interface: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Failed to load PID definitions: %s", esp_err_to_name(ret));
         return ret;
     }
 

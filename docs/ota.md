@@ -3,7 +3,7 @@
 Requirements: OTA-1…9, UI-OTA-1/2. Open decisions: D8 (signing), D9 (server, trigger, frontend packaging).
 
 ## Partition layout
-`sw/firmware/partitions.csv`, 16 MB flash (checked on the board with `esptool flash_id`). No factory partition; the bootloader falls back between `ota_0` and `ota_1`. App at P0.7: 1.2 MB, so each slot has about 43% headroom.
+`sw/firmware/partitions_v1.csv` (the layout below), 16 MB flash on HW v1.x (checked on the board with `esptool flash_id`). `sw/firmware/partitions.csv` is the 4 MB layout prepared for HW v2 (ESP32-S3-MINI-1U-N4R2: 4 MB flash, 2 MB PSRAM); it has no coredump partition yet, and `sdkconfig.defaults` points at `partitions_v1.csv` until v2 is selected. No factory partition; the bootloader falls back between `ota_0` and `ota_1`. App at P0.7: 1.2 MB, so each slot has about 43% headroom.
 
 | Name | Type | Subtype | Offset | Size | Notes |
 |---|---|---|---|---|---|
