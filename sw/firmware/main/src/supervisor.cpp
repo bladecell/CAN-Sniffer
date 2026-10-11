@@ -18,6 +18,7 @@
 #include "esp_sleep.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "input_limits.hpp"
 #include "led_status.hpp"
 #include "middleware.hpp"
 #include "obd2.hpp"
@@ -813,10 +814,11 @@ esp_err_t SUPERVISOR::load_pid_def_from_json(const char* path)
             return ESP_ERR_INVALID_ARG;
         }
 
-        if (static_cast<uintmax_t>(st.st_size) >= std::numeric_limits<size_t>::max())
+        if (static_cast<uintmax_t>(st.st_size) > input_limits::PID_FILE_MAX)
         {
-            ESP_LOGE(TAG, "JSON file is too large to load: %s", path);
-            return ESP_ERR_NO_MEM;
+            ESP_LOGE(TAG, "JSON file is too large to load (%jd > %zu bytes): %s", static_cast<intmax_t>(st.st_size),
+                     input_limits::PID_FILE_MAX, path);
+            return ESP_ERR_INVALID_SIZE;
         }
 
         const size_t file_size = static_cast<size_t>(st.st_size);

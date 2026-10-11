@@ -21,6 +21,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "http_parser.h"
+#include "input_limits.hpp"
 #include "middleware.hpp"
 #include "obd2.hpp"
 #include "sd_card.hpp"
@@ -41,7 +42,7 @@ struct RouteDef
 static const char* TAG = "WEB_SERVER";
 
 static constexpr int64_t JSON_PAYLOAD_RECEIVE_DEADLINE_US = 5LL * 1000 * 1000;
-static constexpr size_t  MAX_UPLOAD_CONTENT_LENGTH        = 16 * 1024 * 1024;
+static constexpr size_t  MAX_UPLOAD_CONTENT_LENGTH        = input_limits::UPLOAD_MAX;
 static constexpr int64_t UPLOAD_NO_PROGRESS_DEADLINE_US   = 5LL * 1000 * 1000;
 static constexpr int64_t UPLOAD_ABSOLUTE_DEADLINE_US      = 60LL * 1000 * 1000;
 static constexpr TickType_t UPLOAD_OPERATION_TIMEOUT       = pdMS_TO_TICKS(250);
@@ -1579,6 +1580,12 @@ esp_err_t ws_socket_handler(httpd_req_t* req)
             wsStreamingEnabled.store(false);
         }
         return httpd_ws_send_frame(req, &ws_pkt);
+    }
+
+    if (!input_limits::wsFrameLenOk(ws_pkt.len))
+    {
+        ESP_LOGW(TAG, "WS Client #%d frame of %zu bytes too large, closing", sockfd, ws_pkt.len);
+        return ESP_FAIL;  // a handler error makes httpd close the socket
     }
 
     if (ws_pkt.len > 0)

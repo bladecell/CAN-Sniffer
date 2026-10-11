@@ -9,7 +9,7 @@ Source of truth in the firmware: the route table `api_routes` in `sw/firmware/ma
 - Base path: `/api/v1`. The frontend page itself is `GET /`.
 - Format: JSON, `Content-Type: application/json`, unless noted. Numbers that are NaN or infinite are serialized by cJSON as `null`.
 - Requests are queued to 6 worker tasks. The server rate limit is global, not per client: more than 50 requests in a one-second window get `429`.
-- Request body limits: 2048 bytes for JSON bodies, except `PUT /pid_def` (64 KiB), the two PID file calls (256 bytes), and SD upload (16 MiB). JSON bodies need a `Content-Length` header; chunked bodies are rejected with 400.
+- Request body limits: 2048 bytes for JSON bodies, except `PUT /pid_def` (64 KiB), the two PID file calls (256 bytes), and SD upload (4 MiB). JSON bodies need a `Content-Length` header; chunked bodies are rejected with 400.
 - Versioning: none. There is no API version field. `GET /api/v1/system` returns `app_version` (`APP_VERSION_STRING`, built from `APP_VERSION_MAJOR/MINOR/PATCH` in `utilities.h`; `"1.2.4"` when checked), which is the only thing the frontend could compare.
 
 ### Error shapes
@@ -59,7 +59,7 @@ Status mapping used by `status_for_error` in the middleware, where a route says 
 | POST | `/api/v1/sd_card/format` | – | `{"status":"success"}`. Formats the card and remounts. **Destroys all files, no confirmation.** | 503 card missing or not mounted, 400, 500 | – |
 | GET | `/api/v1/sd_card/tree` and `/api/v1/sd_card/tree/<path>` | – | `{"path","children":[…],"status":"success"}`. A file child is `{name,type:"file",size}`, a directory child is another `{path,children}` object. Nested up to 5 levels below the requested directory | 400 bad path, 404 not a directory or missing, 503, 500 (also when nesting exceeds 5 levels) | `SDCardImportModal.svelte:28`, `FileTree.svelte` |
 | GET | `/api/v1/sd_card/file/<path>[?download=true\|1\|false\|0]` | only the `download` query is allowed, once | the file, chunked. Content-Type from the extension (`.txt` text/plain, `.csv` text/csv, `.json` application/json, `.png` image/png, `.jpg`/`.jpeg` image/jpeg, else application/octet-stream sent as attachment). `Content-Disposition` is `inline` or `attachment; filename="…"`. Headers `X-Content-Type-Options: nosniff`, `Cache-Control: no-store` | 400 bad path or query, 404 not a regular file, 503 busy or not mounted, 500 | `SDCardImportModal.svelte:48` |
-| POST | `/api/v1/sd_card/file/<path>` | B raw bytes, `Content-Length` required, max 16 MiB. A `<path>` ending in `/` creates a directory and needs an empty body. An existing file is truncated and overwritten in place | `{"status":"success"}` | `{"status":"error","reason"}` with 400 invalid length or path, 408 stalled (5 s no progress, 60 s total), 413, 503 `SD card busy` or `SD Card not mounted`, 500 | `FileTree.svelte:101` (directory), `FileTree.svelte:144` (upload) |
+| POST | `/api/v1/sd_card/file/<path>` | B raw bytes, `Content-Length` required, max 4 MiB. A `<path>` ending in `/` creates a directory and needs an empty body. An existing file is truncated and overwritten in place | `{"status":"success"}` | `{"status":"error","reason"}` with 400 invalid length or path, 408 stalled (5 s no progress, 60 s total), 413, 503 `SD card busy` or `SD Card not mounted`, 500 | `FileTree.svelte:101` (directory), `FileTree.svelte:144` (upload) |
 | DELETE | `/api/v1/sd_card/file/<path>` | a path ending in `/` deletes that directory recursively | `{"status":"success"}` | 400 bad path, 404, 503, 500 | `FileTree.svelte:57` |
 | GET | `/api/v1/settings` | – | array of `{name,settings}` for `wifi`, `can`, `system`. Passwords are never returned. Fields below | 500 if any section could not be read | – |
 | POST | `/api/v1/settings` | B (max 2048 bytes) one `{name,settings:{…}}` object or an array of them. Partial: only the given fields change. Fields may also sit directly on the item | `{"status":"success"}`. Values go to NVS and take effect after a reboot. Nothing is range-checked | 400 not an object or array, or no known fields, 422 unknown `name`, 500 | – |
@@ -89,7 +89,7 @@ The request and file format uses different names for the same fields: `desc`, `m
 | `0x03` CAN status | server → all clients | 12 bytes: `[0]=0x03`, `[1]=10`, `[2]` CAN state (0 not initialized, 1 bus off, 2 not connected, 3 connected), `[3..6]` float32 poll utilization 0.0–1.0, `[7..10]` float32 battery voltage in V, `[11]` bus connected (0/1) | 1 Hz while at least one client is connected |
 
 Other behaviour:
-- Text frames are logged and ignored. Unknown command bytes are logged and ignored.
+- A frame longer than 125 bytes makes the server close the socket (no allocation). Text frames are logged and ignored. Unknown command bytes are logged and ignored.
 - A close frame is echoed. When at most one WebSocket client remains, both streams are turned off. A client that drops without a close frame leaves the flags on.
 - `0x01` (`MSG_TYPE_LOG`) is defined in `middleware.hpp` but nothing sends it.
 - Up to 20 WebSocket clients are considered by a broadcast. The server allows 7 open sockets in total.
