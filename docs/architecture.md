@@ -104,6 +104,70 @@ There is no Recorder. Nothing writes to the SD card besides the PID JSON save, f
 - Bus connect with `autoPoll` set: read the VIN (mode 09 PID 02). Same VIN as the last completed discovery: keep the supported list and refill the queue. Different, unknown or VIN timeout: run supported-PID discovery, then refill. If discovery fails (cold ECU), the callback task retries with backoff 2 s doubling to 30 s, without holding `discoveryMtx_` while waiting, until it succeeds, the bus drops or `autoPoll` is cleared. With `autoPoll` clear the connect runs discovery once, as before. Any discovery run forgets the known VIN.
 - User VIN read (`POST /api/v1/req/vin` and the supervisor's connect-time `requestVIN`, both `OBD2::requestVIN`; not `GET /vin`): on success with a valid 17-character alphanumeric VIN, if OBD is not initialised it runs the same decision as a connect (same VIN: restore the known supported list; otherwise discovery, done by the callback task so the HTTP call does not wait). If OBD is initialised, the same VIN changes nothing, no VIN on record adopts it, a different VIN rediscovers. The queue is refilled only when `autoPoll` is already set; the read never sets it. It uses `discoveryMtx_` with a non-blocking take and skips if discovery is running. Without `autoPoll` a failed rediscovery is not retried.
 
+### State graphs
+Read from `can_driver.cpp`, `obd2.cpp` and `supervisor.cpp`. Timings: CAN ping 2 s (`HEALTHCHECK_PING_PERIOD_MS`), OBD2 health probe every 4 s, answer timeout 3 s (`HEALTHCHECK_RESPONSE_TIMEOUT_MS`), 3 misses clear the queue (`HEALTHCHECK_RETRIES`), supported-PID answer window 500 ms.
+
+CAN driver (`can_health_check` task). A TX success resets both error counters.
+```mermaid
+stateDiagram-v2
+  [*] --> NOT_CONNECTED
+  NOT_CONNECTED --> NOT_CONNECTED: ping every 2 s, any ACK or stuff error resets the clean count
+  NOT_CONNECTED --> CONNECTED: 3 clean pings in a row, connectionChangeCb(true)
+  CONNECTED --> NOT_CONNECTED: more than 3 consecutive ACK errors or stuff errors, connectionChangeCb(false)
+  CONNECTED --> BUS_OFF: TWAI bus-off, connectionChangeCb(false)
+  NOT_CONNECTED --> BUS_OFF: TWAI bus-off
+  BUS_OFF --> BUS_OFF: twai_node_recover, retry every 5 s
+```
+While CONNECTED the task sleeps until notified; there are no pings. An ECU that stays silent on a live bus is invisible here, which is what the OBD2 health check covers.
+
+OBD2 layer. `autoPoll` is not a state: it stays true through every transition below except OBD2 deinit.
+```mermaid
+stateDiagram-v2
+  state "Not initialised (pidsInitialized = false)" as Idle
+  state "Discovering (discoveryMtx_ held, 500 ms answer window)" as Disc
+  state "Polling (queue filled)" as Poll
+  state "Queue cleared (autoPoll set, bus connected, ECU silent)" as Empty
+
+  Idle --> Disc: CAN connected, or a valid VIN read while not initialised
+  Disc --> Poll: group 0 answered, queue refilled if autoPoll
+  Disc --> Idle: no answer, retry 2 s doubling to 30 s while autoPoll is set
+  Idle --> Poll: CAN connected, autoPoll set, VIN equals the last known VIN, queue refilled from the known list
+  Poll --> Idle: CAN disconnected, pidsInitialized = false
+  Poll --> Empty: health check missed 3 times, queue cleared
+  Empty --> Poll: first health probe answer, queue refilled, no rediscovery
+  Poll --> Disc: valid VIN read that differs from the known VIN
+  Poll --> [*]: OBD2 deinit for sleep, autoPoll and VIN and queue cleared
+```
+
+OBD2 health check (receive task). Runs the whole time OBD2 is up; the probe keeps going after a clear.
+```mermaid
+stateDiagram-v2
+  [*] --> Wait
+  Wait --> Sent: every 4 s send 0x7DF mode 01 PID 00
+  Sent --> Wait: answer, failed_pings = 0 (and restore the queue if it was cleared and autoPoll is set)
+  Sent --> Missed: no answer within 3 s, failed_pings + 1
+  Missed --> Wait: failed_pings below 3
+  Missed --> Cleared: failed_pings reaches 3, poll queue cleared, counter reset
+  Cleared --> Wait: probing continues
+```
+
+Supervisor, as it relates to the bus (full sleep path in `power.md`):
+```mermaid
+stateDiagram-v2
+  [*] --> STARTING
+  STARTING --> NOT_CONNECTED: all critical steps ok
+  STARTING --> ERROR: a critical step failed
+  NOT_CONNECTED --> RUNNING: bus connected (isBusConnected)
+  RUNNING --> NOT_CONNECTED: bus no longer connected
+  NOT_CONNECTED --> STOPPING: bus down 60 s and voltage 13.2 V or below
+  STOPPING --> SLEEPING: web server, OBD2, Wi-Fi and CAN deinit ok
+  SLEEPING --> NOT_CONNECTED: wake, bus alive, OBD2, Wi-Fi and web server restarted
+  SLEEPING --> SLEEPING: wake, bus dead
+  SLEEPING --> STOPPING: a restart step failed
+  SLEEPING --> ERROR: CAN init failed after wake
+```
+The supervisor only reads the CAN driver state. It never sees an OBD2 health failure, so an ECU that stops answering while the bus stays connected does not affect it.
+
 ## Sleep and power
 The supervisor puts the device into automatic light sleep when the bus stays down. See `power.md`.
 
