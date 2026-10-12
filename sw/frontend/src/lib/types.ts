@@ -158,7 +158,8 @@ export interface PidDataMetrics {
 }
 
 export interface Obd2Status {
-  continuous_running: boolean;
+  auto_poll: boolean;
+  polling: boolean;
   pid_initialized: boolean;
   pid_def_count: number;
   pid_data_count: number;

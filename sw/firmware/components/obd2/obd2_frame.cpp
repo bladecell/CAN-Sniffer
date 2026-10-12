@@ -236,3 +236,66 @@ esp_err_t decodeVinResponse(const RawFrame* frames, size_t count, char (&vin)[17
 }
 
 }  // namespace obd2frame
+
+namespace obd2frame
+{
+
+bool isValidVin(const char* vin)
+{
+    if (vin == nullptr || strnlen(vin, 18) != 17)
+    {
+        return false;
+    }
+    for (int i = 0; i < 17; i++)
+    {
+        const char ch = vin[i];
+        if (!((ch >= '0' && ch <= '9') || (ch >= 'A' && ch <= 'Z')))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+ConnectPlan planOnConnect(const char* vin, const char* knownVin)
+{
+    if (!isValidVin(vin) || !isValidVin(knownVin))
+    {
+        return ConnectPlan::Discover;
+    }
+    return strncmp(vin, knownVin, 17) == 0 ? ConnectPlan::RestoreKnown : ConnectPlan::Discover;
+}
+
+VinAction planOnVinConfirmed(const char* vin, const char* knownVin, bool pidsReady)
+{
+    if (!isValidVin(vin))
+    {
+        return VinAction::None;
+    }
+    const bool haveKnown = isValidVin(knownVin);
+    if (!pidsReady)
+    {
+        return planOnConnect(vin, knownVin) == ConnectPlan::RestoreKnown ? VinAction::Restore : VinAction::Discover;
+    }
+    if (!haveKnown)
+    {
+        return VinAction::Adopt;
+    }
+    return strncmp(vin, knownVin, 17) == 0 ? VinAction::None : VinAction::Discover;
+}
+
+bool shouldRestoreQueue(bool autoPoll, bool busUp, bool pidsReady, bool queueHasRecurring)
+{
+    return autoPoll && busUp && pidsReady && !queueHasRecurring;
+}
+
+uint32_t nextDiscoveryBackoffMs(uint32_t currentMs)
+{
+    if (currentMs == 0)
+    {
+        return DISCOVERY_BACKOFF_FIRST_MS;
+    }
+    return currentMs >= DISCOVERY_BACKOFF_MAX_MS / 2 ? DISCOVERY_BACKOFF_MAX_MS : currentMs * 2;
+}
+
+}  // namespace obd2frame

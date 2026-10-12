@@ -45,11 +45,11 @@
 
     <div class="autorecord-wrapper">
       <ToggleSwitch
-        label="Log Data"
-        subLabel="Start polling and logging data from the car"
-        checked={canStore.obd2Status?.continuous_running}
+        label="Auto poll"
+        subLabel="Keep polling the car and resume after ignition off/on"
+        checked={canStore.obd2Status?.auto_poll}
         onchange={(newState: boolean) => {
-          canStore.setContinuousPolling(newState);
+          canStore.setAutoPoll(newState);
         }}
         disabled={canStore.wsCanStatus?.state != "CAN Connected"}
       />

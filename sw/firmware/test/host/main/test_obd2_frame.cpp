@@ -313,6 +313,97 @@ static void test_random_frame_sequences_never_overrun(void)
     }
 }
 
+static void test_connect_plan_skips_discovery_only_on_vin_match(void)
+{
+    TEST_ASSERT_EQUAL_INT((int)ConnectPlan::RestoreKnown, (int)planOnConnect("1HGCM82633A004352", "1HGCM82633A004352"));
+    TEST_ASSERT_EQUAL_INT((int)ConnectPlan::Discover, (int)planOnConnect("1HGCM82633A004352", "WVWZZZ1JZXW000001"));
+    TEST_ASSERT_EQUAL_INT((int)ConnectPlan::Discover, (int)planOnConnect("1HGCM82633A004352", ""));    // nothing known yet
+    TEST_ASSERT_EQUAL_INT((int)ConnectPlan::Discover, (int)planOnConnect("", "1HGCM82633A004352"));    // VIN request timed out
+    TEST_ASSERT_EQUAL_INT((int)ConnectPlan::Discover, (int)planOnConnect(nullptr, "1HGCM82633A004352"));
+    TEST_ASSERT_EQUAL_INT((int)ConnectPlan::Discover, (int)planOnConnect("", ""));
+    TEST_ASSERT_EQUAL_INT((int)ConnectPlan::Discover, (int)planOnConnect(nullptr, nullptr));
+}
+
+static void test_restore_queue_after_health_clear(void)
+{
+    TEST_ASSERT_TRUE(shouldRestoreQueue(true, true, true, false));    // lost queue, ECU answered again
+    TEST_ASSERT_FALSE(shouldRestoreQueue(true, true, true, true));    // queue intact
+    TEST_ASSERT_FALSE(shouldRestoreQueue(false, true, true, false));  // user stopped auto poll
+    TEST_ASSERT_FALSE(shouldRestoreQueue(true, false, true, false));  // bus down
+    TEST_ASSERT_FALSE(shouldRestoreQueue(true, true, false, false));  // discovery not finished
+}
+
+static void test_discovery_backoff_doubles_and_caps(void)
+{
+    uint32_t b = nextDiscoveryBackoffMs(0);
+    const uint32_t expect[] = {2000, 4000, 8000, 16000, 30000, 30000, 30000};
+    for (uint32_t e : expect)
+    {
+        TEST_ASSERT_EQUAL_UINT32(e, b);
+        b = nextDiscoveryBackoffMs(b);
+    }
+    TEST_ASSERT_EQUAL_UINT32(30000, nextDiscoveryBackoffMs(0xFFFFFFFFu));
+}
+
+static void test_vin_confirmed_by_api_decides_recovery(void)
+{
+    const char* a = "1HGCM82633A004352";
+    const char* b = "WVWZZZ1JZXW000001";
+    // OBD not initialised: same as a connect
+    TEST_ASSERT_EQUAL_INT((int)VinAction::Restore, (int)planOnVinConfirmed(a, a, false));
+    TEST_ASSERT_EQUAL_INT((int)VinAction::Discover, (int)planOnVinConfirmed(a, b, false));
+    TEST_ASSERT_EQUAL_INT((int)VinAction::Discover, (int)planOnVinConfirmed(a, "", false));
+    // initialised: same VIN changes nothing, other VIN is another car, no known VIN is adopted
+    TEST_ASSERT_EQUAL_INT((int)VinAction::None, (int)planOnVinConfirmed(a, a, true));
+    TEST_ASSERT_EQUAL_INT((int)VinAction::Discover, (int)planOnVinConfirmed(a, b, true));
+    TEST_ASSERT_EQUAL_INT((int)VinAction::Adopt, (int)planOnVinConfirmed(a, "", true));
+    TEST_ASSERT_EQUAL_INT((int)VinAction::Discover, (int)planOnVinConfirmed(a, "WVWZZZ1JZXW000001", true));
+    TEST_ASSERT_EQUAL_INT((int)VinAction::Adopt, (int)planOnVinConfirmed(a, nullptr, true));
+    // differing only at char 17
+    TEST_ASSERT_EQUAL_INT((int)VinAction::Discover, (int)planOnVinConfirmed("1HGCM82633A004352", "1HGCM82633A004353", true));
+    TEST_ASSERT_EQUAL_INT((int)VinAction::Discover, (int)planOnVinConfirmed("1HGCM82633A004352", "1HGCM82633A004353", false));
+    // an invalid VIN is a failed read
+    TEST_ASSERT_EQUAL_INT((int)VinAction::None, (int)planOnVinConfirmed("1hgcm82633a004352", a, false));
+    TEST_ASSERT_EQUAL_INT((int)VinAction::None, (int)planOnVinConfirmed("1HGCM82633A00435", a, true));
+    // a failed read changes nothing
+    TEST_ASSERT_EQUAL_INT((int)VinAction::None, (int)planOnVinConfirmed("", a, false));
+    TEST_ASSERT_EQUAL_INT((int)VinAction::None, (int)planOnVinConfirmed(nullptr, a, true));
+}
+
+static void test_vin_validation(void)
+{
+    TEST_ASSERT_TRUE(isValidVin("1HGBH41JXMN109186"));  // the simulator VIN
+    TEST_ASSERT_FALSE(isValidVin(nullptr));
+    TEST_ASSERT_FALSE(isValidVin(""));
+    TEST_ASSERT_FALSE(isValidVin("1HGBH41JXMN10918"));    // 16
+    TEST_ASSERT_FALSE(isValidVin("1HGBH41JXMN1091866"));  // 18
+    TEST_ASSERT_FALSE(isValidVin("1hgbh41jxmn109186"));   // lowercase
+    TEST_ASSERT_FALSE(isValidVin("1HGBH41JXMN10918-"));   // punctuation
+    TEST_ASSERT_FALSE(isValidVin("1HGBH41J MN109186"));   // space
+    const char embedded[18] = {'1', 'H', 'G', 'B', 'H', '4', '1', 'J', '\0', 'M', 'N', '1', '0', '9', '1', '8', '6', '\0'};
+    TEST_ASSERT_FALSE(isValidVin(embedded));
+}
+
+static void test_simulator_vin_frames_decode_to_a_valid_vin(void)
+{
+    // Same bytes obd2_simulator.cpp sends: first frame 10 14 49 02 01 v0..v2, then 21 v3..v9, 22 v10..v16.
+    const char vinSrc[] = "1HGBH41JXMN109186";
+    RawFrame f[3] = {};
+    const uint8_t first[8] = {0x10, 0x14, 0x49, 0x02, 0x01, (uint8_t)vinSrc[0], (uint8_t)vinSrc[1], (uint8_t)vinSrc[2]};
+    memcpy(f[0].data, first, 8);
+    f[1].data[0] = 0x21;
+    for (int i = 0; i < 7; i++) f[1].data[1 + i] = (uint8_t)vinSrc[3 + i];
+    f[2].data[0] = 0x22;
+    for (int i = 0; i < 7; i++) f[2].data[1 + i] = (uint8_t)vinSrc[10 + i];
+    for (auto& x : f) x.length = 8;
+    char vin[17];
+    TEST_ASSERT_EQUAL_INT(ESP_OK, decodeVinResponse(f, 3, vin));
+    char z[18] = {};
+    memcpy(z, vin, 17);
+    TEST_ASSERT_TRUE(isValidVin(z));
+    TEST_ASSERT_EQUAL_STRING(vinSrc, z);
+}
+
 extern "C" void run_obd2_frame_tests(void)
 {
     RUN_TEST(test_single_frame_mode01);
@@ -332,6 +423,12 @@ extern "C" void run_obd2_frame_tests(void)
     RUN_TEST(test_dtcs_odd_payload_and_empty_response);
     RUN_TEST(test_decode_dtc_response_checks_the_sid);
     RUN_TEST(test_decode_vin_response_checks_the_header);
+    RUN_TEST(test_connect_plan_skips_discovery_only_on_vin_match);
+    RUN_TEST(test_vin_validation);
+    RUN_TEST(test_simulator_vin_frames_decode_to_a_valid_vin);
+    RUN_TEST(test_restore_queue_after_health_clear);
+    RUN_TEST(test_vin_confirmed_by_api_decides_recovery);
+    RUN_TEST(test_discovery_backoff_doubles_and_caps);
     RUN_TEST(test_exhaustive_first_bytes_and_lengths);
     RUN_TEST(test_random_frame_sequences_never_overrun);
 }

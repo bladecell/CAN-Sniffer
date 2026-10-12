@@ -135,6 +135,31 @@ static void test_decode_dtc(void)
     TEST_ASSERT_EQUAL_STRING("No DTC", m.decodeDTC(0).c_str());
 }
 
+static PollRequest recurringReq(uint32_t id, uint8_t mode, uint16_t pid)
+{
+    PollRequest r = {};
+    r.id          = id;
+    r.isRecurring = true;
+    r.isRaw       = false;
+    r.interval    = 100;
+    r.payload.obd.mode = mode;
+    r.payload.obd.pid  = pid;
+    return r;
+}
+
+static void test_push_recurring_unique_skips_a_queued_duplicate(void)
+{
+    PIDPriorityQueue q;
+    TEST_ASSERT_TRUE(q.pushRecurringUnique(recurringReq(0x7E0, 1, 0x0C)));
+    TEST_ASSERT_TRUE(q.pushRecurringUnique(recurringReq(0x7E0, 1, 0x0C)));  // in-flight copy re-added after a refill
+    TEST_ASSERT_TRUE(q.pushRecurringUnique(recurringReq(0x7E0, 1, 0x0D)));
+    TEST_ASSERT_TRUE(q.pushRecurringUnique(recurringReq(0x7E1, 1, 0x0C)));  // other ECU is a different key
+    int n = 0;
+    PollRequest out;
+    while (q.tryPop(out)) { n++; }
+    TEST_ASSERT_EQUAL_INT(3, n);
+}
+
 extern "C" void run_obd2_model_tests(void)
 {
     RUN_TEST(test_mode01_frame_updates_value);
@@ -146,4 +171,5 @@ extern "C" void run_obd2_model_tests(void)
     RUN_TEST(test_bad_formula_or_nan_never_stores_a_value);
     RUN_TEST(test_add_duplicate_and_remove);
     RUN_TEST(test_decode_dtc);
+    RUN_TEST(test_push_recurring_unique_skips_a_queued_duplicate);
 }

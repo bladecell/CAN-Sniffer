@@ -147,20 +147,20 @@ def continuous_polling_state(api):
     try:
         response = api.request("GET", "/api/v1/obd2")
     except (requests.RequestException, RuntimeError) as exc:
-        pytest.skip(f"cannot safely preserve continuous polling state: {exc}")
+        pytest.skip(f"cannot safely preserve auto poll state: {exc}")
     if response.status_code != 200:
-        pytest.skip(f"cannot safely preserve continuous polling state: HTTP {response.status_code}")
+        pytest.skip(f"cannot safely preserve auto poll state: HTTP {response.status_code}")
     try:
         payload = response.json()
     except ValueError:
-        pytest.skip("cannot safely preserve continuous polling state: invalid JSON response")
-    if not isinstance(payload, dict) or type(payload.get("continuous_running")) is not bool:
-        pytest.skip("cannot safely preserve continuous polling state: missing boolean continuous_running")
-    return payload["continuous_running"]
+        pytest.skip("cannot safely preserve auto poll state: invalid JSON response")
+    if not isinstance(payload, dict) or type(payload.get("auto_poll")) is not bool:
+        pytest.skip("cannot safely preserve auto poll state: missing boolean auto_poll")
+    return payload["auto_poll"]
 
 
-def set_continuous_polling(api, running):
-    response = api.request("POST", f"/api/v1/req/pid_poll?running={str(running).lower()}")
+def set_auto_poll(api, running):
+    response = api.request("POST", f"/api/v1/req/auto_poll?auto_poll={str(running).lower()}")
     assert response.status_code == 201, response.text
 
 
@@ -173,7 +173,7 @@ def test_pid_websocket_packets_have_rest_status_flags(api, base_url, device_reac
     packets = []
     try:
         if not original_polling_state:
-            set_continuous_polling(api, True)
+            set_auto_poll(api, True)
         try:
             with RawWebSocket(base_url) as websocket:
                 websocket.send_binary(bytes((0xA0,)))
@@ -214,4 +214,4 @@ def test_pid_websocket_packets_have_rest_status_flags(api, base_url, device_reac
         if not correlated:
             pytest.skip("PID stream data could not be correlated with the REST snapshot")
     finally:
-        set_continuous_polling(api, original_polling_state)
+        set_auto_poll(api, original_polling_state)

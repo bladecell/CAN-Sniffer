@@ -110,7 +110,7 @@ public:
  *
  */
 OBD2::OBD2()
-    : continuousRunning(false),
+    : autoPoll(false),
       configurationMtx_(xSemaphoreCreateMutex()),
       xPidConnectedSemaphore(nullptr),
       xBusConnectionSemaphore(nullptr),
@@ -224,7 +224,9 @@ esp_err_t OBD2::stopInternal(bool)
         if (lifecycleState_ == LifecycleState::Stopped) { xSemaphoreGive(admissionMtx_); return ESP_OK; }
         lifecycleState_ = LifecycleState::Stopping;
         stopRequested_ = true;
-        continuousRunning = false;
+        autoPoll = false;
+        recoveryNeeded_ = false;
+        pendingDiscover_ = false;
         pidsInitialized = false;
         if (PollTaskHandle)
         {
@@ -341,6 +343,7 @@ esp_err_t OBD2::stopInternal(bool)
         return ESP_ERR_TIMEOUT;
     }
     memset(vinData.vin, 0, sizeof(vinData.vin));
+    memset(knownVin_, 0, sizeof(knownVin_));
     vinData.lastUpdated = 0;
     vinData.isValid = false;
     xSemaphoreGive(vinData.mtx_);
@@ -707,6 +710,7 @@ void OBD2::requestSuppPidsInternal()
         return;
     }
     esp_err_t resetResult = ESP_OK;
+    memset(knownVin_, 0, sizeof(knownVin_));  // the supported list is about to change; it no longer matches any VIN
     {
         MutexGuard configurationGuard(configurationMtx_, portMAX_DELAY);
         if (!configurationGuard.isLocked())
@@ -1035,7 +1039,7 @@ esp_err_t OBD2::addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std
                         return ESP_OK;
                     });
 
-                if (continuousRunning)
+                if (autoPoll)
                 {
                     PollRequest request = makePollRequest(id, mode, pid, len, interval, priority, true);
                     esp_err_t enqueueResult = enqueueDefinitionRequestLocked(request);
@@ -1050,7 +1054,7 @@ esp_err_t OBD2::addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std
     }
     else if (mode == MODE_READ_DATA_BY_IDENTIFIER || mode == MODE_DERIVED_DATA)
     {
-        if (continuousRunning)
+        if (autoPoll)
         {
             PollRequest request = makePollRequest(id, mode, pid, len, interval, priority, true);
             esp_err_t enqueueResult = enqueueDefinitionRequestLocked(request);
@@ -1137,7 +1141,7 @@ esp_err_t OBD2::replacePIDDefinitions(const std::vector<PIDDefinitionData>& defi
             definition.mode == MODE_READ_DATA_BY_IDENTIFIER || definition.mode == MODE_DERIVED_DATA ||
             std::find(supportedCurrentPids.begin(), supportedCurrentPids.end(), definition.pid) !=
                 supportedCurrentPids.end();
-        if (continuousRunning && definition.updateInterval_ms != UPDATE_DISABLED && supported)
+        if (autoPoll && definition.updateInterval_ms != UPDATE_DISABLED && supported)
         {
             recurringRequests.push_back(makePollRequest(definition.id, definition.mode, definition.pid,
                                                         definition.len, definition.updateInterval_ms,
@@ -1313,7 +1317,17 @@ void OBD2::handleCanConnected()
     if (stopRequested_ || !canDriver.isBusConnected()) { xSemaphoreGive(discoveryMtx_); return; }
     ESP_LOGI(TAG, "CAN bus connected event received");
     xSemaphoreGive(xBusConnectionSemaphore);
-    if (!pidsInitialized)
+    recoveryNeeded_ = false;
+    recoveryBackoffMs_ = 0;
+    pendingDiscover_ = false;
+    if (autoPoll)
+    {
+        if (!recoverOnce())
+        {
+            armRecovery();
+        }
+    }
+    else if (!pidsInitialized)
     {
         ESP_LOGI(TAG, "Retrieving supported PIDs...");
         requestSuppPidsInternal();
@@ -1324,6 +1338,192 @@ void OBD2::handleCanConnected()
         runOBDIIConnectedCallbacks(true);
     }
     xSemaphoreGive(discoveryMtx_);
+}
+
+// One recovery attempt with autoPoll set. Caller holds discoveryMtx_. Returns true when the queue is (re)filled.
+// Also returns true, doing nothing, when OBD2 is stopping or the bus is down: there is nothing to retry then, and a
+// later connect event restarts recovery.
+// A cold ECU misses the first discovery window; the caller retries with backoff (see recoveryTick).
+bool OBD2::recoverOnce()
+{
+    if (stopRequested_ || !canDriver.isBusConnected())
+    {
+        return true;
+    }
+    std::string vin;
+    if (requestVinInternal() == ESP_OK)
+    {
+        vin = getVIN();
+        if (!obd2frame::isValidVin(vin.c_str()))
+        {
+            vin.clear();
+        }
+    }
+    if (obd2frame::planOnConnect(vin.c_str(), knownVin_) == obd2frame::ConnectPlan::RestoreKnown)
+    {
+        ESP_LOGI(TAG, "Same VIN as last discovery; refilling poll queue without discovery");
+        restoreFromKnown(portMAX_DELAY);
+        return true;
+    }
+    return discoverAndFill(vin);
+}
+
+// Keep the supported list, mark OBD initialised and refill the queue if the user wants polling. Caller holds discoveryMtx_.
+bool OBD2::restoreFromKnown(TickType_t wait)
+{
+    MutexGuard configurationGuard(configurationMtx_, wait);
+    if (!configurationGuard.isLocked() || stopRequested_)
+    {
+        return false;
+    }
+    pidsInitialized = true;
+    if (autoPoll)
+    {
+        startPollingLocked();
+    }
+    return true;
+}
+
+// Supported-PID discovery for `vin` (empty if unknown), then record the VIN and refill if autoPoll. Caller holds
+// discoveryMtx_. False means discovery missed and the caller may retry.
+bool OBD2::discoverAndFill(const std::string& vin)
+{
+    ESP_LOGI(TAG, "Retrieving supported PIDs...");
+    requestSuppPidsInternal();
+    if (stopRequested_ || !canDriver.isBusConnected())
+    {
+        return true;
+    }
+    if (!pidsInitialized)
+    {
+        return false;
+    }
+    strncpy(knownVin_, vin.c_str(), VIN_LENGTH);
+    knownVin_[VIN_LENGTH] = '\0';
+    // Discovery enqueues Mode 01 work per group; rebuild the whole queue so Mode 22 / derived entries are present too.
+    MutexGuard configurationGuard(configurationMtx_, portMAX_DELAY);
+    if (configurationGuard.isLocked() && !stopRequested_ && autoPoll)
+    {
+        startPollingLocked();
+    }
+    return true;
+}
+
+// A user VIN request succeeded. Never waits on discovery: takes discoveryMtx_ without blocking, applies cheap actions
+// inline and hands a rediscovery to the callback worker. Never turns autoPoll on.
+void OBD2::onVinConfirmed()
+{
+    const std::string vin = getVIN();
+    if (!obd2frame::isValidVin(vin.c_str()) || !discoveryMtx_ || xSemaphoreTake(discoveryMtx_, 0) != pdTRUE)
+    {
+        return;  // discovery or another recovery is running and will settle the state itself
+    }
+    if (!stopRequested_ && canDriver.isBusConnected())
+    {
+        switch (obd2frame::planOnVinConfirmed(vin.c_str(), knownVin_, pidsInitialized))
+        {
+            case obd2frame::VinAction::Adopt:
+                strncpy(knownVin_, vin.c_str(), VIN_LENGTH);
+                knownVin_[VIN_LENGTH] = '\0';
+                pendingDiscover_ = false;
+                break;
+            case obd2frame::VinAction::Restore:
+                pendingDiscover_ = false;
+                // Bounded wait on the HTTP / callback thread; on a busy lock the next connect or VIN read retries.
+                if (!restoreFromKnown(pdMS_TO_TICKS(100)))
+                {
+                    ESP_LOGW(TAG, "VIN matched but the configuration lock is busy; restore skipped");
+                }
+                break;
+            case obd2frame::VinAction::Discover:
+                strncpy(pendingVin_, vin.c_str(), VIN_LENGTH);
+                pendingVin_[VIN_LENGTH] = '\0';
+                pendingDiscover_        = true;
+                recoveryBackoffMs_      = 0;
+                recoveryDueTick_        = (uint32_t)xTaskGetTickCount();
+                recoveryNeeded_         = true;
+                break;
+            case obd2frame::VinAction::None:
+                pendingDiscover_ = false;
+                break;
+        }
+    }
+    xSemaphoreGive(discoveryMtx_);
+}
+
+void OBD2::armRecovery()
+{
+    const uint32_t backoff = obd2frame::nextDiscoveryBackoffMs(recoveryBackoffMs_);
+    recoveryBackoffMs_ = backoff;
+    recoveryDueTick_   = (uint32_t)(xTaskGetTickCount() + pdMS_TO_TICKS(backoff));
+    recoveryNeeded_    = true;
+}
+
+// Called from the callback worker when idle. Never holds discoveryMtx_ while waiting.
+void OBD2::recoveryTick()
+{
+    if (!recoveryNeeded_ || stopRequested_)
+    {
+        return;
+    }
+    if (!canDriver.isBusConnected())
+    {
+        recoveryNeeded_ = false;
+        return;
+    }
+    if ((int32_t)((uint32_t)xTaskGetTickCount() - recoveryDueTick_.load()) < 0)
+    {
+        return;
+    }
+    OperationGuard operation(this);
+    if (!operation.admitted() || !lockDiscovery())
+    {
+        return;
+    }
+    bool done = true;
+    if (recoveryNeeded_)
+    {
+        if (pendingDiscover_)
+        {
+            done = discoverAndFill(pendingVin_);
+            if (!done && !autoPoll)
+            {
+                done = true;  // a user VIN read without autoPoll gets one attempt
+            }
+            pendingDiscover_ = !done;
+        }
+        else if (autoPoll && !pidsInitialized)
+        {
+            done = recoverOnce();
+        }
+        if (done)
+        {
+            recoveryNeeded_    = false;
+            recoveryBackoffMs_ = 0;
+        }
+        else
+        {
+            armRecovery();
+        }
+    }
+    xSemaphoreGive(discoveryMtx_);
+}
+
+// Health probe answered after the health check cleared the queue: refill from the known supported list.
+void OBD2::restoreQueueAfterHealthClear()
+{
+    if (!obd2frame::shouldRestoreQueue(autoPoll, canDriver.isBusConnected(), pidsInitialized,
+                                       pollQueue.hasRecurring()))
+    {
+        return;
+    }
+    MutexGuard configurationGuard(configurationMtx_, pdMS_TO_TICKS(100));
+    if (!configurationGuard.isLocked() || stopRequested_ || !autoPoll)
+    {
+        return;
+    }
+    ESP_LOGI(TAG, "ECU answered again; restoring poll queue");
+    startPollingLocked();
 }
 
 void OBD2::handleCanDisconnected()
@@ -1340,76 +1540,62 @@ void OBD2::handleCanDisconnected()
     if (stopRequested_ || canDriver.isBusConnected()) { xSemaphoreGive(discoveryMtx_); return; }
     ESP_LOGW(TAG, "CAN bus disconnected event received");
     pidsInitialized = false;
+    recoveryNeeded_ = false;
+    pendingDiscover_ = false;
+    memset(pendingVin_, 0, sizeof(pendingVin_));
     runOBDIIConnectedCallbacks(false);
     xSemaphoreGive(discoveryMtx_);
 }
 
-bool OBD2::isContinuousRunning() const
+bool OBD2::isAutoPoll() const
 {
-    return continuousRunning;
+    return autoPoll;
 }
 
-void OBD2::startContinuousMode()
+bool OBD2::isPolling()
+{
+    return autoPoll && canDriver.isBusConnected() && pollQueue.hasRecurring();
+}
+
+esp_err_t OBD2::setAutoPoll(bool on)
 {
     OperationGuard operation(this);
     if (!operation.admitted())
     {
-        return;
-    }
-    MutexGuard configurationGuard(configurationMtx_, pdMS_TO_TICKS(100));
-    if (!configurationGuard.isLocked() || stopRequested_)
-    {
-        return;
-    }
-    if (continuousRunning)
-    {
-        return;
-    }
-
-    continuousRunning = true;
-    if (stopRequested_) { continuousRunning = false; return; }
-    startPollingLocked();
-}
-
-void OBD2::stopContinuousMode()
-{
-    OperationGuard operation(this);
-    if (!operation.admitted())
-    {
-        return;
+        return ESP_ERR_INVALID_STATE;
     }
     MutexGuard configurationGuard(configurationMtx_, pdMS_TO_TICKS(100));
     if (!configurationGuard.isLocked())
     {
-        return;
+        return ESP_ERR_TIMEOUT;
     }
-    if (!continuousRunning)
+    if (stopRequested_)
     {
-        return;
+        return ESP_ERR_INVALID_STATE;
     }
-
-    continuousRunning = false;
-    pollQueue.clearRecurring();
-}
-
-void OBD2::startPolling()
-{
-    OperationGuard operation(this);
-    if (!operation.admitted())
+    autoPoll = on;
+    if (on)
     {
-        return;
+        startPollingLocked();
+        if (!pidsInitialized && canDriver.isBusConnected())
+        {
+            recoveryBackoffMs_ = 0;
+            armRecovery();
+        }
     }
-    MutexGuard configurationGuard(configurationMtx_, pdMS_TO_TICKS(100));
-    if (!configurationGuard.isLocked() || stopRequested_)
+    else
     {
-        return;
+        recoveryNeeded_ = false;
+        pendingDiscover_ = false;  // flag only: discoveryMtx_ is never taken under configurationMtx_
+        pollQueue.clearRecurring();
     }
-    startPollingLocked();
+    return ESP_OK;
 }
 
 void OBD2::startPollingLocked()
 {
     std::set<uint32_t> RequestByDataIdentifierIds;
+    pollQueue.clearRecurring();  // refill, not append: the queue does not de-duplicate
 
     esp_err_t scheduleResult = withPidMapLock(
         [&]()
@@ -1609,7 +1795,9 @@ void OBD2::pollTask()
         bool scheduled = false;
         auto schedule  = [&](PollRequest& request, const char* reason)
         {
-            if (!pollQueue.push(request))
+            const bool queued = (request.isRecurring && !request.isRaw) ? pollQueue.pushRecurringUnique(request)
+                                                                        : pollQueue.push(request);
+            if (!queued)
             {
                 ESP_LOGW(TAG, "Poll queue full; dropped %s PID 0x%04X", reason, request.payload.obd.pid);
             }
@@ -1662,7 +1850,7 @@ void OBD2::pollTask()
         }
 
         // 4. Reschedule recurring tasks
-        if (!stopRequested_ && !scheduled && current.isRecurring && continuousRunning)
+        if (!stopRequested_ && !scheduled && current.isRecurring && autoPoll)
         {
             current.nextWake = xTaskGetTickCount() + pdMS_TO_TICKS(current.interval);
             schedule(current, "recurring");
@@ -1813,6 +2001,7 @@ void OBD2::receiveTask()
             {
                 failed_pings      = 0;
                 awaiting_response = false;
+                restoreQueueAfterHealthClear();
             }
             else if (now >= response_deadline)
             {
@@ -2164,7 +2353,7 @@ esp_err_t OBD2::parseSupportedPIDs(const CanDriver::CanFrame& f)
                 }
 
                 const uint8_t bit = (uint8_t)(installedPID - firstPID);
-                if (continuousRunning && (mergedPIDs & (1UL << (31 - bit))) &&
+                if (autoPoll && (mergedPIDs & (1UL << (31 - bit))) &&
                     definition.updateInterval() != UPDATE_DISABLED)
                 {
                     recurringRequests[recurringCount++] =
@@ -2262,7 +2451,23 @@ void OBD2::requestDefaultDiagnosticSession(uint32_t id, bool isRecurring)
     }
 }
 
+// User-initiated VIN read. Success proves the ECU answers, so it also acts as a recovery trigger (onVinConfirmed).
 esp_err_t OBD2::requestVIN()
+{
+    OperationGuard operation(this);
+    if (!operation.admitted())
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    const esp_err_t result = requestVinInternal();
+    if (result == ESP_OK)
+    {
+        onVinConfirmed();
+    }
+    return result;
+}
+
+esp_err_t OBD2::requestVinInternal()
 {
     OperationGuard operation(this);
     if (!operation.admitted())
@@ -2643,7 +2848,7 @@ esp_err_t OBD2::parseVINMultiFrame(std::vector<CanDriver::CanFrame>& frames)
 
     if (xSemaphoreTake(vinData.mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
     {
-        xSemaphoreGive(vinData.vinReadySemaphore);
+        // Do not signal: the waiting request then times out with an error instead of returning a stale VIN as success.
         return ESP_ERR_TIMEOUT;
     }
 
@@ -2752,6 +2957,10 @@ void OBD2::callbackWorkerTask()
                 }
                 cb(is_connected);
             }
+        }
+        else
+        {
+            recoveryTick();
         }
     }
 }

@@ -1092,17 +1092,15 @@ esp_err_t g_pid_data_index_handler(httpd_req_t* req, void* arg)
     return send_json_response(req, m_pid_data_get(target_pid));
 }
 
-esp_err_t p_pid_poll_data_index_handler(httpd_req_t* req, void* arg)
+esp_err_t p_auto_poll_index_handler(httpd_req_t* req, void* arg)
 {
-    bool running = false;
-    if (get_query_bool(req, "running", &running) != ESP_OK)
+    bool on = false;
+    if (get_query_bool(req, "auto_poll", &on) != ESP_OK)
     {
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid query parameter");
     }
 
-    m_pid_poll_set_running(running);
-    httpd_resp_set_status(req, "201 Created");
-    return httpd_resp_send(req, NULL, 0);
+    return send_json_response(req, m_auto_poll_set(on));
 }
 
 esp_err_t p_static_pid_index_handler(httpd_req_t* req, void* arg)
@@ -1713,7 +1711,7 @@ const RouteDef api_routes[] = {{"/", HTTP_GET, index_handler},
 
                                {"/api/v1/pid_data/*", HTTP_GET, g_pid_data_index_handler},
                                {"/api/v1/pid_data", HTTP_GET, g_pid_data_index_handler},
-                               {"/api/v1/req/pid_poll*", HTTP_POST, p_pid_poll_data_index_handler},
+                               {"/api/v1/req/auto_poll*", HTTP_POST, p_auto_poll_index_handler},
                                {"/api/v1/req/static_pid", HTTP_POST, p_static_pid_index_handler},
 
                                {"/api/v1/vin", HTTP_GET, g_vin_index_handler},

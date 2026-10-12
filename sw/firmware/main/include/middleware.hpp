@@ -32,7 +32,8 @@ MiddlewareJsonResult m_pid_def_post(cJSON* data);
 // The caller owns and must delete a returned tree. A successful call reports
 // HTTP 204 through http_status and transfers no JSON ownership.
 cJSON* m_pid_def_put(cJSON* data, int* http_status);
-void   m_pid_poll_set_running(bool running);
+// Sets the auto poll intent; the body is {auto_poll, polling} read after the setter ran (HTTP 201), or an error body and 503 when OBD2 is stopped or busy.
+MiddlewareJsonResult m_auto_poll_set(bool on);
 MiddlewareJsonResult m_can_bus_get();
 MiddlewareJsonResult m_obdii_get();
 MiddlewareJsonResult m_obdii_set(cJSON* payload);

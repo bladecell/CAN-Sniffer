@@ -67,4 +67,36 @@ esp_err_t decodeDtcResponse(const RawFrame* frames, size_t count, uint8_t mode, 
 // ESP_ERR_INVALID_RESPONSE on a wrong header.
 esp_err_t decodeVinResponse(const RawFrame* frames, size_t count, char (&vin)[17]);
 
+// Recovery after the CAN bus (re)connects or the OBD health check clears the poll queue.
+enum class ConnectPlan : uint8_t
+{
+    Discover,      // run supported-PID discovery (VIN differs, unknown or the VIN request failed)
+    RestoreKnown,  // same VIN as the last discovery: keep the supported list and only refill the queue
+};
+
+// `vin` is the VIN just read (null or empty if the request failed); `knownVin` is the VIN of the last completed discovery.
+ConnectPlan planOnConnect(const char* vin, const char* knownVin);
+
+// True for a NUL-terminated string of exactly 17 ASCII uppercase letters or digits. Anything else is a failed VIN read.
+bool isValidVin(const char* vin);
+
+// A user-initiated VIN request succeeded, so the ECU answers. `pidsReady` is whether OBD is initialised.
+enum class VinAction : uint8_t
+{
+    None,      // nothing to do (failed read, or initialised and same VIN)
+    Adopt,     // initialised but no VIN on record: remember this one, keep the supported list
+    Restore,   // not initialised, same VIN as the last discovery: refill from the known supported list
+    Discover,  // not initialised with another or unknown VIN, or initialised with a different VIN: rediscover
+};
+VinAction planOnVinConfirmed(const char* vin, const char* knownVin, bool pidsReady);
+
+// Health probe answered: refill the queue only if the user wants polling, the bus is up, discovery finished and the queue lost its recurring entries.
+bool shouldRestoreQueue(bool autoPoll, bool busUp, bool pidsReady, bool queueHasRecurring);
+
+constexpr uint32_t DISCOVERY_BACKOFF_FIRST_MS = 2000;
+constexpr uint32_t DISCOVERY_BACKOFF_MAX_MS   = 30000;
+
+// Delay before the next discovery retry: 2 s, doubling, capped at 30 s. Pass 0 for the first retry.
+uint32_t nextDiscoveryBackoffMs(uint32_t currentMs);
+
 }  // namespace obd2frame

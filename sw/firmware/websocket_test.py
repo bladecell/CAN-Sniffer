@@ -17,10 +17,10 @@ CAN_SNIFFER_URL = f"http://{ESP_IP}"
 console = Console()
 
 
-def start_pid_poll():
+def start_auto_poll():
     try:
         response = requests.post(
-            f"{CAN_SNIFFER_URL}/api/v1/req/pid_poll?running=true", timeout=5
+            f"{CAN_SNIFFER_URL}/api/v1/req/auto_poll?auto_poll=true", timeout=5
         )
         console.print(
             f"[bold cyan]PID poll response:[/] [green]{response.status_code}[/]"
@@ -77,7 +77,7 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, handle_exit)
 
     if args.poll:
-        start_pid_poll()
+        start_auto_poll()
     else:
         console.print("[dim]PID poll skipped (use --poll to enable)[/]")
 

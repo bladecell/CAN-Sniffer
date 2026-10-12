@@ -115,21 +115,29 @@ public:
     bool push(const PollRequest& req)
     {
         xSemaphoreTake(lock, portMAX_DELAY);
-        if (size >= NUMBER_OF_ITEMS)
-        {
-            xSemaphoreGive(lock);
-            return false;
-        }
-        int i   = size++;
-        heap[i] = req;
-        while (i != 0 && heap[i] < heap[(i - 1) / 2])
-        {
-            swap(i, (i - 1) / 2);
-            i = (i - 1) / 2;
-        }
-        notifyConsumerLocked();
+        bool ok = pushLocked(req);
         xSemaphoreGive(lock);
-        return true;
+        return ok;
+    }
+
+    // Re-adds a recurring request unless one with the same ECU id, mode and PID is already queued
+    // (a refill can land while the poll task holds the same request in flight). True if queued or already present.
+    bool pushRecurringUnique(const PollRequest& req)
+    {
+        xSemaphoreTake(lock, portMAX_DELAY);
+        for (int i = 0; i < size; i++)
+        {
+            const PollRequest& q = heap[i];
+            if (!q.isRaw && q.isRecurring && q.id == req.id && q.payload.obd.mode == req.payload.obd.mode &&
+                q.payload.obd.pid == req.payload.obd.pid)
+            {
+                xSemaphoreGive(lock);
+                return true;
+            }
+        }
+        bool ok = pushLocked(req);
+        xSemaphoreGive(lock);
+        return ok;
     }
 
     bool tryPop(PollRequest& root)
@@ -461,6 +469,18 @@ public:
         return result;
     }
 
+    bool hasRecurring()
+    {
+        xSemaphoreTake(lock, portMAX_DELAY);
+        bool found = false;
+        for (int i = 0; i < size && !found; i++)
+        {
+            found = heap[i].isRecurring;
+        }
+        xSemaphoreGive(lock);
+        return found;
+    }
+
     bool isEmpty()
     {
         xSemaphoreTake(lock, portMAX_DELAY);
@@ -470,6 +490,23 @@ public:
     }
 
 private:
+    bool pushLocked(const PollRequest& req)
+    {
+        if (size >= NUMBER_OF_ITEMS)
+        {
+            return false;
+        }
+        int i   = size++;
+        heap[i] = req;
+        while (i != 0 && heap[i] < heap[(i - 1) / 2])
+        {
+            swap(i, (i - 1) / 2);
+            i = (i - 1) / 2;
+        }
+        notifyConsumerLocked();
+        return true;
+    }
+
     void heapify()
     {
         for (int i = size / 2 - 1; i >= 0; --i)

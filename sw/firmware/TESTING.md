@@ -21,7 +21,7 @@ strictly read-only; it never invokes POST or DELETE probes, reboot, format,
 settings/PID mutation, or DTC clearing endpoints.
 
 The WebSocket PID-stream smoke test is opt-in because it may temporarily start
-continuous polling. When enabled, it reads `continuous_running` from
+auto poll. When enabled, it reads `auto_poll` from
 `/api/v1/obd2`, starts polling only if it was stopped, and restores that exact
 state in a `finally` block (including skips and errors). It skips without
 changing polling if that state cannot be read safely:

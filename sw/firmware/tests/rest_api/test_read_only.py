@@ -63,7 +63,7 @@ def test_can_bus_schema(api, device_reachable):
 
 def test_obd2_schema(api, device_reachable):
     payload = get_json(api, "/api/v1/obd2")
-    assert {"continuous_running", "pid_initialized", "pid_def_count", "pid_data_count", "supported_pids"} <= payload.keys()
+    assert {"auto_poll", "pid_initialized", "pid_def_count", "pid_data_count", "supported_pids"} <= payload.keys()
     assert isinstance(payload["supported_pids"], dict)
     assert isinstance(payload["supported_pids"].get("groups"), list)
     assert isinstance(payload["supported_pids"].get("count"), int)

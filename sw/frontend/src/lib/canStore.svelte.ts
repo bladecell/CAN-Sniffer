@@ -454,7 +454,8 @@ export class CanStore {
 
             // 3. Assemble the strongly-typed object and assign it to state
             this.obd2Status = {
-                continuous_running: result.continuous_running,
+                auto_poll: result.auto_poll,
+                polling: result.polling,
                 pid_initialized: result.pid_initialized,
                 pid_def_count: result.pid_def_count,
                 pid_data_count: result.pid_data_count,
@@ -470,20 +471,19 @@ export class CanStore {
         }
     }
 
-    async setContinuousPolling(running: boolean) {
+    async setAutoPoll(on: boolean) {
         try {
-            const response = await fetch(`/api/v1/req/pid_poll?running=${running}`, {
+            const response = await fetch(`/api/v1/req/auto_poll?auto_poll=${on}`, {
                 method: "POST",
             });
-            if (response.status === 201) {
-                await parseJsonResponseAllowEmpty(response);
-            } else {
-                await parseJsonResponse(response);
+            const result = await parseJsonResponse<{ auto_poll: boolean; polling: boolean }>(response);
+            if (this.obd2Status) {
+                this.obd2Status = { ...this.obd2Status, auto_poll: result.auto_poll, polling: result.polling };
             }
 
             this.getObd2Status();
         } catch (e) {
-            console.error("Failed to set OBD2 continuous polling", e);
+            console.error("Failed to set OBD2 auto poll", e);
         }
     }
 

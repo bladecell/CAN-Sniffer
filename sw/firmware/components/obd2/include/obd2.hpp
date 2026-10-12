@@ -52,9 +52,11 @@ public:
     esp_err_t removePID(uint16_t pid);
     esp_err_t replacePIDDefinitions(const std::vector<PIDDefinitionData>& definitions);
 
-    void      startContinuousMode();
-    void      stopContinuousMode();
-    bool      isContinuousRunning() const;
+    // User intent to poll. RAM only; cleared by deinit. true refills the queue, false clears it.
+    esp_err_t setAutoPoll(bool on);  // ESP_ERR_INVALID_STATE when stopped or stopping, ESP_ERR_TIMEOUT if the configuration lock is busy
+    bool      isAutoPoll() const;
+    // autoPoll && CAN bus connected && the poll queue holds recurring entries.
+    bool      isPolling();
     esp_err_t requestPID(uint16_t pid);
 
     void      requestSuppPids();
@@ -62,7 +64,6 @@ public:
     esp_err_t requestVIN();
     esp_err_t requestDTC(uint8_t mode);
     esp_err_t requestClearDTCs();
-    void      startPolling();
     void      pollRequestStaticPids();
     void      requestDefaultDiagnosticSession(uint32_t id, bool isRecurring = false);
 
@@ -99,7 +100,7 @@ private:
     OBD2(const OBD2&)                 = delete;
     OBD2&      operator=(const OBD2&) = delete;
     CanDriver& canDriver              = CanDriver::getInstance();
-    std::atomic<bool> continuousRunning{false};
+    std::atomic<bool> autoPoll{false};
     // Polling acquires bus arbitration, then configuration, then the PID map
     // and poll queue. Definition mutations acquire configuration, then the
     // PID map and poll queue; they never hold bus arbitration.
@@ -166,6 +167,20 @@ private:
                                 uint8_t priority, bool isRecurring);
     esp_err_t enqueueDefinitionRequestLocked(const PollRequest& request);
     void startPollingLocked();
+    bool recoverOnce();
+    bool discoverAndFill(const std::string& vin);
+    bool restoreFromKnown(TickType_t wait);
+    void onVinConfirmed();
+    esp_err_t requestVinInternal();
+    std::atomic<bool>     pendingDiscover_{false};  // pendingVin_ is valid only while set; pendingVin_ guarded by discoveryMtx_
+    char                  pendingVin_[VIN_LENGTH + 1] = {};
+    void armRecovery();
+    void recoveryTick();
+    void restoreQueueAfterHealthClear();
+    std::atomic<bool>     recoveryNeeded_{false};
+    std::atomic<uint32_t> recoveryDueTick_{0};
+    std::atomic<uint32_t> recoveryBackoffMs_{0};
+    char                  knownVin_[VIN_LENGTH + 1] = {};  // VIN of the last completed discovery; guarded by discoveryMtx_; stopInternal wipes it under vinData.mtx_ after the workers stopped
 
     // Receiving Task
     void        receiveTask();

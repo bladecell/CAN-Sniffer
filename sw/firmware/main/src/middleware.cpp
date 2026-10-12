@@ -345,16 +345,26 @@ MiddlewareJsonResult m_pid_data_get(int filter_id)
     return json_result(root);
 }
 
-void m_pid_poll_set_running(bool running)
+static void add_auto_poll_state(cJSON* root)
 {
-    if (running)
+    cJSON_AddBoolToObject(root, "auto_poll", OBD2::getInstance().isAutoPoll());
+    cJSON_AddBoolToObject(root, "polling", OBD2::getInstance().isPolling());
+}
+
+MiddlewareJsonResult m_auto_poll_set(bool on)
+{
+    const esp_err_t err = OBD2::getInstance().setAutoPoll(on);
+    if (err != ESP_OK)
     {
-        OBD2::getInstance().startContinuousMode();
+        return json_result(json_error_body(esp_err_to_name(err)), 503);
     }
-    else
+    cJSON* root = cJSON_CreateObject();
+    if (root == nullptr)
     {
-        OBD2::getInstance().stopContinuousMode();
+        return json_result(nullptr, 500);
     }
+    add_auto_poll_state(root);
+    return json_result(root, 201);
 }
 
 MiddlewareJsonResult m_can_bus_get()
@@ -402,7 +412,7 @@ MiddlewareJsonResult m_obdii_get()
     }
 
     // Add OBD-II information to the JSON object
-    cJSON_AddBoolToObject(root, "continuous_running", OBD2::getInstance().isContinuousRunning());
+    add_auto_poll_state(root);
     cJSON_AddBoolToObject(root, "pid_initialized", OBD2::getInstance().isPidInit());
     cJSON_AddNumberToObject(root, "pid_def_count", OBD2::getInstance().getPIDDEFSize());
     cJSON_AddNumberToObject(root, "pid_data_count", OBD2::getInstance().getPIDDataSize());

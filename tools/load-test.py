@@ -2,7 +2,7 @@
 """Load test for the async web server (WEB-1): parallel read-only HTTP clients plus WebSocket clients.
 
 Usage: tools/load-test.py [host] [--levels 2,4,8,16,32] [--seconds 30] [--ws 3] [--slow 2]
-Stdlib only. Only GET requests on read-only endpoints, plus POST /req/pid_poll to start and stop polling.
+Stdlib only. Only GET requests on read-only endpoints, plus POST /req/auto_poll to start and stop polling.
 Per level it prints success / 429 / 503 / other-status / timeout / error counts, latency p50 and p95, the WebSocket
 packet rate, and heap and the lowest task stack from GET /system (heap_free, heap_min_free, tasks).
 Never calls clear_dtc, SD format or delete, OTA, or any pid_def write.
@@ -137,7 +137,7 @@ def main():
     host = a.host
     http_get(host, "/api/v1/obd2")
     c = http.client.HTTPConnection(host, 80, timeout=5)
-    c.request("POST", "/api/v1/req/pid_poll?running=true")
+    c.request("POST", "/api/v1/req/auto_poll?auto_poll=true")
     print("poll start", c.getresponse().status)
     print("start   uptime/heap_free/heap_min/lowest stacks:", diag(host))
     ws = [WsClient(host) for _ in range(a.ws)]
@@ -193,7 +193,7 @@ def main():
         for w in ws:
             w.stop = True
         c = http.client.HTTPConnection(host, 80, timeout=5)
-        c.request("POST", "/api/v1/req/pid_poll?running=false")
+        c.request("POST", "/api/v1/req/auto_poll?auto_poll=false")
         print("poll stop", c.getresponse().status)
         print("slow clients:", {k: slow_counts.count(k) for k in set(slow_counts)})
         print("ws clients:", [(w.packets, w.pongs, w.error) for w in ws])

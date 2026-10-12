@@ -237,18 +237,18 @@
 {#if isBgMenuOpen}
   <div class="bg-context-menu" style="top: {bgMenu.y}px; left: {bgMenu.x}px;">
     <button
-      class={canStore.obd2Status?.continuous_running
+      class={canStore.obd2Status?.auto_poll
         ? "stop-action"
         : "start-action"}
       onclick={() => {
-        const state = canStore.obd2Status?.continuous_running ?? false;
-        canStore.setContinuousPolling(!state);
+        const state = canStore.obd2Status?.auto_poll ?? false;
+        canStore.setAutoPoll(!state);
         dashboardStore.activeMenuId = null;
       }}
     >
-      {canStore.obd2Status?.continuous_running
-        ? "Stop Logging"
-        : "Start Logging"}
+      {canStore.obd2Status?.auto_poll
+        ? "Stop auto poll"
+        : "Start auto poll"}
     </button>
     <button
       class="add-action"
