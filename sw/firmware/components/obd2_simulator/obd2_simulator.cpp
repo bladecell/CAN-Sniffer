@@ -2,10 +2,12 @@
 #include "obd2_simulator.hpp"
 
 #include <cmath>
+#include <cstring>
 #include <vector>
 
 #include "can_driver.hpp"
 #include "esp_log.h"
+#include "freertos/queue.h"
 #include "esp_random.h"
 #include "obd2_common.hpp"
 
@@ -13,22 +15,58 @@ static const char* TAG = "SIM_TASK";
 
 TaskHandle_t xDataSimTaskHandle = NULL;
 
-void IRAM_ATTR sim_notify(uint32_t data, BaseType_t* woken)
+// Frames seen by the CAN RX ISR (requests and flow control, loopback). Static storage: no allocation, nothing to free.
+struct SimRequest
 {
-    if (xDataSimTaskHandle != NULL)
+    uint32_t id;
+    uint8_t  data[8];
+    uint8_t  length;
+};
+static constexpr size_t SIM_QUEUE_DEPTH = 16;
+static StaticQueue_t    simQueueBuffer;
+static uint8_t          simQueueStorage[SIM_QUEUE_DEPTH * sizeof(SimRequest)];
+static QueueHandle_t    simQueue = NULL;
+
+volatile uint32_t simDroppedFrames = 0;
+
+static constexpr uint32_t SIM_ECU_COUNT       = 2;
+static constexpr uint32_t SIM_REQUEST_BASE_ID = OBD2_RESPONSE_BASE_ID - RESPONSE_ID_OFFSET;  // 0x7E0
+
+void IRAM_ATTR sim_notify(uint32_t id, const uint8_t* data, uint8_t length, BaseType_t* woken)
+{
+    if (simQueue == NULL || data == NULL || length > sizeof(SimRequest::data))
     {
-        xTaskNotifyFromISR(xDataSimTaskHandle, data, eSetValueWithOverwrite, woken);
+        return;
+    }
+    SimRequest r;
+    r.id     = id;
+    r.length = length;
+    memset(r.data, 0, sizeof(r.data));
+    memcpy(r.data, data, length);
+    if (xQueueSendFromISR(simQueue, &r, woken) != pdTRUE)
+    {
+        simDroppedFrames = simDroppedFrames + 1;
     }
 }
 
 void start_sim_task(CanDriver* driver)
 {
+    if (xDataSimTaskHandle != NULL)
+    {
+        return;
+    }
+    if (simQueue == NULL)
+    {
+        simQueue = xQueueCreateStatic(SIM_QUEUE_DEPTH, sizeof(SimRequest), simQueueStorage, &simQueueBuffer);
+    }
+    xQueueReset(simQueue);
     // Using xTaskCreate for automatic core selection (Floating Task)
     BaseType_t result = xTaskCreatePinnedToCore(dataSimTaskWrapper, "DataSimTask", 4096, (void*)driver,
                                                 tskIDLE_PRIORITY + 2, &xDataSimTaskHandle, CORE_ID_CAN_TASKS);
 
     if (result != pdPASS)
     {
+        xDataSimTaskHandle = NULL;
         ESP_LOGE(TAG, "Failed to create DataSimTask!");
     }
 }
@@ -49,24 +87,152 @@ void dataSimTaskWrapper(void* param)
     dataSimTask(*driver);
 }
 
+// A multi-frame response that waits for the tester's flow control (sent to the ECU's physical request ID).
+struct SimTransfer
+{
+    bool     active = false;
+    uint8_t  bytes[32];
+    uint8_t  total = 0;
+    uint8_t  pos   = 0;
+    uint8_t  seq   = 1;
+};
+
+static void injectFrame(CanDriver& canDriver, uint32_t id, const uint8_t (&bytes)[8])
+{
+    CanDriver::CanFrame f = {};
+    f.header.id           = id;
+    memcpy(f.data, bytes, sizeof(bytes));
+    f.length = PID_DATA_LENGTH;  // Max length for CAN 2.0A
+    if (xQueueSend(canDriver.getRxQueueHandle(), &f, 0) != pdTRUE)
+    {
+        ESP_LOGW(TAG, "Failed to inject simulated frame.");
+    }
+}
+
+// Single frame, or first frame plus a pending transfer that the flow control releases.
+static void sendPayload(CanDriver& canDriver, uint32_t id, SimTransfer& t, const uint8_t* payload, uint8_t length)
+{
+    uint8_t f[8] = {};
+    t.active     = false;
+    if (length <= 7)
+    {
+        f[0] = length;
+        memcpy(f + 1, payload, length);
+        injectFrame(canDriver, id, f);
+        return;
+    }
+    if (length > sizeof(t.bytes))
+    {
+        return;
+    }
+    f[0] = 0x10 | ((length >> 8) & 0x0F);
+    f[1] = length;
+    memcpy(f + 2, payload, 6);
+    memcpy(t.bytes, payload, length);
+    t.total  = length;
+    t.pos    = 6;
+    t.seq    = 1;
+    t.active = true;
+    injectFrame(canDriver, id, f);
+}
+
+static void sendConsecutiveFrames(CanDriver& canDriver, uint32_t id, SimTransfer& t)
+{
+    while (t.active && t.pos < t.total)
+    {
+        uint8_t f[8] = {};
+        f[0]         = 0x20 | (t.seq++ & 0x0F);
+        for (int j = 1; j <= 7 && t.pos < t.total; j++)
+        {
+            f[j] = t.bytes[t.pos++];
+        }
+        injectFrame(canDriver, id, f);
+    }
+    t.active = false;
+}
+
 void dataSimTask(CanDriver& canDriver)
 {
-    uint32_t              sd            = 0;
-    uint8_t               requested_pid = 0, mode = 0;
     static const char     vin[] = "1HGBH41JXMN109186";
     std::vector<uint16_t> dtcs  = {0x0143, 0x8260, 0x4234, 0x0300, 0x0408, 0x0506, 0x0101, 0x0113, 0x0335, 0x0401};
-    // uint32_t DTCs_to_send = (esp_random() % 10) + 1;
+    // ECU 1 (0x7E9) only answers DTC and VIN requests. 0x0300 and 0x0408 are also reported by ECU 0, to exercise the merge.
+    static const uint16_t dtcsEcu1[] = {0x0300, 0x0408, 0x1A10, 0x2345};
+    SimTransfer           transfer[SIM_ECU_COUNT];
 
     while (1)
     {
-        // Block until notified with a PID request
-        if (xTaskNotifyWait(0x00, ULONG_MAX, &sd, portMAX_DELAY) != pdPASS)
+        SimRequest req;
+        if (xQueueReceive(simQueue, &req, portMAX_DELAY) != pdPASS)
+        {
+            continue;
+        }
+        if (req.length < 2)
         {
             continue;
         }
 
-        requested_pid = sd & 0xFF;
-        mode          = (sd >> 8) & 0xFF;
+        // Flow control frames the firmware sends to a physical request ID (response ID minus 8).
+        if ((req.data[0] >> 4) == 0x3)
+        {
+            if (req.id >= SIM_REQUEST_BASE_ID && req.id < SIM_REQUEST_BASE_ID + SIM_ECU_COUNT)
+            {
+                const uint32_t ecu = req.id - SIM_REQUEST_BASE_ID;
+                sendConsecutiveFrames(canDriver, OBD2_RESPONSE_BASE_ID + ecu, transfer[ecu]);
+            }
+            continue;
+        }
+        // Only single-frame requests carry a mode.
+        if ((req.data[0] >> 4) != 0x0)
+        {
+            continue;
+        }
+
+        const uint8_t requested_pid = req.data[2];
+        const uint8_t mode          = req.data[1];
+
+        // ECU 1 answers the functional ID and its own physical ID.
+        const bool ecu1Addressed = req.id == OBD2_FUNCTIONAL_ID || req.id == SIM_REQUEST_BASE_ID + 1;
+        if (ecu1Addressed)
+        {
+            uint8_t payload[32];
+            switch (mode)
+            {
+                case MODE_DTCS:
+                case MODE_PENDING_DTCS:
+                case MODE_PERMANENT_DTCS:
+                {
+                    const uint8_t n = sizeof(dtcsEcu1) / sizeof(dtcsEcu1[0]);
+                    payload[0]      = mode | 0x40;
+                    payload[1]      = n;
+                    for (uint8_t i = 0; i < n; i++)
+                    {
+                        payload[2 + 2 * i] = (dtcsEcu1[i] >> 8) & 0xFF;
+                        payload[3 + 2 * i] = dtcsEcu1[i] & 0xFF;
+                    }
+                    sendPayload(canDriver, OBD2_RESPONSE_BASE_ID + 1, transfer[1], payload, 2 + 2 * n);
+                    break;
+                }
+                case MODE_VEHICLE_INFO:
+                    if (requested_pid == PID_VIN)
+                    {
+                        payload[0] = RESPONSE_VEHICLE_INFO;
+                        payload[1] = PID_VIN;
+                        payload[2] = 0x01;
+                        for (uint8_t i = 0; i < 17; i++)
+{
+    payload[3 + i] = static_cast<uint8_t>(vin[i]);
+}
+                        sendPayload(canDriver, OBD2_RESPONSE_BASE_ID + 1, transfer[1], payload, 20);
+                    }
+                    break;
+                default:
+                    break;
+            }
+        }
+        if (req.id == SIM_REQUEST_BASE_ID + 1)
+        {
+            continue;  // a request for ECU 1 alone: ECU 0 stays quiet
+        }
 
         switch (mode)
         {
@@ -119,7 +285,7 @@ void dataSimTask(CanDriver& canDriver)
                         break;
 
                     default:
-                        ESP_LOGW(TAG, "PID 0x%02lX not simulated.", requested_pid);
+                        ESP_LOGW(TAG, "PID 0x%02lX not simulated.", (unsigned long)requested_pid);
                         continue;  // Ignore unknown PIDs
                 }
 
@@ -132,8 +298,8 @@ void dataSimTask(CanDriver& canDriver)
             }
             case MODE_READ_DATA_BY_IDENTIFIER:
             {
-                // Request {03, 22, pidHi, pidLo}; the ISR passes pidHi in the low byte and pidLo in bits 16-23.
-                const uint16_t rdbiPid = (uint16_t)((requested_pid << 8) | ((sd >> 16) & 0xFF));
+                // Request {03, 22, pidHi, pidLo}.
+                const uint16_t rdbiPid = (uint16_t)((req.data[2] << 8) | req.data[3]);
                 const uint32_t tNow    = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
                 CanDriver::CanFrame response_frame = {};
@@ -191,172 +357,28 @@ void dataSimTask(CanDriver& canDriver)
             case MODE_PENDING_DTCS:
             case MODE_PERMANENT_DTCS:
             {
-                uint32_t DTCs_to_send = (esp_random() % 10) + 1;
-                if (DTCs_to_send < 3)
+                const uint8_t n = (esp_random() % 10) + 1;
+                uint8_t       payload[32];
+                payload[0] = mode | 0x40;
+                payload[1] = n;
+                for (uint8_t i = 0; i < n; i++)
                 {
-                    CanDriver::CanFrame response_frame = {};
-                    response_frame.header.id           = OBD2_RESPONSE_BASE_ID;
-                    response_frame.data[0]             = DTCs_to_send > 1 ? 0x07 : 0x05;
-                    response_frame.data[1]             = mode | 0x40;
-                    response_frame.data[2]             = (uint8_t)DTCs_to_send;
-                    response_frame.data[3]             = (dtcs[0] >> 8) & 0xFF;
-                    response_frame.data[4]             = dtcs[0] & 0xFF;
-                    response_frame.data[5]             = DTCs_to_send > 1 ? (dtcs[1] >> 8) & 0xFF : 0x00;
-                    response_frame.data[6]             = DTCs_to_send > 1 ? dtcs[1] & 0xFF : 0x00;
-                    response_frame.data[7]             = 0x00;
-                    response_frame.length              = PID_DATA_LENGTH;  // Max length for CAN 2.0A
-
-                    if (xQueueSend(canDriver.getRxQueueHandle(), &response_frame, 0) != pdTRUE)
-                    {
-                        ESP_LOGW(TAG, "Failed to inject simulated frame.");
-                        continue;
-                    }
+                    payload[2 + 2 * i] = (dtcs[i] >> 8) & 0xFF;
+                    payload[3 + 2 * i] = dtcs[i] & 0xFF;
                 }
-                else
-                {
-                    std::vector<uint8_t> bytes_to_send;
-                    for (int i = 0; i < DTCs_to_send; i++)
-                    {
-                        bytes_to_send.push_back((dtcs[i] >> 8) & 0xFF);
-                        bytes_to_send.push_back(dtcs[i] & 0xFF);
-                    }
-                    uint16_t            total_length   = bytes_to_send.size() + 2;
-                    CanDriver::CanFrame response_frame = {};
-                    response_frame.header.id           = OBD2_RESPONSE_BASE_ID;
-                    response_frame.data[0]             = 0x10 | ((uint8_t)((total_length >> 8) & 0x0F));
-                    response_frame.data[1]             = (uint8_t)(total_length & 0xFF);
-                    response_frame.data[2]             = mode | 0x40;
-                    response_frame.data[3]             = (uint8_t)DTCs_to_send;
-                    response_frame.data[4]             = bytes_to_send[0];
-                    response_frame.data[5]             = bytes_to_send[1];
-                    response_frame.data[6]             = bytes_to_send[2];
-                    response_frame.data[7]             = bytes_to_send[3];
-                    response_frame.length              = PID_DATA_LENGTH;  // Max length for CAN 2.0A
-
-                    if (xQueueSend(canDriver.getRxQueueHandle(), &response_frame, 0) != pdTRUE)
-                    {
-                        ESP_LOGW(TAG, "Failed to inject simulated frame.");
-                        continue;
-                    }
-
-                    TickType_t stop_tick = xTaskGetTickCount() + pdMS_TO_TICKS(200);
-                    bool       found     = false;
-                    while (stop_tick > xTaskGetTickCount())
-                    {
-                        if (xTaskNotifyWait(0x00, ULONG_MAX, &sd, stop_tick - xTaskGetTickCount()) != pdPASS)
-                        {
-                            break;
-                        }
-
-                        if (sd == 0x0000)
-                        {
-                            found = true;
-                        }
-                    }
-                    if (!found)
-                    {
-                        continue;
-                    }
-
-                    uint8_t bts_idx = 4;
-                    uint8_t cf_idx  = 1;
-
-                    while (bts_idx < bytes_to_send.size())
-                    {
-                        CanDriver::CanFrame response_frame = {};
-                        response_frame.header.id           = OBD2_RESPONSE_BASE_ID;
-                        response_frame.data[0]             = 0x20 + cf_idx++;
-                        for (int j = 1; (bts_idx < bytes_to_send.size()) && (j <= 7); j++)
-                        {
-                            response_frame.data[j] = bytes_to_send[bts_idx++];
-                        }
-
-                        response_frame.length = PID_DATA_LENGTH;  // Max length for CAN 2.0A
-
-                        if (xQueueSend(canDriver.getRxQueueHandle(), &response_frame, 0) != pdTRUE)
-                        {
-                            ESP_LOGW(TAG, "Failed to inject simulated frame.");
-                            continue;
-                        }
-                    }
-                }
+                sendPayload(canDriver, OBD2_RESPONSE_BASE_ID, transfer[0], payload, 2 + 2 * n);
                 break;
             }
             case MODE_VEHICLE_INFO:
             {
                 if (requested_pid == PID_VIN)  // VIN with multiframe
                 {
-                    CanDriver::CanFrame response_frame = {};
-                    response_frame.header.id           = OBD2_RESPONSE_BASE_ID;
-                    response_frame.data[0]             = 0x10;
-                    response_frame.data[1]             = 0x14;
-                    response_frame.data[2]             = 0x49;
-                    response_frame.data[3]             = (uint8_t)requested_pid;
-                    response_frame.data[4]             = 0x01;
-                    response_frame.data[5]             = vin[0];
-                    response_frame.data[6]             = vin[1];
-                    response_frame.data[7]             = vin[2];
-                    response_frame.length              = PID_DATA_LENGTH;  // Max length for CAN 2.0A
-
-                    if (xQueueSend(canDriver.getRxQueueHandle(), &response_frame, 0) != pdTRUE)
-                    {
-                        ESP_LOGW(TAG, "Failed to inject simulated frame.");
-                        continue;
-                    }
-
-                    TickType_t stop_tick = xTaskGetTickCount() + pdMS_TO_TICKS(200);
-                    bool       found     = false;
-                    while (stop_tick > xTaskGetTickCount())
-                    {
-                        if (xTaskNotifyWait(0x00, ULONG_MAX, &sd, stop_tick - xTaskGetTickCount()) != pdPASS)
-                        {
-                            break;
-                        }
-
-                        if (sd == 0x0000)
-                        {
-                            found = true;
-                        }
-                    }
-                    if (!found)
-                    {
-                        continue;
-                    }
-
-                    CanDriver::CanFrame consecutiveFrame1 = {};
-                    consecutiveFrame1.header.id           = OBD2_RESPONSE_BASE_ID;
-                    consecutiveFrame1.data[0]             = 0x21;  // Consecutive Frame
-                    consecutiveFrame1.data[1]             = vin[3];
-                    consecutiveFrame1.data[2]             = vin[4];
-                    consecutiveFrame1.data[3]             = vin[5];
-                    consecutiveFrame1.data[4]             = vin[6];
-                    consecutiveFrame1.data[5]             = vin[7];
-                    consecutiveFrame1.data[6]             = vin[8];
-                    consecutiveFrame1.data[7]             = vin[9];
-                    consecutiveFrame1.length              = PID_DATA_LENGTH;  // Max length for CAN 2.0A
-
-                    if (xQueueSend(canDriver.getRxQueueHandle(), &consecutiveFrame1, 0) != pdTRUE)
-                    {
-                        ESP_LOGW(TAG, "Failed to inject simulated frame.");
-                    }
-
-                    CanDriver::CanFrame consecutiveFrame2 = {};
-                    consecutiveFrame2.header.id           = OBD2_RESPONSE_BASE_ID;
-                    consecutiveFrame2.data[0]             = 0x22;  // Consecutive Frame
-                    consecutiveFrame2.data[1]             = vin[10];
-                    consecutiveFrame2.data[2]             = vin[11];
-                    consecutiveFrame2.data[3]             = vin[12];
-                    consecutiveFrame2.data[4]             = vin[13];
-                    consecutiveFrame2.data[5]             = vin[14];
-                    consecutiveFrame2.data[6]             = vin[15];
-                    consecutiveFrame2.data[7]             = vin[16];
-                    consecutiveFrame2.length              = PID_DATA_LENGTH;  // Max length for CAN 2.0A
-
-                    if (xQueueSend(canDriver.getRxQueueHandle(), &consecutiveFrame2, 0) != pdTRUE)
-                    {
-                        ESP_LOGW(TAG, "Failed to inject simulated frame.");
-                    }
-                    continue;
+                    uint8_t payload[20] = {RESPONSE_VEHICLE_INFO, PID_VIN, 0x01};
+                    for (uint8_t i = 0; i < 17; i++)
+{
+    payload[3 + i] = static_cast<uint8_t>(vin[i]);
+}
+                    sendPayload(canDriver, OBD2_RESPONSE_BASE_ID, transfer[0], payload, 20);
                 }
                 break;
             }

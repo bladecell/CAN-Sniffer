@@ -12,6 +12,9 @@ class CanDriver;
 // Initialize in the implementation file.
 extern TaskHandle_t xDataSimTaskHandle;
 
+// Frames the ISR hook dropped because the simulator queue was full.
+extern volatile uint32_t simDroppedFrames;
+
 // Function Declarations
 void dataSimTask(CanDriver &canDriver);
 void dataSimTaskWrapper(void *param);
@@ -21,4 +24,4 @@ void sendVIN(bool multiframe_in_progress);
 uint32_t sinDataSim(uint32_t t_ms, float frequency, uint32_t size);
 
 // ISR-safe notify hook, called from CanDriver's RX ISR in debug mode.
-void sim_notify(uint32_t data, BaseType_t* woken);
+void sim_notify(uint32_t id, const uint8_t* data, uint8_t length, BaseType_t* woken);
