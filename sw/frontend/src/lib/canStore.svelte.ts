@@ -14,35 +14,24 @@ import type {
 } from "./types";
 import { validatePidDefinitionSet } from "./pidValidation";
 import { parseJsonResponse, parseJsonResponseAllowEmpty } from "./api";
-
-function normalizePidDefinition(def: any): PidDefinition {
-    if (!def || typeof def !== "object") {
-        throw new Error("Invalid PID definition");
-    }
-
-    const normalized = {
-        id: def.id,
-        mode: def.mode,
-        pid: def.pid,
-        length: def.length ?? def.len,
-        name: def.name,
-        unit: def.unit,
-        description: def.description ?? def.desc,
-        formula: def.formula,
-        minValue: def.minValue ?? def.minV,
-        maxValue: def.maxValue ?? def.maxV,
-        update_interval_ms: def.update_interval_ms ?? def.interval,
-        color: def.color,
-        priority: def.priority,
-        icon: def.icon,
-    };
-
-    if (Object.values(normalized).some((value) => value === undefined || value === null)) {
-        throw new Error("Incomplete PID definition");
-    }
-
-    return normalized;
-}
+import { normalizePidDefinition, parsePidList, serializePidDefinition } from "./pidDefinition";
+import { parseWsFrame, type WsFrame } from "./wsFrames";
+import { dispatchToListeners } from "./dispatch";
+import { reconnectDelay } from "./backoff";
+import { createStreamRefCount } from "./streamRefCount";
+import { createThrottle } from "./throttle";
+import { createLatest } from "./latest";
+import {
+    parseObd2Status,
+    parseCanBusStatus,
+    parseDtcGroups,
+    parseDtcDescriptions,
+    parseConfirmRequired,
+    type ConfirmRequired,
+    buildDtcData,
+    emptyDtcData,
+    type CanBusStatus,
+} from "./guards";
 
 export const COMMANDS = {
     START_LOG: 0xa0,
@@ -67,6 +56,15 @@ export class CanStore {
 
     intentionalDisconnect = false;
     reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+    reconnectAttempts = 0;
+    outageAlerted = false;
+    pageshowBound = false;
+
+    // The server's PID stream flag is global: send 0xA0 on the first user and 0xA1 when the last one leaves.
+    private streamRefs = createStreamRefCount(
+        () => { this.sendByte(COMMANDS.START_LOG); this.isStreaming = true; },
+        () => { this.sendByte(COMMANDS.STOP_LOG); this.isStreaming = false; },
+    );
 
     // Heartbeat timers
     pingInterval: ReturnType<typeof setInterval> | null = null;
@@ -82,19 +80,35 @@ export class CanStore {
             this.reconnectTimeout = null;
         }
 
+        if (!this.pageshowBound && typeof window !== "undefined") {
+            this.pageshowBound = true;
+            window.addEventListener("pageshow", (e) => this.handlePageShow(e));
+        }
+
         const host = window.location.host;
         const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
         const wsUrl = `${protocol}//${host}/ws`;
 
         console.log(`Connecting to ${wsUrl}...`);
 
-        this.socket = new WebSocket(wsUrl);
+        try {
+            this.socket = new WebSocket(wsUrl);
+        } catch (e) {
+            console.error("WebSocket construction failed", e);
+            this.handleConnectionDrop();
+            return;
+        }
         this.socket.binaryType = "arraybuffer";
 
         this.socket.onopen = () => {
             console.log("WebSocket Connected");
             alertStore.add("WebSocket Connected", "success");
             this.connected = true;
+            this.reconnectAttempts = 0;
+            this.outageAlerted = false;
+            // A new connection may find the server flag off (it resets when clients leave).
+            if (this.streamRefs.count() > 0) this.sendByte(COMMANDS.START_LOG);
+            this.isStreaming = this.streamRefs.count() > 0;
 
             this.startHeartbeat();
 
@@ -111,13 +125,29 @@ export class CanStore {
         };
 
         this.socket.onmessage = (event) => {
-            // Check if the message is an ArrayBuffer (binary data)
-            if (event.data instanceof ArrayBuffer) {
-                const buffer = new Uint8Array(event.data);
+            try {
+                this.handleMessage(event.data);
+            } catch (e) {
+                console.error("Failed to handle WebSocket message", e);
             }
-
-            this.handleMessage(event.data);
         };
+    }
+
+    // A page restored from the back/forward cache has a dead socket and no timers.
+    handlePageShow(e: PageTransitionEvent) {
+        if (this.intentionalDisconnect) return;
+        if (e.persisted && this.socket && this.socket.readyState !== WebSocket.OPEN) {
+            this.socket.onclose = null;
+            this.socket.close();
+            this.handleConnectionDrop(true);
+        }
+        if (!this.socket) {
+            if (this.reconnectTimeout) {
+                clearTimeout(this.reconnectTimeout);
+                this.reconnectTimeout = null;
+            }
+            this.connect();
+        }
     }
 
     // --- HEARTBEAT LOGIC ---
@@ -144,7 +174,7 @@ export class CanStore {
         }, 2000);
     }
 
-    handleConnectionDrop() {
+    handleConnectionDrop(silent = false) {
         this.connected = false;
         this.isStreaming = false;
         this.socket = null;
@@ -153,8 +183,16 @@ export class CanStore {
         this.stopHeartbeat();
 
         if (!this.intentionalDisconnect) {
-            alertStore.add("WebSocket Disconnected, reconnecting...", "error");
-            this.reconnectTimeout = setTimeout(() => this.connect(), 2000);
+            if (!this.outageAlerted && !silent) {
+                this.outageAlerted = true;
+                alertStore.add("WebSocket Disconnected, reconnecting...", "error");
+            }
+            if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
+            const delay = reconnectDelay(this.reconnectAttempts++);
+            this.reconnectTimeout = setTimeout(() => {
+                this.reconnectTimeout = null;
+                this.connect();
+            }, delay);
         }
     }
 
@@ -199,24 +237,9 @@ export class CanStore {
         }
     }
 
-    startLogging() {
-        console.log("Sending START_LOG");
-        this.sendByte(COMMANDS.START_LOG);
-        this.isStreaming = true;
-    }
-
-    stopLogging() {
-        console.log("Sending STOP_LOG");
-        this.sendByte(COMMANDS.STOP_LOG);
-        this.isStreaming = false;
-    }
-
-    toggleLogging() {
-        if (this.isStreaming) {
-            this.stopLogging();
-        } else {
-            this.startLogging();
-        }
+    /** Ask for the PID stream. Returns a release function; call it when the view goes away. */
+    acquireStream(): () => void {
+        return this.streamRefs.acquire();
     }
 
     sendByte(byte: number) {
@@ -228,22 +251,18 @@ export class CanStore {
         }
     }
 
-    handleMessage(data: any) {
-        if (!(data instanceof ArrayBuffer)) return;
-        const view = new DataView(data);
-        const type = view.getUint8(0);
-
-        switch (type) {
-            case 0x02:
-                this.parsePidPacket(view);
+    handleMessage(data: unknown) {
+        const frame = parseWsFrame(data);
+        if (!frame) return;
+        switch (frame.kind) {
+            case "pid":
+                this.applyPidFrame(frame);
                 break;
-            case 0x03:
-                this.parseCanStatusPacket(view);
+            case "canStatus":
+                this.applyCanStatusFrame(frame);
                 break;
-            case COMMANDS.PING_RESPONSE:
+            case "pong":
                 this.handlePong();
-                break;
-            default:
                 break;
         }
     }
@@ -263,16 +282,12 @@ export class CanStore {
 
     battery_below_12v_alerted = $state(false);
 
-    parseCanStatusPacket(view: DataView) {
+    private utilizationAlertAllowed = createThrottle(60_000);
+
+    applyCanStatusFrame(frame: Extract<WsFrame, { kind: "canStatus" }>) {
         const previousState = this.wsCanStatus?.state;
-        const length = view.getUint8(1);
-        if (length !== view.byteLength - 2) {
-            console.warn("Invalid Can Status packet length");
-            return;
-        }
-        const stateIdx = view.getUint8(2);
-        const utilization = view.getFloat32(3, true);
-        const battery_voltage = view.getFloat32(7, true);
+        const utilization = frame.utilization;
+        const battery_voltage = frame.batteryVoltage;
         const can_bus_state_name = [
             "CAN Not Initialized",
             "CAN Off",
@@ -281,7 +296,7 @@ export class CanStore {
         ];
 
         this.wsCanStatus = {
-            state: can_bus_state_name[stateIdx] || "Unknown",
+            state: can_bus_state_name[frame.state] || "Unknown",
             utilization: Math.round(utilization * 100),
             battery_voltage: battery_voltage,
         };
@@ -296,7 +311,7 @@ export class CanStore {
             }
         }
 
-        if (utilization > 0.9) {
+        if (utilization > 0.9 && this.utilizationAlertAllowed()) {
             alertStore.add("CAN Bus Utilization is above 90%", "warning");
         }
 
@@ -312,52 +327,22 @@ export class CanStore {
         }
     }
 
-    parsePidPacket(view: DataView) {
-        const length = view.getUint8(1);
-        if (length !== view.byteLength - 2) {
-            console.warn("Invalid PID %d packet length", view.getUint32(2, true));
-            return;
-        }
+    applyPidFrame(frame: Extract<WsFrame, { kind: "pid" }>) {
+        const value = Number(frame.value.toFixed(2));
 
-        const fullPid = view.getUint32(2, true);
+        this.pids.set(frame.pid, {
+            value,
+            lastUpdated: frame.lastUpdated,
+            rate: frame.rate,
+            isValid: frame.isValid,
+            isSupported: frame.isSupported,
+        });
 
-        // Calculate this once for better performance
-        const rawValue = view.getFloat32(6, true);
-        const value = Number(rawValue.toFixed(2));
-
-        const time = view.getUint32(10, true);
-        const rate = view.getUint32(14, true);
-        const isSupported = view.getUint8(18) !== 0;
-        const isValid = view.getUint8(19) !== 0;
-
-        const existing = this.pids.get(fullPid);
-
-        // 2. Create the completely new object using consistent property names!
-        const newData = {
-            value: value,
-            lastUpdated: time,
-            rate: rate,
-            isValid: isValid,         // Matches usePidData perfectly
-            isSupported: isSupported, // Matches usePidData perfectly
-        };
-
-        // 3. Trigger the SvelteMap update
-        this.pids.set(fullPid, newData);
-
-        // 4. (Optional) If you used the "Tick Sledgehammer" fix for the universal table, 
-        // uncomment the line below to force the parent array to rebuild!
-        // this.updateTick++;
-
-        // 5. Fire your traditional listeners
-        const update = {
-            pid: fullPid,
-            value: value,
-            timestamp: time,
-        };
-
-        for (const listener of this.listeners) {
-            listener(update);
-        }
+        dispatchToListeners(this.listeners, {
+            pid: frame.pid,
+            value,
+            timestamp: frame.lastUpdated,
+        });
     }
 
     system = $state<SystemStatus>({
@@ -400,13 +385,7 @@ export class CanStore {
     async loadDefinitions(): Promise<boolean> {
         try {
             const response = await fetch("/api/v1/pid_def");
-            const result = await parseJsonResponse<{ data: unknown }>(response);
-
-            if (!Array.isArray(result.data)) {
-                throw new Error("Invalid PID definition response");
-            }
-
-            this.pidDefinitions = result.data.map(normalizePidDefinition);
+            this.pidDefinitions = parsePidList(await parseJsonResponse<unknown>(response));
             return true;
         } catch (e) {
             console.error("Failed to load PIDs", e);
@@ -414,14 +393,13 @@ export class CanStore {
         }
     }
 
-    canStatus = $state<any>(null);
+    canStatus = $state<CanBusStatus | null>(null);
     canCurrentRate = $state(5000);
 
     async getCanStatus() {
         try {
             const response = await fetch("/api/v1/can_bus");
-            const result = await parseJsonResponse(response);
-            this.canStatus = result;
+            this.canStatus = parseCanBusStatus(await parseJsonResponse<unknown>(response));
         } catch (e) {
             console.error("Failed to load CAN status", e);
         }
@@ -432,38 +410,18 @@ export class CanStore {
     async getObd2Status() {
         try {
             const response = await fetch("/api/v1/obd2");
-            const result = await parseJsonResponse<any>(response);
+            const result = parseObd2Status(await parseJsonResponse<unknown>(response));
 
             const supportedGroupsMap = new SvelteMap<number, boolean>();
-
-            if (result.supported_pids && Array.isArray(result.supported_pids.groups)) {
-                result.supported_pids.groups.forEach((mask: number, groupIndex: number) => {
-                    const pidBase = groupIndex * 32;
-
-                    for (let i = 0; i < 32; i++) {
-                        const bitPosition = 31 - i;
-
-                        const isSupported = ((mask >>> bitPosition) & 1) === 1;
-
-                        const pidNumber = pidBase + i + 1;
-
-                        supportedGroupsMap.set(pidNumber, isSupported);
-                    }
-                });
-            }
-
-            // 3. Assemble the strongly-typed object and assign it to state
-            this.obd2Status = {
-                auto_poll: result.auto_poll,
-                polling: result.polling,
-                pid_initialized: result.pid_initialized,
-                pid_def_count: result.pid_def_count,
-                pid_data_count: result.pid_data_count,
-                poll_task_utilization: result.poll_task_utilization,
-                supported_pids: {
-                    count: result.supported_pids.count,
-                    groups: supportedGroupsMap
+            result.supported_pids.groups.forEach((mask, groupIndex) => {
+                for (let i = 0; i < 32; i++) {
+                    supportedGroupsMap.set(groupIndex * 32 + i + 1, ((mask >>> (31 - i)) & 1) === 1);
                 }
+            });
+
+            this.obd2Status = {
+                ...result,
+                supported_pids: { count: result.supported_pids.count, groups: supportedGroupsMap },
             };
 
         } catch (e) {
@@ -512,87 +470,37 @@ export class CanStore {
         }
     }
 
-    dtc = $state<DtcData>({
-        confirmed: { mode: 3, dtc_count: 0, dtc: [] },
-        pending: { mode: 7, dtc_count: 0, dtc: [] },
-        permanent: { mode: 10, dtc_count: 0, dtc: [] },
-    });
+    dtc = $state<DtcData>(emptyDtcData());
     totalDTCs = $state(0);
+    private dtcLatest = createLatest();
 
     async getDTC() {
+        // Overlapping calls: only the newest one may write the store.
+        const isCurrent = this.dtcLatest.begin();
         try {
             const response = await fetch("/api/v1/dtc");
-            const result = await parseJsonResponse<any>(response);
-            const rawDtcs = result.dtcs || [];
+            const groups = parseDtcGroups(await parseJsonResponse<unknown>(response));
+            if (!isCurrent()) return;
 
-            // The response may omit an empty mode. Reset all groups first so a
-            // later response cannot leave stale codes in the store.
-            this.dtc = {
-                confirmed: { mode: 3, dtc_count: 0, dtc: [] },
-                pending: { mode: 7, dtc_count: 0, dtc: [] },
-                permanent: { mode: 10, dtc_count: 0, dtc: [] },
-            };
-
-            const uniqueCodes = new Set<string>();
-            for (const group of rawDtcs) {
-                if (Array.isArray(group.dtc)) {
-                    group.dtc.forEach((code: string) => uniqueCodes.add(code));
-                }
-            }
-
-            let descriptionsMap: Record<string, string> = {};
-            const codesArray = Array.from(uniqueCodes);
+            const codesArray = Array.from(new Set(groups.flatMap((g) => g.dtc)));
+            const descriptions: Record<string, string> = {};
             const CHUNK_SIZE = 15;
 
             for (let i = 0; i < codesArray.length; i += CHUNK_SIZE) {
-                const chunk = codesArray.slice(i, i + CHUNK_SIZE);
-                const codesParam = chunk.join(",");
+                const codesParam = codesArray.slice(i, i + CHUNK_SIZE).map(encodeURIComponent).join(",");
 
                 try {
                     const descResponse = await fetch(`/api/v1/dtc?codes=${codesParam}`);
-                    const descResult = await parseJsonResponse<any>(descResponse);
-
-                    if (descResult.status === 'success' && Array.isArray(descResult.dtcs)) {
-                        for (const item of descResult.dtcs) {
-                            descriptionsMap[item.dtc] = item.description;
-                        }
-                    }
+                    Object.assign(descriptions, parseDtcDescriptions(await parseJsonResponse<unknown>(descResponse)));
                 } catch (chunkErr) {
                     // If one chunk fails, log it but don't break the whole app
                     console.error(`Failed to fetch descriptions for chunk ${codesParam}:`, chunkErr);
                 }
+                if (!isCurrent()) return;
             }
 
-            for (const group of rawDtcs) {
-                if (Array.isArray(group.dtc)) {
-                    const mappedDtcs = group.dtc.map((code: string) => ({
-                        dtc: code,
-                        description: descriptionsMap[code] || "Description not available",
-                        mode: group.mode,
-                    }));
-
-                    if (group.mode === 3) {
-                        this.dtc.confirmed = {
-                            mode: group.mode,
-                            dtc_count: group.dtc_count,
-                            dtc: mappedDtcs,
-                        };
-                    } else if (group.mode === 7) {
-                        this.dtc.pending = {
-                            mode: group.mode,
-                            dtc_count: group.dtc_count,
-                            dtc: mappedDtcs,
-                        };
-                    } else if (group.mode === 10) {
-                        this.dtc.permanent = {
-                            mode: group.mode,
-                            dtc_count: group.dtc_count,
-                            dtc: mappedDtcs,
-                        };
-                    }
-                }
-            }
-
+            // The response may omit an empty mode; building from scratch cannot leave stale codes.
+            this.dtc = buildDtcData(groups, descriptions);
             this.totalDTCs =
                 this.dtc.confirmed.dtc_count +
                 this.dtc.pending.dtc_count +
@@ -624,18 +532,30 @@ export class CanStore {
 
     isClearing = $state(false);
 
-    clearDTCs = async () => {
+    /** Set while the UI must ask the user before codes are cleared on the vehicle. */
+    clearConfirm = $state<ConfirmRequired | null>(null);
+
+    // POST clear_dtc. Without a token the firmware answers 409 and sends nothing to the car.
+    private async postClear(token?: string): Promise<ConfirmRequired | null> {
+        const url = token ? `/api/v1/req/clear_dtc?token=${encodeURIComponent(token)}` : "/api/v1/req/clear_dtc";
+        const response = await fetch(url, { method: "POST" });
+        if (response.status === 409) {
+            const confirm = parseConfirmRequired(409, await response.json().catch(() => null));
+            if (!confirm) throw new Error("Unexpected clear confirmation response");
+            return confirm;
+        }
+        await parseJsonResponse(response);
+        return null;
+    }
+
+    private async runClear(token?: string) {
         this.isClearing = true;
-
         try {
-            const response = await fetch("/api/v1/req/clear_dtc", {
-                method: "POST",
-            });
-            await parseJsonResponse(response);
-
-            await this.requestDTC();
-
+            const confirm = await this.postClear(token);
+            this.clearConfirm = confirm;
+            if (!confirm) await this.requestDTC();
         } catch (e) {
+            this.clearConfirm = null;
             console.error("Failed to clear DTCs:", e);
             const reason = e instanceof Error ? `: ${e.message}` : "";
             alertStore.add(`Failed to clear DTCs.${reason}`, "error");
@@ -643,25 +563,26 @@ export class CanStore {
             this.isClearing = false;
         }
     }
-    serializePidDefinition(def: any) {
-        const normalized = normalizePidDefinition(def);
 
-        return {
-            id: normalized.id,
-            mode: normalized.mode,
-            pid: normalized.pid,
-            length: normalized.length,
-            name: normalized.name,
-            unit: normalized.unit,
-            desc: normalized.description,
-            formula: normalized.formula,
-            minV: normalized.minValue,
-            maxV: normalized.maxValue,
-            priority: normalized.priority,
-            interval: normalized.update_interval_ms,
-            color: normalized.color,
-            icon: normalized.icon,
-        };
+    /** First step: asks the firmware for a token and opens the confirm dialog. */
+    requestClearDTCs = async () => {
+        if (this.isClearing) return;
+        await this.runClear();
+    };
+
+    /** Second step, only from the dialog's confirm button. A new 409 reopens the dialog with the new token. */
+    confirmClearDTCs = async () => {
+        const token = this.clearConfirm?.token;
+        this.clearConfirm = null;
+        if (token) await this.runClear(token);
+    };
+
+    cancelClearDTCs = () => {
+        this.clearConfirm = null;
+    };
+
+    serializePidDefinition(def: any) {
+        return serializePidDefinition(normalizePidDefinition(def));
     }
 
     async replacePids(rows: any[]): Promise<boolean> {

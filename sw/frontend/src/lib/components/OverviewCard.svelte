@@ -1,5 +1,6 @@
 <script lang="ts">
   import { canStore } from "$lib/canStore.svelte";
+  import { safeHexColor } from "$lib/color";
   import { usePidData } from "$lib/pidHelpers.svelte.ts";
   import type { OverviewGridItem, DtcModeData } from "$lib/types";
 
@@ -45,7 +46,7 @@
 
 <article
   class="dashboard-card overview-card"
-  style="--module-accent: {item.color}"
+  style="--module-accent: {safeHexColor(item.color, '#3b82f6')}"
   {...rest}
 >
   <header class="dashboard-card-header">

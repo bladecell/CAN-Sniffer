@@ -47,6 +47,18 @@ bool jsonFloat(const cJSON* object, const char* key, float& output)
     return std::isfinite(output);
 }
 
+// Absent or null means "unset" and is stored as NaN; anything else must be a finite float.
+bool jsonOptionalFloat(const cJSON* object, const char* key, float& output)
+{
+    const cJSON* value = cJSON_GetObjectItemCaseSensitive(object, key);
+    if (value == nullptr || cJSON_IsNull(value))
+    {
+        output = std::numeric_limits<float>::quiet_NaN();
+        return true;
+    }
+    return jsonFloat(object, key, output);
+}
+
 bool jsonString(const cJSON* object, const char* key, size_t maxLength, std::string& output)
 {
     const cJSON* value = cJSON_GetObjectItemCaseSensitive(object, key);
@@ -148,8 +160,10 @@ ParseResult parse(const cJSON* array, std::vector<PIDDefinitionData>& out)
             return fail(422, "Invalid PID interval, mode, PID, or length");
         }
 
-        if (!jsonFloat(item, "minV", definition.minValue) || !jsonFloat(item, "maxV", definition.maxValue) ||
-            definition.minValue > definition.maxValue)
+        if (!jsonOptionalFloat(item, "minV", definition.minValue) ||
+            !jsonOptionalFloat(item, "maxV", definition.maxValue) ||
+            (std::isfinite(definition.minValue) && std::isfinite(definition.maxValue) &&
+             definition.minValue > definition.maxValue))
         {
             return fail(422, "Invalid PID value range");
         }

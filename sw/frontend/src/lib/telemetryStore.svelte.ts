@@ -141,6 +141,7 @@ export class TelemetryStore {
     const newRows = [];
     for (let def of defs) {
       // Validate or map minimally
+      if (!def || typeof def !== "object") continue;
       const rawPid = Number(def.pid);
       if (isNaN(rawPid)) continue;
 
@@ -361,15 +362,16 @@ export function createRowObject(def: any, loaded: boolean, selected: boolean) {
       const originalLoaded = !!original;
 
       if (this.loaded !== originalLoaded) return true;
-      if (!this.loaded) return false;
+      if (!original) return false;
 
+      // Object.is: NaN (unset min/max) equals itself
       return (
         def.name !== original.name ||
         def.description !== original.description ||
         def.formula !== original.formula ||
         def.unit !== original.unit ||
-        def.minValue !== original.minValue ||
-        def.maxValue !== original.maxValue ||
+        !Object.is(def.minValue, original.minValue) ||
+        !Object.is(def.maxValue, original.maxValue) ||
         def.mode !== original.mode ||
         def.length !== original.length ||
         def.update_interval_ms !== original.update_interval_ms ||

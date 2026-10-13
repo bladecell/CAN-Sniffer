@@ -58,6 +58,7 @@ export function createResizeHandler(
 
     window.addEventListener("pointermove", handlePointerMove, { passive: false });
     window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", cancel);
   }
 
   function handlePointerMove(e: PointerEvent) {
@@ -108,9 +109,21 @@ function stop(e: PointerEvent) {
     }
   }
 
+  end();
+}
+
+// The browser took the pointer (scroll, system gesture): drop the resize without committing it.
+function cancel() {
+  end();
+}
+
+function end() {
   state.resizingItemId = null;
-  window.removeEventListener("pointermove", handlePointerMove); // ← was addEventListener
+  state.resizeDeltaX = 0;
+  state.resizeDeltaY = 0;
+  window.removeEventListener("pointermove", handlePointerMove);
   window.removeEventListener("pointerup", stop);
+  window.removeEventListener("pointercancel", cancel);
 }
 
   return {

@@ -2,6 +2,7 @@
 import { untrack } from "svelte";
 import type { DashboardItem, CardType, PidDisplayMode, OverviewGridItem } from "./types";
 import { getModuleBounds } from "./types";
+import { parseStoredLayout } from "./layoutStorage";
 
 const STORAGE_KEY = "dashboard-unified-flow";
 
@@ -16,21 +17,22 @@ export class DashboardStore {
   }
 
   load() {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      try {
-        this.items = JSON.parse(stored);
-      } catch (e) {
-        console.error("Failed to parse stored dashboard layout", e);
-        this.items = [];
-      }
+    try {
+      this.items = parseStoredLayout(localStorage.getItem(STORAGE_KEY));
+    } catch (e) {
+      console.error("Failed to read stored dashboard layout", e);
+      this.items = [];
     }
     this.isInitialized = true;
   }
 
   save() {
     if (!this.isInitialized) return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(this.items));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.items));
+    } catch (e) {
+      console.error("Failed to save dashboard layout", e);
+    }
   }
 
   addItem(type: CardType, pid?: number) {

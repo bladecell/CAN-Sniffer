@@ -3,6 +3,7 @@
   import { canStore } from "./lib/canStore.svelte";
   import DTCFault from "./lib/components/DTCFault.svelte";
   import Icon from "$lib/Icon.svelte";
+  import ClearDtcDialog from "$lib/components/ClearDtcDialog.svelte";
 
   const confirmedCodes = $derived(
     canStore?.dtc?.confirmed || {},
@@ -80,12 +81,20 @@ is detected
       <Icon name="magnifying-glass" size={16} />
       Scan Vehicle
     </button>
-    <button type="button" class="btn btn-clear" onclick={canStore.clearDTCs}>
+    <button type="button" class="btn btn-clear" onclick={canStore.requestClearDTCs}
+      disabled={canStore.isClearing}>
       <Icon name="trash" size={16} />
       Clear Codes
     </button>
   </div>
 </div>
+
+{#if canStore.clearConfirm}
+  <ClearDtcDialog
+    onconfirm={canStore.confirmClearDTCs}
+    oncancel={canStore.cancelClearDTCs}
+  />
+{/if}
 
 <div class="dtc-container">
   {#each activeFaults as fault}

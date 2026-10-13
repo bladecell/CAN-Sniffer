@@ -1,5 +1,6 @@
 <script lang="ts">
   import { canStore } from "$lib/canStore.svelte";
+  import { safeHexColor } from "$lib/color";
   import SDCardImportModal from "$lib/components/SDCardImportModal.svelte";
   import { alertStore } from "$lib/alertStore.svelte";
   import {
@@ -17,7 +18,7 @@
     modes,
     units,
   } from "$lib/telemetryStore.svelte";
-  import { onDestroy, onMount, untrack } from "svelte";
+  import { onMount, untrack } from "svelte";
   import DataTable from "$lib/components/DataTable.svelte";
   import LayerChartLarge from "$lib/components/LayerChartLarge.svelte";
   import GridSelector from "$lib/components/GridSelector.svelte";
@@ -60,12 +61,8 @@
     console.log("Active index changed to:", telemetryStore.activeIndex);
   });
 
-  $effect(() => {
-    if (canStore.connected) canStore.startLogging();
-  });
-  onDestroy(() => {
-    canStore.stopLogging();
-  });
+  // Ref-counted: the stream stays on while any view needs it.
+  $effect(() => canStore.acquireStream());
 
   let showSdImportModal = $state(false);
 
@@ -138,11 +135,7 @@
     if (!pids || pids.length === 0) return null;
     const pid = pids[0];
     const def = telemetryStore.local_piddef.find((d) => parseInt(d.pid, 16) === pid)?.def;
-    if (!def?.color) return "#10b981";
-    if (typeof def.color === "number") {
-      return `#${def.color.toString(16).padStart(6, "0")}`;
-    }
-    return def.color;
+    return safeHexColor(def?.color);
   }
 
   let dirtyCount = $derived(
@@ -305,7 +298,7 @@
     {:else if telemetryStore.activeTab === "editor"}
       <div
         class="dashboard-card header-container"
-        style="--module-accent: {telemetryStore.colorInput};"
+        style="--module-accent: {safeHexColor(telemetryStore.colorInput, '#01AAFF')};"
       >
         <div class="title-row">
           <div class="header-title-row">

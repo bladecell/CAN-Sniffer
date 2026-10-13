@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
+  import { safeHexColor } from "$lib/color";
   import {
     Chart,
     Svg,
@@ -77,11 +78,7 @@
 
   function getPidColor(pid: number | undefined) {
     const def = getPidDef(pid);
-    if (!def?.color) return "#10b981";
-    if (typeof def.color === "number") {
-      return `#${def.color.toString(16).padStart(6, "0")}`;
-    }
-    return def.color;
+    return safeHexColor(def?.color);
   }
 
   // Update chart data map when pids change

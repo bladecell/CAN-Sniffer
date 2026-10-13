@@ -1,7 +1,6 @@
 4	src/CanLogging.svelte	Object literal may only specify known properties, and 'width' does not exist in type 'Column'.
 1	src/CanLogging.svelte	Parameter 'pidData' implicitly has an 'any' type.
 1	src/CanLogging.svelte	Property 'item' is missing in type '{}' but required in type 'Props'.
-1	src/CanLogging.svelte	Property 'timestamp' does not exist on type 'PidValue'.
 1	src/CanLogging.svelte	Type '\"text\"' is not assignable to type 'ColumnType'.
 2	src/Dashboard.svelte	'item' is possibly 'undefined'.
 1	src/Dashboard.svelte	Parameter 'e' implicitly has an 'any' type.
@@ -26,7 +25,6 @@
 1	src/lib/pidHelpers.svelte.ts	'PidDataMetrics' is a type and must be imported using a type-only import when 'verbatimModuleSyntax' is enabled.
 1	src/lib/pidHelpers.svelte.ts	Argument of type 'string | number' is not assignable to parameter of type 'number'.   Type 'string' is not assignable to type 'number'.
 1	src/lib/pidHelpers.svelte.ts	Type 'number | \"\"' is not assignable to type 'string'.   Type 'number' is not assignable to type 'string'.
-13	src/lib/telemetryStore.svelte.ts	'original' is possibly 'undefined'.
 1	src/lib/telemetryStore.svelte.ts	Type '\"text\"' is not assignable to type 'ColumnType'.
 1	src/main.js	Type 'HTMLElement | null' is not assignable to type 'Document | Element | ShadowRoot'.   Type 'null' is not assignable to type 'Document | Element | ShadowRoot'.
 1	src/main.js	Type 'string' is not assignable to type '`${string}-${string}-${string}-${string}-${string}`'.

@@ -1,5 +1,6 @@
 import { canStore } from "$lib/canStore.svelte";
 import { PidDataMetrics } from "$lib/types";
+import { safeHexColor } from "$lib/color";
 /**
  * Reactive selector that extracts both static configurations and runtime 
  * stream data for a given PID from the global canStore.
@@ -10,13 +11,7 @@ export function usePidData(getPid: () => number | string): PidDataMetrics {
     canStore.pidDefinitions?.find((c: any) => c.pid === getPid())
   );
 
-  const formattedColor = $derived(() => {
-    if (!definition?.color) return "#10b981";
-    if (typeof definition.color === "number") {
-      return `#${definition.color.toString(16).padStart(6, "0")}`;
-    }
-    return definition.color;
-  });
+  const formattedColor = $derived(() => safeHexColor(definition?.color));
 
   // Track the runtime stream dynamically using the evaluated PID
   const runtime = $derived(canStore.pids.get(getPid()));
@@ -41,22 +36,4 @@ export function usePidData(getPid: () => number | string): PidDataMetrics {
   };
 }
 
-export function getModeLabel(mode: number): string {
-  const modeLabels: Record<number, string> = {
-    0x01: "Current Data",
-    0x02: "Freeze Frame",
-    0x03: "DTCs",
-    0x04: "Clear DTCs",
-    0x05: "Test Results O2",
-    0x06: "Test Results Other",
-    0x07: "Pending DTCs",
-    0x08: "Control",
-    0x09: "Vehicle Info",
-    0x0a: "Permanent DTCs",
-    0x10: "Diagnostic Session Control",
-    0x22: "Read Data By Identifier",
-    0x45: "Derived Data",
-  };
-
-  return modeLabels[mode] ?? `0x${mode.toString(16).toUpperCase().padStart(2, '0')}`;
-}
+export { getModeLabel } from "./modeLabel";

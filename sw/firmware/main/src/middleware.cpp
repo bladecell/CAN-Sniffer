@@ -16,9 +16,12 @@
 #include <vector>
 
 #include "cJSON.h"
+#include "confirm_token.hpp"
 #include "esp_check.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_random.h"
+#include "esp_timer.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -1049,19 +1052,40 @@ MiddlewareJsonResult m_dtc_request(int mode)
     return json_result(root, status_for_error(first_error, 422));
 }
 
-MiddlewareJsonResult m_clear_dtc_request()
+static constexpr uint32_t kClearDtcTokenTtlMs = 10000;
+
+static ConfirmToken& clear_dtc_token()
+{
+    static ConfirmToken t([]() -> uint64_t { return static_cast<uint64_t>(esp_timer_get_time() / 1000); },
+                          []() -> uint32_t { return esp_random(); }, kClearDtcTokenTtlMs);
+    return t;
+}
+
+MiddlewareJsonResult m_clear_dtc_request(const char* token)
 {
     cJSON* root = cJSON_CreateObject();
     if (root == nullptr)
     {
         return json_result(nullptr, 500);
     }
+
+    // Without a valid one-shot token nothing goes on the bus. A call with no token gets the pending
+    // token back; a wrong, expired or used token gets a fresh one.
+    if (!clear_dtc_token().consume(token))
+    {
+        char           fresh[ConfirmToken::kTokenSize];
+        const uint32_t expiresMs = clear_dtc_token().challenge(token, fresh);
+        cJSON_AddStringToObject(root, "status", "confirm_required");
+        cJSON_AddStringToObject(root, "token", fresh);
+        cJSON_AddNumberToObject(root, "expires_ms", expiresMs);
+        return json_result(root, 409);
+    }
+
     esp_err_t err = OBD2::getInstance().requestClearDTCs();
 
     if (err == ESP_OK)
     {
         cJSON_AddStringToObject(root, "status", "success");
-        // add DTC data here
     }
     else
     {
@@ -1322,8 +1346,8 @@ MiddlewareJsonResult m_pid_def_post(cJSON* data)
 
         std::string parsed_unit     = "";
         std::string parsed_desc     = "";
-        float       parsed_minV     = 0.0f;
-        float       parsed_maxV     = 0.0f;
+        float       parsed_minV     = NAN;
+        float       parsed_maxV     = NAN;
         uint8_t     parsed_priority = 0;
         uint32_t    parsed_color    = 0x4EB31B;
         std::string parsed_icon     = "";
@@ -1347,11 +1371,20 @@ MiddlewareJsonResult m_pid_def_post(cJSON* data)
         }
         if (cJSON_IsNumber(minV))
         {
-            parsed_minV = static_cast<float>(minV->valuedouble);
+            parsed_minV = std::isfinite(minV->valuedouble) ? static_cast<float>(minV->valuedouble) : NAN;
         }
         if (cJSON_IsNumber(maxV))
         {
-            parsed_maxV = static_cast<float>(maxV->valuedouble);
+            parsed_maxV = std::isfinite(maxV->valuedouble) ? static_cast<float>(maxV->valuedouble) : NAN;
+        }
+        if (std::isfinite(parsed_minV) && std::isfinite(parsed_maxV) && parsed_minV > parsed_maxV)
+        {
+            cJSON* fail_obj = cJSON_CreateObject();
+            cJSON_AddNumberToObject(fail_obj, "pid", parsed_pid);
+            cJSON_AddStringToObject(fail_obj, "error", esp_err_to_name(ESP_ERR_INVALID_ARG));
+            cJSON_AddItemToArray(failed_array, fail_obj);
+            error_count++;
+            continue;
         }
         if (cJSON_IsNumber(priority))
         {

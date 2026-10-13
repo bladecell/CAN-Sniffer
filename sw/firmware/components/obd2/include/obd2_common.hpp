@@ -145,6 +145,20 @@ struct PIDData_t
 #define MAX_NRC_LIST_SIZE 20
 #define MESSAGE_TIMEOUT_MS 200
 
+// ISO-TP / multi-ECU response timings, OBD-II profile (ISO 15765-4). Values are user-supplied
+// (2026-10-13); the standard text was not available to check them. UDS needs its own profile
+// (N_* 1000 ms, P2/P2* updated from the 0x10 response) when UDS is added. The quiet gap is
+// tester policy, not a standard value: tune it against real bus captures.
+#define ISOTP_N_AS_MS 33                    // sender: transmit of a frame
+#define ISOTP_N_AR_MS 33                    // receiver: transmit of a flow control frame
+#define ISOTP_N_BS_MS 75                    // sender: wait for flow control after a first frame
+#define ISOTP_N_CR_MS 150                   // receiver: wait for the next consecutive frame, restarted per valid CF
+#define OBD2_ECU_P2_MAX_MS 50               // ECU response time after a request
+#define OBD2_ECU_P2_STAR_MAX_MS 5000        // ECU wait after a negative response 0x78 (response pending)
+#define OBD2_FIRST_RESPONSE_WAIT_MS 100     // tester wait for the first reply: P2 max plus margin
+#define OBD2_RESPONSE_QUIET_GAP_MS 50       // no new frame on any response ID and no active reassembly: all ECUs have replied
+#define OBD2_RESPONSE_TOTAL_CAP_MS 0        // 0 = no unconditional cap (see B33: a bound is still needed against endless 0x78)
+
 struct PollRequest
 {
     // Priority Fields (Used for Min-Heap)

@@ -49,7 +49,8 @@ MiddlewareJsonResult m_dtc_get(int mode);
 MiddlewareJsonResult m_dtc_description_get(const char* target_codes[], size_t count);
 MiddlewareJsonResult m_vin_request();
 MiddlewareJsonResult m_dtc_request(int mode);
-MiddlewareJsonResult m_clear_dtc_request();
+// Sends mode 0x04 only for a valid one-shot token; otherwise 409 confirm_required with a fresh token.
+MiddlewareJsonResult m_clear_dtc_request(const char* token);
 cJSON* m_static_pid_request();
 
 MiddlewareJsonResult m_pid_def_set(cJSON* payload);

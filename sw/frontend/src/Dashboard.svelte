@@ -1,7 +1,6 @@
 <script lang="ts">
   import { dndzone, SOURCES, TRIGGERS } from "svelte-dnd-action";
   import { flip } from "svelte/animate";
-  import { onDestroy } from "svelte";
   import { fade } from "svelte/transition";
 
   import DashboardCardWrapper from "$lib/components/DashboardCardWrapper.svelte";
@@ -137,12 +136,8 @@
     modalIsNewCard = false;
   }
 
-  $effect(() => {
-    if (canStore.connected) canStore.startLogging();
-  });
-  onDestroy(() => {
-    canStore.stopLogging();
-  });
+  // Ref-counted: the stream stays on while any view needs it.
+  $effect(() => canStore.acquireStream());
 </script>
 
 <svelte:window

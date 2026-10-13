@@ -1,5 +1,5 @@
 @import '@picocss/pico/css/pico.orange.min.css';
-@import '@fontsource/atkinson-hyperlegible';
+@import '@fontsource/atkinson-hyperlegible/latin-400.css';
 
 :root {
 	--pico-font-family: 'Atkinson Hyperlegible', sans-serif;

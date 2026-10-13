@@ -11,8 +11,6 @@ const numericFields = [
   "mode",
   "pid",
   "length",
-  "minValue",
-  "maxValue",
   "update_interval_ms",
   "color",
   "priority",
@@ -36,6 +34,13 @@ export function validatePidDefinitionSet(definitions: unknown[]): string | null 
     for (const field of numericFields) {
       if (!isFiniteNumber(def[field])) {
         return `PID definition ${index + 1}: ${field} must be a finite number.`;
+      }
+    }
+
+    for (const field of ["minValue", "maxValue"]) {
+      const v = def[field];
+      if (typeof v !== "number" || v === Infinity || v === -Infinity) {
+        return `PID definition ${index + 1}: ${field} must be a number or NaN.`;
       }
     }
 

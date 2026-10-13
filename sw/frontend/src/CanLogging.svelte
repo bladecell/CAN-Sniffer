@@ -1,7 +1,7 @@
 <script lang="ts">
   import DashboardCardWrapper from "$lib/components/DashboardCardWrapper.svelte";
   import { canStore } from "./lib/canStore.svelte";
-  import { untrack, onDestroy, onMount } from "svelte";
+  import { untrack, onMount } from "svelte";
   import ControlsCard from "$lib/components/ControlsCard.svelte";
   import DTCFault from "./lib/components/DTCFault.svelte";
 
@@ -49,17 +49,12 @@
     displayMode = cards[cardIndex];
   }
 
-  $effect(() => {
-    if (canStore.connected) canStore.startLogging();
-  });
-
-  onDestroy(() => {
-    canStore.stopLogging();
-  });
+  // Ref-counted: the stream stays on while any view needs it.
+  $effect(() => canStore.acquireStream());
 
   const pidData1 = $derived(canStore.pids.get(4));
   const currentValue1 = $derived(pidData1?.value ?? 0);
-  const timestamp1 = $derived(pidData1?.timestamp ?? 0);
+  const timestamp1 = $derived(pidData1?.lastUpdated ?? 0);
 
   let previousTimestamp1 = $state(0);
 

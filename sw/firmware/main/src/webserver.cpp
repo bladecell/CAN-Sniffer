@@ -959,7 +959,10 @@ esp_err_t p_dtc_index_handler(httpd_req_t* req, void* arg)
 
 esp_err_t p_clear_dtc_index_handler(httpd_req_t* req, void* arg)
 {
-    return send_json_response(req, m_clear_dtc_request());
+    char token[33] = {};
+    // A missing, oversized or truncated token reads as "no token" and gets a fresh one.
+    const bool have = get_query_str(req, "token", token, sizeof(token));
+    return send_json_response(req, m_clear_dtc_request(have ? token : nullptr));
 }
 
 esp_err_t g_pid_def_index_handler(httpd_req_t* req, void* arg)

@@ -1,4 +1,5 @@
 // PID definition JSON: validation, add / edit / remove through the data model, and an exact round trip (OBD-5, OBD-6).
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -259,6 +260,61 @@ static void test_deeply_nested_and_truncated_text_is_a_parse_error_not_a_crash(v
     TEST_ASSERT_NULL(cJSON_Parse(""));
 }
 
+static void test_null_or_absent_min_max_mean_unset_nan(void)
+{
+    const char* cases[] = {"null"};
+    for (const char* v : cases)
+    {
+        std::vector<PIDDefinitionData> defs;
+        cJSON*                         root = cJSON_Parse(withField("minV", v).c_str());
+        TEST_ASSERT_TRUE(pidjson::parse(root, defs).ok);
+        cJSON_Delete(root);
+        TEST_ASSERT_TRUE(std::isnan(defs[0].minValue));
+        TEST_ASSERT_EQUAL_FLOAT(10.0f, defs[0].maxValue);
+    }
+    // absent keys
+    std::string text = withField("minV", "0");
+    text.replace(text.find("\"minV\":0,"), 9, "");
+    text.replace(text.find("\"maxV\":10,"), 10, "");
+    std::vector<PIDDefinitionData> defs;
+    cJSON*                         root = cJSON_Parse(text.c_str());
+    TEST_ASSERT_TRUE_MESSAGE(pidjson::parse(root, defs).ok, text.c_str());
+    cJSON_Delete(root);
+    TEST_ASSERT_TRUE(std::isnan(defs[0].minValue));
+    TEST_ASSERT_TRUE(std::isnan(defs[0].maxValue));
+}
+
+static void test_one_sided_and_inverted_ranges(void)
+{
+    std::vector<PIDDefinitionData> defs;
+    // one side unset: no ordering check, even when the finite side is "inverted" against nothing
+    cJSON* root = cJSON_Parse(withField("maxV", "null").c_str());
+    TEST_ASSERT_TRUE(pidjson::parse(root, defs).ok);
+    cJSON_Delete(root);
+    TEST_ASSERT_TRUE(std::isnan(defs[0].maxValue));
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, defs[0].minValue);
+    // both finite and inverted is rejected; equal is fine
+    TEST_ASSERT_FALSE(parseText(withField("minV", "11").c_str()).ok);
+    TEST_ASSERT_TRUE(parseText(withField("minV", "10").c_str()).ok);
+    // non-null non-numbers and infinities stay rejected
+    TEST_ASSERT_FALSE(parseText(withField("minV", "\"x\"").c_str()).ok);
+    TEST_ASSERT_FALSE(parseText(withField("maxV", "1e999").c_str()).ok);
+}
+
+static void test_unset_range_round_trips_as_null_and_loads_through_the_model(void)
+{
+    std::string text = withField("minV", "null");
+    text.replace(text.find("\"maxV\":10"), 10, "\"maxV\":null");
+    std::vector<PIDDefinitionData> defs;
+    const std::string              first = parseAndSerialize(text.c_str(), &defs);
+    TEST_ASSERT_NOT_NULL(strstr(first.c_str(), "\"minV\":null,\"maxV\":null"));
+    TEST_ASSERT_EQUAL_STRING(first.c_str(), parseAndSerialize(first.c_str()).c_str());
+    Model m;
+    TEST_ASSERT_EQUAL_INT(ESP_OK, m.replace(defs));
+    TEST_ASSERT_TRUE(std::isnan(m.getMinValue(12)));
+    TEST_ASSERT_TRUE(std::isnan(m.getMaxValue(12)));
+}
+
 extern "C" void run_pid_json_tests(void)
 {
     RUN_TEST(test_round_trip_is_byte_identical);
@@ -270,4 +326,7 @@ extern "C" void run_pid_json_tests(void)
     RUN_TEST(test_hostile_fields_are_rejected);
     RUN_TEST(test_hostile_structure_is_rejected);
     RUN_TEST(test_deeply_nested_and_truncated_text_is_a_parse_error_not_a_crash);
+    RUN_TEST(test_null_or_absent_min_max_mean_unset_nan);
+    RUN_TEST(test_one_sided_and_inverted_ranges);
+    RUN_TEST(test_unset_range_round_trips_as_null_and_loads_through_the_model);
 }
