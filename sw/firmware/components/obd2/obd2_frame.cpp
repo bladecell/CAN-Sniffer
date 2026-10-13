@@ -505,6 +505,7 @@ DiagFrameResult DiagCollector::onFrame(uint32_t canId, const uint8_t* data, size
                 return res;
             }
             res.consumed = true;
+            // total >= 8 (parseFirstFrame) and received starts at 6, so total - received never underflows.
             const size_t need = (s->total - s->received) < 7 ? (s->total - s->received) : 7;
             if ((data[0] & 0x0F) != s->nextSeq)
             {

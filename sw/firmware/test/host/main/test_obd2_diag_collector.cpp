@@ -336,6 +336,39 @@ static void test_diag_vin_without_valid_reply_has_no_vin(void)
     TEST_ASSERT_FALSE(c.vin(vin));
 }
 
+static void test_diag_short_payloads_count_as_responders_without_data(void)
+{
+    // Coverage only: these already behave (the collector reads pairs from byte 1 of the payload, like extractDtcs).
+    DiagCollector c;
+    startDtc(c);
+    feed(c, 0x7E8, frame8({0x02, 0x43, 0x01}), 1);  // 1 stray byte after the SID: dropped, still a responder
+    feed(c, 0x7E9, frame8({0x04, 0x43, 0x01, 0x33, 0x02}), 2);  // odd length: one DTC, trailing byte dropped
+    feed(c, 0x7EA, frame8({0x01, 0x43}), 3);
+    TEST_ASSERT_EQUAL_UINT32(3, c.responders());
+    TEST_ASSERT_EQUAL_UINT32(1, c.dtcCount());
+    TEST_ASSERT_TRUE(hasDtc(c, 0x0133));
+    // A zero-length or too-long PCI is not a frame at all.
+    TEST_ASSERT_FALSE(feed(c, 0x7EB, frame8({0x00, 0x43}), 4).consumed);
+    TEST_ASSERT_FALSE(feed(c, 0x7EB, frame8({0x08, 0x43}), 4).consumed);
+    RawFrame shortDlc = frame8({0x05, 0x43, 0x01, 0x33, 0x02, 0x44});
+    shortDlc.length   = 3;  // PCI claims 5 bytes but the frame carries 2
+    TEST_ASSERT_FALSE(feed(c, 0x7EB, shortDlc, 4).consumed);
+    TEST_ASSERT_EQUAL_UINT32(3, c.responders());
+}
+
+static void test_diag_short_vin_payloads_give_no_vin(void)
+{
+    DiagCollector c;
+    startVin(c);
+    feed(c, 0x7E8, frame8({0x03, 0x49, 0x02, 0x01}), 1);  // header only
+    // 12-byte payload: first frame plus one consecutive frame, far short of 17 characters.
+    feed(c, 0x7E9, frame8({0x10, 0x0C, 0x49, 0x02, 0x01, 'A', 'B', 'C'}), 2);
+    feed(c, 0x7E9, frame8({0x21, 'D', 'E', 'F', 'G', 'H', 'I', 0xAA}), 3);
+    TEST_ASSERT_EQUAL_UINT32(2, c.responders());
+    char vin[17];
+    TEST_ASSERT_FALSE(c.vin(vin));
+}
+
 static void test_diag_hostile_first_frame_lengths(void)
 {
     DiagCollector c;
@@ -578,6 +611,8 @@ extern "C" void run_obd2_diag_collector_tests(void)
     RUN_TEST(test_diag_vin_same_vin_from_two_ecus_is_not_a_conflict);
     RUN_TEST(test_diag_vin_skips_an_invalid_reply);
     RUN_TEST(test_diag_vin_without_valid_reply_has_no_vin);
+    RUN_TEST(test_diag_short_payloads_count_as_responders_without_data);
+    RUN_TEST(test_diag_short_vin_payloads_give_no_vin);
     RUN_TEST(test_diag_hostile_first_frame_lengths);
     RUN_TEST(test_diag_bad_sequence_drops_only_that_ecus_session);
     RUN_TEST(test_diag_duplicate_and_wrong_sequence_variants);

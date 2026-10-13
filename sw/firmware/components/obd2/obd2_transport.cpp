@@ -125,10 +125,18 @@ bool OBD2::handleDiagFrame(const CanDriver::CanFrame& f)
     if (r.sendFlowControl)
     {
         // Keep the poll task off the bus while any ECU is mid-message; released when the last session ends.
-        if (!busMutexOwnedByReceive_ && xBusArbitrationMutex &&
-            xSemaphoreTake(xBusArbitrationMutex, pdMS_TO_TICKS(100)) == pdTRUE)
+        if (!busMutexOwnedByReceive_ && xBusArbitrationMutex)
         {
-            busMutexOwnedByReceive_ = true;
+            if (xSemaphoreTake(xBusArbitrationMutex, pdMS_TO_TICKS(100)) == pdTRUE)
+            {
+                busMutexOwnedByReceive_ = true;
+            }
+            else
+            {
+                // Flow control still goes out (the ECU would abort otherwise); at most one warning per first frame.
+                ESP_LOGW(TAG, "Bus arbitration busy: sending flow control to 0x%03X without holding the bus",
+                         static_cast<unsigned>(r.flowControlId));
+            }
         }
         vTaskDelay(pdMS_TO_TICKS(10));  // Wait before sending Flow Control
         if (!stopRequested_)
@@ -255,6 +263,12 @@ esp_err_t OBD2::runDiagRequest(uint8_t mode, SemaphoreHandle_t sem, PollRequest&
             if (xSemaphoreTake(sem, pdMS_TO_TICKS(50)) == pdTRUE)
             {
                 result = stopRequested_ ? ESP_ERR_INVALID_STATE : ESP_OK;
+                break;
+            }
+            if (!canDriver.isBusConnected())
+            {
+                ESP_LOGW(TAG, "Bus dropped during diagnostic request 0x%02X", static_cast<unsigned>(mode));
+                result = ESP_ERR_INVALID_STATE;
                 break;
             }
             const TickType_t now = xTaskGetTickCount();
