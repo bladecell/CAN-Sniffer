@@ -50,7 +50,8 @@ esp_err_t parseFirstFrame(const uint8_t* data, size_t length, uint16_t& totalLen
 // True if this is a consecutive frame whose 4-bit sequence matches the 1-based index (wraps 15 -> 0).
 bool consecutiveSequenceOk(const uint8_t* data, size_t length, uint16_t index);
 
-// Mode 03/07/0A payload (0x43 / 0x47 / 0x4A, then 2 bytes per DTC) to raw 16-bit DTCs. A trailing odd byte is dropped.
+// Mode 03/07/0A payload (0x43 / 0x47 / 0x4A, count byte NN, then NN 2-byte DTCs; layout assumed, see obd2_frame.cpp) to raw DTCs.
+// Reads at most NN pairs and only those present; no count byte or a half pair gives none.
 esp_err_t extractDtcs(const std::vector<uint8_t>& payload, std::vector<uint16_t>& rawDtcs);
 
 // Mode 09 PID 02 payload (0x49 0x02 count, then 17 ASCII chars) to the VIN.

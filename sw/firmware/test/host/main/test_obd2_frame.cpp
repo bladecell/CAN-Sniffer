@@ -152,7 +152,7 @@ static void test_extract_vin_rejects_short_payload(void)
 static void test_dtcs_single_frame(void)
 {
     // 06 43 01 33 02 44 00 -> payload after the SID is 4 bytes: P0133, P0244 (PCI length 5)
-    std::vector<uint8_t>  p = {0x43, 0x01, 0x33, 0x02, 0x44};
+    std::vector<uint8_t>  p = {0x43, 0x02, 0x01, 0x33, 0x02, 0x44};
     std::vector<uint16_t> dtcs;
     TEST_ASSERT_EQUAL_INT(ESP_OK, extractDtcs(p, dtcs));
     TEST_ASSERT_EQUAL_UINT32(2, dtcs.size());
@@ -162,8 +162,8 @@ static void test_dtcs_single_frame(void)
 
 static void test_dtcs_multi_frame_payload(void)
 {
-    // 15 bytes: 43 + 7 DTCs (the reassembly itself is covered by the DiagCollector tests).
-    std::vector<uint8_t>  p = {0x43, 0x01, 0x01, 0x02, 0x02, 0x03, 0x03, 0x04, 0x04, 0x05, 0x05, 0x06, 0x06, 0x07, 0x07};
+    // 16 bytes: 43, count 7, 7 DTCs (the reassembly itself is covered by the DiagCollector tests).
+    std::vector<uint8_t>  p = {0x43, 0x07, 0x01, 0x01, 0x02, 0x02, 0x03, 0x03, 0x04, 0x04, 0x05, 0x05, 0x06, 0x06, 0x07, 0x07};
     std::vector<uint16_t> dtcs;
     TEST_ASSERT_EQUAL_INT(ESP_OK, extractDtcs(p, dtcs));
     TEST_ASSERT_EQUAL_UINT32(7, dtcs.size());
@@ -173,11 +173,14 @@ static void test_dtcs_multi_frame_payload(void)
 
 static void test_dtcs_odd_payload_and_empty_response(void)
 {
-    std::vector<uint8_t>  p = {0x43, 0x01, 0x33, 0x02};  // trailing odd byte dropped
+    std::vector<uint8_t>  p = {0x43, 0x01, 0x01, 0x33, 0x02};  // trailing odd byte dropped
     std::vector<uint16_t> dtcs;
     TEST_ASSERT_EQUAL_INT(ESP_OK, extractDtcs(p, dtcs));
     TEST_ASSERT_EQUAL_UINT32(1, dtcs.size());
-    p = {0x43};
+    p = {0x43, 0x01, 0x01};  // count 1 but half a pair
+    TEST_ASSERT_EQUAL_INT(ESP_OK, extractDtcs(p, dtcs));
+    TEST_ASSERT_EQUAL_UINT32(0, dtcs.size());
+    p = {0x43};  // no count byte
     TEST_ASSERT_EQUAL_INT(ESP_OK, extractDtcs(p, dtcs));
     TEST_ASSERT_EQUAL_UINT32(0, dtcs.size());
     p.clear();

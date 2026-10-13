@@ -59,7 +59,8 @@ std::vector<RawFrame> segment(const std::vector<uint8_t>& payload)
 
 std::vector<uint8_t> dtcPayload(uint8_t sid, std::initializer_list<uint16_t> dtcs)
 {
-    std::vector<uint8_t> p = {sid};
+    // Assumed CAN layout (user-supplied, secondary sources pending): SID, number of DTCs, then 2 bytes per DTC.
+    std::vector<uint8_t> p = {sid, static_cast<uint8_t>(dtcs.size())};
     for (uint16_t d : dtcs)
     {
         p.push_back(static_cast<uint8_t>(d >> 8));
@@ -165,14 +166,14 @@ static void test_diag_sequence_number_wraps_15_to_0(void)
 {
     DiagCollector       c;
     startDtc(c);
-    std::vector<uint8_t> p = {0x43};
+    std::vector<uint8_t> p = {0x43, 60};
     for (uint16_t i = 1; i <= 60; i++)  // 121 bytes: 17 CFs, sequence 1..15, 0, 1
     {
         p.push_back(0x01);
         p.push_back(static_cast<uint8_t>(i));
     }
     const auto frames = segment(p);
-    TEST_ASSERT_EQUAL_UINT32(18, frames.size());
+    TEST_ASSERT_EQUAL_UINT32(18, frames.size());  // 122 bytes: FF + 17 CFs
     TEST_ASSERT_EQUAL_HEX8(0x20, frames[16].data[0]);  // wrapped
     feedAll(c, 0x7EA, frames, 0);
     TEST_ASSERT_EQUAL_UINT32(0, c.activeSessions());
@@ -201,8 +202,8 @@ static void test_diag_ncr_restarts_on_every_valid_consecutive_frame(void)
 {
     DiagCollector c;
     startDtc(c);
-    std::vector<uint8_t> p = {0x43};
-    for (uint16_t i = 1; i <= 17; i++)  // 35 bytes: FF + 5 CFs
+    std::vector<uint8_t> p = {0x43, 17};
+    for (uint16_t i = 1; i <= 17; i++)  // 36 bytes: FF + 5 CFs
     {
         p.push_back(0x02);
         p.push_back(static_cast<uint8_t>(i));
@@ -224,7 +225,7 @@ static void test_diag_quiet_gap_never_ends_an_active_reassembly(void)
 {
     DiagCollector c;
     startDtc(c);
-    feed(c, 0x7E8, frame8({0x05, 0x43, 0x01, 0x11, 0x01, 0x12}), 0);                  // ECU A done at t=0
+    feed(c, 0x7E8, frame8({0x06, 0x43, 0x02, 0x01, 0x11, 0x01, 0x12}), 0);                  // ECU A done at t=0
     const auto b = segment(dtcPayload(0x43, {0x0201, 0x0202, 0x0203, 0x0204}));
     feed(c, 0x7E9, b[0], 10);                                                           // ECU B starts a multi-frame
     TEST_ASSERT_EQUAL_INT(static_cast<int>(DiagStatus::Waiting), static_cast<int>(c.poll(10 + T.quietGapMs + 20)));
@@ -255,9 +256,9 @@ static void test_diag_dtc_union_is_deduplicated_and_empty_replies_count(void)
 {
     DiagCollector c;
     startDtc(c, 0x07);
-    feed(c, 0x7E8, frame8({0x05, 0x47, 0x01, 0x33, 0x02, 0x44}), 1);
-    feed(c, 0x7E9, frame8({0x05, 0x47, 0x02, 0x44, 0x03, 0x55}), 2);  // 0x0244 duplicated across ECUs
-    feed(c, 0x7EA, frame8({0x01, 0x47}), 3);                           // no DTCs: still a responder
+    feed(c, 0x7E8, frame8({0x06, 0x47, 0x02, 0x01, 0x33, 0x02, 0x44}), 1);
+    feed(c, 0x7E9, frame8({0x06, 0x47, 0x02, 0x02, 0x44, 0x03, 0x55}), 2);  // 0x0244 duplicated across ECUs
+    feed(c, 0x7EA, frame8({0x02, 0x47, 0x00}), 3);                     // count 0: still a responder
     TEST_ASSERT_EQUAL_UINT32(3, c.responders());
     TEST_ASSERT_EQUAL_INT(static_cast<int>(DiagStatus::Complete), static_cast<int>(c.poll(3 + T.quietGapMs)));
     TEST_ASSERT_EQUAL_UINT32(3, c.dtcCount());
@@ -270,7 +271,7 @@ static void test_diag_only_empty_replies_complete_with_no_dtcs(void)
 {
     DiagCollector c;
     startDtc(c, 0x0A);
-    feed(c, 0x7E8, frame8({0x01, 0x4A}), 1);
+    feed(c, 0x7E8, frame8({0x02, 0x4A, 0x00}), 1);
     TEST_ASSERT_EQUAL_INT(static_cast<int>(DiagStatus::Complete), static_cast<int>(c.poll(1 + T.quietGapMs)));
     TEST_ASSERT_EQUAL_UINT32(1, c.responders());
     TEST_ASSERT_EQUAL_UINT32(0, c.dtcCount());
@@ -338,22 +339,95 @@ static void test_diag_vin_without_valid_reply_has_no_vin(void)
 
 static void test_diag_short_payloads_count_as_responders_without_data(void)
 {
-    // Coverage only: these already behave (the collector reads pairs from byte 1 of the payload, like extractDtcs).
     DiagCollector c;
     startDtc(c);
-    feed(c, 0x7E8, frame8({0x02, 0x43, 0x01}), 1);  // 1 stray byte after the SID: dropped, still a responder
-    feed(c, 0x7E9, frame8({0x04, 0x43, 0x01, 0x33, 0x02}), 2);  // odd length: one DTC, trailing byte dropped
-    feed(c, 0x7EA, frame8({0x01, 0x43}), 3);
+    feed(c, 0x7E8, frame8({0x02, 0x43, 0x01}), 1);  // count 1 but no DTC bytes: nothing to read, still a responder
+    feed(c, 0x7E9, frame8({0x01, 0x43}), 2);        // no count byte at all
+    feed(c, 0x7EA, frame8({0x05, 0x43, 0x01, 0x33, 0x02}), 3);  // count 1, pair 0x3302
     TEST_ASSERT_EQUAL_UINT32(3, c.responders());
     TEST_ASSERT_EQUAL_UINT32(1, c.dtcCount());
-    TEST_ASSERT_TRUE(hasDtc(c, 0x0133));
+    TEST_ASSERT_TRUE(hasDtc(c, 0x3302));
     // A zero-length or too-long PCI is not a frame at all.
     TEST_ASSERT_FALSE(feed(c, 0x7EB, frame8({0x00, 0x43}), 4).consumed);
     TEST_ASSERT_FALSE(feed(c, 0x7EB, frame8({0x08, 0x43}), 4).consumed);
-    RawFrame shortDlc = frame8({0x05, 0x43, 0x01, 0x33, 0x02, 0x44});
-    shortDlc.length   = 3;  // PCI claims 5 bytes but the frame carries 2
+    RawFrame shortDlc = frame8({0x06, 0x43, 0x02, 0x01, 0x33, 0x02, 0x44});
+    shortDlc.length   = 3;  // PCI claims 6 bytes but the frame carries 2
     TEST_ASSERT_FALSE(feed(c, 0x7EB, shortDlc, 4).consumed);
     TEST_ASSERT_EQUAL_UINT32(3, c.responders());
+}
+
+static void test_diag_dtc_count_byte_layout(void)
+{
+    // 43 NN then NN pairs. Assumed CAN layout, see dtcPayload().
+    {
+        DiagCollector c;
+        startDtc(c);
+        feed(c, 0x7E8, frame8({0x02, 0x43, 0x00}), 1);
+        TEST_ASSERT_EQUAL_UINT32(1, c.responders());
+        TEST_ASSERT_EQUAL_UINT32(0, c.dtcCount());
+    }
+    {
+        DiagCollector c;  // one DTC, the rest of the 8-byte frame is padding (non-zero too)
+        startDtc(c);
+        feed(c, 0x7E8, frame8({0x07, 0x43, 0x01, 0x01, 0x33, 0xAA, 0xAA, 0xAA}), 1);
+        TEST_ASSERT_EQUAL_UINT32(1, c.dtcCount());
+        TEST_ASSERT_TRUE(hasDtc(c, 0x0133));
+    }
+    {
+        DiagCollector c;  // padding with zeros after the count
+        startDtc(c);
+        feed(c, 0x7E8, frame8({0x07, 0x43, 0x01, 0x01, 0x33, 0x00, 0x00, 0x00}), 1);
+        TEST_ASSERT_EQUAL_UINT32(1, c.dtcCount());
+    }
+    {
+        DiagCollector c;  // two DTCs
+        startDtc(c);
+        feed(c, 0x7E8, frame8({0x06, 0x43, 0x02, 0x01, 0x33, 0x02, 0x44}), 1);
+        TEST_ASSERT_EQUAL_UINT32(2, c.dtcCount());
+        TEST_ASSERT_TRUE(hasDtc(c, 0x0133) && hasDtc(c, 0x0244));
+    }
+    {
+        DiagCollector c;  // count larger than the bytes present: only whole pairs that are there
+        startDtc(c);
+        feed(c, 0x7E8, frame8({0x05, 0x43, 0xFF, 0x01, 0x33, 0x02}), 1);
+        TEST_ASSERT_EQUAL_UINT32(1, c.dtcCount());
+        TEST_ASSERT_TRUE(hasDtc(c, 0x0133));
+    }
+    {
+        DiagCollector c;  // count smaller than the pairs present: the count wins
+        startDtc(c);
+        feed(c, 0x7E8, frame8({0x07, 0x43, 0x01, 0x01, 0x33, 0x02, 0x44, 0x03}), 1);
+        TEST_ASSERT_EQUAL_UINT32(1, c.dtcCount());
+        TEST_ASSERT_TRUE(hasDtc(c, 0x0133));
+    }
+    {
+        DiagCollector c;  // multi-frame, count 255 but only 3 pairs sent
+        startDtc(c);
+        std::vector<uint8_t> p = {0x43, 0xFF, 0x01, 0x01, 0x02, 0x02, 0x03, 0x03};
+        feedAll(c, 0x7E8, segment(p), 0);
+        TEST_ASSERT_EQUAL_UINT32(3, c.dtcCount());
+    }
+    {
+        DiagCollector c;  // multi-frame with the count honoured: 4 DTCs listed, count says 3
+        startDtc(c);
+        std::vector<uint8_t> p = {0x43, 0x03, 0x01, 0x01, 0x02, 0x02, 0x03, 0x03, 0x04, 0x04};
+        feedAll(c, 0x7E8, segment(p), 0);
+        TEST_ASSERT_EQUAL_UINT32(3, c.dtcCount());
+        TEST_ASSERT_FALSE(hasDtc(c, 0x0404));
+    }
+    {
+        DiagCollector c;  // a count byte of 0x00 DTC value 0x0000 pairs are never stored
+        startDtc(c);
+        feed(c, 0x7E8, frame8({0x06, 0x43, 0x02, 0x00, 0x00, 0x01, 0x33}), 1);
+        TEST_ASSERT_EQUAL_UINT32(1, c.dtcCount());
+    }
+    {
+        DiagCollector c;  // the first payload byte after the SID is a count, never a DTC half
+        startDtc(c, 0x0A);
+        feed(c, 0x7E8, frame8({0x04, 0x4A, 0x01, 0x03, 0x01}), 1);
+        TEST_ASSERT_TRUE(hasDtc(c, 0x0301));
+        TEST_ASSERT_FALSE(hasDtc(c, 0x0103));
+    }
 }
 
 static void test_diag_short_vin_payloads_give_no_vin(void)
@@ -440,7 +514,7 @@ static void test_diag_foreign_ids_and_degenerate_input_are_ignored(void)
 {
     DiagCollector c;
     startDtc(c);
-    const RawFrame sf = frame8({0x05, 0x43, 0x01, 0x33, 0x02, 0x44});
+    const RawFrame sf = frame8({0x06, 0x43, 0x02, 0x01, 0x33, 0x02, 0x44});
     TEST_ASSERT_FALSE(feed(c, 0x7DF, sf, 0).consumed);
     TEST_ASSERT_FALSE(feed(c, 0x7E7, sf, 0).consumed);
     TEST_ASSERT_FALSE(feed(c, 0x7F0, sf, 0).consumed);
@@ -486,7 +560,7 @@ static void test_diag_pending_response_extends_the_wait_but_is_bounded(void)
 {
     DiagCollector c;
     startDtc(c);
-    feed(c, 0x7E8, frame8({0x01, 0x43}), 0);  // ECU A answered, nothing to report
+    feed(c, 0x7E8, frame8({0x02, 0x43, 0x00}), 0);  // ECU A answered, nothing to report
     const RawFrame pending = frame8({0x03, 0x7F, 0x03, 0x78});
     TEST_ASSERT_FALSE(c.anyPending());
     feed(c, 0x7E9, pending, 10);
@@ -507,7 +581,7 @@ static void test_diag_pending_ecu_finally_answers(void)
     startDtc(c);
     feed(c, 0x7E9, frame8({0x03, 0x7F, 0x03, 0x78}), 5);
     TEST_ASSERT_EQUAL_INT(static_cast<int>(DiagStatus::Waiting), static_cast<int>(c.poll(2000)));  // beyond the first wait, still pending
-    feed(c, 0x7E9, frame8({0x05, 0x43, 0x09, 0x99, 0x00, 0x00}), 2500);
+    feed(c, 0x7E9, frame8({0x04, 0x43, 0x01, 0x09, 0x99}), 2500);
     TEST_ASSERT_EQUAL_INT(static_cast<int>(DiagStatus::Complete), static_cast<int>(c.poll(2500 + T.quietGapMs)));
     TEST_ASSERT_TRUE(hasDtc(c, 0x0999));
 }
@@ -521,7 +595,7 @@ static void test_diag_pending_counter_resets_after_a_real_answer(void)
     {
         feed(c, 0x7E9, pending, i);
     }
-    feed(c, 0x7E9, frame8({0x01, 0x43}), 10);  // answered: a later pending cycle starts counting again
+    feed(c, 0x7E9, frame8({0x02, 0x43, 0x00}), 10);  // answered: a later pending cycle starts counting again
     feed(c, 0x7E9, pending, 20);
     TEST_ASSERT_EQUAL_INT(static_cast<int>(DiagStatus::Waiting), static_cast<int>(c.poll(20 + T.quietGapMs + 10)));
 }
@@ -542,7 +616,7 @@ static void test_diag_clock_wrap_and_restart(void)
     DiagCollector c;
     const uint32_t t0 = 0xFFFFFFF0u;
     startDtc(c, 0x03, t0);
-    feed(c, 0x7E8, frame8({0x05, 0x43, 0x01, 0x33, 0x02, 0x44}), t0 + 5);
+    feed(c, 0x7E8, frame8({0x06, 0x43, 0x02, 0x01, 0x33, 0x02, 0x44}), t0 + 5);
     TEST_ASSERT_EQUAL_INT(static_cast<int>(DiagStatus::Waiting), static_cast<int>(c.poll(t0 + 5 + T.quietGapMs - 1)));
     TEST_ASSERT_EQUAL_INT(static_cast<int>(DiagStatus::Complete), static_cast<int>(c.poll(t0 + 5 + T.quietGapMs)));
     // begin() clears the previous result.
@@ -612,6 +686,7 @@ extern "C" void run_obd2_diag_collector_tests(void)
     RUN_TEST(test_diag_vin_skips_an_invalid_reply);
     RUN_TEST(test_diag_vin_without_valid_reply_has_no_vin);
     RUN_TEST(test_diag_short_payloads_count_as_responders_without_data);
+    RUN_TEST(test_diag_dtc_count_byte_layout);
     RUN_TEST(test_diag_short_vin_payloads_give_no_vin);
     RUN_TEST(test_diag_hostile_first_frame_lengths);
     RUN_TEST(test_diag_bad_sequence_drops_only_that_ecus_session);

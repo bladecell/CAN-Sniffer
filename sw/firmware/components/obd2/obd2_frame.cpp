@@ -115,6 +115,19 @@ bool consecutiveSequenceOk(const uint8_t* data, size_t length, uint16_t index)
     return (data[0] & 0x0F) == (index & 0x0F);
 }
 
+// DTC response layout for CAN (assumed, user-supplied; secondary-source confirmation pending):
+//   SID (0x43 / 0x47 / 0x4A), NN = number of DTCs in this ECU, then 2 bytes per DTC (high, low).
+// Only whole pairs that are present are read, never more than NN, so padding after the list and a lying NN are harmless.
+static size_t dtcPairsInPayload(const uint8_t* payload, size_t length)
+{
+    if (payload == nullptr || length < 2)
+    {
+        return 0;  // no count byte
+    }
+    const size_t present = (length - 2) / 2;
+    return payload[1] < present ? payload[1] : present;
+}
+
 esp_err_t extractDtcs(const std::vector<uint8_t>& payload, std::vector<uint16_t>& rawDtcs)
 {
     rawDtcs.clear();
@@ -122,9 +135,10 @@ esp_err_t extractDtcs(const std::vector<uint8_t>& payload, std::vector<uint16_t>
     {
         return ESP_ERR_INVALID_SIZE;
     }
-    for (size_t i = 1; i + 1 < payload.size(); i += 2)
+    const size_t pairs = dtcPairsInPayload(payload.data(), payload.size());
+    for (size_t i = 0; i < pairs; i++)
     {
-        rawDtcs.push_back(static_cast<uint16_t>((payload[i] << 8) | payload[i + 1]));
+        rawDtcs.push_back(static_cast<uint16_t>((payload[2 + 2 * i] << 8) | payload[3 + 2 * i]));
     }
     return ESP_OK;
 }
@@ -370,9 +384,10 @@ void DiagCollector::finishPayload(uint32_t id, const uint8_t* payload, size_t le
 
     if (kind_ == DiagKind::Dtc)
     {
-        for (size_t i = 1; i + 1 < length; i += 2)
+        const size_t pairs = dtcPairsInPayload(payload, length);
+        for (size_t i = 0; i < pairs; i++)
         {
-            addDtc(static_cast<uint16_t>((payload[i] << 8) | payload[i + 1]));
+            addDtc(static_cast<uint16_t>((payload[2 + 2 * i] << 8) | payload[3 + 2 * i]));
         }
         return;
     }
