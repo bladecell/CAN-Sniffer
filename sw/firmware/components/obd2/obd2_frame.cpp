@@ -115,70 +115,6 @@ bool consecutiveSequenceOk(const uint8_t* data, size_t length, uint16_t index)
     return (data[0] & 0x0F) == (index & 0x0F);
 }
 
-esp_err_t reassemble(const RawFrame* frames, size_t count, std::vector<uint8_t>& payload)
-{
-    payload.clear();
-    if (frames == nullptr || count == 0)
-    {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    IsoTp     type = IsoTp::Single;
-    esp_err_t err  = frameType(frames[0].data, frames[0].length, type);
-    if (err != ESP_OK)
-    {
-        return err;
-    }
-
-    if (type == IsoTp::Single)
-    {
-        SingleFrameInfo info;
-        err = parseSingleFrame(frames[0].data, frames[0].length, info);
-        if (err != ESP_OK)
-        {
-            return err;
-        }
-        if (count != 1)
-        {
-            return ESP_ERR_INVALID_SIZE;
-        }
-        payload.assign(frames[0].data + 1, frames[0].data + 1 + (frames[0].data[0] & 0x0F));
-        return ESP_OK;
-    }
-
-    uint16_t total = 0, needed = 0;
-    err = parseFirstFrame(frames[0].data, frames[0].length, total, needed);
-    if (err != ESP_OK)
-    {
-        return err;
-    }
-    if (count != static_cast<size_t>(needed) + 1)
-    {
-        return ESP_ERR_INVALID_SIZE;
-    }
-
-    payload.reserve(total);
-    payload.insert(payload.end(), frames[0].data + 2, frames[0].data + frames[0].length);
-
-    for (size_t i = 1; i < count; i++)
-    {
-        if (!consecutiveSequenceOk(frames[i].data, frames[i].length, static_cast<uint16_t>(i)))
-        {
-            payload.clear();
-            return ESP_ERR_INVALID_RESPONSE;
-        }
-        payload.insert(payload.end(), frames[i].data + 1, frames[i].data + frames[i].length);
-    }
-
-    if (payload.size() < total)
-    {
-        payload.clear();
-        return ESP_ERR_INVALID_SIZE;
-    }
-    payload.resize(total);  // drop padding in the last frame
-    return ESP_OK;
-}
-
 esp_err_t extractDtcs(const std::vector<uint8_t>& payload, std::vector<uint16_t>& rawDtcs)
 {
     rawDtcs.clear();
@@ -202,37 +138,6 @@ esp_err_t extractVin(const std::vector<uint8_t>& payload, char (&vin)[17])
     }
     memcpy(vin, payload.data() + HEADER, sizeof(vin));
     return ESP_OK;
-}
-
-esp_err_t decodeDtcResponse(const RawFrame* frames, size_t count, uint8_t mode, std::vector<uint16_t>& rawDtcs)
-{
-    rawDtcs.clear();
-    std::vector<uint8_t> payload;
-    esp_err_t            err = reassemble(frames, count, payload);
-    if (err != ESP_OK)
-    {
-        return err;
-    }
-    if (payload.empty() || payload[0] != mode)
-    {
-        return ESP_ERR_INVALID_RESPONSE;
-    }
-    return extractDtcs(payload, rawDtcs);
-}
-
-esp_err_t decodeVinResponse(const RawFrame* frames, size_t count, char (&vin)[17])
-{
-    std::vector<uint8_t> payload;
-    esp_err_t            err = reassemble(frames, count, payload);
-    if (err != ESP_OK)
-    {
-        return err;
-    }
-    if (payload.size() < 2 || payload[0] != RESPONSE_VEHICLE_INFO || payload[1] != PID_VIN)
-    {
-        return ESP_ERR_INVALID_RESPONSE;
-    }
-    return extractVin(payload, vin);
 }
 
 }  // namespace obd2frame

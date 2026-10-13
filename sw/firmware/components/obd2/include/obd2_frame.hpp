@@ -50,23 +50,11 @@ esp_err_t parseFirstFrame(const uint8_t* data, size_t length, uint16_t& totalLen
 // True if this is a consecutive frame whose 4-bit sequence matches the 1-based index (wraps 15 -> 0).
 bool consecutiveSequenceOk(const uint8_t* data, size_t length, uint16_t index);
 
-// Joins one single frame, or a first frame plus consecutive frames, into the ISO-TP payload (SID first).
-// Checks frame types, sequence numbers, total length and that all frames are present. Returns the payload.
-esp_err_t reassemble(const RawFrame* frames, size_t count, std::vector<uint8_t>& payload);
-
 // Mode 03/07/0A payload (0x43 / 0x47 / 0x4A, then 2 bytes per DTC) to raw 16-bit DTCs. A trailing odd byte is dropped.
 esp_err_t extractDtcs(const std::vector<uint8_t>& payload, std::vector<uint16_t>& rawDtcs);
 
 // Mode 09 PID 02 payload (0x49 0x02 count, then 17 ASCII chars) to the VIN.
 esp_err_t extractVin(const std::vector<uint8_t>& payload, char (&vin)[17]);
-
-// Reassembles `count` frames and checks the response SID equals `mode` (0x43 / 0x47 / 0x4A), then extracts raw DTCs.
-// ESP_ERR_INVALID_RESPONSE on a wrong SID. Clears `rawDtcs` on failure.
-esp_err_t decodeDtcResponse(const RawFrame* frames, size_t count, uint8_t mode, std::vector<uint16_t>& rawDtcs);
-
-// Reassembles `count` frames and checks the header is 0x49 0x02, then extracts the VIN.
-// ESP_ERR_INVALID_RESPONSE on a wrong header.
-esp_err_t decodeVinResponse(const RawFrame* frames, size_t count, char (&vin)[17]);
 
 // ---- Multi-ECU response collection (DTC modes 03/07/0A and VIN, mode 09/02) ----
 // A functional request is answered by several ECUs at once; each reassembles in its own session keyed by the response

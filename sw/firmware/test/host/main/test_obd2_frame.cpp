@@ -132,45 +132,14 @@ static void test_consecutive_sequence_wraps_after_15(void)
     TEST_ASSERT_FALSE(consecutiveSequenceOk(cf1, 0, 1));
 }
 
-static void vinFrames(RawFrame (&f)[3])
+static void test_extract_vin(void)
 {
-    // 49 02 01 + "WVWZZZ1KZ6W000001"
-    f[0] = frame({0x10, 0x14, 0x49, 0x02, 0x01, 'W', 'V', 'W'});
-    f[1] = frame({0x21, 'Z', 'Z', 'Z', '1', 'K', 'Z', '6'});
-    f[2] = frame({0x22, 'W', '0', '0', '0', '0', '0', '1'});
-}
-
-static void test_reassemble_vin(void)
-{
-    RawFrame             f[3];
-    std::vector<uint8_t> p;
-    vinFrames(f);
-    TEST_ASSERT_EQUAL_INT(ESP_OK, reassemble(f, 3, p));
-    TEST_ASSERT_EQUAL_UINT32(20, p.size());
+    const char           src[] = "WVWZZZ1KZ6W000001";
+    std::vector<uint8_t> p     = {0x49, 0x02, 0x01};
+    p.insert(p.end(), src, src + 17);
     char vin[17];
     TEST_ASSERT_EQUAL_INT(ESP_OK, extractVin(p, vin));
-    TEST_ASSERT_EQUAL_MEMORY("WVWZZZ1KZ6W000001", vin, 17);
-}
-
-static void test_reassemble_rejects_broken_sequences(void)
-{
-    RawFrame             f[3];
-    std::vector<uint8_t> p;
-    vinFrames(f);
-    TEST_ASSERT_NOT_EQUAL(ESP_OK, reassemble(f, 2, p));  // a consecutive frame is missing
-    TEST_ASSERT_TRUE(p.empty());
-    f[1].data[0] = 0x22;                                 // wrong sequence number
-    TEST_ASSERT_NOT_EQUAL(ESP_OK, reassemble(f, 3, p));
-    vinFrames(f);
-    f[2].data[0] = 0x32;                                 // flow control instead of consecutive
-    TEST_ASSERT_NOT_EQUAL(ESP_OK, reassemble(f, 3, p));
-    vinFrames(f);
-    TEST_ASSERT_NOT_EQUAL(ESP_OK, reassemble(f + 1, 2, p));  // starts without a first frame
-    TEST_ASSERT_NOT_EQUAL(ESP_OK, reassemble(f, 0, p));
-    TEST_ASSERT_NOT_EQUAL(ESP_OK, reassemble(nullptr, 3, p));
-    vinFrames(f);
-    f[1].length = 200;                                   // DLC above 8
-    TEST_ASSERT_NOT_EQUAL(ESP_OK, reassemble(f, 3, p));
+    TEST_ASSERT_EQUAL_MEMORY(src, vin, 17);
 }
 
 static void test_extract_vin_rejects_short_payload(void)
@@ -183,27 +152,19 @@ static void test_extract_vin_rejects_short_payload(void)
 static void test_dtcs_single_frame(void)
 {
     // 06 43 01 33 02 44 00 -> payload after the SID is 4 bytes: P0133, P0244 (PCI length 5)
-    RawFrame             f = frame({0x05, 0x43, 0x01, 0x33, 0x02, 0x44, 0x00, 0x00});
-    std::vector<uint8_t> p;
+    std::vector<uint8_t>  p = {0x43, 0x01, 0x33, 0x02, 0x44};
     std::vector<uint16_t> dtcs;
-    TEST_ASSERT_EQUAL_INT(ESP_OK, reassemble(&f, 1, p));
     TEST_ASSERT_EQUAL_INT(ESP_OK, extractDtcs(p, dtcs));
     TEST_ASSERT_EQUAL_UINT32(2, dtcs.size());
     TEST_ASSERT_EQUAL_HEX16(0x0133, dtcs[0]);
     TEST_ASSERT_EQUAL_HEX16(0x0244, dtcs[1]);
 }
 
-static void test_dtcs_multi_frame_pair_split_across_frames(void)
+static void test_dtcs_multi_frame_payload(void)
 {
-    // 15 bytes: 43 + 7 DTCs. FF holds 43 + 2.5 DTCs, so the third DTC straddles the FF/CF boundary.
-    RawFrame f[3];
-    f[0] = frame({0x10, 0x0F, 0x43, 0x01, 0x01, 0x02, 0x02, 0x03});
-    f[1] = frame({0x21, 0x03, 0x04, 0x04, 0x05, 0x05, 0x06, 0x06});
-    f[2] = frame({0x22, 0x07, 0x07, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA});
-    std::vector<uint8_t>  p;
+    // 15 bytes: 43 + 7 DTCs (the reassembly itself is covered by the DiagCollector tests).
+    std::vector<uint8_t>  p = {0x43, 0x01, 0x01, 0x02, 0x02, 0x03, 0x03, 0x04, 0x04, 0x05, 0x05, 0x06, 0x06, 0x07, 0x07};
     std::vector<uint16_t> dtcs;
-    TEST_ASSERT_EQUAL_INT(ESP_OK, reassemble(f, 3, p));
-    TEST_ASSERT_EQUAL_UINT32(15, p.size());
     TEST_ASSERT_EQUAL_INT(ESP_OK, extractDtcs(p, dtcs));
     TEST_ASSERT_EQUAL_UINT32(7, dtcs.size());
     TEST_ASSERT_EQUAL_HEX16(0x0303, dtcs[2]);
@@ -223,31 +184,6 @@ static void test_dtcs_odd_payload_and_empty_response(void)
     TEST_ASSERT_NOT_EQUAL(ESP_OK, extractDtcs(p, dtcs));
 }
 
-
-static void test_decode_dtc_response_checks_the_sid(void)
-{
-    RawFrame              f = frame({0x05, 0x43, 0x01, 0x33, 0x02, 0x44, 0x00, 0x00});
-    std::vector<uint16_t> dtcs;
-    TEST_ASSERT_EQUAL_INT(ESP_OK, decodeDtcResponse(&f, 1, 0x43, dtcs));
-    TEST_ASSERT_EQUAL_UINT32(2, dtcs.size());
-    TEST_ASSERT_EQUAL_INT(ESP_ERR_INVALID_RESPONSE, decodeDtcResponse(&f, 1, 0x47, dtcs));  // pending SID expected
-    TEST_ASSERT_TRUE(dtcs.empty());
-    TEST_ASSERT_NOT_EQUAL(ESP_OK, decodeDtcResponse(&f, 0, 0x43, dtcs));
-    TEST_ASSERT_NOT_EQUAL(ESP_OK, decodeDtcResponse(nullptr, 1, 0x43, dtcs));
-}
-
-static void test_decode_vin_response_checks_the_header(void)
-{
-    RawFrame f[3];
-    char     vin[17];
-    vinFrames(f);
-    TEST_ASSERT_EQUAL_INT(ESP_OK, decodeVinResponse(f, 3, vin));
-    TEST_ASSERT_EQUAL_MEMORY("WVWZZZ1KZ6W000001", vin, 17);
-    TEST_ASSERT_EQUAL_INT(ESP_ERR_INVALID_SIZE, decodeVinResponse(f, 2, vin));  // frame missing
-    vinFrames(f);
-    f[0].data[3] = 0x03;  // PID 0x03 instead of 0x02
-    TEST_ASSERT_EQUAL_INT(ESP_ERR_INVALID_RESPONSE, decodeVinResponse(f, 3, vin));
-}
 
 // ROB-1: exhaustive and seeded-random malformed input. Invariants: no crash, outputs stay in bounds.
 static void test_exhaustive_first_bytes_and_lengths(void)
@@ -282,32 +218,17 @@ static void test_exhaustive_first_bytes_and_lengths(void)
     }
 }
 
-static void test_random_frame_sequences_never_overrun(void)
+static void test_random_payloads_never_overrun(void)
 {
     uint32_t rng = 12345;
     auto     next = [&rng]() { return rng = rng * 1664525u + 1013904223u; };
     for (int iter = 0; iter < 20000; iter++)
     {
-        RawFrame frames[80] = {};
-        size_t   count      = (next() >> 8) % 81;
-        for (size_t k = 0; k < count; k++)
-        {
-            for (auto& byte : frames[k].data) byte = static_cast<uint8_t>(next() >> 16);
-            frames[k].length = (next() >> 8) % (CAN_DATA_MAX + 2);
-            if (k == 0 && (next() & 1)) frames[k].data[0] = 0x10 | (frames[k].data[0] & 0x0F);
-            if (k > 0 && (next() & 3)) frames[k].data[0] = 0x20 | (k & 0x0F);
-        }
-        std::vector<uint8_t> payload;
-        if (reassemble(frames, count, payload) == ESP_OK)
-        {
-            TEST_ASSERT_TRUE(payload.size() <= MAX_ISOTP_LENGTH);
-        }
-        else
-        {
-            TEST_ASSERT_TRUE(payload.empty());
-        }
+        std::vector<uint8_t> payload((next() >> 8) % (MAX_ISOTP_LENGTH + 1));
+        for (auto& byte : payload) byte = static_cast<uint8_t>(next() >> 16);
         std::vector<uint16_t> dtcs;
         extractDtcs(payload, dtcs);
+        TEST_ASSERT_TRUE(dtcs.size() <= MAX_ISOTP_LENGTH / 2);
         char vin[17];
         extractVin(payload, vin);
     }
@@ -396,8 +317,11 @@ static void test_simulator_vin_frames_decode_to_a_valid_vin(void)
     f[2].data[0] = 0x22;
     for (int i = 0; i < 7; i++) f[2].data[1 + i] = (uint8_t)vinSrc[10 + i];
     for (auto& x : f) x.length = 8;
+    DiagCollector c;
+    c.begin(DiagKind::Vin, 0x09, 0);
+    for (const RawFrame& x : f) c.onFrame(0x7E8, x.data, x.length, 0);
     char vin[17];
-    TEST_ASSERT_EQUAL_INT(ESP_OK, decodeVinResponse(f, 3, vin));
+    TEST_ASSERT_TRUE(c.vin(vin));
     char z[18] = {};
     memcpy(z, vin, 17);
     TEST_ASSERT_TRUE(isValidVin(z));
@@ -415,14 +339,11 @@ extern "C" void run_obd2_frame_tests(void)
     RUN_TEST(test_first_frame_lengths);
     RUN_TEST(test_first_frame_rejects_bad_lengths);
     RUN_TEST(test_consecutive_sequence_wraps_after_15);
-    RUN_TEST(test_reassemble_vin);
-    RUN_TEST(test_reassemble_rejects_broken_sequences);
+    RUN_TEST(test_extract_vin);
     RUN_TEST(test_extract_vin_rejects_short_payload);
     RUN_TEST(test_dtcs_single_frame);
-    RUN_TEST(test_dtcs_multi_frame_pair_split_across_frames);
+    RUN_TEST(test_dtcs_multi_frame_payload);
     RUN_TEST(test_dtcs_odd_payload_and_empty_response);
-    RUN_TEST(test_decode_dtc_response_checks_the_sid);
-    RUN_TEST(test_decode_vin_response_checks_the_header);
     RUN_TEST(test_connect_plan_skips_discovery_only_on_vin_match);
     RUN_TEST(test_vin_validation);
     RUN_TEST(test_simulator_vin_frames_decode_to_a_valid_vin);
@@ -430,5 +351,5 @@ extern "C" void run_obd2_frame_tests(void)
     RUN_TEST(test_vin_confirmed_by_api_decides_recovery);
     RUN_TEST(test_discovery_backoff_doubles_and_caps);
     RUN_TEST(test_exhaustive_first_bytes_and_lengths);
-    RUN_TEST(test_random_frame_sequences_never_overrun);
+    RUN_TEST(test_random_payloads_never_overrun);
 }
