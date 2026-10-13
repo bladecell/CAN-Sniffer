@@ -21,6 +21,9 @@ All paths are relative to the git root. Firmware and frontend conventions are in
 
 `plan/` is gitignored and local only. `docs/` is committed.
 
+## Parallel sessions
+Several sessions can share this working tree. Before editing or committing, read `plan/LANES.md` (file ownership, commit rules, requests) and update your row when you start or finish. Edit only files your lane owns. Commit with `git commit -m "<task id>: ..." -- <paths>`, never `git add -A`, `git add .` or `git commit -a`. Don't `reset`, `stash` or amend commits another lane may have built on.
+
 ## Docs
 Read a doc before changing what it describes. If your change alters a contract or behaviour in a doc, update the doc in the same commit. A doc that disagrees with the code is a bug: fix whichever one is wrong.
 - `docs/architecture.md`: components, FreeRTOS tasks, data flow, startup order
