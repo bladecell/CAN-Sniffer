@@ -30,8 +30,8 @@
 
 #define HEALTHCHECK_RETRIES 3
 #define OBD2_HEALTHCHECK_PING_PERIOD_MS                                                                              \
-    (NO_MESSAGE_SENT_HEALTHCHECK_PING_PERIOD_MS - 1000) > 1000 ? (NO_MESSAGE_SENT_HEALTHCHECK_PING_PERIOD_MS - 1000) \
-                                                               : 1000
+    (((NO_MESSAGE_SENT_HEALTHCHECK_PING_PERIOD_MS - 1000) > 1000) ? (NO_MESSAGE_SENT_HEALTHCHECK_PING_PERIOD_MS - 1000) \
+                                                                    : 1000)
 #define HEALTHCHECK_RESPONSE_TIMEOUT_MS 3000
 #define SUPPORTED_PID_RESPONSE_TIMEOUT_MS 500
 #define SUPPORTED_PID_RESPONSE_WINDOW_MS 50
