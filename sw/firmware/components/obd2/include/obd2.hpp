@@ -25,6 +25,7 @@
 #include "freertos/event_groups.h"
 #include "obd2_data_model.hpp"
 #include "obd2_common.hpp"
+#include "obd2_frame.hpp"
 
 #define POLL_TASK_PERIOD_MS MIN_TRANSMIT_PERIOD_MS
 #define ERR_ACCUMULATE(result, expr) ((result) = (result) ?: (expr))
@@ -94,9 +95,6 @@ private:
     SemaphoreHandle_t diagnosticRequestMtx_ = nullptr;
     std::atomic<bool> stopRequested_{false};
     bool busMutexOwnedByReceive_ = false;
-    uint16_t multiframe_totalLength_ = 0, multiframe_consecutiveFrameIndex_ = 0,
-             multiframe_consecutiveFramesNeeded_ = 0;
-    std::vector<CanDriver::CanFrame> multiFrameBuffer_;
     OBD2(const OBD2&)                 = delete;
     OBD2&      operator=(const OBD2&) = delete;
     CanDriver& canDriver              = CanDriver::getInstance();
@@ -123,11 +121,22 @@ private:
     SemaphoreHandle_t xRequestNextPIDSemaphore = nullptr;
     SemaphoreHandle_t healthCheckSemaphore     = nullptr;
 
-    uint8_t  multiframe_state         = 99;
-    uint32_t last_multiframe_received = 0;
-
-    void multiframe_watchdog();
-    void resetMultiFrame();
+    // Multi-ECU DTC / VIN collection (obd2_transport.cpp). diagCollector_ and diagSeenRequest_ belong to the receive
+    // task; the requester and the poll task only touch the atomics.
+    obd2frame::DiagCollector diagCollector_;
+    std::atomic<uint32_t>    diagRequest_{0};   // (generation << 8) | request mode; mode 0 = no collection
+    std::atomic<uint32_t>    diagSentMs_{0};    // when the poll task put the request on the bus
+    std::atomic<bool>        diagSent_{false};
+    std::atomic<bool>        diagPending_{false};  // an ECU answered NRC 0x78: the requester may wait longer
+    uint32_t                 diagGen_         = 0;  // requester side, under diagnosticRequestMtx_
+    uint32_t                 diagSeenRequest_ = 0;
+    void      resetDiagCollection();
+    void      releaseDiagBus();
+    void      syncDiagRequest();
+    bool      handleDiagFrame(const CanDriver::CanFrame& f);
+    void      serviceDiagCollection();
+    void      commitDiagResult();
+    esp_err_t runDiagRequest(uint8_t mode, SemaphoreHandle_t sem, PollRequest& r);
     bool admitOperation();
     void releaseOperation();
     struct OperationGuard {
@@ -200,15 +209,10 @@ private:
 
     // Frame Parsing
     esp_err_t parseCurrentData(const CanDriver::CanFrame& f);
-    esp_err_t parseDTCs(std::vector<CanDriver::CanFrame>& frames, uint8_t mode);
 
     esp_err_t   parseRecFrame(const CanDriver::CanFrame& f);
     esp_err_t   parseSupportedPIDs(const CanDriver::CanFrame& f);
     esp_err_t   parseClearDTCsAck(const CanDriver::CanFrame& f);
-    esp_err_t   captureMultiFrame(const CanDriver::CanFrame& f);
-    esp_err_t   parseMultiFrame(std::vector<CanDriver::CanFrame>& frames);
-    esp_err_t   parseVehicleInfoMultiFrame(std::vector<CanDriver::CanFrame>& frames);
-    esp_err_t   parseVINMultiFrame(std::vector<CanDriver::CanFrame>& frames);
     esp_err_t   parseRDBI(const CanDriver::CanFrame& f);
     esp_err_t   parseDerivedData(const CanDriver::CanFrame& f);
     esp_err_t   parseRMDSC(const CanDriver::CanFrame& f);

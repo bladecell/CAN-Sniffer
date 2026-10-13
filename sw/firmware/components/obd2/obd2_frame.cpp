@@ -385,6 +385,18 @@ size_t DiagCollector::activeSessions() const
     return n;
 }
 
+bool DiagCollector::anyPending() const
+{
+    for (bool p : pendingActive_)
+    {
+        if (p)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool DiagCollector::vin(char (&out)[17]) const
 {
     if (!haveVin_)

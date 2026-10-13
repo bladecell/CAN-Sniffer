@@ -37,21 +37,3 @@
 #define SUPPORTED_PID_RESPONSE_WINDOW_MS 50
 
 inline constexpr const char* TAG = "OBD2";
-
-// Shared by obd2_rx.cpp (parseDTCs) and obd2_transport.cpp (parseVINMultiFrame).
-inline esp_err_t toRawFrames(const std::vector<CanDriver::CanFrame>& frames, std::vector<obd2frame::RawFrame>& raw)
-{
-    raw.reserve(frames.size());
-    for (const auto& frame : frames)
-    {
-        if (frame.length > obd2frame::CAN_DATA_MAX)
-        {
-            return ESP_ERR_INVALID_SIZE;
-        }
-        obd2frame::RawFrame r = {};
-        memcpy(r.data, frame.data, sizeof(r.data));
-        r.length = frame.length;
-        raw.push_back(r);
-    }
-    return ESP_OK;
-}

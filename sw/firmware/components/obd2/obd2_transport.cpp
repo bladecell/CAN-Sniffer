@@ -56,115 +56,167 @@ esp_err_t OBD2::queryMsg(PollRequest& req)
 
     esp_err_t ret = canDriver.transmit(tx, 100);
 
+    if (ret == ESP_OK && req.isRaw && dlc >= 3 && req.id == OBD2_FUNCTIONAL_ID)
+    {
+        // The running DTC / VIN request is on the bus: the receive task starts the first-response wait from here.
+        const uint8_t mode = diagRequest_.load() & 0xFF;
+        if (mode != 0 && tx.data[1] == mode && (mode != MODE_VEHICLE_INFO || tx.data[2] == PID_VIN))
+        {
+            diagSentMs_.store(pdTICKS_TO_MS(xTaskGetTickCount()));
+            diagSent_.store(true);
+        }
+    }
+
     return ret;
 }
 
-void OBD2::multiframe_watchdog()
+void OBD2::releaseDiagBus()
 {
-    if (multiframe_state != 99)
+    if (busMutexOwnedByReceive_ && xBusArbitrationMutex)
     {
-        if ((xTaskGetTickCount() - last_multiframe_received) > pdMS_TO_TICKS(250))
-        {
-            ESP_LOGE(TAG, "Multiframe session timeout");
-            resetMultiFrame();
-        }
-    }
-}
-
-void OBD2::resetMultiFrame()
-{
-    if (busMutexOwnedByReceive_ && xBusArbitrationMutex) {
         xSemaphoreGive(xBusArbitrationMutex);
-        busMutexOwnedByReceive_ = false;
     }
-    multiframe_state = 99;
-    last_multiframe_received = 0;
-    multiframe_totalLength_ = multiframe_consecutiveFrameIndex_ = multiframe_consecutiveFramesNeeded_ = 0;
-    multiFrameBuffer_.clear();
+    busMutexOwnedByReceive_ = false;
 }
 
-esp_err_t OBD2::captureMultiFrame(const CanDriver::CanFrame& f)
+void OBD2::resetDiagCollection()
 {
-    uint8_t                                 frameType;
-    esp_err_t                               ret = ESP_OK;
+    releaseDiagBus();
+    diagCollector_.cancel();
+    diagPending_.store(false);
+    diagSeenRequest_ = 0;
+}
 
-    if (f.length == 0 || f.length > obd2frame::CAN_DATA_MAX)
+// Receive task: follow the requester's start / end of a collection.
+void OBD2::syncDiagRequest()
+{
+    const uint32_t request = diagRequest_.load();
+    if (request == diagSeenRequest_)
     {
-        resetMultiFrame();
-        return ESP_ERR_INVALID_SIZE;
+        return;
     }
-
-    last_multiframe_received = xTaskGetTickCount();
-
-    switch (multiframe_state)
+    diagSeenRequest_ = request;
+    releaseDiagBus();
+    const uint8_t mode = request & 0xFF;
+    if (mode == 0)
     {
-        case 99:  // Idle State
+        diagCollector_.cancel();
+        diagPending_.store(false);
+        return;
+    }
+    diagCollector_.begin(mode == MODE_VEHICLE_INFO ? obd2frame::DiagKind::Vin : obd2frame::DiagKind::Dtc, mode,
+                         pdTICKS_TO_MS(xTaskGetTickCount()));
+}
+
+// Receive task: a frame on a response ID while a collection runs belongs to the collector, one session per ECU.
+bool OBD2::handleDiagFrame(const CanDriver::CanFrame& f)
+{
+    if (f.header.ide || !diagCollector_.active())
+    {
+        return false;
+    }
+    const obd2frame::DiagFrameResult r =
+        diagCollector_.onFrame(f.header.id, f.data, f.length, pdTICKS_TO_MS(xTaskGetTickCount()));
+    if (r.err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "ECU 0x%03X: multi-frame response dropped: %s", static_cast<unsigned>(f.header.id),
+                 esp_err_to_name(r.err));
+    }
+    if (r.sendFlowControl)
+    {
+        // Keep the poll task off the bus while any ECU is mid-message; released when the last session ends.
+        if (!busMutexOwnedByReceive_ && xBusArbitrationMutex &&
+            xSemaphoreTake(xBusArbitrationMutex, pdMS_TO_TICKS(100)) == pdTRUE)
         {
-            frameType = (f.data[0] >> 4) & 0x0F;
-            if (frameType == 1)
-            {
-                multiframe_state = 0;  // Go to First Frame state
-            }
-            else
-            {
-                ESP_LOGE(TAG, "Unexpected multi-frame type: %d", frameType);
-                resetMultiFrame();
-                return ESP_ERR_INVALID_RESPONSE;
-            }
-            ret = captureMultiFrame(f);
-            break;
-        }
-        case 0:  // First Frame
-        {
-            const esp_err_t ffErr = obd2frame::parseFirstFrame(f.data, f.length, multiframe_totalLength_,
-                                                               multiframe_consecutiveFramesNeeded_);
-            if (ffErr != ESP_OK)
-            {
-                resetMultiFrame();
-                return ffErr;
-            }
-            multiframe_consecutiveFrameIndex_   = 0;
-            multiFrameBuffer_.clear();
-            multiFrameBuffer_.push_back(f);
-            if (stopRequested_ || !xBusArbitrationMutex || xSemaphoreTake(xBusArbitrationMutex, pdMS_TO_TICKS(100)) != pdTRUE) { resetMultiFrame(); return ESP_ERR_TIMEOUT; }
             busMutexOwnedByReceive_ = true;
-            vTaskDelay(pdMS_TO_TICKS(10));  // Wait before sending Flow Control
-            if (stopRequested_) { resetMultiFrame(); return ESP_ERR_INVALID_STATE; }
-            sendFlowControlFrame(f.header.id - RESPONSE_ID_OFFSET);
-            multiframe_state = 1;  // Go to Consecutive Frame state
-            break;
         }
-        case 1:  // Consecutive Frames
+        vTaskDelay(pdMS_TO_TICKS(10));  // Wait before sending Flow Control
+        if (!stopRequested_)
         {
-            multiframe_consecutiveFrameIndex_++;
-            if (!obd2frame::consecutiveSequenceOk(f.data, f.length, multiframe_consecutiveFrameIndex_))
-            {
-                ESP_LOGW(TAG, "Unexpected consecutive frame. Expected seq: %d, got: 0x%02X",
-                         multiframe_consecutiveFrameIndex_ & 0x0F, f.data[0]);
-                resetMultiFrame();
-                return ESP_ERR_INVALID_RESPONSE;
-            }
-            multiFrameBuffer_.push_back(f);
-            if (multiframe_consecutiveFrameIndex_ >= multiframe_consecutiveFramesNeeded_)
-            {
-                if (busMutexOwnedByReceive_) { xSemaphoreGive(xBusArbitrationMutex); busMutexOwnedByReceive_ = false; }
-                ret              = parseMultiFrame(multiFrameBuffer_);
-                resetMultiFrame();
-            }
-            break;
+            sendFlowControlFrame(r.flowControlId);
         }
-        default:
-            resetMultiFrame();
-            ret = ESP_ERR_INVALID_STATE;
-            break;
+    }
+    return r.consumed;
+}
+
+// Receive task, every loop: expire stale sessions and publish the result once all ECUs have answered.
+void OBD2::serviceDiagCollection()
+{
+    if (!diagCollector_.active())
+    {
+        releaseDiagBus();
+        return;
+    }
+    if (diagSent_.exchange(false))
+    {
+        diagCollector_.markSent(diagSentMs_.load());
+    }
+    const obd2frame::DiagStatus status = diagCollector_.poll(pdTICKS_TO_MS(xTaskGetTickCount()));
+    diagPending_.store(diagCollector_.anyPending());
+    if (diagCollector_.activeSessions() == 0)
+    {
+        releaseDiagBus();
+    }
+    if (status == obd2frame::DiagStatus::Complete)
+    {
+        commitDiagResult();
+        diagCollector_.cancel();
+        diagPending_.store(false);
+    }
+    else if (status == obd2frame::DiagStatus::Failed)
+    {
+        ESP_LOGW(TAG, "No ECU answered the 0x%02X request", static_cast<unsigned>(diagSeenRequest_ & 0xFF));
+        diagCollector_.cancel();
+        diagPending_.store(false);
+    }
+}
+
+void OBD2::commitDiagResult()
+{
+    const uint8_t mode = diagSeenRequest_ & 0xFF;
+    if (mode == MODE_VEHICLE_INFO)
+    {
+        char vin[VIN_LENGTH] = {};
+        const bool valid     = diagCollector_.vin(vin);
+        if (diagCollector_.conflictingVins() > 0)
+        {
+            ESP_LOGW(TAG, "%u ECU(s) reported a different VIN; keeping the first valid one",
+                     static_cast<unsigned>(diagCollector_.conflictingVins()));
+        }
+        if (xSemaphoreTake(vinData.mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
+        {
+            // Do not signal: the waiting request then times out with an error instead of returning a stale VIN as success.
+            return;
+        }
+        if (valid)
+        {
+            memcpy(vinData.vin, vin, VIN_LENGTH);
+        }
+        vinData.isValid     = valid;
+        vinData.lastUpdated = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        xSemaphoreGive(vinData.vinReadySemaphore);
+        xSemaphoreGive(vinData.mtx_);
+        return;
     }
 
-    if (ret != ESP_OK)
+    for (size_t i = 0; i < diagCollector_.dtcCount(); i++)
     {
-        ESP_LOGE(TAG, "Failed to parse multi-frame: %s", esp_err_to_name(ret));
-        resetMultiFrame();
+        _setDTC(diagCollector_.dtcs()[i], mode);
     }
-    return ret;
+    switch (mode)
+    {
+        case MODE_DTCS:
+            xSemaphoreGive(dtcData.confirmedReadySemaphore);
+            break;
+        case MODE_PENDING_DTCS:
+            xSemaphoreGive(dtcData.pendingReadySemaphore);
+            break;
+        case MODE_PERMANENT_DTCS:
+            xSemaphoreGive(dtcData.permanentReadySemaphore);
+            break;
+        default:
+            break;
+    }
 }
 
 inline void OBD2::sendFlowControlFrame(uint32_t id)
@@ -183,99 +235,37 @@ inline void OBD2::sendFlowControlFrame(uint32_t id)
     queryMsg(r);
 }
 
-esp_err_t OBD2::parseMultiFrame(std::vector<CanDriver::CanFrame>& frames)
+// Requester side: start the collection, enqueue the request, wait for the merged result, end the collection.
+// Waits OBD2_DIAG_WAIT_MS, or while an ECU has a response pending (NRC 0x78) up to OBD2_DIAG_PENDING_CAP_MS.
+esp_err_t OBD2::runDiagRequest(uint8_t mode, SemaphoreHandle_t sem, PollRequest& r)
 {
-    if (frames.empty())
+    diagSent_.store(false);
+    const uint32_t generation = ++diagGen_;
+    diagRequest_.store((generation << 8) | mode);
+
+    esp_err_t result = req(r);
+    if (result == ESP_OK)
     {
-        return ESP_ERR_INVALID_ARG;
+        const TickType_t start     = xTaskGetTickCount();
+        const TickType_t deadline  = start + pdMS_TO_TICKS(OBD2_DIAG_WAIT_MS);
+        const TickType_t hardLimit = start + pdMS_TO_TICKS(OBD2_DIAG_PENDING_CAP_MS);
+        result                     = ESP_ERR_INVALID_STATE;
+        while (!stopRequested_)
+        {
+            if (xSemaphoreTake(sem, pdMS_TO_TICKS(50)) == pdTRUE)
+            {
+                result = stopRequested_ ? ESP_ERR_INVALID_STATE : ESP_OK;
+                break;
+            }
+            const TickType_t now = xTaskGetTickCount();
+            if (tickDeadlineDue(hardLimit, now) || (tickDeadlineDue(deadline, now) && !diagPending_.load()))
+            {
+                ESP_LOGW(TAG, "Diagnostic request 0x%02X timed out", static_cast<unsigned>(mode));
+                result = ESP_ERR_TIMEOUT;
+                break;
+            }
+        }
     }
-
-    esp_err_t ret = ESP_OK;
-
-    uint8_t mode = frames[0].data[2];
-
-    switch (mode)
-    {
-        case RESPONSE_CURRENT_DATA:
-            // NOT IMPLEMENTED
-            break;
-        case RESPONSE_DTCS:
-            ret = parseDTCs(frames, mode);
-            break;
-        case RESPONSE_CLEAR_DTCS:
-            // NOT IMPLEMENTED
-            break;
-        case RESPONSE_PENDING_DTCS:
-            ret = parseDTCs(frames, mode);
-            break;
-        case RESPONSE_VEHICLE_INFO:
-            ret = parseVehicleInfoMultiFrame(frames);
-            break;
-        case RESPONSE_PERMANENT_DTCS:
-            ret = parseDTCs(frames, mode);
-            break;
-        default:
-            return ESP_ERR_NOT_SUPPORTED;
-    }
-
-    return ret;
-}
-
-esp_err_t OBD2::parseVehicleInfoMultiFrame(std::vector<CanDriver::CanFrame>& frames)
-{
-    if (frames.empty())
-    {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    esp_err_t ret = ESP_OK;
-
-    uint16_t pid = frames[0].data[3];
-
-    switch (pid)
-    {
-        case PID_VIN:
-            ret = parseVINMultiFrame(frames);
-            break;
-        default:
-            ret = ESP_ERR_NOT_SUPPORTED;
-            break;
-    }
-    return ret;
-}
-
-esp_err_t OBD2::parseVINMultiFrame(std::vector<CanDriver::CanFrame>& frames)
-{
-    if (frames.empty())
-    {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    std::vector<obd2frame::RawFrame> raw;
-    ESP_RETURN_ON_ERROR(toRawFrames(frames, raw), TAG, "bad frame length");
-
-    char      vinBuffer[VIN_LENGTH] = {0};
-    esp_err_t ret                   = obd2frame::decodeVinResponse(raw.data(), raw.size(), vinBuffer);
-
-    if (xSemaphoreTake(vinData.mtx_, pdMS_TO_TICKS(10)) != pdTRUE)
-    {
-        // Do not signal: the waiting request then times out with an error instead of returning a stale VIN as success.
-        return ESP_ERR_TIMEOUT;
-    }
-
-    if (ret == ESP_OK)
-    {
-        memcpy(vinData.vin, vinBuffer, VIN_LENGTH);
-        vinData.isValid = true;
-    }
-    else
-    {
-        vinData.isValid = false;
-    }
-
-    vinData.lastUpdated = xTaskGetTickCount() * portTICK_PERIOD_MS;
-    xSemaphoreGive(vinData.vinReadySemaphore);
-    xSemaphoreGive(vinData.mtx_);
-
-    return ret;
+    diagRequest_.store(generation << 8);  // mode 0: the receive task drops the collection
+    return result;
 }

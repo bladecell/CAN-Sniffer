@@ -455,7 +455,9 @@ static void test_diag_pending_response_extends_the_wait_but_is_bounded(void)
     startDtc(c);
     feed(c, 0x7E8, frame8({0x01, 0x43}), 0);  // ECU A answered, nothing to report
     const RawFrame pending = frame8({0x03, 0x7F, 0x03, 0x78});
+    TEST_ASSERT_FALSE(c.anyPending());
     feed(c, 0x7E9, pending, 10);
+    TEST_ASSERT_TRUE(c.anyPending());
     TEST_ASSERT_EQUAL_INT(static_cast<int>(DiagStatus::Waiting), static_cast<int>(c.poll(10 + T.quietGapMs + 100)));
     feed(c, 0x7E9, pending, 4000);  // P2* restarts on each valid 0x78
     TEST_ASSERT_EQUAL_INT(static_cast<int>(DiagStatus::Waiting), static_cast<int>(c.poll(4000 + T.pendingMs - 1)));

@@ -130,6 +130,8 @@ public:
     bool   active() const { return kind_ != DiagKind::None; }
     size_t activeSessions() const;
     size_t responders() const { return responders_; }
+    // True while any ECU has an unexpired NRC 0x78 (response pending).
+    bool anyPending() const;
 
     // Merged, de-duplicated raw DTCs (zero DTCs and padding are not stored).
     const uint16_t* dtcs() const { return dtcs_; }

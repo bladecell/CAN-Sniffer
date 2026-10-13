@@ -111,25 +111,7 @@ esp_err_t OBD2::requestVinInternal()
     r.retries_left        = DEFAULT_NUMER_OF_RETRIES;
 
     xSemaphoreTake(vinData.vinReadySemaphore, 0);
-    esp_err_t enqueueResult = req(r);
-    if (enqueueResult != ESP_OK)
-    {
-        return enqueueResult;
-    }
-    TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(500);
-    while (!stopRequested_)
-    {
-        TickType_t remaining = deadline - xTaskGetTickCount();
-        if ((int32_t)remaining <= 0)
-        {
-            return ESP_ERR_TIMEOUT;
-        }
-        if (xSemaphoreTake(vinData.vinReadySemaphore, std::min(remaining, pdMS_TO_TICKS(50))) == pdTRUE)
-        {
-            return stopRequested_ ? ESP_ERR_INVALID_STATE : ESP_OK;
-        }
-    }
-    return ESP_ERR_INVALID_STATE;
+    return runDiagRequest(MODE_VEHICLE_INFO, vinData.vinReadySemaphore, r);
 }
 
 esp_err_t OBD2::requestDTC(uint8_t mode)
@@ -188,22 +170,7 @@ esp_err_t OBD2::requestDTC(uint8_t mode)
     r.isRecurring         = false;
     r.retries_left        = DEFAULT_NUMER_OF_RETRIES;
 
-    esp_err_t enqueueResult = req(r);
-    if (enqueueResult != ESP_OK)
-    {
-        return enqueueResult;
-    }
-    TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(500);
-    while (!stopRequested_)
-    {
-        TickType_t remaining = deadline - xTaskGetTickCount();
-        if ((int32_t)remaining <= 0) { ESP_LOGW(TAG, "DTC Request %s timed out", OBD2_MODE_TO_STR(mode)); return ESP_ERR_TIMEOUT; }
-        if (xSemaphoreTake(*sem, std::min(remaining, pdMS_TO_TICKS(50))) == pdTRUE)
-        {
-            return stopRequested_ ? ESP_ERR_INVALID_STATE : ESP_OK;
-        }
-    }
-    return ESP_ERR_INVALID_STATE;
+    return runDiagRequest(mode, *sem, r);
 }
 
 esp_err_t OBD2::requestClearDTCs()

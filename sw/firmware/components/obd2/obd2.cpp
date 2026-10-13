@@ -292,8 +292,7 @@ esp_err_t OBD2::stopInternal(bool)
     connected_subscribers_.clear();
     xSemaphoreGive(connected_subscribers_mtx_);
 
-    resetMultiFrame();
-    last_multiframe_received = 0;
+    resetDiagCollection();
     pollTaskUtilization = 0.0f;
     nrc_list_size = 0;
     memset(nrc_list, 0, sizeof(nrc_list));
@@ -393,7 +392,7 @@ esp_err_t OBD2::stopInternal(bool)
     }
 
     pidsInitialized = false;
-    multiframe_state = 99; busMutexOwnedByReceive_ = false;
+    busMutexOwnedByReceive_ = false;
     if (lifecycleEvents_)
     {
         xEventGroupClearBits(lifecycleEvents_, STARTUP_GATE | RECEIVE_EXIT | POLL_EXIT | CALLBACK_EXIT);

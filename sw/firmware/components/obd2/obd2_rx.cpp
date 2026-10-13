@@ -4,7 +4,7 @@ void OBD2::receiveTaskWrapper(void* param)
 {
     OBD2* obd2 = static_cast<OBD2*>(param);
     obd2->receiveTask();
-    obd2->resetMultiFrame();
+    obd2->resetDiagCollection();
     obd2->workerExit(RECEIVE_EXIT);
 }
 
@@ -23,6 +23,7 @@ void OBD2::receiveTask()
     {
         if (!canDriver.isBusConnected())
         {
+            resetDiagCollection();
             xSemaphoreTake(xBusConnectionSemaphore, portMAX_DELAY);
             if (stopRequested_)
             {
@@ -69,6 +70,7 @@ void OBD2::receiveTask()
             }
         }
 
+        syncDiagRequest();
         CanDriver::CanFrame f{};
         esp_err_t           ret = canDriver.receive(f, 10);
         if (stopRequested_)
@@ -78,7 +80,8 @@ void OBD2::receiveTask()
 
         if (ret == ESP_OK)
         {
-            ret = parseRecFrame(f);
+            syncDiagRequest();  // the request may have gone out while this task waited for the frame
+            ret = handleDiagFrame(f) ? ESP_OK : parseRecFrame(f);
 
             if (ret != ESP_OK)
             {
@@ -91,7 +94,7 @@ void OBD2::receiveTask()
             vTaskDelay(pdMS_TO_TICKS(10));
         }
 
-        multiframe_watchdog();
+        serviceDiagCollection();
 
         // Health check: periodically probe Mode 1 (supported PIDs) and clear the
         // poll queue if the ECU stops responding (e.g. ignition turned off).
@@ -166,7 +169,8 @@ esp_err_t OBD2::parseRecFrame(const CanDriver::CanFrame& f)
 
     if (frame_type != obd2frame::IsoTp::Single)
     {
-        return captureMultiFrame(f);
+        // Multi-frame DTC / VIN responses are reassembled by handleDiagFrame while a request runs; anything else is not ours.
+        return ESP_OK;
     }
 
     obd2frame::SingleFrameInfo info;
@@ -184,29 +188,15 @@ esp_err_t OBD2::parseRecFrame(const CanDriver::CanFrame& f)
             ret = parseCurrentData(f);
             break;
         case RESPONSE_DTCS:
-        {
-            std::vector<CanDriver::CanFrame> frame = {f};
-            ret                                    = parseDTCs(frame, mode);
-            break;
-        }
+        case RESPONSE_PENDING_DTCS:
+        case RESPONSE_PERMANENT_DTCS:
+            break;  // answers to a DTC request are collected by handleDiagFrame; one outside a request is stale
         case RESPONSE_CLEAR_DTCS:
             parseClearDTCsAck(f);
             break;
-        case RESPONSE_PENDING_DTCS:
-        {
-            std::vector<CanDriver::CanFrame> frame = {f};
-            ret                                    = parseDTCs(frame, mode);
-            break;
-        }
         case RESPONSE_VEHICLE_INFO:
             // TODO parseVehicleInfo(f);
             break;
-        case RESPONSE_PERMANENT_DTCS:
-        {
-            std::vector<CanDriver::CanFrame> frame = {f};
-            ret                                    = parseDTCs(frame, mode);
-            break;
-        }
         case RESPONSE_MODE_DIAGNOSTIC_SESSION_CONTROL:
             parseRMDSC(f);
             break;
@@ -362,46 +352,6 @@ esp_err_t OBD2::parseDerivedData(const CanDriver::CanFrame& f)
     if (ret == ESP_OK)
     {
         runPidUpdateCallbacks(pid, &stopRequested_);
-    }
-
-    return ret;
-}
-
-esp_err_t OBD2::parseDTCs(std::vector<CanDriver::CanFrame>& frames, uint8_t mode)
-{
-    if (frames.empty())
-    {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    std::vector<obd2frame::RawFrame> raw;
-    ESP_RETURN_ON_ERROR(toRawFrames(frames, raw), TAG, "bad frame length");
-
-    std::vector<uint16_t> rawDtcs;
-    esp_err_t             ret = obd2frame::decodeDtcResponse(raw.data(), raw.size(), mode, rawDtcs);
-    if (ret != ESP_OK)
-    {
-        return ret;
-    }
-
-    for (const uint16_t rawDTC : rawDtcs)
-    {
-        ERR_ACCUMULATE(ret, _setDTC(rawDTC, mode));
-    }
-
-    switch (mode)
-    {
-        case RESPONSE_DTCS:
-            xSemaphoreGive(dtcData.confirmedReadySemaphore);
-            break;
-        case RESPONSE_PENDING_DTCS:
-            xSemaphoreGive(dtcData.pendingReadySemaphore);
-            break;
-        case RESPONSE_PERMANENT_DTCS:
-            xSemaphoreGive(dtcData.permanentReadySemaphore);
-            break;
-        default:
-            break;
     }
 
     return ret;
