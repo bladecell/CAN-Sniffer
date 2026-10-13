@@ -12,7 +12,7 @@ All paths are relative to `sw/firmware/`. Dependencies are the `REQUIRES` / `PRI
 | CAN driver | `components/can_driver/` | TWAI node, RX and TX queues, TX task, bus health check task, connected/disconnected callback, loopback/debug mode, `isBusConnected()`, `quickCheckBus()` | esp_driver_twai, driver |
 | OBD2 | `components/obd2/` | The `OBD2` class is split by concern: `obd2.cpp` (lifecycle, callbacks), `obd2_poll.cpp`, `obd2_rx.cpp`, `obd2_transport.cpp`, `obd2_discovery.cpp`, `obd2_recovery.cpp`, `obd2_diag.cpp`, with private shared bits in `obd2_internal.hpp`. Contents: PID database (`obd2_data_model.cpp`), formulas (`pid_def.cpp`), hardware-free frame parsing and ISO-TP reassembly (`obd2_frame.cpp`), PID JSON validation and serialization (`pid_json.cpp`), poll scheduler (`include/pid_priority_queue.hpp`), receive task, ISO-TP multi-frame (DTC, VIN), supported-PID discovery, DTC and VIN requests | can_driver, tinyexpr. It does not touch the SD card; the supervisor does the JSON file I/O |
 | TinyExpr | `components/tinyexpr/` | Vendored expression parser (compiled with `-w`) | – |
-| OBD2 simulator | `components/obd2_simulator/` | Answers requests with synthetic frames when the CAN config has `debug=true` | can_driver, obd2 |
+| OBD2 simulator | `components/obd2_simulator/` | Answers requests with synthetic frames when the CAN config has `debug=true`. Two ECUs: 0x7E8 answers everything (PIDs, DTC, VIN), 0x7E9 only DTC and VIN requests (own DTC set overlapping ECU 0, same VIN); flow control sent to 0x7E0 or 0x7E1 releases that ECU's consecutive frames. The RX ISR passes CAN ID and data bytes to a 16-entry static queue (`simDroppedFrames` counts overflows) | can_driver, obd2 |
 | SD card | `components/sd_card/` | SDMMC mount, hot-plug via the card-detect pin, task-affine operation lease (recursive mutex), file ops, path validation | driver, fatfs, freertos, sdmmc; private: json |
 | WiFi | `components/wifi/` | AP, STA or AP+STA, STA retry then AP fallback, mDNS | esp_wifi, nvs_flash, espressif/mdns |
 | Async web server | `components/async_web_server/` | Wraps `esp_http_server`: request queue, worker tasks, rate limit, WebSocket broadcast | esp_http_server, esp_timer |
@@ -46,7 +46,7 @@ Priorities are absolute FreeRTOS numbers (`tskIDLE_PRIORITY` is 0). "Core" is th
 | `OBD2_receive_task` | `components/obd2/` | 1 | 8192 | 2 | startup gate event bit, then `xBusConnectionSemaphore` while the bus is down; otherwise `CanDriver::receive` with a 10 ms timeout |
 | `OBD2_PollTask` | `components/obd2/` | 1 | 8192 | 1 | startup gate, then `ulTaskNotifyTake` with the wait time of the poll queue (next due request) |
 | `OBD_Connection_callback_task` | `components/obd2/` | 1 | 4096 | 0 | `xQueueReceive(event_queue)` with a 100 ms timeout. Runs the supervisor's VIN and DTC requests and the discovery retries while `autoPoll` is set |
-| `DataSimTask` | `components/obd2_simulator/` | 1 | 4096 | 2 | `xTaskNotifyWait(portMAX_DELAY)`. Exists only when the CAN config has `debug=true` |
+| `DataSimTask` | `components/obd2_simulator/` | 1 | 4096 | 2 | `xQueueReceive(portMAX_DELAY)` on the ISR queue. Exists only when the CAN config has `debug=true` |
 | `sys_reboot` | `main/src/middleware.cpp` | any | 2048 | 5 | one-shot: waits 500 ms, then `esp_restart()` |
 
 Not listed: ESP-IDF system tasks (IDLE, `esp_timer`, event loop, lwIP, Wi-Fi, mDNS).
