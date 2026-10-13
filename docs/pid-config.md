@@ -20,7 +20,7 @@ The file, `POST` and `PUT` use these names. `GET` responses use other names for 
 | `unit` | string ≤32 | Display unit | `unit` |
 | `desc` | string ≤256 | Description | `description` |
 | `formula` | string 1–1024 | TinyExpr expression (below) | `formula` |
-| `minV`, `maxV` | float | Expected range, `minV <= maxV`. The firmware stores and returns them; it does not clamp or check values against them | `minValue`, `maxValue` |
+| `minV`, `maxV` | float or null, optional | Expected range. Absent or `null` means unset (NaN internally, returned as `null`). When both are set, `minV <= maxV`. The firmware stores and returns them; it does not clamp or check values against them | `minValue`, `maxValue` |
 | `priority` | uint8 | Lower number is polled first when two requests are due at the same tick | `priority` |
 | `interval` | uint16 | Poll interval in ms. `0` means "not polled recurrently"; it is only read by `POST /api/v1/req/static_pid`. Otherwise at least 4 (`MIN_TRANSMIT_PERIOD_MS`). The frontend enforces at least 16 | `update_interval_ms` |
 | `color` | uint, 0–0xFFFFFF | Display color, RGB as one number (e.g. `16096779` = `0xF59F0B`) | `color` |
@@ -37,10 +37,10 @@ A received frame is rejected (value not stored, PID marked invalid) if it carrie
 
 Implemented in `components/obd2/pid_json.cpp` (host-tested). JSON nesting deeper than 32 levels is a parse error (`CONFIG_CJSON_NESTING_LIMIT`). A formula result that is NaN, inf (division by zero) or overflows float marks that reading invalid and the value is not stored; a formula that does not compile is rejected when the set is loaded. Applied to the whole array by `PUT /api/v1/pid_def`, `POST /api/v1/pid_def/load` and the boot-time file load. Any failure rejects the entire set:
 - the root is a JSON array of at most 256 objects, no trailing data after the JSON;
-- required on every item: `id`, `mode`, `pid`, `length` (or `len`), `priority`, `interval`, `color`, `minV`, `maxV`, and the strings `name`, `unit`, `desc`, `formula`, `icon` (empty strings are allowed except `formula`); keys the firmware does not know are ignored;
-- numbers must be finite integers within the ranges above (floats for `minV`, `maxV`);
+- required on every item: `id`, `mode`, `pid`, `length` (or `len`), `priority`, `interval`, `color`, and the strings `name`, `unit`, `desc`, `formula`, `icon` (empty strings are allowed except `formula`); keys the firmware does not know are ignored;
+- numbers must be finite integers within the ranges above (floats for `minV`, `maxV`, which are optional: absent or `null` is unset, any other non-number is rejected);
 - valid combinations: mode 0x01 with `pid` 1–255 and `length` 2; mode 0x22 with `length` 3; mode 0x45 with `length` 0. Any other mode is rejected;
-- `interval` is 0 or ≥ 4; `minV <= maxV`; `formula` not empty;
+- `interval` is 0 or ≥ 4; `minV <= maxV` only when both are finite numbers; `formula` not empty;
 - `pid` is unique in the array;
 - the formula must compile (TinyExpr). A formula that does not compile makes the whole replace fail with 422.
 
