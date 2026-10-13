@@ -4,6 +4,7 @@
 void run_tinyexpr_tests(void);
 void run_pid_def_tests(void);
 void run_obd2_frame_tests(void);
+void run_obd2_diag_collector_tests(void);
 void run_obd2_model_tests(void);
 void run_pid_json_tests(void);
 void run_confirm_token_tests(void);
@@ -15,6 +16,7 @@ void app_main(void)
     run_tinyexpr_tests();
     run_pid_def_tests();
     run_obd2_frame_tests();
+    run_obd2_diag_collector_tests();
     run_obd2_model_tests();
     run_pid_json_tests();
     run_confirm_token_tests();

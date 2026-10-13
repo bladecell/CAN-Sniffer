@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "esp_err.h"
+#include "obd2_common.hpp"
 
 namespace obd2frame
 {
@@ -66,6 +67,118 @@ esp_err_t decodeDtcResponse(const RawFrame* frames, size_t count, uint8_t mode, 
 // Reassembles `count` frames and checks the header is 0x49 0x02, then extracts the VIN.
 // ESP_ERR_INVALID_RESPONSE on a wrong header.
 esp_err_t decodeVinResponse(const RawFrame* frames, size_t count, char (&vin)[17]);
+
+// ---- Multi-ECU response collection (DTC modes 03/07/0A and VIN, mode 09/02) ----
+// A functional request is answered by several ECUs at once; each reassembles in its own session keyed by the response
+// CAN ID (11-bit 0x7E8-0x7EF). Hardware-free: the caller supplies frames and a millisecond clock (wrap-safe).
+
+constexpr uint32_t DIAG_RESPONSE_ID_FIRST = 0x7E8;
+constexpr uint32_t DIAG_RESPONSE_ID_LAST  = 0x7EF;
+constexpr size_t   MAX_MERGED_DTCS        = 256;
+
+enum class DiagKind : uint8_t
+{
+    None,
+    Dtc,  // request mode 0x03 / 0x07 / 0x0A
+    Vin,  // request mode 0x09, infotype 0x02
+};
+
+enum class DiagStatus : uint8_t
+{
+    Idle,      // no collection running
+    Waiting,   // collecting
+    Complete,  // at least one ECU answered, every session is finished and the bus went quiet
+    Failed,    // nobody answered within the first-response wait
+};
+
+struct DiagTimings
+{
+    uint32_t firstResponseWaitMs;  // from markSent(): no responder by then means Failed
+    uint32_t quietGapMs;           // no relevant frame and no active reassembly or pending ECU means Complete
+    uint32_t nCrMs;                // per session, restarted by each valid frame
+    uint32_t pendingMs;            // P2*: restarted by each valid NRC 0x78
+    uint8_t  maxPending;           // consecutive 0x78 accepted per ECU before it is given up
+    uint32_t totalCapMs;           // 0 = none
+};
+
+// The B33 OBD-II profile from obd2_common.hpp.
+DiagTimings defaultDiagTimings();
+
+struct DiagFrameResult
+{
+    bool      consumed;         // the frame belongs to the running collection; the caller must not parse it further
+    bool      sendFlowControl;  // send ISO-TP flow control (continue, no block limit, no separation time) to flowControlId
+    uint32_t  flowControlId;    // physical request ID of the ECU: response ID minus 8, never the functional ID
+    esp_err_t err;              // ESP_OK, or why the frame was dropped (only that ECU's session is affected)
+};
+
+class DiagCollector
+{
+public:
+    explicit DiagCollector(const DiagTimings& timings = defaultDiagTimings(), size_t maxSessions = ISOTP_MAX_SESSIONS);
+
+    // Starts a collection for `requestMode` (0x03, 0x07, 0x0A, or 0x09 for the VIN) and clears the previous result.
+    void begin(DiagKind kind, uint8_t requestMode, uint32_t nowMs);
+    // The request went out on the bus: starts the first-response wait.
+    void markSent(uint32_t nowMs);
+    void cancel();
+
+    DiagFrameResult onFrame(uint32_t canId, const uint8_t* data, size_t length, uint32_t nowMs);
+    // Expires stale sessions and pending ECUs, then evaluates completion. Call regularly.
+    DiagStatus poll(uint32_t nowMs);
+
+    bool   active() const { return kind_ != DiagKind::None; }
+    size_t activeSessions() const;
+    size_t responders() const { return responders_; }
+
+    // Merged, de-duplicated raw DTCs (zero DTCs and padding are not stored).
+    const uint16_t* dtcs() const { return dtcs_; }
+    size_t          dtcCount() const { return dtcCount_; }
+    // First valid VIN. False if no ECU sent one. conflictingVins() counts valid but different VINs that were ignored.
+    bool   vin(char (&out)[17]) const;
+    size_t conflictingVins() const { return vinConflicts_; }
+
+private:
+    struct Session
+    {
+        bool     used;
+        uint32_t id;
+        uint16_t total;
+        uint16_t received;
+        uint8_t  nextSeq;
+        uint32_t lastMs;
+        uint8_t  buf[MAX_ISOTP_LENGTH];
+    };
+
+    static bool inRange(uint32_t id) { return id >= DIAG_RESPONSE_ID_FIRST && id <= DIAG_RESPONSE_ID_LAST; }
+    bool        matchesService(const uint8_t* data, size_t length) const;
+    Session*    findSession(uint32_t id);
+    void        dropSession(Session& s);
+    void        finishPayload(uint32_t id, const uint8_t* payload, size_t length);
+    void        addDtc(uint16_t raw);
+
+    DiagTimings timings_;
+    size_t      maxSessions_;
+    DiagKind    kind_        = DiagKind::None;
+    uint8_t     requestMode_ = 0;
+    uint8_t     responseSid_ = 0;
+    uint32_t    beginMs_     = 0;
+    uint32_t    sentMs_      = 0;
+    bool        sent_        = false;
+    uint32_t    lastActivityMs_ = 0;
+    size_t      responders_  = 0;
+    uint16_t    respondedMask_ = 0;  // one bit per response ID: counted once per ECU
+    uint8_t     pendingCount_[8]{};
+    uint32_t    pendingSinceMs_[8]{};
+    bool        pendingActive_[8]{};
+    bool        gaveUp_[8]{};
+    Session     sessions_[ISOTP_MAX_SESSIONS]{};
+    uint16_t    dtcs_[MAX_MERGED_DTCS]{};
+    size_t      dtcCount_ = 0;
+    char        vin_[17]{};
+    bool        haveVin_ = false;
+    size_t      vinConflicts_ = 0;
+};
 
 // Recovery after the CAN bus (re)connects or the OBD health check clears the poll queue.
 enum class ConnectPlan : uint8_t

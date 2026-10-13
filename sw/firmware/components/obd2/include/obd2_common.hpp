@@ -157,7 +157,9 @@ struct PIDData_t
 #define OBD2_ECU_P2_STAR_MAX_MS 5000        // ECU wait after a negative response 0x78 (response pending)
 #define OBD2_FIRST_RESPONSE_WAIT_MS 100     // tester wait for the first reply: P2 max plus margin
 #define OBD2_RESPONSE_QUIET_GAP_MS 50       // no new frame on any response ID and no active reassembly: all ECUs have replied
-#define OBD2_RESPONSE_TOTAL_CAP_MS 0        // 0 = no unconditional cap (see B33: a bound is still needed against endless 0x78)
+#define OBD2_RESPONSE_TOTAL_CAP_MS 0        // 0 = no unconditional cap; the bound against endless 0x78 is OBD2_MAX_CONSECUTIVE_PENDING
+#define OBD2_MAX_CONSECUTIVE_PENDING 3      // consecutive NRC 0x78 accepted per ECU: total wait about 3 x P2* = 15 s
+#define ISOTP_MAX_SESSIONS 8                // concurrent ISO-TP reassembly sessions (one per response CAN ID)
 
 struct PollRequest
 {

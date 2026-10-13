@@ -299,3 +299,364 @@ uint32_t nextDiscoveryBackoffMs(uint32_t currentMs)
 }
 
 }  // namespace obd2frame
+
+namespace obd2frame
+{
+
+DiagTimings defaultDiagTimings()
+{
+    return {OBD2_FIRST_RESPONSE_WAIT_MS, OBD2_RESPONSE_QUIET_GAP_MS, ISOTP_N_CR_MS,
+            OBD2_ECU_P2_STAR_MAX_MS,     OBD2_MAX_CONSECUTIVE_PENDING, OBD2_RESPONSE_TOTAL_CAP_MS};
+}
+
+namespace
+{
+constexpr uint8_t SID_NEGATIVE_RESPONSE = RESPONSE_NEGATIVE_RESPONSE_CODE;
+constexpr uint8_t NRC_RESPONSE_PENDING  = 0x78;
+constexpr uint8_t FLOW_CONTROL_CTS      = 0x30;
+
+uint32_t elapsed(uint32_t now, uint32_t since)
+{
+    return static_cast<uint32_t>(now - since);
+}
+}  // namespace
+
+DiagCollector::DiagCollector(const DiagTimings& timings, size_t maxSessions)
+    : timings_(timings), maxSessions_(maxSessions < ISOTP_MAX_SESSIONS ? maxSessions : ISOTP_MAX_SESSIONS)
+{
+    cancel();
+}
+
+void DiagCollector::cancel()
+{
+    kind_ = DiagKind::None;
+    for (Session& s : sessions_)
+    {
+        s.used = false;
+    }
+    memset(pendingCount_, 0, sizeof(pendingCount_));
+    memset(pendingSinceMs_, 0, sizeof(pendingSinceMs_));
+    memset(pendingActive_, 0, sizeof(pendingActive_));
+    memset(gaveUp_, 0, sizeof(gaveUp_));
+    memset(vin_, 0, sizeof(vin_));
+    responders_    = 0;
+    respondedMask_ = 0;
+    dtcCount_      = 0;
+    haveVin_       = false;
+    vinConflicts_  = 0;
+    sent_          = false;
+}
+
+void DiagCollector::begin(DiagKind kind, uint8_t requestMode, uint32_t nowMs)
+{
+    cancel();
+    const bool dtcMode = requestMode == MODE_DTCS || requestMode == MODE_PENDING_DTCS || requestMode == MODE_PERMANENT_DTCS;
+    if (kind == DiagKind::Dtc && dtcMode)
+    {
+        responseSid_ = static_cast<uint8_t>(requestMode | 0x40);
+    }
+    else if (kind == DiagKind::Vin && requestMode == MODE_VEHICLE_INFO)
+    {
+        responseSid_ = RESPONSE_VEHICLE_INFO;
+    }
+    else
+    {
+        return;  // not a collectable request: stay idle
+    }
+    kind_           = kind;
+    requestMode_    = requestMode;
+    beginMs_        = nowMs;
+    lastActivityMs_ = nowMs;
+}
+
+void DiagCollector::markSent(uint32_t nowMs)
+{
+    sent_   = true;
+    sentMs_ = nowMs;
+}
+
+size_t DiagCollector::activeSessions() const
+{
+    size_t n = 0;
+    for (const Session& s : sessions_)
+    {
+        n += s.used ? 1 : 0;
+    }
+    return n;
+}
+
+bool DiagCollector::vin(char (&out)[17]) const
+{
+    if (!haveVin_)
+    {
+        return false;
+    }
+    memcpy(out, vin_, sizeof(out));
+    return true;
+}
+
+bool DiagCollector::matchesService(const uint8_t* p, size_t n) const
+{
+    if (n == 0 || p[0] != responseSid_)
+    {
+        return false;
+    }
+    return kind_ != DiagKind::Vin || (n >= 2 && p[1] == PID_VIN);
+}
+
+DiagCollector::Session* DiagCollector::findSession(uint32_t id)
+{
+    for (size_t i = 0; i < maxSessions_; i++)
+    {
+        if (sessions_[i].used && sessions_[i].id == id)
+        {
+            return &sessions_[i];
+        }
+    }
+    return nullptr;
+}
+
+void DiagCollector::dropSession(Session& s)
+{
+    s.used = false;
+}
+
+void DiagCollector::addDtc(uint16_t raw)
+{
+    if (raw == 0)
+    {
+        return;
+    }
+    for (size_t i = 0; i < dtcCount_; i++)
+    {
+        if (dtcs_[i] == raw)
+        {
+            return;
+        }
+    }
+    if (dtcCount_ < MAX_MERGED_DTCS)
+    {
+        dtcs_[dtcCount_++] = raw;
+    }
+}
+
+void DiagCollector::finishPayload(uint32_t id, const uint8_t* payload, size_t length)
+{
+    const uint32_t idx = id - DIAG_RESPONSE_ID_FIRST;
+    pendingCount_[idx] = 0;
+    pendingActive_[idx] = false;
+    if ((respondedMask_ & (1u << idx)) == 0)
+    {
+        respondedMask_ = static_cast<uint16_t>(respondedMask_ | (1u << idx));
+        responders_++;
+    }
+
+    if (kind_ == DiagKind::Dtc)
+    {
+        for (size_t i = 1; i + 1 < length; i += 2)
+        {
+            addDtc(static_cast<uint16_t>((payload[i] << 8) | payload[i + 1]));
+        }
+        return;
+    }
+
+    constexpr size_t HEADER = 3;  // 0x49, 0x02, number of data items
+    if (length < HEADER + 17)
+    {
+        return;
+    }
+    char candidate[18];
+    memcpy(candidate, payload + HEADER, 17);
+    candidate[17] = '\0';
+    if (!isValidVin(candidate))
+    {
+        return;
+    }
+    if (!haveVin_)
+    {
+        memcpy(vin_, candidate, 17);
+        haveVin_ = true;
+    }
+    else if (memcmp(vin_, candidate, 17) != 0)
+    {
+        vinConflicts_++;
+    }
+}
+
+DiagFrameResult DiagCollector::onFrame(uint32_t canId, const uint8_t* data, size_t length, uint32_t nowMs)
+{
+    DiagFrameResult res = {false, false, 0, ESP_OK};
+    IsoTp           type = IsoTp::Single;
+    if (!active() || !inRange(canId) || frameType(data, length, type) != ESP_OK)
+    {
+        return res;
+    }
+    const uint32_t idx = canId - DIAG_RESPONSE_ID_FIRST;
+
+    switch (type)
+    {
+        case IsoTp::Single:
+        {
+            const size_t pci = data[0] & 0x0F;
+            if (pci < 1 || pci > 7 || pci > length - 1)
+            {
+                return res;
+            }
+            if (data[1] == SID_NEGATIVE_RESPONSE)
+            {
+                if (pci < 3 || data[2] != requestMode_)
+                {
+                    return res;
+                }
+                res.consumed = true;
+                if (data[3] != NRC_RESPONSE_PENDING)
+                {
+                    pendingActive_[idx] = false;
+                    lastActivityMs_     = nowMs;
+                    return res;
+                }
+                if (gaveUp_[idx])
+                {
+                    return res;
+                }
+                if (++pendingCount_[idx] > timings_.maxPending)
+                {
+                    gaveUp_[idx]        = true;
+                    pendingActive_[idx] = false;
+                    return res;
+                }
+                pendingActive_[idx]  = true;
+                pendingSinceMs_[idx] = nowMs;
+                lastActivityMs_      = nowMs;
+                return res;
+            }
+            if (!matchesService(data + 1, pci))
+            {
+                return res;
+            }
+            res.consumed    = true;
+            lastActivityMs_ = nowMs;
+            finishPayload(canId, data + 1, pci);
+            return res;
+        }
+        case IsoTp::First:
+        {
+            if (length < 4 || !matchesService(data + 2, length - 2))
+            {
+                return res;
+            }
+            res.consumed = true;
+            Session* existing = findSession(canId);
+            if (existing != nullptr)
+            {
+                dropSession(*existing);  // a new first frame from the same ECU restarts its message
+            }
+            uint16_t total = 0, needed = 0;
+            res.err = length == CAN_DATA_MAX ? parseFirstFrame(data, length, total, needed) : ESP_ERR_INVALID_SIZE;
+            if (res.err != ESP_OK)
+            {
+                return res;
+            }
+            Session* slot = existing;
+            for (size_t i = 0; slot == nullptr && i < maxSessions_; i++)
+            {
+                slot = sessions_[i].used ? nullptr : &sessions_[i];
+            }
+            if (slot == nullptr)
+            {
+                res.err = ESP_ERR_NO_MEM;
+                return res;
+            }
+            slot->used     = true;
+            slot->id       = canId;
+            slot->total    = total;
+            slot->received = 6;
+            slot->nextSeq  = 1;
+            slot->lastMs   = nowMs;
+            memcpy(slot->buf, data + 2, 6);
+            pendingActive_[idx] = false;
+            lastActivityMs_     = nowMs;
+            res.sendFlowControl = true;
+            res.flowControlId   = canId - RESPONSE_ID_OFFSET;
+            return res;
+        }
+        case IsoTp::Consecutive:
+        {
+            Session* s = findSession(canId);
+            if (s == nullptr)
+            {
+                return res;
+            }
+            res.consumed = true;
+            const size_t need = (s->total - s->received) < 7 ? (s->total - s->received) : 7;
+            if ((data[0] & 0x0F) != s->nextSeq)
+            {
+                res.err = ESP_ERR_INVALID_RESPONSE;
+            }
+            else if (length - 1 < need)
+            {
+                res.err = ESP_ERR_INVALID_SIZE;
+            }
+            if (res.err != ESP_OK)
+            {
+                dropSession(*s);
+                return res;
+            }
+            memcpy(s->buf + s->received, data + 1, need);
+            s->received = static_cast<uint16_t>(s->received + need);
+            s->nextSeq  = static_cast<uint8_t>((s->nextSeq + 1) & 0x0F);
+            s->lastMs   = nowMs;
+            lastActivityMs_ = nowMs;
+            if (s->received >= s->total)
+            {
+                finishPayload(canId, s->buf, s->total);
+                dropSession(*s);
+            }
+            return res;
+        }
+        case IsoTp::FlowControl:
+            return res;
+    }
+    return res;
+}
+
+DiagStatus DiagCollector::poll(uint32_t nowMs)
+{
+    if (!active())
+    {
+        return DiagStatus::Idle;
+    }
+    bool busy = false;
+    for (size_t i = 0; i < maxSessions_; i++)
+    {
+        if (sessions_[i].used && elapsed(nowMs, sessions_[i].lastMs) >= timings_.nCrMs)
+        {
+            dropSession(sessions_[i]);
+        }
+        busy = busy || sessions_[i].used;
+    }
+    for (size_t i = 0; i < 8; i++)
+    {
+        if (pendingActive_[i] && elapsed(nowMs, pendingSinceMs_[i]) >= timings_.pendingMs)
+        {
+            pendingActive_[i] = false;
+        }
+        busy = busy || pendingActive_[i];
+    }
+
+    if (timings_.totalCapMs != 0 && elapsed(nowMs, beginMs_) >= timings_.totalCapMs)
+    {
+        return responders_ > 0 ? DiagStatus::Complete : DiagStatus::Failed;
+    }
+    if (busy)
+    {
+        return DiagStatus::Waiting;
+    }
+    if (responders_ == 0)
+    {
+        return (sent_ && elapsed(nowMs, sentMs_) >= timings_.firstResponseWaitMs) ? DiagStatus::Failed : DiagStatus::Waiting;
+    }
+    return elapsed(nowMs, lastActivityMs_) >= timings_.quietGapMs ? DiagStatus::Complete : DiagStatus::Waiting;
+}
+
+}  // namespace obd2frame

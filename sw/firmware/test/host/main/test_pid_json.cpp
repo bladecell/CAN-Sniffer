@@ -304,7 +304,7 @@ static void test_one_sided_and_inverted_ranges(void)
 static void test_unset_range_round_trips_as_null_and_loads_through_the_model(void)
 {
     std::string text = withField("minV", "null");
-    text.replace(text.find("\"maxV\":10"), 10, "\"maxV\":null");
+    text.replace(text.find("\"maxV\":10"), 9, "\"maxV\":null");
     std::vector<PIDDefinitionData> defs;
     const std::string              first = parseAndSerialize(text.c_str(), &defs);
     TEST_ASSERT_NOT_NULL(strstr(first.c_str(), "\"minV\":null,\"maxV\":null"));
