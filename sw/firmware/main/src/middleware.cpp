@@ -21,8 +21,8 @@
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_random.h"
-#include "esp_timer.h"
 #include "esp_system.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -485,9 +485,9 @@ MiddlewareJsonResult m_system_get()
     // Read-only diagnostics: heap and the unused stack of every task (shrinks under load, never grows back).
     cJSON_AddNumberToObject(root, "heap_free", esp_get_free_heap_size());
     cJSON_AddNumberToObject(root, "heap_min_free", esp_get_minimum_free_heap_size());
-    const UBaseType_t              taskCapacity = uxTaskGetNumberOfTasks() + 4;
+    const UBaseType_t               taskCapacity = uxTaskGetNumberOfTasks() + 4;
     std::unique_ptr<TaskStatus_t[]> taskStatus(new (std::nothrow) TaskStatus_t[taskCapacity]);
-    cJSON*                         stacks = cJSON_CreateArray();
+    cJSON*                          stacks = cJSON_CreateArray();
     if (taskStatus != nullptr && stacks != nullptr)
     {
         const UBaseType_t count = uxTaskGetSystemState(taskStatus.get(), taskCapacity, nullptr);
@@ -615,7 +615,7 @@ MiddlewareJsonResult m_sdcard_file_tree_get(const char* path)
         return sd_operation_error(operation.status());
     }
 
-    cJSON*    root      = nullptr;
+    cJSON*    root       = nullptr;
     esp_err_t tree_error = sd.get_file_tree(path, 5, root);
     if (tree_error != ESP_OK)
     {
@@ -624,8 +624,8 @@ MiddlewareJsonResult m_sdcard_file_tree_get(const char* path)
         // Keep the directory-tree error distinct from its JSON body. A
         // missing path is a confirmed 404; acquisition failures were handled
         // above, while filesystem/resource/hot-removal failures are 500.
-        const int status = tree_error == ESP_ERR_NOT_FOUND    ? 404
-                           : tree_error == ESP_ERR_INVALID_ARG ? 400
+        const int status = tree_error == ESP_ERR_NOT_FOUND                                        ? 404
+                           : tree_error == ESP_ERR_INVALID_ARG                                    ? 400
                            : tree_error == ESP_ERR_TIMEOUT || tree_error == ESP_ERR_INVALID_STATE ? 503
                                                                                                   : 500;
         return json_result(json_error_body(esp_err_to_name(tree_error)), status);
@@ -779,10 +779,9 @@ MiddlewareJsonResult m_dtc_description_get(const char* target_codes[], size_t co
 
     if (!file)
     {
-        const int open_errno = errno;
-        const std::string reason = is_confirmed_missing_errno(open_errno)
-                                       ? "File " + dtc_desc_db_path + " not found"
-                                       : "Failed to open file " + dtc_desc_db_path;
+        const int         open_errno = errno;
+        const std::string reason = is_confirmed_missing_errno(open_errno) ? "File " + dtc_desc_db_path + " not found"
+                                                                          : "Failed to open file " + dtc_desc_db_path;
         return dtc_db_io_error(root, reason, is_confirmed_missing_errno(open_errno) ? 404 : 500);
     }
 
@@ -792,7 +791,7 @@ MiddlewareJsonResult m_dtc_description_get(const char* target_codes[], size_t co
         return dtc_db_io_error(root, "Failed to seek file " + dtc_desc_db_path, 500);
     }
 
-    errno = 0;
+    errno                = 0;
     const long file_size = ftell(file.get());
     if (file_size < 0)
     {
@@ -845,7 +844,7 @@ MiddlewareJsonResult m_dtc_description_get(const char* target_codes[], size_t co
                 return dtc_db_io_error(root, "Failed to seek file " + dtc_desc_db_path, 500);
             }
 
-            errno = 0;
+            errno              = 0;
             const size_t bytes = fread(read_code, 1, 6, file.get());
 
             if (bytes != 6 || ferror(file.get()) != 0)
@@ -860,7 +859,7 @@ MiddlewareJsonResult m_dtc_description_get(const char* target_codes[], size_t co
 
             if (cmp == 0)
             {
-                errno = 0;
+                errno                          = 0;
                 const size_t description_bytes = fread(desc_buf, 1, 122, file.get());
                 if (description_bytes != 122 || ferror(file.get()) != 0)
                 {
@@ -1028,7 +1027,7 @@ MiddlewareJsonResult m_dtc_request(int mode)
         failure_reason += result.name;
         failure_reason += " (";
         failure_reason += esp_err_to_name(result.error);
-        failure_reason += ")";
+        failure_reason += ')';
         has_failures = true;
     }
 
@@ -1315,9 +1314,9 @@ MiddlewareJsonResult m_pid_def_post(cJSON* data)
 
         // Every number is range-checked against the schema (docs/pid-config.md) before any cast: nothing wraps.
         // Optional fields that are absent or null keep their default; present but invalid rejects the item.
-        uint32_t parsed_id = 0, parsed_mode = 0, parsed_pid32 = 0, parsed_interval = 0;
-        uint32_t parsed_priority32 = 0, parsed_color = 0x4EB31B;
-        float    parsed_minV = NAN, parsed_maxV = NAN;
+        uint32_t   parsed_id = 0, parsed_mode = 0, parsed_pid32 = 0, parsed_interval = 0;
+        uint32_t   parsed_priority32 = 0, parsed_color = 0x4EB31B;
+        float      parsed_minV = NAN, parsed_maxV = NAN;
         const auto optionalPresent = [](const cJSON* v) { return v != nullptr && !cJSON_IsNull(v); };
 
         bool valid = pidjson::integerFromJson(pid, 0, std::numeric_limits<uint16_t>::max(), parsed_pid32) &&
@@ -1346,7 +1345,8 @@ MiddlewareJsonResult m_pid_def_post(cJSON* data)
         {
             valid = false;
         }
-        uint8_t parsed_len = parsed_mode == MODE_READ_DATA_BY_IDENTIFIER ? 3 : (parsed_mode == MODE_DERIVED_DATA ? 0 : 2);
+        uint8_t parsed_len =
+            parsed_mode == MODE_READ_DATA_BY_IDENTIFIER ? 3 : (parsed_mode == MODE_DERIVED_DATA ? 0 : 2);
         if (valid)
         {
             valid = pidjson::lengthFromJson(item, parsed_len, false);
@@ -1355,7 +1355,8 @@ MiddlewareJsonResult m_pid_def_post(cJSON* data)
         {
             cJSON* fail_obj = cJSON_CreateObject();
             if (cJSON_IsNumber(pid) && std::isfinite(pid->valuedouble) && pid->valuedouble >= 0 &&
-                pid->valuedouble <= std::numeric_limits<uint16_t>::max() && std::floor(pid->valuedouble) == pid->valuedouble)
+                pid->valuedouble <= std::numeric_limits<uint16_t>::max() &&
+                std::floor(pid->valuedouble) == pid->valuedouble)
             {
                 cJSON_AddNumberToObject(fail_obj, "pid", pid->valuedouble);
             }
@@ -1369,7 +1370,7 @@ MiddlewareJsonResult m_pid_def_post(cJSON* data)
             continue;
         }
 
-        const uint16_t parsed_pid = static_cast<uint16_t>(parsed_pid32);
+        const uint16_t parsed_pid  = static_cast<uint16_t>(parsed_pid32);
         std::string    parsed_unit = cJSON_IsString(unit) && unit->valuestring != nullptr ? unit->valuestring : "";
         std::string    parsed_desc = cJSON_IsString(desc) && desc->valuestring != nullptr ? desc->valuestring : "";
         std::string    parsed_icon = cJSON_IsString(icon) && icon->valuestring != nullptr ? icon->valuestring : "";
@@ -1476,8 +1477,9 @@ MiddlewareJsonResult m_pid_def_save(cJSON* payload)
     }
 
     const int status = result.error == ESP_OK ? 200
-                                              : (result.sd_card_busy || result.error == ESP_ERR_INVALID_STATE ? 503
-                                                                                                               : status_for_error(result.error, 400));
+                                              : (result.sd_card_busy || result.error == ESP_ERR_INVALID_STATE
+                                                     ? 503
+                                                     : status_for_error(result.error, 400));
     return json_result(root, status);
 }
 
