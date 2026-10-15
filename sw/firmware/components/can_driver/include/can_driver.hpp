@@ -104,6 +104,19 @@ public:
     twai_node_status_t getStatus();
 
     esp_err_t transmit(CanDriver::CanFrame& tx_frame, int timeout_ms = 1000);
+    // Puts the frame at the front of the TX queue and never waits (ISO-TP flow control must beat poll traffic).
+    esp_err_t transmitUrgent(CanDriver::CanFrame& tx_frame);
+
+    // Called for every frame that really left the controller (TWAI "TX done", ISR context, so the function must be
+    // IRAM-safe, short and non-blocking) and, from the TX task, for a frame twai_node_transmit refused (success false).
+    // `data` holds the first `length` (at most 8) data bytes and is only valid during the call.
+    typedef void (*TxDoneFn)(void* arg, uint32_t id, const uint8_t* data, uint8_t length, bool success);
+    void setTxDoneHook(TxDoneFn fn, void* arg)
+    {
+        txDoneFn_.store(nullptr);  // never run a new function with the old argument
+        txDoneArg_.store(arg);
+        txDoneFn_.store(fn);
+    }
 
     esp_err_t receive(CanDriver::CanFrame& frame, int timeout_ms = 100);
 
@@ -177,6 +190,10 @@ private:
     void         rxCb();
     RxCallback_t rxCallback    = nullptr;
     void*        rxCallbackArg = nullptr;
+
+    std::atomic<TxDoneFn> txDoneFn_{nullptr};
+    std::atomic<void*>    txDoneArg_{nullptr};
+    void IRAM_ATTR        notifyTxDone(const twai_frame_t* frame, bool success);
 
     // Simulation hooks (nullptr until injected by the simulator component)
     SimStartFn  simStart_  = nullptr;

@@ -174,6 +174,7 @@ esp_err_t OBD2::stopInternal(bool)
         xSemaphoreGive(admissionMtx_);
     }
     if (callbackInstalled) {
+        canDriver.setTxDoneHook(nullptr, nullptr);
         const TickType_t remaining = remainingTicks();
         if (remaining == 0)
         {
@@ -552,6 +553,7 @@ esp_err_t OBD2::init()
     xSemaphoreTake(admissionMtx_, portMAX_DELAY);
     canCallbackInstalled_ = true;
     xSemaphoreGive(admissionMtx_);
+    canDriver.setTxDoneHook(&OBD2::onTxDone, this);
 
     // Register/fence first, then take the bus snapshot to avoid missing a transition.
     if (canDriver.isBusConnected())

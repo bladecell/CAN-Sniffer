@@ -272,6 +272,33 @@ esp_err_t CanDriver::transmit(CanDriver::CanFrame& tx_frame, int timeout_ms)
     return ESP_OK;
 }
 
+esp_err_t CanDriver::transmitUrgent(CanDriver::CanFrame& tx_frame)
+{
+    if (!isInitialized() || !isBusConnected())
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (xQueueSendToFront(txQueue, &tx_frame, 0) != pdTRUE)
+    {
+        ESP_LOGE(TAG, "TX queue full, urgent frame dropped");
+        return ESP_FAIL;
+    }
+
+    return ESP_OK;
+}
+
+void CanDriver::notifyTxDone(const twai_frame_t* frame, bool success)
+{
+    const TxDoneFn fn = txDoneFn_.load();
+    if (fn == nullptr || frame == nullptr || frame->buffer == nullptr)
+    {
+        return;
+    }
+    const uint8_t length = frame->buffer_len > 8 ? 8 : static_cast<uint8_t>(frame->buffer_len);
+    fn(txDoneArg_.load(), frame->header.id, frame->buffer, length, success);
+}
+
 esp_err_t CanDriver::receive(CanDriver::CanFrame& frame, int timeout_ms)
 {
     if (!isInitialized() || !rxQueue || !isBusConnected())
@@ -339,6 +366,8 @@ bool IRAM_ATTR CanDriver::twai_tx_cb(twai_node_handle_t handle, const twai_tx_do
 {
     CanDriver* driver                   = static_cast<CanDriver*>(user_ctx);
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    driver->notifyTxDone(edata->done_tx_frame, edata->is_tx_success);
 
     if (edata->is_tx_success)
     {
@@ -687,6 +716,8 @@ void CanDriver::txTaskWrapper(void* param)
 void CanDriver::txTask()
 {
     CanDriver::CanFrame f;
+    // The driver reads the frame until TX done, so it must outlive one loop iteration.
+    twai_frame_t tx_msg = {};
     while (1)
     {
         if (!isBusConnected())
@@ -699,16 +730,15 @@ void CanDriver::txTask()
         {
             TickType_t startTime = xTaskGetTickCount();
 
-            twai_frame_t tx_msg = {
-                .header     = f.header,
-                .buffer     = f.data,
-                .buffer_len = f.length,
-            };
+            tx_msg.header     = f.header;
+            tx_msg.buffer     = f.data;
+            tx_msg.buffer_len = f.length;
 
             esp_err_t ret = twai_node_transmit(nodeHdl, &tx_msg, pdMS_TO_TICKS(200));
             if (ret != ESP_OK)
             {
                 ESP_LOGE(TAG, "Failed to transmit message: %s", esp_err_to_name(ret));
+                notifyTxDone(&tx_msg, false);  // the waiting requester learns that nothing went out
             }
 
             LOG_CAN_FRAME(TAG, "TX -> ", f.header.id, f.data, twaifd_dlc2len(f.header.dlc));

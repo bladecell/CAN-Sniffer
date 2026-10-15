@@ -413,6 +413,69 @@ static void test_pid_spec_rule(void)
     TEST_ASSERT_FALSE(isValidPidSpec(0xFF, 0x0001, 3));
 }
 
+static void test_tx_done_matches_only_the_running_diag_request(void)
+{
+    RequestBytes b;
+    for (uint8_t mode : {0x03, 0x07, 0x0A})
+    {
+        buildDtcRequest(mode, b);
+        TEST_ASSERT_TRUE(isDiagRequestFrame(mode, OBD2_FUNCTIONAL_ID, b, 8));
+        for (uint8_t other : {0x03, 0x07, 0x0A, 0x09, 0x04, 0x01})
+        {
+            if (other != mode)
+            {
+                TEST_ASSERT_FALSE(isDiagRequestFrame(other, OBD2_FUNCTIONAL_ID, b, 8));
+            }
+        }
+        TEST_ASSERT_FALSE(isDiagRequestFrame(mode, 0x7E0, b, 8));  // physical ID: not the functional request
+        TEST_ASSERT_FALSE(isDiagRequestFrame(mode, OBD2_FUNCTIONAL_ID, b, 1));
+        TEST_ASSERT_FALSE(isDiagRequestFrame(mode, OBD2_FUNCTIONAL_ID, nullptr, 8));
+    }
+    buildVinRequest(b);
+    TEST_ASSERT_TRUE(isDiagRequestFrame(0x09, OBD2_FUNCTIONAL_ID, b, 8));
+    TEST_ASSERT_FALSE(isDiagRequestFrame(0x03, OBD2_FUNCTIONAL_ID, b, 8));
+    b[2] = 0x04;  // mode 09 with another infotype is not the VIN request
+    TEST_ASSERT_FALSE(isDiagRequestFrame(0x09, OBD2_FUNCTIONAL_ID, b, 8));
+    buildClearDtcRequest(b);  // never matches a collection
+    for (uint8_t mode : {0x00, 0x03, 0x04, 0x07, 0x09, 0x0A})
+    {
+        TEST_ASSERT_FALSE(isDiagRequestFrame(mode, OBD2_FUNCTIONAL_ID, b, 8));
+    }
+    buildCurrentDataRequest(0x00, b);  // the health ping and discovery probes
+    for (uint8_t mode : {0x00, 0x01, 0x03, 0x07, 0x09, 0x0A})
+    {
+        TEST_ASSERT_FALSE(isDiagRequestFrame(mode, OBD2_FUNCTIONAL_ID, b, 8));
+    }
+}
+
+static void test_flow_control_frame_identification(void)
+{
+    RequestBytes b;
+    buildFlowControl(b);
+    for (uint32_t id = 0x7E0; id <= 0x7E7; id++)
+    {
+        TEST_ASSERT_TRUE(isFlowControlFrame(id, b, 8));
+    }
+    TEST_ASSERT_FALSE(isFlowControlFrame(0x7DF, b, 8));
+    TEST_ASSERT_FALSE(isFlowControlFrame(0x7E8, b, 8));
+    TEST_ASSERT_FALSE(isFlowControlFrame(0x7DF - 1, b, 8));
+    TEST_ASSERT_FALSE(isFlowControlFrame(0x7E0, b, 0));
+    TEST_ASSERT_FALSE(isFlowControlFrame(0x7E0, nullptr, 8));
+    buildVinRequest(b);
+    TEST_ASSERT_FALSE(isFlowControlFrame(0x7E0, b, 8));
+}
+
+static void test_flow_control_latency_limit_is_n_ar(void)
+{
+    TEST_ASSERT_EQUAL_UINT32(33, ISOTP_N_AR_MS);
+    TEST_ASSERT_FALSE(isoTpFlowControlLate(1000, 1000));
+    TEST_ASSERT_FALSE(isoTpFlowControlLate(1000, 1000 + ISOTP_N_AR_MS));
+    TEST_ASSERT_TRUE(isoTpFlowControlLate(1000, 1000 + ISOTP_N_AR_MS + 1));
+    TEST_ASSERT_TRUE(isoTpFlowControlLate(1000, 1000 + 110));  // the old worst case
+    TEST_ASSERT_FALSE(isoTpFlowControlLate(0xFFFFFFF0u, 0xFFFFFFF0u + 10));  // across the 32-bit wrap
+    TEST_ASSERT_TRUE(isoTpFlowControlLate(0xFFFFFFF0u, 0xFFFFFFF0u + 100));
+}
+
 static void test_clear_dtc_request_is_one_byte_after_the_pci(void)
 {
     RequestBytes b;
@@ -433,6 +496,9 @@ extern "C" void run_obd2_frame_tests(void)
     RUN_TEST(test_consecutive_sequence_wraps_after_15);
     RUN_TEST(test_request_frames_have_exact_bytes);
     RUN_TEST(test_clear_dtc_request_is_one_byte_after_the_pci);
+    RUN_TEST(test_tx_done_matches_only_the_running_diag_request);
+    RUN_TEST(test_flow_control_frame_identification);
+    RUN_TEST(test_flow_control_latency_limit_is_n_ar);
     RUN_TEST(test_pid_request_builder_refuses_anything_it_cannot_frame);
     RUN_TEST(test_pid_spec_rule);
     RUN_TEST(test_extract_vin);

@@ -147,11 +147,10 @@ struct PIDData_t
 
 // ISO-TP / multi-ECU response timings, OBD-II profile (ISO 15765-4). Values are user-supplied
 // (2026-10-13); the standard text was not available to check them. UDS needs its own profile
-// (N_* 1000 ms, P2/P2* updated from the 0x10 response) when UDS is added. The quiet gap is
+// (N_* 1000 ms, P2/P2* updated from the 0x10 response) when UDS is added. N_As and N_Bs are the ECU's own timers
+// (its transmit and its wait for our flow control, 75 ms); we do not run them, we only keep N_Ar well inside them. The quiet gap is
 // tester policy, not a standard value: tune it against real bus captures.
-#define ISOTP_N_AS_MS 33                    // sender: transmit of a frame
-#define ISOTP_N_AR_MS 33                    // receiver: transmit of a flow control frame
-#define ISOTP_N_BS_MS 75                    // sender: wait for flow control after a first frame
+#define ISOTP_N_AR_MS 33                    // receiver: our flow control frame must be on the bus this soon after the first frame (enforced: counted and logged when late)
 #define ISOTP_N_CR_MS 150                   // receiver: wait for the next consecutive frame, restarted per valid CF
 #define OBD2_ECU_P2_MAX_MS 50               // ECU response time after a request
 #define OBD2_ECU_P2_STAR_MAX_MS 5000        // ECU wait after a negative response 0x78 (response pending)

@@ -127,6 +127,15 @@ private:
     std::atomic<uint32_t>    diagRequest_{0};   // (generation << 8) | request mode; mode 0 = no collection
     std::atomic<uint32_t>    diagSentMs_{0};    // when the poll task put the request on the bus
     std::atomic<bool>        diagSent_{false};
+    std::atomic<bool>        diagTxFailed_{false};  // the request frame was refused by the TX path: the requester fails at once
+    // Flow control timing: the receive task stamps the first frame, the TX-done hook measures against it.
+    std::atomic<uint32_t>    fcFirstFrameMs_[8] = {};
+    std::atomic<uint32_t>    fcSentCount_{0};       // flow control frames seen leaving the controller
+    std::atomic<uint32_t>    fcLateCount_{0};       // flow control frames that missed N_Ar
+    std::atomic<uint32_t>    fcLastLatencyMs_{0};
+    std::atomic<uint32_t>    fcMaxLatencyMs_{0};
+    uint32_t                 fcLateLogged_ = 0;     // receive task only
+    static void IRAM_ATTR    onTxDone(void* arg, uint32_t id, const uint8_t* data, uint8_t length, bool success);
     std::atomic<esp_err_t>   diagResult_{ESP_OK};  // what the finished collection means for the requester (read after the semaphore)
     std::atomic<bool>        diagReassembling_{false};  // collection progressing: session open or ECU answered (N_Cr drops stalled sessions)
     std::atomic<bool>        diagPending_{false};  // an ECU answered NRC 0x78: the requester may wait longer
@@ -134,6 +143,7 @@ private:
     uint32_t                 diagSeenRequest_ = 0;
     void      resetDiagCollection();
     void      releaseDiagBus();
+    void      tryHoldDiagBus();
     void      syncDiagRequest();
     bool      handleDiagFrame(const CanDriver::CanFrame& f);
     void      serviceDiagCollection();
@@ -167,7 +177,7 @@ private:
     void workerExit(EventBits_t bit);
     esp_err_t stopInternal(bool fromInitFailure);
 
-    esp_err_t queryMsg(PollRequest& req);
+    esp_err_t queryMsg(PollRequest& req, bool urgent = false);
 
     // Polling Task
     void        pollTask();

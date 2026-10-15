@@ -1,6 +1,6 @@
 #include "obd2_internal.hpp"
 
-esp_err_t OBD2::queryMsg(PollRequest& req)
+esp_err_t OBD2::queryMsg(PollRequest& req, bool urgent)
 {
     if (!canDriver.isBusConnected())
     {
@@ -46,20 +46,58 @@ esp_err_t OBD2::queryMsg(PollRequest& req)
 
     tx.length = dlc;
 
-    esp_err_t ret = canDriver.transmit(tx, 100);
-
-    if (ret == ESP_OK && req.isRaw && dlc >= 3 && req.id == OBD2_FUNCTIONAL_ID)
-    {
-        // The running DTC / VIN request is on the bus: the receive task starts the first-response wait from here.
-        const uint8_t mode = diagRequest_.load() & 0xFF;
-        if (mode != 0 && tx.data[1] == mode && (mode != MODE_VEHICLE_INFO || tx.data[2] == PID_VIN))
-        {
-            diagSentMs_.store(pdTICKS_TO_MS(xTaskGetTickCount()));
-            diagSent_.store(true);
-        }
-    }
+    // The response timer does not start here: the frame is only queued. onTxDone() starts it when the frame left the controller.
+    esp_err_t ret = urgent ? canDriver.transmitUrgent(tx) : canDriver.transmit(tx, 100);
 
     return ret;
+}
+
+// TWAI TX-done (ISR) or a refused send (can_tx task). Atomics only: no locks, no logging, no allocation.
+void IRAM_ATTR OBD2::onTxDone(void* arg, uint32_t id, const uint8_t* data, uint8_t length, bool success)
+{
+    OBD2* self = static_cast<OBD2*>(arg);
+    if (self == nullptr)
+    {
+        return;
+    }
+    const uint32_t nowMs = pdTICKS_TO_MS(xTaskGetTickCountFromISR());
+    if (obd2frame::isDiagRequestFrame(self->diagRequest_.load() & 0xFF, id, data, length))
+    {
+        if (success)
+        {
+            self->diagSentMs_.store(nowMs);
+            self->diagSent_.store(true);
+        }
+        else
+        {
+            self->diagTxFailed_.store(true);
+        }
+    }
+    else if (success && obd2frame::isFlowControlFrame(id, data, length))
+    {
+        const uint32_t sinceMs = self->fcFirstFrameMs_[id - (OBD2_RESPONSE_BASE_ID - RESPONSE_ID_OFFSET)].load();
+        const uint32_t latency = static_cast<uint32_t>(nowMs - sinceMs);
+        self->fcLastLatencyMs_.store(latency);
+        self->fcSentCount_.fetch_add(1);
+        if (latency > self->fcMaxLatencyMs_.load())
+        {
+            self->fcMaxLatencyMs_.store(latency);
+        }
+        if (obd2frame::isoTpFlowControlLate(sinceMs, nowMs))
+        {
+            self->fcLateCount_.fetch_add(1);
+        }
+    }
+}
+
+// Keep the poll task off the bus while an ECU is mid-message. Never blocks: if the poll task holds the bus right now the
+// attempt is repeated every receive-loop pass while a session is open.
+void OBD2::tryHoldDiagBus()
+{
+    if (!busMutexOwnedByReceive_ && xBusArbitrationMutex && xSemaphoreTake(xBusArbitrationMutex, 0) == pdTRUE)
+    {
+        busMutexOwnedByReceive_ = true;
+    }
 }
 
 void OBD2::releaseDiagBus()
@@ -109,8 +147,8 @@ bool OBD2::handleDiagFrame(const CanDriver::CanFrame& f)
     {
         return false;
     }
-    const obd2frame::DiagFrameResult r =
-        diagCollector_.onFrame(f.header.id, f.data, f.length, pdTICKS_TO_MS(xTaskGetTickCount()));
+    const uint32_t rxMs = pdTICKS_TO_MS(xTaskGetTickCount());
+    const obd2frame::DiagFrameResult r = diagCollector_.onFrame(f.header.id, f.data, f.length, rxMs);
     if (r.err != ESP_OK)
     {
         ESP_LOGW(TAG, "ECU 0x%03X: multi-frame response dropped: %s", static_cast<unsigned>(f.header.id),
@@ -118,25 +156,14 @@ bool OBD2::handleDiagFrame(const CanDriver::CanFrame& f)
     }
     if (r.sendFlowControl)
     {
-        // Keep the poll task off the bus while any ECU is mid-message; released when the last session ends.
-        if (!busMutexOwnedByReceive_ && xBusArbitrationMutex)
-        {
-            if (xSemaphoreTake(xBusArbitrationMutex, pdMS_TO_TICKS(100)) == pdTRUE)
-            {
-                busMutexOwnedByReceive_ = true;
-            }
-            else
-            {
-                // Flow control still goes out (the ECU would abort otherwise); at most one warning per first frame.
-                ESP_LOGW(TAG, "Bus arbitration busy: sending flow control to 0x%03X without holding the bus",
-                         static_cast<unsigned>(r.flowControlId));
-            }
-        }
-        vTaskDelay(pdMS_TO_TICKS(10));  // Wait before sending Flow Control
+        // Flow control first: stamp the first frame, then queue the frame at the front of the TX queue without waiting
+        // (N_Ar). Only afterwards try to keep the poll task off the bus; failing to get it is harmless.
+        fcFirstFrameMs_[f.header.id - obd2frame::DIAG_RESPONSE_ID_FIRST].store(rxMs);
         if (!stopRequested_)
         {
             sendFlowControlFrame(r.flowControlId);
         }
+        tryHoldDiagBus();
     }
     return r.consumed;
 }
@@ -159,6 +186,18 @@ void OBD2::serviceDiagCollection()
     if (diagCollector_.activeSessions() == 0)
     {
         releaseDiagBus();
+    }
+    else
+    {
+        tryHoldDiagBus();
+    }
+    const uint32_t late = fcLateCount_.load();
+    if (late != fcLateLogged_)
+    {
+        fcLateLogged_ = late;
+        ESP_LOGW(TAG, "Flow control missed N_Ar (%u ms): last %u ms, max %u ms, %u late so far",
+                 static_cast<unsigned>(ISOTP_N_AR_MS), static_cast<unsigned>(fcLastLatencyMs_.load()),
+                 static_cast<unsigned>(fcMaxLatencyMs_.load()), static_cast<unsigned>(late));
     }
     if (status == obd2frame::DiagStatus::Complete)
     {
@@ -243,7 +282,7 @@ inline void OBD2::sendFlowControlFrame(uint32_t id)
     r.isRecurring         = false;
     r.retries_left        = DEFAULT_NUMER_OF_RETRIES;
 
-    queryMsg(r);
+    queryMsg(r, true);
 }
 
 // Requester side: start the collection, enqueue the request, wait for the merged result, end the collection.
@@ -252,6 +291,7 @@ inline void OBD2::sendFlowControlFrame(uint32_t id)
 esp_err_t OBD2::runDiagRequest(uint8_t mode, SemaphoreHandle_t sem, PollRequest& r)
 {
     diagSent_.store(false);
+    diagTxFailed_.store(false);
     diagResult_.store(ESP_OK);
     const uint32_t generation = ++diagGen_;
     diagRequest_.store((generation << 8) | mode);
@@ -266,6 +306,12 @@ esp_err_t OBD2::runDiagRequest(uint8_t mode, SemaphoreHandle_t sem, PollRequest&
             if (xSemaphoreTake(sem, pdMS_TO_TICKS(50)) == pdTRUE)
             {
                 result = stopRequested_ ? ESP_ERR_INVALID_STATE : diagResult_.load();
+                break;
+            }
+            if (diagTxFailed_.load())
+            {
+                ESP_LOGW(TAG, "Diagnostic request 0x%02X could not be sent", static_cast<unsigned>(mode));
+                result = ESP_FAIL;
                 break;
             }
             if (!canDriver.isBusConnected())
