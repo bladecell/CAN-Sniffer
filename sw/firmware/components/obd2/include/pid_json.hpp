@@ -25,6 +25,14 @@ ParseResult parse(const cJSON* array, std::vector<PIDDefinitionData>& out);
 // Returns false if the value is out of range or the aliases disagree; absent is ok unless `required`.
 bool lengthFromJson(const cJSON* object, uint8_t& output, bool required);
 
+// One JSON number to an unsigned integer in [minValue, maxValue]. False (output untouched) for null, non-numbers, NaN,
+// infinity, fractions and anything out of range. Never wraps and never casts an out-of-range double.
+bool integerFromJson(const cJSON* value, uint32_t minValue, uint32_t maxValue, uint32_t& output);
+
+// One JSON number to a finite float. False (output untouched) for null, non-numbers, NaN, infinity and values a float
+// cannot hold.
+bool floatFromJson(const cJSON* value, float& output);
+
 // Serializes definitions to a JSON array in the same schema. Returns nullptr on allocation failure.
 cJSON* serialize(const std::vector<PIDDefinitionData>& definitions);
 

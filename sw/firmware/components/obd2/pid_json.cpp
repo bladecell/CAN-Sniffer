@@ -24,28 +24,19 @@ constexpr size_t PID_ICON_MAX    = 64;
 template <typename T>
 bool jsonInteger(const cJSON* object, const char* key, T minValue, T maxValue, T& output)
 {
-    const cJSON* value = cJSON_GetObjectItemCaseSensitive(object, key);
-    if (!cJSON_IsNumber(value) || !std::isfinite(value->valuedouble) ||
-        std::floor(value->valuedouble) != value->valuedouble || value->valuedouble < (double)minValue ||
-        value->valuedouble > (double)maxValue)
+    uint32_t parsed = 0;
+    if (!integerFromJson(cJSON_GetObjectItemCaseSensitive(object, key), static_cast<uint32_t>(minValue),
+                         static_cast<uint32_t>(maxValue), parsed))
     {
         return false;
     }
-    output = static_cast<T>(value->valuedouble);
+    output = static_cast<T>(parsed);
     return true;
 }
 
 bool jsonFloat(const cJSON* object, const char* key, float& output)
 {
-    const cJSON* value = cJSON_GetObjectItemCaseSensitive(object, key);
-    if (!cJSON_IsNumber(value) || !std::isfinite(value->valuedouble) ||
-        value->valuedouble < -std::numeric_limits<float>::max() ||
-        value->valuedouble > std::numeric_limits<float>::max())
-    {
-        return false;
-    }
-    output = static_cast<float>(value->valuedouble);
-    return std::isfinite(output);
+    return floatFromJson(cJSON_GetObjectItemCaseSensitive(object, key), output);
 }
 
 // Absent or null means "unset" and is stored as NaN; anything else must be a finite float.
@@ -76,6 +67,33 @@ ParseResult fail(int status, const char* reason)
     return {false, status, reason};
 }
 }  // namespace
+
+bool integerFromJson(const cJSON* value, uint32_t minValue, uint32_t maxValue, uint32_t& output)
+{
+    if (!cJSON_IsNumber(value))
+    {
+        return false;
+    }
+    const double d = value->valuedouble;
+    if (!std::isfinite(d) || std::floor(d) != d || d < static_cast<double>(minValue) || d > static_cast<double>(maxValue))
+    {
+        return false;
+    }
+    output = static_cast<uint32_t>(d);  // integral and inside [minValue, maxValue]: no wrap, no UB
+    return true;
+}
+
+bool floatFromJson(const cJSON* value, float& output)
+{
+    if (!cJSON_IsNumber(value) || !std::isfinite(value->valuedouble) ||
+        value->valuedouble < -static_cast<double>(std::numeric_limits<float>::max()) ||
+        value->valuedouble > static_cast<double>(std::numeric_limits<float>::max()))
+    {
+        return false;
+    }
+    output = static_cast<float>(value->valuedouble);
+    return true;
+}
 
 bool lengthFromJson(const cJSON* object, uint8_t& output, bool required)
 {

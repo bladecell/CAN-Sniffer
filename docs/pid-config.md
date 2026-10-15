@@ -44,7 +44,7 @@ Implemented in `components/obd2/pid_json.cpp` (host-tested). JSON nesting deeper
 - `pid` is unique in the array;
 - the formula must compile (TinyExpr). A formula that does not compile makes the whole replace fail with 422.
 
-`POST /api/v1/pid_def` (add) is looser, per item: it needs `id, mode, pid, name, formula, interval` and nothing is range-checked, `length` defaults to 3 for `pid > 0xFF` else 2, `interval` below 4 is raised to 4 (so 0 becomes 4 there), a formula that does not compile is accepted and the PID never gets a value, and a `pid` that already exists is rejected. Prefer `PUT`.
+`POST /api/v1/pid_def` (add) is looser, per item: it needs `id, mode, pid, name, formula, interval`; every number is range-checked against the table above (`id` 0-0x7FF, `mode` and `priority` 0-255, `pid` and `interval` 0-65535, `color` 0-0xFFFFFF, `minV`/`maxV` finite floats; fractions, NaN, negative or out-of-range values reject the item with `ESP_ERR_INVALID_ARG`; optional fields may be absent or `null`), the (mode, PID, length) rule above applies, `length` defaults to 3 for mode 0x22, 0 for derived and 2 otherwise, `interval` below 4 is raised to 4 (so 0 becomes 4 there), a formula that does not compile is accepted and the PID never gets a value, and a `pid` that already exists is rejected. Prefer `PUT`.
 
 ## Formulas
 Formulas are compiled by TinyExpr (`components/tinyexpr`) when the definition is created.
