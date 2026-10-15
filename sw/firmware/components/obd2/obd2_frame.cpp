@@ -304,6 +304,20 @@ size_t DiagCollector::activeSessions() const
     return n;
 }
 
+bool diagWaitExpired(const DiagWaitState& w)
+{
+    uint32_t limit = w.waitMs;
+    if (w.reassembling && w.reassemblyCapMs > limit)
+    {
+        limit = w.reassemblyCapMs;
+    }
+    if (w.pending && w.pendingCapMs > limit)
+    {
+        limit = w.pendingCapMs;
+    }
+    return static_cast<uint32_t>(w.nowMs - w.startMs) >= limit;
+}
+
 bool DiagCollector::anyPending() const
 {
     for (bool p : pendingActive_)

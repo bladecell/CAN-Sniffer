@@ -127,6 +127,7 @@ private:
     std::atomic<uint32_t>    diagRequest_{0};   // (generation << 8) | request mode; mode 0 = no collection
     std::atomic<uint32_t>    diagSentMs_{0};    // when the poll task put the request on the bus
     std::atomic<bool>        diagSent_{false};
+    std::atomic<bool>        diagReassembling_{false};  // collection progressing: session open or ECU answered (N_Cr drops stalled sessions)
     std::atomic<bool>        diagPending_{false};  // an ECU answered NRC 0x78: the requester may wait longer
     uint32_t                 diagGen_         = 0;  // requester side, under diagnosticRequestMtx_
     uint32_t                 diagSeenRequest_ = 0;

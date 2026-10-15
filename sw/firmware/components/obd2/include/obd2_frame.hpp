@@ -119,6 +119,8 @@ public:
     bool   active() const { return kind_ != DiagKind::None; }
     size_t activeSessions() const;
     size_t responders() const { return responders_; }
+    // A session is open or some ECU has answered: the result is on its way (a stalled session is dropped after N_Cr).
+    bool progressing() const { return activeSessions() > 0 || responders_ > 0; }
     // True while any ECU has an unexpired NRC 0x78 (response pending).
     bool anyPending() const;
 
@@ -170,6 +172,22 @@ private:
     bool        haveVin_ = false;
     size_t      vinConflicts_ = 0;
 };
+
+// Requester deadline for a DTC / VIN request, all times in ms (wrap-safe). The base wait is `waitMs`; it stretches while an
+// ISO-TP session is being assembled (up to reassemblyCapMs) or an ECU has an NRC 0x78 pending (up to pendingCapMs).
+// "Reassembling" is DiagCollector::progressing(): a session is open or an ECU already answered, so the result follows within
+// the quiet gap. A stalled session is dropped after N_Cr, so it only stays true while frames arrive.
+struct DiagWaitState
+{
+    uint32_t nowMs;
+    uint32_t startMs;
+    uint32_t waitMs;
+    uint32_t reassemblyCapMs;
+    uint32_t pendingCapMs;
+    bool     reassembling;
+    bool     pending;
+};
+bool diagWaitExpired(const DiagWaitState& w);
 
 // Recovery after the CAN bus (re)connects or the OBD health check clears the poll queue.
 enum class ConnectPlan : uint8_t

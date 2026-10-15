@@ -669,6 +669,92 @@ static void test_diag_random_frames_never_break_the_collector(void)
     }
 }
 
+namespace
+{
+DiagWaitState waitState(uint32_t start, uint32_t now, bool reassembling, bool pending)
+{
+    return {now, start, OBD2_DIAG_WAIT_MS, OBD2_DIAG_REASSEMBLY_CAP_MS, OBD2_DIAG_PENDING_CAP_MS, reassembling, pending};
+}
+}  // namespace
+
+static void test_diag_wait_slow_multiframe_is_not_abandoned_and_completes(void)
+{
+    // 14 consecutive frames 50 ms apart: about 700 ms, every gap well inside N_Cr, longer than the 500 ms base wait.
+    DiagCollector c;
+    startDtc(c);
+    std::vector<uint8_t> p = {0x43, 50};
+    for (uint16_t i = 1; i <= 50; i++)  // 102 bytes: FF + 14 CFs
+    {
+        p.push_back(0x01);
+        p.push_back(static_cast<uint8_t>(i));
+    }
+    const auto frames = segment(p);
+    TEST_ASSERT_EQUAL_UINT32(15, frames.size());
+    uint32_t t = 10;
+    for (size_t i = 0; i < frames.size(); i++, t += 50)
+    {
+        feed(c, 0x7E8, frames[i], t);
+        c.poll(t);
+        TEST_ASSERT_FALSE(diagWaitExpired(waitState(0, t, c.progressing(), c.anyPending())));
+        // the requester also wakes between frames
+        c.poll(t + 25);
+        TEST_ASSERT_FALSE(diagWaitExpired(waitState(0, t + 25, c.progressing(), c.anyPending())));
+    }
+    t -= 50;
+    TEST_ASSERT_TRUE(t > OBD2_DIAG_WAIT_MS);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(DiagStatus::Complete), static_cast<int>(c.poll(t + T.quietGapMs)));
+    TEST_ASSERT_EQUAL_UINT32(50, c.dtcCount());
+}
+
+static void test_diag_wait_stalled_session_does_not_keep_the_wait_alive(void)
+{
+    DiagCollector c;
+    startDtc(c);
+    const auto a = segment(dtcPayload(0x43, {0x0101, 0x0102, 0x0103, 0x0104}));
+    feed(c, 0x7E8, a[0], 10);  // first frame, then the ECU goes silent
+    uint32_t expiredAt = 0;
+    for (uint32_t t = 10; t < 20000 && expiredAt == 0; t += 50)
+    {
+        c.poll(t);
+        if (diagWaitExpired(waitState(0, t, c.progressing(), c.anyPending())))
+        {
+            expiredAt = t;
+        }
+    }
+    TEST_ASSERT_EQUAL_UINT32(0, c.activeSessions());  // N_Cr dropped it
+    TEST_ASSERT_TRUE(expiredAt >= OBD2_DIAG_WAIT_MS);
+    TEST_ASSERT_TRUE(expiredAt < OBD2_DIAG_WAIT_MS + 100);
+}
+
+static void test_diag_wait_reassembly_cap_is_a_hard_limit(void)
+{
+    TEST_ASSERT_EQUAL_UINT32(11600, OBD2_DIAG_REASSEMBLY_CAP_MS);  // 500 + 74 x 150
+    TEST_ASSERT_FALSE(diagWaitExpired(waitState(1000, 1000 + OBD2_DIAG_REASSEMBLY_CAP_MS - 1, true, false)));
+    TEST_ASSERT_TRUE(diagWaitExpired(waitState(1000, 1000 + OBD2_DIAG_REASSEMBLY_CAP_MS, true, false)));
+}
+
+static void test_diag_wait_pending_behaviour_is_unchanged(void)
+{
+    TEST_ASSERT_TRUE(diagWaitExpired(waitState(0, OBD2_DIAG_WAIT_MS, false, false)));
+    TEST_ASSERT_FALSE(diagWaitExpired(waitState(0, OBD2_DIAG_WAIT_MS - 1, false, false)));
+    TEST_ASSERT_FALSE(diagWaitExpired(waitState(0, OBD2_DIAG_WAIT_MS + 4000, false, true)));
+    TEST_ASSERT_FALSE(diagWaitExpired(waitState(0, OBD2_DIAG_PENDING_CAP_MS - 1, false, true)));
+    TEST_ASSERT_TRUE(diagWaitExpired(waitState(0, OBD2_DIAG_PENDING_CAP_MS, false, true)));
+    // a pending ECU does not lift the reassembly cap, and the larger cap wins when both hold
+    TEST_ASSERT_FALSE(diagWaitExpired(waitState(0, OBD2_DIAG_REASSEMBLY_CAP_MS, true, true)));
+    TEST_ASSERT_TRUE(diagWaitExpired(waitState(0, OBD2_DIAG_PENDING_CAP_MS, true, true)));
+}
+
+static void test_diag_wait_survives_tick_wraparound(void)
+{
+    const uint32_t start = 0xFFFFFF00u;
+    TEST_ASSERT_FALSE(diagWaitExpired(waitState(start, start + OBD2_DIAG_WAIT_MS - 1, false, false)));
+    TEST_ASSERT_TRUE(diagWaitExpired(waitState(start, start + OBD2_DIAG_WAIT_MS, false, false)));
+    TEST_ASSERT_FALSE(diagWaitExpired(waitState(start, start + 700, true, false)));  // wrapped past 0
+    TEST_ASSERT_TRUE(diagWaitExpired(waitState(start, start + OBD2_DIAG_REASSEMBLY_CAP_MS, true, false)));
+    TEST_ASSERT_FALSE(diagWaitExpired(waitState(start, start, false, false)));
+}
+
 extern "C" void run_obd2_diag_collector_tests(void)
 {
     RUN_TEST(test_diag_single_ecu_multiframe_dtc_completes_after_quiet_gap);
@@ -699,5 +785,10 @@ extern "C" void run_obd2_diag_collector_tests(void)
     RUN_TEST(test_diag_pending_counter_resets_after_a_real_answer);
     RUN_TEST(test_diag_other_negative_response_is_not_a_responder);
     RUN_TEST(test_diag_clock_wrap_and_restart);
+    RUN_TEST(test_diag_wait_slow_multiframe_is_not_abandoned_and_completes);
+    RUN_TEST(test_diag_wait_stalled_session_does_not_keep_the_wait_alive);
+    RUN_TEST(test_diag_wait_reassembly_cap_is_a_hard_limit);
+    RUN_TEST(test_diag_wait_pending_behaviour_is_unchanged);
+    RUN_TEST(test_diag_wait_survives_tick_wraparound);
     RUN_TEST(test_diag_random_frames_never_break_the_collector);
 }

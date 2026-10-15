@@ -84,6 +84,7 @@ void OBD2::resetDiagCollection()
     releaseDiagBus();
     diagCollector_.cancel();
     diagPending_.store(false);
+    diagReassembling_.store(false);
     diagSeenRequest_ = 0;
 }
 
@@ -102,6 +103,7 @@ void OBD2::syncDiagRequest()
     {
         diagCollector_.cancel();
         diagPending_.store(false);
+    diagReassembling_.store(false);
         return;
     }
     diagCollector_.begin(mode == MODE_VEHICLE_INFO ? obd2frame::DiagKind::Vin : obd2frame::DiagKind::Dtc, mode,
@@ -161,6 +163,7 @@ void OBD2::serviceDiagCollection()
     }
     const obd2frame::DiagStatus status = diagCollector_.poll(pdTICKS_TO_MS(xTaskGetTickCount()));
     diagPending_.store(diagCollector_.anyPending());
+    diagReassembling_.store(diagCollector_.progressing());
     if (diagCollector_.activeSessions() == 0)
     {
         releaseDiagBus();
@@ -170,12 +173,14 @@ void OBD2::serviceDiagCollection()
         commitDiagResult();
         diagCollector_.cancel();
         diagPending_.store(false);
+    diagReassembling_.store(false);
     }
     else if (status == obd2frame::DiagStatus::Failed)
     {
         ESP_LOGW(TAG, "No ECU answered the 0x%02X request", static_cast<unsigned>(diagSeenRequest_ & 0xFF));
         diagCollector_.cancel();
         diagPending_.store(false);
+    diagReassembling_.store(false);
     }
 }
 
@@ -244,7 +249,8 @@ inline void OBD2::sendFlowControlFrame(uint32_t id)
 }
 
 // Requester side: start the collection, enqueue the request, wait for the merged result, end the collection.
-// Waits OBD2_DIAG_WAIT_MS, or while an ECU has a response pending (NRC 0x78) up to OBD2_DIAG_PENDING_CAP_MS.
+// Waits OBD2_DIAG_WAIT_MS, longer while a multi-frame message is arriving (up to OBD2_DIAG_REASSEMBLY_CAP_MS) or an ECU has a
+// response pending (NRC 0x78, up to OBD2_DIAG_PENDING_CAP_MS); see obd2frame::diagWaitExpired.
 esp_err_t OBD2::runDiagRequest(uint8_t mode, SemaphoreHandle_t sem, PollRequest& r)
 {
     diagSent_.store(false);
@@ -254,9 +260,7 @@ esp_err_t OBD2::runDiagRequest(uint8_t mode, SemaphoreHandle_t sem, PollRequest&
     esp_err_t result = req(r);
     if (result == ESP_OK)
     {
-        const TickType_t start     = xTaskGetTickCount();
-        const TickType_t deadline  = start + pdMS_TO_TICKS(OBD2_DIAG_WAIT_MS);
-        const TickType_t hardLimit = start + pdMS_TO_TICKS(OBD2_DIAG_PENDING_CAP_MS);
+        const uint32_t startMs = pdTICKS_TO_MS(xTaskGetTickCount());
         result                     = ESP_ERR_INVALID_STATE;
         while (!stopRequested_)
         {
@@ -271,8 +275,14 @@ esp_err_t OBD2::runDiagRequest(uint8_t mode, SemaphoreHandle_t sem, PollRequest&
                 result = ESP_ERR_INVALID_STATE;
                 break;
             }
-            const TickType_t now = xTaskGetTickCount();
-            if (tickDeadlineDue(hardLimit, now) || (tickDeadlineDue(deadline, now) && !diagPending_.load()))
+            const obd2frame::DiagWaitState wait = {pdTICKS_TO_MS(xTaskGetTickCount()),
+                                                   startMs,
+                                                   OBD2_DIAG_WAIT_MS,
+                                                   OBD2_DIAG_REASSEMBLY_CAP_MS,
+                                                   OBD2_DIAG_PENDING_CAP_MS,
+                                                   diagReassembling_.load(),
+                                                   diagPending_.load()};
+            if (obd2frame::diagWaitExpired(wait))
             {
                 ESP_LOGW(TAG, "Diagnostic request 0x%02X timed out", static_cast<unsigned>(mode));
                 result = ESP_ERR_TIMEOUT;

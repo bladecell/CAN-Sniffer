@@ -161,6 +161,8 @@ struct PIDData_t
 #define OBD2_MAX_CONSECUTIVE_PENDING 3      // consecutive NRC 0x78 accepted per ECU: total wait about 3 x P2* = 15 s
 #define OBD2_DIAG_WAIT_MS 500               // requester wait for a DTC / VIN result (first wait, N_Cr and quiet gap fit well inside)
 #define OBD2_DIAG_PENDING_CAP_MS (OBD2_DIAG_WAIT_MS + OBD2_MAX_CONSECUTIVE_PENDING * OBD2_ECU_P2_STAR_MAX_MS)  // hard limit while an ECU says 0x78
+#define OBD2_DIAG_MAX_CONSECUTIVE_FRAMES 74 // a 512-byte payload: first frame carries 6, 506 / 7 = 72.3, so 73 consecutive frames; 74 with margin
+#define OBD2_DIAG_REASSEMBLY_CAP_MS (OBD2_DIAG_WAIT_MS + OBD2_DIAG_MAX_CONSECUTIVE_FRAMES * ISOTP_N_CR_MS)  // 500 + 74 x 150 = 11600 ms: every frame as late as N_Cr allows
 #define ISOTP_MAX_SESSIONS 8                // concurrent ISO-TP reassembly sessions (one per response CAN ID)
 
 struct PollRequest
