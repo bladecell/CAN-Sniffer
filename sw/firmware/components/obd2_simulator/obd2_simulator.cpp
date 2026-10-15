@@ -29,6 +29,12 @@ static QueueHandle_t    simQueue = NULL;
 
 volatile uint32_t simDroppedFrames = 0;
 
+// Test aid, debug builds only: when > 0, ECU 1 answers DTC requests with a 40-DTC list whose consecutive frames are this many
+// ms apart (50 gives about 600 ms, longer than the requester's base wait). 0 keeps the default behaviour.
+#ifndef SIM_ECU1_CF_DELAY_MS
+#define SIM_ECU1_CF_DELAY_MS 0
+#endif
+
 static constexpr uint32_t SIM_ECU_COUNT       = 2;
 static constexpr uint32_t SIM_REQUEST_BASE_ID = OBD2_RESPONSE_BASE_ID - RESPONSE_ID_OFFSET;  // 0x7E0
 
@@ -91,7 +97,7 @@ void dataSimTaskWrapper(void* param)
 struct SimTransfer
 {
     bool     active = false;
-    uint8_t  bytes[32];
+    uint8_t  bytes[96];
     uint8_t  total = 0;
     uint8_t  pos   = 0;
     uint8_t  seq   = 1;
@@ -136,10 +142,14 @@ static void sendPayload(CanDriver& canDriver, uint32_t id, SimTransfer& t, const
     injectFrame(canDriver, id, f);
 }
 
-static void sendConsecutiveFrames(CanDriver& canDriver, uint32_t id, SimTransfer& t)
+static void sendConsecutiveFrames(CanDriver& canDriver, uint32_t id, SimTransfer& t, uint32_t gapMs)
 {
     while (t.active && t.pos < t.total)
     {
+        if (gapMs != 0)
+        {
+            vTaskDelay(pdMS_TO_TICKS(gapMs));
+        }
         uint8_t f[8] = {};
         f[0]         = 0x20 | (t.seq++ & 0x0F);
         for (int j = 1; j <= 7 && t.pos < t.total; j++)
@@ -177,7 +187,7 @@ void dataSimTask(CanDriver& canDriver)
             if (req.id >= SIM_REQUEST_BASE_ID && req.id < SIM_REQUEST_BASE_ID + SIM_ECU_COUNT)
             {
                 const uint32_t ecu = req.id - SIM_REQUEST_BASE_ID;
-                sendConsecutiveFrames(canDriver, OBD2_RESPONSE_BASE_ID + ecu, transfer[ecu]);
+                sendConsecutiveFrames(canDriver, OBD2_RESPONSE_BASE_ID + ecu, transfer[ecu], ecu == 1 ? SIM_ECU1_CF_DELAY_MS : 0);
             }
             continue;
         }
@@ -194,20 +204,29 @@ void dataSimTask(CanDriver& canDriver)
         const bool ecu1Addressed = req.id == OBD2_FUNCTIONAL_ID || req.id == SIM_REQUEST_BASE_ID + 1;
         if (ecu1Addressed)
         {
-            uint8_t payload[32];
+            uint8_t payload[96];
             switch (mode)
             {
                 case MODE_DTCS:
                 case MODE_PENDING_DTCS:
                 case MODE_PERMANENT_DTCS:
                 {
+#if SIM_ECU1_CF_DELAY_MS > 0
+                    const uint8_t n = 40;
+#else
                     const uint8_t n = sizeof(dtcsEcu1) / sizeof(dtcsEcu1[0]);
-                    payload[0]      = mode | 0x40;
-                    payload[1]      = n;
+#endif
+                    payload[0] = mode | 0x40;
+                    payload[1] = n;
                     for (uint8_t i = 0; i < n; i++)
                     {
-                        payload[2 + 2 * i] = (dtcsEcu1[i] >> 8) & 0xFF;
-                        payload[3 + 2 * i] = dtcsEcu1[i] & 0xFF;
+#if SIM_ECU1_CF_DELAY_MS > 0
+                        const uint16_t dtc = i < 4 ? dtcsEcu1[i] : static_cast<uint16_t>(0x1000 + i);
+#else
+                        const uint16_t dtc = dtcsEcu1[i];
+#endif
+                        payload[2 + 2 * i] = (dtc >> 8) & 0xFF;
+                        payload[3 + 2 * i] = dtc & 0xFF;
                     }
                     sendPayload(canDriver, OBD2_RESPONSE_BASE_ID + 1, transfer[1], payload, 2 + 2 * n);
                     break;
