@@ -4,7 +4,6 @@
   import SDCardImportModal from "$lib/components/SDCardImportModal.svelte";
   import { alertStore } from "$lib/alertStore.svelte";
   import {
-    telemetryStore,
     isValidHex,
     isValidName,
     isValidDescription,
@@ -12,6 +11,9 @@
     isLengthValidForPid,
     isIdValidForMode,
     isValidFormula,
+  } from "$lib/pidInputRules";
+  import {
+    telemetryStore,
     handleSavePid,
     createRowObject,
     columns,
