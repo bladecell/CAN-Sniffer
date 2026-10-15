@@ -3,6 +3,7 @@
   import { alertStore } from "$lib/alertStore.svelte";
   import Icon from "$lib/Icon.svelte";
   import type { SdTreeNode } from "$lib/types";
+  import { nodeKey } from "$lib/sdTree";
   import { parseJsonResponse, sdCardFileEndpoint } from "$lib/api";
 
   const errorMessage = (err: unknown) => (err instanceof Error ? err.message : String(err));
@@ -188,85 +189,10 @@
   let displayName = $derived(node.name || (node.path === '/' ? 'SD Root' : node.path.split('/').pop() || 'Folder'));
 </script>
 
-<input type="file" bind:this={fileInputForUpload} style="display: none;" onchange={handleFileSelected} />
-{#if isRoot}
-  <div class="tree-container">
-    <ul class="tree-root-ul">
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <li class="tree-item">
-        {#if node.children}
-          {@const folderId = generateId(node.path || "root")}
-          <input type="checkbox" id={folderId} class="tree-toggle" checked />
-          <label for={folderId} class="tree-label" onmouseleave={cancelDelete}>
-            <Icon name="folder-closed" class="icon folder-closed-icon" />
-            <Icon name="folder-open" class="icon folder-open-icon" />
-            <span class="folder-name-span">{displayName}</span>
-            <div class="action-buttons">
-              <button class="icon-action-btn" onclick={(e) => triggerAddFolder(e)} title="New Folder" aria-label="New Folder">
-                <Icon name="folder-add" size={14} />
-              </button>
-              <button class="icon-action-btn" onclick={(e) => triggerUpload(node.path, e)} title="Upload File" aria-label="Upload File">
-                <Icon name="upload" size={14} />
-              </button>
-            </div>
-          </label>
-          <div class="tree-children-wrapper">
-            <ul class="tree-children">
-              {#if isCreatingFolder}
-                <li class="tree-item">
-                  <div class="file-item is-creating">
-                    <Icon name="folder-closed" class="icon folder-closed-icon inline-svg" />
-                    <input 
-                      type="text" 
-                      class="new-folder-input" 
-                      bind:value={newFolderName} 
-                      bind:this={newFolderInput} 
-                      onblur={commitAddFolder} 
-                      onkeydown={handleNewFolderKeyDown} 
-                    />
-                  </div>
-                </li>
-              {/if}
-              {#each node.children as child}
-                <FileTree node={child} isRoot={false} {allowedExtensions} {onFileSelect} parentPath={node.path || parentPath} {onUploadSuccess} />
-              {/each}
-            </ul>
-          </div>
-        {:else}
-          <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div 
-            class="file-item" 
-            class:is-clickable={isClickable(node.name)}
-            onclick={() => handleFileClick(node)}
-            onmouseleave={cancelDelete}
-          >
-            <Icon name="file-doc" class="icon" />
-            <span class="folder-name-span">{displayName}</span>
-            <div class="action-buttons">
-              {#if confirmDeletePath === getFileFullPath()}
-                <button class="icon-action-btn confirm-yes-btn" onclick={executeDelete} title="Confirm Delete" aria-label="Confirm">
-                  <Icon name="check" size={14} />
-                </button>
-                <button class="icon-action-btn" onclick={cancelDelete} title="Cancel" aria-label="Cancel">
-                  <Icon name="x" size={14} />
-                </button>
-              {:else}
-                <button class="icon-action-btn delete-btn" onclick={(e) => triggerDelete(getFileFullPath(), false, e)} title="Delete File" aria-label="Delete File">
-                  <Icon name="trash" size={14} />
-                </button>
-              {/if}
-            </div>
-          </div>
-        {/if}
-      </li>
-    </ul>
-  </div>
-{:else}
-  <!-- Recursive call without the root container wrapper -->
+{#snippet entry()}
   <li class="tree-item">
     {#if node.children}
-      {@const folderId = generateId(node.path)}
+      {@const folderId = generateId(node.path || "root")}
       <input type="checkbox" id={folderId} class="tree-toggle" checked />
       <label for={folderId} class="tree-label" onmouseleave={cancelDelete}>
         <Icon name="folder-closed" class="icon folder-closed-icon" />
@@ -301,18 +227,18 @@
             <li class="tree-item">
               <div class="file-item is-creating">
                 <Icon name="folder-closed" class="icon folder-closed-icon inline-svg" />
-                <input 
-                  type="text" 
-                  class="new-folder-input" 
-                  bind:value={newFolderName} 
-                  bind:this={newFolderInput} 
-                  onblur={commitAddFolder} 
-                  onkeydown={handleNewFolderKeyDown} 
+                <input
+                  type="text"
+                  class="new-folder-input"
+                  bind:value={newFolderName}
+                  bind:this={newFolderInput}
+                  onblur={commitAddFolder}
+                  onkeydown={handleNewFolderKeyDown}
                 />
               </div>
             </li>
           {/if}
-          {#each node.children as child}
+          {#each node.children as child (nodeKey(child))}
             <FileTree node={child} isRoot={false} {allowedExtensions} {onFileSelect} parentPath={node.path || parentPath} {onUploadSuccess} />
           {/each}
         </ul>
@@ -320,8 +246,8 @@
     {:else}
       <!-- svelte-ignore a11y_click_events_have_key_events -->
       <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div 
-        class="file-item" 
+      <div
+        class="file-item"
         class:is-clickable={isClickable(node.name)}
         onclick={() => handleFileClick(node)}
         onmouseleave={cancelDelete}
@@ -345,6 +271,17 @@
       </div>
     {/if}
   </li>
+{/snippet}
+
+<input type="file" bind:this={fileInputForUpload} style="display: none;" onchange={handleFileSelected} />
+{#if isRoot}
+  <div class="tree-container">
+    <ul class="tree-root-ul">
+      {@render entry()}
+    </ul>
+  </div>
+{:else}
+  {@render entry()}
 {/if}
 <style>
   /* Adapted from Uiverse.io snippet to match PicoCSS glassmorphism dark theme */

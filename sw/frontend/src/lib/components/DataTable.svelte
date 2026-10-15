@@ -2,6 +2,7 @@
   import type { DataTableProps } from "$lib/types";
   import Switch from "$lib/components/Switch.svelte";
   import Icon from "$lib/Icon.svelte";
+  import { filterRows, formatNumber, sortRows, type FilterRule } from "$lib/tableRows";
 
   let {
     columns,
@@ -50,80 +51,14 @@
 
   // --- FILTER STATE ---
 
-  type FilterOperator = "contains" | "equals" | "starts_with" | "gt" | "lt";
-  type FilterRule = {
-    id: string;
-    column: string;
-    operator: FilterOperator;
-    value: string;
-  };
-
   let filterRules = $state<FilterRule[]>([]);
 
   // --- DERIVED FILTERED & SORTED DATA ---
   let processedData = $derived.by(() => {
-    let result = data;
-
-    const validFilters = filterRules.filter(
-      (rule) => rule.column && rule.value.trim() !== "",
-    );
-
-    if (validFilters.length > 0) {
-      result = result.filter((row) => {
-        return validFilters.every((rule) => {
-          const rawVal = row[rule.column];
-          const strVal = String(rawVal ?? "").toLowerCase();
-          const searchVal = rule.value.toLowerCase().trim();
-
-          switch (rule.operator) {
-            case "contains":
-              return strVal.includes(searchVal);
-            case "equals":
-              return strVal === searchVal;
-            case "starts_with":
-              return strVal.startsWith(searchVal);
-            case "gt":
-              return Number(rawVal) > Number(rule.value);
-            case "lt":
-              return Number(rawVal) < Number(rule.value);
-            default:
-              return true;
-          }
-        });
-      });
-    }
-
-    if (!sortKey) return result;
-
-    const columnDef = columns.find((c) => c.key === sortKey);
-    const isNumeric = columnDef?.type === "number";
-
-    return [...result].sort((a, b) => {
-      let valA = a[sortKey!];
-      let valB = b[sortKey!];
-
-      const isEmptyA = valA == null || valA === "N/A" || valA === "";
-      const isEmptyB = valB == null || valB === "N/A" || valB === "";
-
-      if (isEmptyA && isEmptyB) return 0;
-      if (isEmptyA) return 1;
-      if (isEmptyB) return -1;
-
-      if (isNumeric) {
-        const numA = Number(valA);
-        const numB = Number(valB);
-        if (!isNaN(numA) && !isNaN(numB)) {
-          return sortDirection === "asc" ? numA - numB : numB - numA;
-        }
-      }
-
-      const strA = String(valA).toLowerCase();
-      const strB = String(valB).toLowerCase();
-
-      if (strA < strB) return sortDirection === "asc" ? -1 : 1;
-      if (strA > strB) return sortDirection === "asc" ? 1 : -1;
-      return 0;
-    });
+    const filtered = filterRows(data, filterRules);
+    if (!sortKey) return filtered;
+    const isNumeric = columns.find((c) => c.key === sortKey)?.type === "number";
+    return sortRows(filtered, sortKey, sortDirection, isNumeric);
   });
 
   // --- EVENT HANDLERS ---
@@ -212,26 +147,12 @@
     }, 0),
   );
 
-  function formatNumber(value: unknown, format?: string) {
-    if (value == null || value === "N/A" || value === "") return value;
-    const num = Number(value);
-    if (isNaN(num)) return value;
-
-    if (format === "hex") {
-      return "0x" + num.toString(16).toUpperCase();
-    } else if (format === "bin") {
-      return "0b" + num.toString(2);
-    }
-    return value;
-  }
-
   function isAllChecked(key: string) {
     if (data.length === 0) return false;
     return data.every((r) => r[key] === true);
   }
 
-  function handleHeaderToggle(key: string, e: Event) {
-    e.stopPropagation();
+  function handleHeaderToggle(key: string) {
     const newValue = !isAllChecked(key);
     for (let i = 0; i < data.length; i++) {
       data[i][key] = newValue;
@@ -282,7 +203,7 @@
                   <span class="filter-label">{i === 0 ? "Where" : "And"}</span>
 
                   <select class="filter-select" bind:value={rule.column}>
-                    {#each columns as col}
+                    {#each columns as col (col.key)}
                       <option value={col.key}>{col.label}</option>
                     {/each}
                   </select>
@@ -348,7 +269,7 @@
         {#if activePopover === "view"}
           <div class="popover-menu view-menu blur-background">
             <div class="column-list">
-              {#each columns as col}
+              {#each columns as col (col.key)}
                 <button
                   class="column-toggle-btn"
                   onclick={() => toggleColumnVisibility(col.key)}
@@ -370,7 +291,7 @@
   <div class="data-grid-container">
     <table style="min-width: calc({minTableWidth}px * var(--table-scale, 1));">
       <colgroup>
-        {#each activeColumns as col}
+        {#each activeColumns as col (col.key)}
           <col
             style="width: {(col.type === 'checkbox' || col.type === 'toggle') &&
             col.width_px
@@ -383,7 +304,7 @@
       </colgroup>
       <thead>
         <tr>
-          {#each activeColumns as col}
+          {#each activeColumns as col (col.key)}
             <th
               scope="col"
               class="sortable-header"
@@ -408,7 +329,7 @@
                     {#if col.type === "toggle"}
                       <Switch
                         checked={isAllChecked(col.key)}
-                        onchange={(e) => handleHeaderToggle(col.key, e)}
+                        onchange={() => handleHeaderToggle(col.key)}
                         aria-label={`Toggle all ${col.label}`}
                         style="--toggle-width: 2em; --toggle-height: 1em;"
                       />
@@ -417,7 +338,7 @@
                         type="checkbox"
                         aria-label={`Select all ${col.label}`}
                         checked={isAllChecked(col.key)}
-                        onchange={(e) => handleHeaderToggle(col.key, e)}
+                        onchange={() => handleHeaderToggle(col.key)}
                       />
                     {/if}
                   </div>
@@ -432,7 +353,7 @@
       </thead>
       <tbody>
         {#if processedData.length > 0}
-          {#each processedData as row}
+          {#each processedData as row (row)}
             {@const originalIndex = data.indexOf(row)}
             <tr
               class:selected={selectedRowIndex === originalIndex}
@@ -448,7 +369,7 @@
               tabindex="0"
               aria-selected={selectedRowIndex === originalIndex}
             >
-              {#each activeColumns as col, colIndex}
+              {#each activeColumns as col, colIndex (col.key)}
                 <td>
                   {#if col.type === "code"}
                     <span class="type-code">{row[col.key]}</span>

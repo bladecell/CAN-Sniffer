@@ -1,7 +1,7 @@
 <script lang="ts">
   import { canStore } from "$lib/canStore.svelte";
   import Icon from "$lib/Icon.svelte";
-  import ToggleSwitch from "$lib/components/ToggleSwitch.svelte";
+  import Switch from "$lib/components/Switch.svelte";
 
   let statusColor = "oklch(1 0 0)";
   let isRecording = $derived(canStore.isRecording);
@@ -36,7 +36,7 @@
     </button>
 
     <div class="autorecord-wrapper">
-      <ToggleSwitch
+      <Switch
         label="Auto Record"
         subLabel="Start recording when car is started"
         disabled={canStore.wsCanStatus?.state != "CAN Connected"}
@@ -44,7 +44,7 @@
     </div>
 
     <div class="autorecord-wrapper">
-      <ToggleSwitch
+      <Switch
         label="Auto poll"
         subLabel="Keep polling the car and resume after ignition off/on"
         checked={canStore.obd2Status?.auto_poll}

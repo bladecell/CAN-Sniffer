@@ -4,12 +4,16 @@
   interface Props extends Omit<HTMLLabelAttributes, "onchange"> {
     checked?: boolean;
     disabled?: boolean;
-    onchange?: (e: Event) => void;
+    label?: string;
+    subLabel?: string;
+    onchange?: (checked: boolean) => void;
   }
 
   let {
-    checked = $bindable(),
+    checked = $bindable(false),
     disabled = false,
+    label,
+    subLabel,
     onchange,
     "aria-label": ariaLabel,
     ...rest
@@ -17,22 +21,68 @@
 
   function handleToggle(e: Event) {
     if (disabled) return;
-    if (onchange) onchange(e);
+    checked = (e.currentTarget as HTMLInputElement).checked;
+    onchange?.(checked);
   }
 </script>
 
-<label class="switch" class:disabled {...rest}>
-  <input
-    type="checkbox"
-    bind:checked
-    {disabled}
-    aria-label={ariaLabel}
-    onchange={handleToggle}
-  />
-  <span class="slider"></span>
-</label>
+{#snippet toggle()}
+  <label class="switch" class:disabled {...rest}>
+    <input
+      type="checkbox"
+      {checked}
+      {disabled}
+      aria-label={ariaLabel ?? label}
+      onchange={handleToggle}
+    />
+    <span class="slider"></span>
+  </label>
+{/snippet}
+
+{#if label}
+  <div class="toggle-container">
+    <div class="toggle-text-group">
+      <div class="toggle-label">{label}</div>
+      {#if subLabel}
+        <div class="toggle-sub-label">{subLabel}</div>
+      {/if}
+    </div>
+    {@render toggle()}
+  </div>
+{:else}
+  {@render toggle()}
+{/if}
 
 <style>
+  /* --- LAYOUT & TEXT (only with a label) --- */
+  .toggle-container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    gap: 1rem;
+  }
+
+  .toggle-text-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .toggle-label {
+    margin: 0;
+    letter-spacing: 0.05em;
+    font-weight: 500;
+  }
+
+  .toggle-sub-label {
+    margin: 0;
+    color: #a1a1aa;
+    font-size: 0.7rem;
+    letter-spacing: 0.05em;
+    font-weight: 300;
+  }
+
   /* --- CUSTOM TOGGLE SWITCH --- */
   .switch {
     /* Colors */
