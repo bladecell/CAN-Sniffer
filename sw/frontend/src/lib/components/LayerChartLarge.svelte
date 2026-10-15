@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, untrack } from "svelte";
+  import { untrack } from "svelte";
   import { safeHexColor } from "$lib/color";
   import {
     Chart,
@@ -23,120 +23,41 @@
   }
   let { pids = [], isActive = true }: Props = $props();
 
-  const KEEP_RAW_POINTS = 10_000;
-  const MAX_CHART_POINTS = 40_000;
+  type Point = { t: number; v: number | null; pid: number };
 
-  // A map of PID -> array of data points
-  let chartDataMap = $state<
-    Record<number, { t: number; v: number | null; pid: number }[]>
-  >({});
+  // Each cell reads the shared, bounded history (chartBuffer.ts). It is copied at most 5 Hz.
+  let chartDataMap = $state.raw<Record<number, Point[]>>({});
 
-  function downsample(
-    points: { t: number; v: number | null; pid: number }[],
-  ): { t: number; v: number | null; pid: number }[] {
-    const pid = points[0].pid;
-    const recent = points.slice(points.length - KEEP_RAW_POINTS);
-    const older = points.slice(0, points.length - KEEP_RAW_POINTS);
-    const buckets = MAX_CHART_POINTS - KEEP_RAW_POINTS;
-    const size = older.length / buckets;
-    const compressed: { t: number; v: number | null; pid: number }[] = [];
+  $effect(() => {
+    // Rebuilt from the current pids, so data of removed PIDs is released.
+    untrack(() => {
+      chartDataMap = {};
+    });
+    const unsubscribes = pids.map((pid) =>
+      chartHistoryStore.subscribe(pid, (buffer) => {
+        const { t, v } = buffer.snapshot();
+        const points = t.map((time, i) => ({ t: time, v: v[i], pid }));
+        untrack(() => {
+          chartDataMap = { ...chartDataMap, [pid]: points };
+        });
+      }),
+    );
+    return () => unsubscribes.forEach((unsubscribe) => unsubscribe());
+  });
 
-    for (let b = 0; b < buckets; b++) {
-      const start = Math.floor(b * size);
-      if (start >= older.length) break;
-      const end = Math.min(
-        older.length,
-        Math.max(start + 1, Math.floor((b + 1) * size)),
-      );
-      let sum = 0;
-      let tSum = 0;
-      let count = 0;
-      let hasNull = false;
-      for (let i = start; i < end; i++) {
-        const val = older[i].v;
-        if (val === null) {
-          hasNull = true;
-          break;
-        }
-        sum += val;
-        tSum += older[i].t;
-        count++;
-      }
-      compressed.push({
-        t: count > 0 ? tSum / count : older[start].t,
-        v: hasNull || count === 0 ? null : sum / count,
-        pid,
-      });
-    }
+  let defByPid = $derived(
+    new Map(canStore.pidDefinitions.map((d) => [d.pid, d])),
+  );
 
-    return [...compressed, ...recent];
-  }
+  let flatChartData = $derived(pids.flatMap((pid) => chartDataMap[pid] ?? []));
 
   function getPidDef(pid: number | undefined) {
-    return canStore.pidDefinitions?.find((c) => c.pid === pid);
+    return pid === undefined ? undefined : defByPid.get(pid);
   }
 
   function getPidColor(pid: number | undefined) {
-    const def = getPidDef(pid);
-    return safeHexColor(def?.color);
+    return safeHexColor(getPidDef(pid)?.color);
   }
-
-  // Update chart data map when pids change
-  $effect(() => {
-    // Only react to changes in `pids`
-    const currentPids = pids;
-
-    untrack(() => {
-      const newMap: Record<
-        number,
-        { t: number; v: number | null; pid: number }[]
-      > = {};
-      for (const pid of currentPids) {
-        if (chartDataMap[pid]) {
-          newMap[pid] = chartDataMap[pid];
-        } else {
-          const unsubscribe = chartHistoryStore.subscribe(
-            pid,
-            (tData, vData) => {
-              newMap[pid] = tData.map((t, i) => ({
-                t,
-                v: vData[i],
-                pid,
-              }));
-            },
-          );
-          unsubscribe(); // just want one-shot
-        }
-      }
-      chartDataMap = newMap;
-    });
-  });
-
-  // Listen to new events and push to the respective PID's array
-  $effect(() => {
-    if (pids.length === 0) return;
-
-    const unsubscribeCan = canStore.subscribe((update) => {
-      if (pids.includes(update.pid)) {
-        if (!chartDataMap[update.pid]) chartDataMap[update.pid] = [];
-        const arr = chartDataMap[update.pid];
-        arr.push({
-          t: update.timestamp,
-          v: update.value,
-          pid: update.pid,
-        });
-        if (arr.length > MAX_CHART_POINTS + KEEP_RAW_POINTS) {
-          const next = downsample(arr);
-          arr.length = 0;
-          arr.push(...next);
-        }
-      }
-    });
-
-    return () => unsubscribeCan();
-  });
-
-  let flatChartData = $derived(Object.values(chartDataMap).flat());
 
   let chartContext = $state<any>();
 
@@ -150,8 +71,9 @@
   let autoXDomain = $derived.by(() => {
     let minT = Infinity;
     let maxT = -Infinity;
-    for (const data of Object.values(chartDataMap)) {
-      if (data.length > 0) {
+    for (const pid of pids) {
+      const data = chartDataMap[pid];
+      if (data && data.length > 0) {
         minT = Math.min(minT, data[0].t);
         maxT = Math.max(maxT, data[data.length - 1].t);
       }
@@ -328,7 +250,7 @@
             />
 
             <ChartClipPath>
-              {#each pids as p}
+              {#each pids as p (p)}
                 <Spline
                   data={chartDataMap[p] ?? []}
                   x="t"
@@ -410,7 +332,7 @@
 
     {#if pids.length > 0}
       <div class="custom-chart-legend">
-        {#each pids as p}
+        {#each pids as p (p)}
           <div
             class="legend-item blur-background"
             style="border-color: {getPidColor(

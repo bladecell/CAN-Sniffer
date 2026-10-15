@@ -17,17 +17,21 @@
 
   const metric = usePidData(() => item.pid);
 
-  let chartData = $state<{ date: Date; value: number | null }[]>([]);
+  let chartData = $state.raw<{ date: Date; value: number | null }[]>([]);
 
   $effect(() => {
     if (item.pid === undefined) return;
-    const unsubscribe = chartHistoryStore.subscribe(item.pid, (tData, vData) => {
-      chartData = tData.map((t, i) => ({ date: new Date(t), value: vData[i] ?? null }));
+    const unsubscribe = chartHistoryStore.subscribe(item.pid, (buffer) => {
+      const last = buffer.lastTime();
+      if (last === undefined) {
+        chartData = [];
+        return;
+      }
+      const { t, v } = buffer.snapshot(last - MAX_HISTORY_SEC * 1000);
+      chartData = t.map((time, i) => ({ date: new Date(time), value: v[i] }));
     });
 
-    return () => {
-      unsubscribe();
-    };
+    return unsubscribe;
   });
 
   const xDomain = $derived(
