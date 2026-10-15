@@ -25,21 +25,8 @@ esp_err_t OBD2::queryMsg(PollRequest& req)
     }
     else
     {
-        if (req.payload.obd.mode == MODE_READ_DATA_BY_IDENTIFIER)
-        {
-            tx.data[0] = req.payload.obd.len;
-            tx.data[1] = req.payload.obd.mode;
-            tx.data[2] = (req.payload.obd.pid >> 8) & 0xFF;
-            tx.data[3] = req.payload.obd.pid & 0xFF;
-            dlc        = 8;
-        }
-        else
-        {
-            tx.data[0] = req.payload.obd.len;
-            tx.data[1] = req.payload.obd.mode;
-            tx.data[2] = (uint8_t)req.payload.obd.pid;
-            dlc        = 8;
-        }
+        obd2frame::buildPidRequest(req.payload.obd.len, req.payload.obd.mode, req.payload.obd.pid, tx.data);
+        dlc = 8;
     }
 
     tx.header.id           = req.id;  // OBD-II  request ID
@@ -237,7 +224,7 @@ inline void OBD2::sendFlowControlFrame(uint32_t id)
     PollRequest r         = {};
     r.id                  = id;
     r.isRaw               = true;
-    r.payload.raw.data[0] = 0x30;
+    obd2frame::buildFlowControl(r.payload.raw.data);
     r.payload.raw.dlc     = 8;
     r.interval            = 0;
     r.nextWake            = xTaskGetTickCount();

@@ -1,6 +1,7 @@
 #include "obd2_frame.hpp"
 
 #include <cstring>
+#include <initializer_list>
 
 #include "obd2_common.hpp"
 
@@ -126,6 +127,58 @@ static size_t dtcPairsInPayload(const uint8_t* payload, size_t length)
     }
     const size_t present = (length - 2) / 2;
     return payload[1] < present ? payload[1] : present;
+}
+
+static void clearRequest(RequestBytes& out, std::initializer_list<uint8_t> bytes)
+{
+    memset(out, 0, sizeof(out));
+    size_t i = 0;
+    for (uint8_t b : bytes)
+    {
+        out[i++] = b;
+    }
+}
+
+void buildDtcRequest(uint8_t mode, RequestBytes& out)
+{
+    clearRequest(out, {0x01, mode});
+}
+
+void buildVinRequest(RequestBytes& out)
+{
+    clearRequest(out, {0x02, MODE_VEHICLE_INFO, PID_VIN});
+}
+
+void buildClearDtcRequest(RequestBytes& out)
+{
+    clearRequest(out, {0x01, MODE_CLEAR_DTCS});
+}
+
+void buildDiagSessionRequest(uint8_t session, RequestBytes& out)
+{
+    clearRequest(out, {0x02, MODE_DIAGNOSTIC_SESSION_CONTROL, session});
+}
+
+void buildCurrentDataRequest(uint8_t pid, RequestBytes& out)
+{
+    clearRequest(out, {0x02, MODE_CURRENT_DATA, pid});
+}
+
+void buildFlowControl(RequestBytes& out)
+{
+    clearRequest(out, {0x30});
+}
+
+void buildPidRequest(uint8_t length, uint8_t mode, uint16_t pid, RequestBytes& out)
+{
+    if (mode == MODE_READ_DATA_BY_IDENTIFIER)
+    {
+        clearRequest(out, {length, mode, static_cast<uint8_t>(pid >> 8), static_cast<uint8_t>(pid & 0xFF)});
+    }
+    else
+    {
+        clearRequest(out, {length, mode, static_cast<uint8_t>(pid & 0xFF)});
+    }
 }
 
 esp_err_t extractDtcs(const std::vector<uint8_t>& payload, std::vector<uint16_t>& rawDtcs)

@@ -331,6 +331,52 @@ static void test_simulator_vin_frames_decode_to_a_valid_vin(void)
     TEST_ASSERT_EQUAL_STRING(vinSrc, z);
 }
 
+static void expectBytes(std::initializer_list<uint8_t> expected, const RequestBytes& got)
+{
+    uint8_t want[CAN_DATA_MAX] = {};
+    size_t  i                  = 0;
+    for (uint8_t b : expected)
+    {
+        want[i++] = b;
+    }
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(want, got, CAN_DATA_MAX);
+}
+
+static void test_request_frames_have_exact_bytes(void)
+{
+    // SF PCI = bytes after the PCI byte (ISO 15765-2), request layouts from SAE J1979.
+    RequestBytes b;
+    buildDtcRequest(0x03, b);
+    expectBytes({0x01, 0x03}, b);
+    buildDtcRequest(0x07, b);
+    expectBytes({0x01, 0x07}, b);
+    buildDtcRequest(0x0A, b);
+    expectBytes({0x01, 0x0A}, b);
+    buildVinRequest(b);
+    expectBytes({0x02, 0x09, 0x02}, b);
+    buildDiagSessionRequest(0x01, b);
+    expectBytes({0x02, 0x10, 0x01}, b);
+    buildCurrentDataRequest(0x00, b);
+    expectBytes({0x02, 0x01, 0x00}, b);
+    buildCurrentDataRequest(0x40, b);
+    expectBytes({0x02, 0x01, 0x40}, b);
+    buildFlowControl(b);
+    expectBytes({0x30, 0x00, 0x00}, b);
+    buildPidRequest(2, 0x01, 0x0C, b);
+    expectBytes({0x02, 0x01, 0x0C}, b);
+    buildPidRequest(3, 0x22, 0x2613, b);
+    expectBytes({0x03, 0x22, 0x26, 0x13}, b);
+    buildPidRequest(2, 0x01, 0x010C, b);  // a mode 01 PID is 8 bits
+    expectBytes({0x02, 0x01, 0x0C}, b);
+}
+
+static void test_clear_dtc_request_is_one_byte_after_the_pci(void)
+{
+    RequestBytes b;
+    buildClearDtcRequest(b);
+    expectBytes({0x01, 0x04}, b);  // mode 04 has no parameters: PCI length 1 (the SID only)
+}
+
 extern "C" void run_obd2_frame_tests(void)
 {
     RUN_TEST(test_single_frame_mode01);
@@ -342,6 +388,8 @@ extern "C" void run_obd2_frame_tests(void)
     RUN_TEST(test_first_frame_lengths);
     RUN_TEST(test_first_frame_rejects_bad_lengths);
     RUN_TEST(test_consecutive_sequence_wraps_after_15);
+    RUN_TEST(test_request_frames_have_exact_bytes);
+    RUN_TEST(test_clear_dtc_request_is_one_byte_after_the_pci);
     RUN_TEST(test_extract_vin);
     RUN_TEST(test_extract_vin_rejects_short_payload);
     RUN_TEST(test_dtcs_single_frame);

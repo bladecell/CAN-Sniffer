@@ -150,9 +150,7 @@ void OBD2::requestSuppPidsInternal()
         PollRequest probe         = {};
         probe.id                  = OBD2_FUNCTIONAL_ID;
         probe.isRaw               = true;
-        probe.payload.raw.data[0] = 0x02;
-        probe.payload.raw.data[1] = MODE_CURRENT_DATA;
-        probe.payload.raw.data[2] = (uint8_t)(group << 5);
+        obd2frame::buildCurrentDataRequest((uint8_t)(group << 5), probe.payload.raw.data);
         probe.payload.raw.dlc     = 8;
         probe.interval            = 0;
         probe.nextWake            = xTaskGetTickCount();

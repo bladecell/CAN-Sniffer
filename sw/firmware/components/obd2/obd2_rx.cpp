@@ -112,9 +112,7 @@ void OBD2::receiveTask()
             PollRequest r         = {};
             r.id                  = OBD2_FUNCTIONAL_ID;
             r.isRaw               = true;
-            r.payload.raw.data[0] = 0x02;
-            r.payload.raw.data[1] = MODE_CURRENT_DATA;
-            r.payload.raw.data[2] = PID_PIDS_SUPPORTED_01_20;
+            obd2frame::buildCurrentDataRequest(PID_PIDS_SUPPORTED_01_20, r.payload.raw.data);
             r.payload.raw.dlc     = 8;
             r.interval            = 0;
             r.nextWake            = now;

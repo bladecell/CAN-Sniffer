@@ -57,6 +57,19 @@ esp_err_t extractDtcs(const std::vector<uint8_t>& payload, std::vector<uint16_t>
 // Mode 09 PID 02 payload (0x49 0x02 count, then 17 ASCII chars) to the VIN.
 esp_err_t extractVin(const std::vector<uint8_t>& payload, char (&vin)[17]);
 
+// ---- Request frames (8 data bytes, unused bytes 0) ----
+// ISO 15765-2 single frame: byte 0 = 0x0 | N, N = number of bytes after the PCI byte (the SID plus its parameters, 1..7).
+using RequestBytes = uint8_t[CAN_DATA_MAX];
+void buildDtcRequest(uint8_t mode, RequestBytes& out);             // 01 mode          (03 / 07 / 0A, no parameters)
+void buildVinRequest(RequestBytes& out);                           // 02 09 02
+void buildClearDtcRequest(RequestBytes& out);                      // 01 04            (mode 04 has no parameters)
+void buildDiagSessionRequest(uint8_t session, RequestBytes& out);  // 02 10 session
+void buildCurrentDataRequest(uint8_t pid, RequestBytes& out);      // 02 01 pid
+void buildFlowControl(RequestBytes& out);                          // 30 00 00         (continue to send, no block limit, no separation time)
+// A configured PID: byte 0 is the configured request length (docs/pid-config.md `length`: 2 for mode 01, 3 for mode 22).
+// Mode 0x22 carries a 16-bit DID, every other mode an 8-bit PID.
+void buildPidRequest(uint8_t length, uint8_t mode, uint16_t pid, RequestBytes& out);
+
 // ---- Multi-ECU response collection (DTC modes 03/07/0A and VIN, mode 09/02) ----
 // A functional request is answered by several ECUs at once; each reassembles in its own session keyed by the response
 // CAN ID (11-bit 0x7E8-0x7EF). Hardware-free: the caller supplies frames and a millisecond clock (wrap-safe).
