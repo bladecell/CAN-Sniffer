@@ -187,7 +187,14 @@ void dataSimTask(CanDriver& canDriver)
             if (req.id >= SIM_REQUEST_BASE_ID && req.id < SIM_REQUEST_BASE_ID + SIM_ECU_COUNT)
             {
                 const uint32_t ecu = req.id - SIM_REQUEST_BASE_ID;
-                sendConsecutiveFrames(canDriver, OBD2_RESPONSE_BASE_ID + ecu, transfer[ecu], ecu == 1 ? SIM_ECU1_CF_DELAY_MS : 0);
+                uint32_t gapMs = 0;
+#if SIM_ECU1_CF_DELAY_MS > 0
+                if (ecu == 1)
+                {
+                    gapMs = SIM_ECU1_CF_DELAY_MS;
+                }
+#endif
+                sendConsecutiveFrames(canDriver, OBD2_RESPONSE_BASE_ID + ecu, transfer[ecu], gapMs);
             }
             continue;
         }
