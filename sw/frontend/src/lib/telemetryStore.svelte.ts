@@ -1,4 +1,4 @@
-import type { Column } from "$lib/types";
+import type { Column, PidDefinition } from "$lib/types";
 import { canStore } from "$lib/canStore.svelte";
 import { getModeLabel } from "$lib/pidHelpers.svelte.ts";
 import {
@@ -9,6 +9,9 @@ import {
   MIN_PID_INTERVAL,
   MIN_PID_PRIORITY,
 } from "$lib/pidValidation";
+
+/** A PID object from a file or the SD card: long or short key names, nothing guaranteed. */
+type RawPidDef = Partial<PidDefinition> & { desc?: string; len?: number; minV?: number; maxV?: number; interval?: number };
 
 export class TelemetryStore {
   constructor() {
@@ -54,8 +57,8 @@ export class TelemetryStore {
     });
   }
 
-  local_piddef = $state<any[]>([]);
-  lastPidDef = $state<any[] | null>(null);
+  local_piddef = $state<PidRow[]>([]);
+  lastPidDef = $state<PidDefinition[] | null>(null);
 
   chartRows = $state(1);
   chartCols = $state(1);
@@ -137,7 +140,7 @@ export class TelemetryStore {
   }
 
 
-  importPidDefinitions(defs: any[]) {
+  importPidDefinitions(defs: RawPidDef[]) {
     const newRows = [];
     for (let def of defs) {
       // Validate or map minimally
@@ -155,7 +158,7 @@ export class TelemetryStore {
         update_interval_ms: def.update_interval_ms !== undefined ? def.update_interval_ms : def.interval,
       };
       
-      const newRow = createRowObject(normalizedDef, true, false);
+      const newRow = createRowObject(normalizedDef as PidDefinition, true, false);
       newRows.push(newRow);
     }
     
@@ -308,7 +311,9 @@ export function isValidFormula(modeInput: string, formula: string): boolean {
   return false;
 }
 
-export function createRowObject(def: any, loaded: boolean, selected: boolean) {
+export type PidRow = ReturnType<typeof createRowObject>;
+
+export function createRowObject(def: PidDefinition, loaded: boolean, selected: boolean) {
   const rawPid = Number(def.pid);
   return {
     def: def,
@@ -358,7 +363,7 @@ export function createRowObject(def: any, loaded: boolean, selected: boolean) {
       return this.isValid ? "var(--normal-color)" : "var(--error-color)";
     },
     get isDirty() {
-      const original = canStore.pidDefinitions.find((d: any) => Number(d.pid) === rawPid);
+      const original = canStore.pidDefinitions.find((d) => Number(d.pid) === rawPid);
       const originalLoaded = !!original;
 
       if (this.loaded !== originalLoaded) return true;
@@ -410,7 +415,7 @@ export function handleSavePid() {
     update_interval_ms: telemetryStore.updateIntervalInput,
     color: parseInt(telemetryStore.colorInput.replace("#", ""), 16),
     icon: telemetryStore.iconInput,
-  };
+  } as PidDefinition; // min, max and length may be unset (undefined) while the form is partial
 
   const localIndex = telemetryStore.local_piddef.findIndex(
     (row) => parseInt(row.pid, 16) === rawPid,

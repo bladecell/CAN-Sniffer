@@ -1,5 +1,13 @@
 <script lang="ts">
-  let { checked = $bindable(), disabled = false, onchange, ...rest } = $props();
+  import type { HTMLLabelAttributes } from "svelte/elements";
+
+  interface Props extends Omit<HTMLLabelAttributes, "onchange"> {
+    checked?: boolean;
+    disabled?: boolean;
+    onchange?: (e: Event) => void;
+  }
+
+  let { checked = $bindable(), disabled = false, onchange, ...rest }: Props = $props();
 
   function handleToggle(e: Event) {
     if (disabled) return;

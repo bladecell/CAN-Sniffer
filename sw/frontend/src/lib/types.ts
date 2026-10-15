@@ -48,6 +48,8 @@ export interface ControlsGridItem extends BaseGridItem {
   color: string;
 }
 
+export type SpecialGridItem = BatteryGridItem | DtcGridItem;
+
 export type DashboardItem = PidGridItem | BatteryGridItem | DtcGridItem | OverviewGridItem | ControlsGridItem;
 
 /**
@@ -73,7 +75,6 @@ export interface singleDtc {
 }
 
 export interface PidValue {
-  is?: number;
   value: number;
   lastUpdated: number;
   rate: number;
@@ -87,6 +88,7 @@ export interface WsCanStatus {
   battery_voltage: number;
 }
 
+/** `GET /system`. `state` is the supervisor enum (docs/api.md). */
 export interface SystemStatus {
   app_version: string;
   uptime_s: number;
@@ -96,6 +98,64 @@ export interface SystemStatus {
   battery_voltage: number;
   sd_card_detected: boolean;
   component_status: ComponentStatus[];
+  heap_free: number;
+  heap_min_free: number;
+  tasks: TaskStack[];
+}
+
+export interface TaskStack {
+  name: string;
+  stack_free: number;
+}
+
+export type CanBusState = "not_initialized" | "bus_off" | "not_connected" | "connected";
+export type TwaiErrorState = "error_active" | "error_warning" | "error_passive" | "bus_off";
+
+/** `GET /can_bus` */
+export interface CanBusStatus {
+  state: CanBusState | (string & {}); // unknown future states are kept as strings
+  bitrate: number;
+  rs_mode: "high_speed" | "slope_control";
+  debug_mode: boolean;
+  initialized: boolean;
+  bus_connected: boolean;
+  node_status: {
+    twai_error_state: TwaiErrorState;
+    tx_error_count: number;
+    rx_error_count: number;
+  };
+}
+
+/** One item of `GET /pid_data`. `value` is null when the formula result is NaN. */
+export interface PidDataWire {
+  id: number;
+  pid: number;
+  value: number | null;
+  lastUpdated: number;
+  isSupported: boolean;
+  isValid: boolean;
+  update_interval_ms: number;
+}
+
+/** `GET /dtc` without a query: one group per mode (3, 7, 10). */
+export interface DtcGroupWire {
+  mode: number;
+  type: string;
+  dtc: string[];
+  dtc_count: number;
+}
+
+export interface DtcResponse {
+  dtcs: DtcGroupWire[];
+  count: number;
+  status: string;
+}
+
+/** `GET /dtc?codes=...` */
+export interface DtcDescriptionResponse {
+  status: string;
+  dtc_count: number;
+  dtcs: { dtc: string; description: string }[];
 }
 
 export interface ComponentStatus {
@@ -113,6 +173,15 @@ export interface SDCardInfo {
   is_mmc: boolean;
   is_mounted: boolean;
   is_present: boolean;
+}
+
+/** One node of `GET /sd_card/tree`: a directory has `children`, a file has `size`. */
+export interface SdTreeNode {
+  name?: string;
+  path: string;
+  type?: string;
+  size?: number;
+  children?: SdTreeNode[];
 }
 
 export interface Alert {
@@ -139,17 +208,16 @@ export interface PidDefinition {
 }
 
 export interface PidDataMetrics {
+  min: number;
+  max: number;
   label: string;
   id: string;
   description: string;
   unit: string;
   icon: string;
   color: string;
-  minValue: number;
-  maxValue: number;
   updateInterval: number;
   formula: string;
-  length: number;
 
   currentValue: number;
   isValid: boolean;
@@ -157,13 +225,24 @@ export interface PidDataMetrics {
   displayValue: string;
 }
 
-export interface Obd2Status {
+/** `GET /obd2` as sent: `groups` are 7 uint32 bitmaps. */
+export interface Obd2StatusWire {
   auto_poll: boolean;
   polling: boolean;
   pid_initialized: boolean;
   pid_def_count: number;
   pid_data_count: number;
   poll_task_utilization: number;
+  pid_def_path: string;
+  dtc_desc_path: string;
+  supported_pids: { count: number; groups: number[] };
+}
+
+/** The fields of `Obd2StatusWire` the frontend validates and keeps. */
+export type Obd2StatusCore = Omit<Obd2StatusWire, "pid_def_path" | "dtc_desc_path">;
+
+/** Store model: the bitmaps expanded to a PID -> supported map. */
+export interface Obd2Status extends Omit<Obd2StatusCore, "supported_pids"> {
   supported_pids: SupportedPids;
 }
 
@@ -202,13 +281,13 @@ export type ModuleConfigs = typeof MODULE_CONFIGS;
 /**
  * HELPER FUNCTIONS
  */
-export function getModuleBounds(item: DashboardItem): Bounds {
+export function getModuleBounds(item: { cardType: CardType; displayMode?: string }): Bounds {
   const DEFAULT_BOUNDS: Bounds = MODULE_CONFIGS.pid.card;
 
   if (!item) return DEFAULT_BOUNDS;
 
   if (item.cardType === "pid") {
-    return MODULE_CONFIGS.pid[item.displayMode] ?? DEFAULT_BOUNDS;
+    return MODULE_CONFIGS.pid[item.displayMode as PidDisplayMode] ?? DEFAULT_BOUNDS;
   }
 
   // Safe runtime lookup without 'any' typecasting
@@ -233,7 +312,7 @@ export interface DTCFaultProps {
 /**
  * TABLE CONSTRAINTS
  */
-export type ColumnType = "string" | "number" | "code" | "badge" | "checkbox" | "toggle";
+export type ColumnType = "text" | "string" | "number" | "code" | "badge" | "checkbox" | "toggle";
 
 export interface Column {
   label: string;
@@ -248,14 +327,14 @@ export interface Column {
   hidden?: boolean;
   formatKey?: string;
   autoShowKey?: string;
-  autoShowValue?: any;
+  autoShowValue?: unknown;
   showHeaderToggle?: boolean;
   showHeaderLabel?: boolean;
 }
 
 export interface DataTableProps {
   columns: Column[];
-  data: any[];
+  data: Record<string, any>[];
   selectedRowIndex?: number;
   onExport?: () => void;
   onImport?: () => void;

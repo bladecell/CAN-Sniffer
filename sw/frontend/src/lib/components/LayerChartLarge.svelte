@@ -73,7 +73,7 @@
   }
 
   function getPidDef(pid: number | undefined) {
-    return canStore.pidDefinitions?.find((c: any) => c.pid === pid);
+    return canStore.pidDefinitions?.find((c) => c.pid === pid);
   }
 
   function getPidColor(pid: number | undefined) {

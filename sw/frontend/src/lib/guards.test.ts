@@ -21,6 +21,7 @@ describe("parseObd2Status", () => {
 describe("parseCanBusStatus", () => {
   test("accepts and rejects", () => {
     expect(parseCanBusStatus({ state: "connected", bitrate: 500000 }).state).toBe("connected");
+    expect(parseCanBusStatus({ state: "future_state", bitrate: 500000 }).state).toBe("future_state");
     expect(() => parseCanBusStatus({ bitrate: 5 })).toThrow();
     expect(() => parseCanBusStatus([])).toThrow();
   });

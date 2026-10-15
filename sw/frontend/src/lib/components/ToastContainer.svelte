@@ -1,11 +1,12 @@
-<script>
+<script lang="ts">
   import { alertStore } from "$lib/alertStore.svelte";
   import { fly } from "svelte/transition";
   import { flip } from "svelte/animate";
+  import type { Alert } from "$lib/types";
   import Icon from "$lib/Icon.svelte"; // Adjust this path to where your Icon component is saved
 
   // Maps the alert type to the keys in your iconData
-  const getIconName = (type) => {
+  const getIconName = (type: Alert["type"]) => {
     switch (type) {
       case "success":
         return "circle-check";

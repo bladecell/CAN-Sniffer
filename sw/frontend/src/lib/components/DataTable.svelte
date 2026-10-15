@@ -190,14 +190,14 @@
   let minTableWidth = $derived(
     activeColumns.reduce((sum, col) => {
       if (col.width_px) {
-        return sum + parseInt(col.width_px, 10);
+        return sum + col.width_px;
       }
       // Give auto-scaling columns a sensible minimum so they don't squish to nothing
       return sum + 150;
     }, 0),
   );
 
-  function formatNumber(value: any, format?: string) {
+  function formatNumber(value: unknown, format?: string) {
     if (value == null || value === "N/A" || value === "") return value;
     const num = Number(value);
     if (isNaN(num)) return value;

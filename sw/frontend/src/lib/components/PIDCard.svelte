@@ -1,11 +1,11 @@
 <script lang="ts">
+  import type { HTMLAttributes } from "svelte/elements";
   import Icon from "$lib/Icon.svelte";
   import { usePidData } from "$lib/pidHelpers.svelte.ts";
   import type { PidGridItem } from "$lib/types"; // Import your contract type
 
-  interface Props {
+  interface Props extends HTMLAttributes<HTMLElement> {
     item: PidGridItem; // Expect our structural routing definition explicitly
-    [key: string]: any;
   }
 
   let { item, ...rest }: Props = $props();

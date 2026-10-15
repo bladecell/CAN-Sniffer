@@ -4,6 +4,7 @@
   import { telemetryStore } from "$lib/telemetryStore.svelte";
   import { parseJsonResponse, sdCardFileEndpoint } from "$lib/api";
   import FileTree from "./FileTree.svelte";
+  import type { SdTreeNode } from "$lib/types";
 
   interface Props {
     isOpen: boolean;
@@ -12,7 +13,7 @@
 
   let { isOpen, onClose }: Props = $props();
 
-  let tree = $state<any>(null);
+  let tree = $state<SdTreeNode | null>(null);
   let loadingTree = $state(false);
   let fetchingFile = $state(false);
 

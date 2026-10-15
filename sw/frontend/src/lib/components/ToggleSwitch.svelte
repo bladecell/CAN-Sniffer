@@ -1,11 +1,11 @@
 <script lang="ts">
-  interface Props {
+  import type { HTMLAttributes } from "svelte/elements";
+  interface Props extends Omit<HTMLAttributes<HTMLElement>, "onchange"> {
     label?: string;
     subLabel?: string;
     checked?: boolean;
     onchange?: (newState: boolean) => void;
     disabled?: boolean;
-    [key: string]: any;
   }
 
   let {

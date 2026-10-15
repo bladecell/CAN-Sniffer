@@ -1,12 +1,12 @@
 <script lang="ts">
+  import type { HTMLAttributes } from "svelte/elements";
   import { canStore } from "$lib/canStore.svelte";
   import { safeHexColor } from "$lib/color";
   import { usePidData } from "$lib/pidHelpers.svelte.ts";
   import type { OverviewGridItem, DtcModeData } from "$lib/types";
 
-  interface Props {
+  interface Props extends HTMLAttributes<HTMLElement> {
     item: OverviewGridItem;
-    [key: string]: any;
   }
 
   let { item, ...rest }: Props = $props();

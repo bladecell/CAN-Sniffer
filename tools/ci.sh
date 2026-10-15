@@ -50,7 +50,7 @@ if [ -f "$FRONTEND/package.json" ]; then
     elif [ -f package-lock.json ];            then PM=npm;  npm ci
     else echo "No lockfile in sw/frontend"; exit 1; fi
     has() { grep -q "\"$1\"[[:space:]]*:" package.json; }
-    has check && "$ROOT/tools/frontend-check.sh"   # svelte-check vs baseline (P0.9)
+    has check && "$ROOT/tools/frontend-check.sh"   # svelte-check, zero errors allowed
     has lint  && "$PM" run lint
     has test  && "$PM" run test
     "$PM" run build )

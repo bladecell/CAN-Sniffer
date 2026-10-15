@@ -1,11 +1,11 @@
 <script lang="ts">
+  import type { HTMLAttributes } from "svelte/elements";
   import { canStore } from "$lib/canStore.svelte";
   import type { SpecialGridItem, DtcModeData } from "$lib/types";
   import Icon from "../Icon.svelte";
 
-  interface Props {
+  interface Props extends HTMLAttributes<HTMLElement> {
     item: SpecialGridItem;
-    [key: string]: any;
   }
 
   let { item, ...rest }: Props = $props();

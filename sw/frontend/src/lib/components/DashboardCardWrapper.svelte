@@ -27,7 +27,7 @@
     onDelete: (id: string) => void;
   }
 
-  let { item, onRequestDrag, resizeStart, onOpenSettings, onAddNew, onDelete } =
+  let { item, onRequestDrag, resizeStart, onOpenSettings, onAddNew, onDelete }: Props =
     $props();
 
   let menuPos = $state({ x: 0, y: 0 });

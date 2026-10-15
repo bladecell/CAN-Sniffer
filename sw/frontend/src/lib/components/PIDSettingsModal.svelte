@@ -70,30 +70,25 @@
     const { w, h, cardType } = localItem;
 
     // Read properties dynamically based on type for tracking
-    let p: any, m: any, g: any, c: any, ps: any;
+    let pidFields: Pick<PidGridItem, "pid" | "displayMode" | "gaugeStyle"> | undefined;
+    let overFields: Pick<OverviewGridItem, "displayMode" | "color"> & { pids: string } | undefined;
     if (localItem.cardType === "pid") {
-      p = (localItem as PidGridItem).pid;
-      m = (localItem as PidGridItem).displayMode;
-      g = (localItem as PidGridItem).gaugeStyle;
+      const { pid, displayMode, gaugeStyle } = localItem as PidGridItem;
+      pidFields = { pid, displayMode, gaugeStyle };
     } else if (localItem.cardType === "overview") {
-      const over = localItem as OverviewGridItem;
-      m = over.displayMode;
-      c = over.color;
-      ps = JSON.stringify(over.pids); // Track deep array changes
+      const { displayMode, color, pids } = localItem as OverviewGridItem;
+      overFields = { displayMode, color, pids: JSON.stringify(pids) }; // Track deep array changes
     }
 
     untrack(() => {
       // Re-create object to trigger reference-based reactivity in parent
       const nextPreview = { ...localItem, w, h, cardType };
 
-      if (localItem.cardType === "pid") {
-        (nextPreview as PidGridItem).pid = p;
-        (nextPreview as PidGridItem).displayMode = m;
-        (nextPreview as PidGridItem).gaugeStyle = g;
-      } else if (localItem.cardType === "overview") {
-        (nextPreview as OverviewGridItem).displayMode = m;
-        (nextPreview as OverviewGridItem).pids = JSON.parse(ps);
-        (nextPreview as OverviewGridItem).color = c;
+      if (pidFields) {
+        Object.assign(nextPreview, pidFields);
+      } else if (overFields) {
+        const { pids, ...rest } = overFields;
+        Object.assign(nextPreview, rest, { pids: JSON.parse(pids) });
       }
 
       previewItem = nextPreview as DashboardItem;
@@ -116,9 +111,10 @@
     } else {
       const specialItem = localItem as SpecialGridItem;
       specialItem.displayMode = "default";
-      delete (specialItem as any).pid;
-      delete (specialItem as any).pids;
-      delete (specialItem as any).color;
+      const stray = specialItem as Partial<Pick<PidGridItem, "pid"> & Pick<OverviewGridItem, "pids" | "color">>;
+      delete stray.pid;
+      delete stray.pids;
+      delete stray.color;
     }
     updateDimensionsToMin();
   }

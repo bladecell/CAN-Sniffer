@@ -3,9 +3,10 @@
   import { canStore } from "./lib/canStore.svelte";
   import { untrack, onMount } from "svelte";
   import ControlsCard from "$lib/components/ControlsCard.svelte";
+  import type { Column, PidDefinition } from "$lib/types";
   import DTCFault from "./lib/components/DTCFault.svelte";
 
-  function createCardFromPID(pidData) {
+  function createCardFromPID(pidData: PidDefinition) {
     return {
       pid: pidData.pid,
       label: pidData.name,
@@ -13,7 +14,7 @@
       unit: pidData.unit,
       icon: pidData.icon,
       color: `#${pidData.color.toString(16).padStart(6, "0")}`,
-      update_interval_ms: pidData.updateIntervalMs,
+      update_interval_ms: pidData.update_interval_ms,
       min: pidData.minValue || 0,
       max: pidData.maxValue || 100,
     };
@@ -84,20 +85,18 @@
   ];
 
   import DataTable from "./lib/components/DataTable.svelte";
-  import type { Column } from "$lib/types";
 
   const columns: Column[] = [
-    { label: "Module", key: "name", type: "text", width: "200px" },
-    { label: "Age", key: "age", type: "number", width: "60px" },
+    { label: "Module", key: "name", type: "text" },
+    { label: "Age", key: "age", type: "number" },
     {
       label: "Voltage",
       key: "voltage",
       type: "number",
       unit: "V",
-      width: "90px",
     },
-    { label: "DTC", key: "dtc", type: "code", width: "100px" },
-    { label: "Status", key: "status", type: "badge", width: "100px" },
+    { label: "DTC", key: "dtc", type: "code" },
+    { label: "Status", key: "status", type: "badge" },
     { key: "isActive", label: "Active Tab", type: "checkbox" },
   ];
 

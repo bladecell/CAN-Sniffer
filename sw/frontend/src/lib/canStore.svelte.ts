@@ -10,11 +10,13 @@ import type {
     DtcModeData,
     singleDtc,
     SystemStatus,
-    SDCardInfo
+    SDCardInfo,
+    CanBusStatus
 } from "./types";
 import { validatePidDefinitionSet } from "./pidValidation";
 import { parseJsonResponse, parseJsonResponseAllowEmpty } from "./api";
 import { normalizePidDefinition, parsePidList, serializePidDefinition } from "./pidDefinition";
+import type { PidRow } from "./telemetryStore.svelte";
 import { parseWsFrame, type WsFrame } from "./wsFrames";
 import { dispatchToListeners } from "./dispatch";
 import { reconnectDelay } from "./backoff";
@@ -38,7 +40,6 @@ import {
     parseConfirmRequired,
     buildDtcData,
     emptyDtcData,
-    type CanBusStatus,
 } from "./guards";
 
 export const COMMANDS = {
@@ -60,7 +61,7 @@ export class CanStore {
     listeners = new Set<MessageListener>();
     isStreaming = $state(false);
     socket: WebSocket | null = null;
-    pollInterval: any = null;
+    pollInterval: ReturnType<typeof setInterval> | null = null;
 
     intentionalDisconnect = false;
     reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -241,7 +242,7 @@ export class CanStore {
         }
 
         if (this.canStatus) {
-            this.canStatus = { ...this.canStatus, state: "disconnected" };
+            this.canStatus = { ...this.canStatus, state: "not_connected" };
         }
     }
 
@@ -362,6 +363,9 @@ export class CanStore {
         battery_voltage: 0,
         sd_card_detected: false,
         component_status: [],
+        heap_free: 0,
+        heap_min_free: 0,
+        tasks: [],
     });
 
     async requestSystem() {
@@ -594,11 +598,11 @@ export class CanStore {
         this.setClearState(clearCancel(this.clearState));
     };
 
-    serializePidDefinition(def: any) {
+    serializePidDefinition(def: unknown) {
         return serializePidDefinition(normalizePidDefinition(def));
     }
 
-    async replacePids(rows: any[]): Promise<boolean> {
+    async replacePids(rows: PidRow[]): Promise<boolean> {
         try {
             const desiredDefinitions = rows
                 .filter((row) => row.loaded)
@@ -640,7 +644,7 @@ export class CanStore {
         }
     }
 
-    async savePids(rows: any[]) {
+    async savePids(rows: PidRow[]) {
         if (!(await this.replacePids(rows))) {
             return;
         }
@@ -663,7 +667,7 @@ export class CanStore {
     }
 
 
-    async updatePids(rows: any[]) {
+    async updatePids(rows: PidRow[]) {
         if (await this.replacePids(rows)) {
             alertStore.add("Successfully synced PIDs with device.", "success");
         }

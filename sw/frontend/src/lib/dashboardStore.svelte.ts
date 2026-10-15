@@ -54,7 +54,7 @@ export class DashboardStore {
         h: 7,
       };
     } else if (type === "overview") {
-      const bounds = getModuleBounds({ cardType: type, id, w: 0, h: 0, displayMode: "default" } as any);
+      const bounds = getModuleBounds({ cardType: type });
       return {
         id,
         cardType: "overview",
@@ -65,7 +65,7 @@ export class DashboardStore {
         color: "#3b82f6"
       } as OverviewGridItem;
     } else {
-      const bounds = getModuleBounds({ cardType: type, id, w: 0, h: 0, displayMode: "default" } as any);
+      const bounds = getModuleBounds({ cardType: type });
       return {
         id,
         cardType: type,

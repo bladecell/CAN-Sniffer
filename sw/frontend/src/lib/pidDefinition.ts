@@ -11,29 +11,31 @@ const isSet = (v: unknown) => v !== undefined && v !== null;
  * present. Optional fields (unit, desc, priority, color, icon, minV, maxV) may
  * be null or missing: cJSON writes NaN as null.
  */
-export function normalizePidDefinition(def: any): PidDefinition {
-  if (!def || typeof def !== "object") throw new Error("Invalid PID definition");
+export function normalizePidDefinition(raw: unknown): PidDefinition {
+  if (!raw || typeof raw !== "object") throw new Error("Invalid PID definition");
+  const def = raw as Record<string, unknown>;
 
+  // Presence is checked below; field types are trusted as before.
   const required = {
-    id: def.id,
-    mode: def.mode,
-    pid: def.pid,
-    length: def.length ?? def.len,
-    name: def.name,
-    formula: def.formula,
-    update_interval_ms: def.update_interval_ms ?? def.interval,
+    id: def.id as number,
+    mode: def.mode as number,
+    pid: def.pid as number,
+    length: (def.length ?? def.len) as number,
+    name: def.name as string,
+    formula: def.formula as string,
+    update_interval_ms: (def.update_interval_ms ?? def.interval) as number,
   };
   if (Object.values(required).some((v) => !isSet(v))) throw new Error("Incomplete PID definition");
 
   return {
     ...required,
-    unit: def.unit ?? "",
-    description: def.description ?? def.desc ?? "",
-    minValue: def.minValue ?? def.minV ?? NaN,
-    maxValue: def.maxValue ?? def.maxV ?? NaN,
+    unit: (def.unit ?? "") as string,
+    description: (def.description ?? def.desc ?? "") as string,
+    minValue: (def.minValue ?? def.minV ?? NaN) as number,
+    maxValue: (def.maxValue ?? def.maxV ?? NaN) as number,
     color: parseInt(safeHexColor(def.color, "#01aaff").slice(1), 16),
-    priority: def.priority ?? DEFAULT_PID_PRIORITY,
-    icon: def.icon ?? "",
+    priority: (def.priority ?? DEFAULT_PID_PRIORITY) as number,
+    icon: (def.icon ?? "") as string,
   };
 }
 

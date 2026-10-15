@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { HTMLAttributes } from "svelte/elements";
   import { onMount } from "svelte";
   import Icon from "$lib/Icon.svelte";
   import { usePidData } from "$lib/pidHelpers.svelte.ts";
@@ -7,22 +8,21 @@
   import { Chart, Svg, Spline, Area } from "layerchart";
   import { scaleTime } from "d3-scale";
 
-  interface Props {
+  interface Props extends HTMLAttributes<HTMLElement> {
     item: PidGridItem;
     update_interval_ms?: number;
-    [key: string]: any;
   }
 
   let { item, update_interval_ms = 500, ...rest }: Props = $props();
 
   const metric = usePidData(() => item.pid);
 
-  let chartData = $state<{ date: Date; value: number }[]>([]);
+  let chartData = $state<{ date: Date; value: number | null }[]>([]);
 
   $effect(() => {
     if (item.pid === undefined) return;
     const unsubscribe = chartHistoryStore.subscribe(item.pid, (tData, vData) => {
-      chartData = tData.map((t, i) => ({ date: new Date(t), value: vData[i] }));
+      chartData = tData.map((t, i) => ({ date: new Date(t), value: vData[i] ?? null }));
     });
 
     return () => {

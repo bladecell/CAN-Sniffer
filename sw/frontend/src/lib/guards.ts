@@ -1,4 +1,4 @@
-import type { DtcData, DtcModeData } from "./types";
+import type { CanBusStatus, DtcData, DtcGroupWire, DtcModeData, Obd2StatusCore } from "./types";
 
 type Rec = Record<string, unknown>;
 
@@ -9,17 +9,7 @@ function need(ok: boolean, what: string): void {
   if (!ok) throw new Error(`Invalid ${what} response`);
 }
 
-export interface Obd2StatusRaw {
-  auto_poll: boolean;
-  polling: boolean;
-  pid_initialized: boolean;
-  pid_def_count: number;
-  pid_data_count: number;
-  poll_task_utilization: number;
-  supported_pids: { count: number; groups: number[] };
-}
-
-export function parseObd2Status(raw: unknown): Obd2StatusRaw {
+export function parseObd2Status(raw: unknown): Obd2StatusCore {
   need(isRec(raw), "OBD2 status");
   const r = raw as Rec;
   need(typeof r.auto_poll === "boolean" && typeof r.polling === "boolean" && typeof r.pid_initialized === "boolean", "OBD2 status");
@@ -38,22 +28,13 @@ export function parseObd2Status(raw: unknown): Obd2StatusRaw {
   };
 }
 
-export interface CanBusStatus {
-  state: string;
-  bitrate: number;
-  [key: string]: unknown;
-}
-
 export function parseCanBusStatus(raw: unknown): CanBusStatus {
   need(isRec(raw) && typeof raw.state === "string" && isNum(raw.bitrate), "CAN status");
-  return raw as CanBusStatus;
+  // Only state (any string, so a newer firmware state cannot break the load) and bitrate are checked; the other fields are display-only.
+  return raw as unknown as CanBusStatus;
 }
 
-export interface DtcGroupRaw {
-  mode: number;
-  dtc_count: number;
-  dtc: string[];
-}
+type DtcGroupRaw = Pick<DtcGroupWire, "mode" | "dtc_count" | "dtc">;
 
 /** `GET /dtc`. A missing `dtcs` is an empty list; malformed groups throw. */
 export function parseDtcGroups(raw: unknown): DtcGroupRaw[] {

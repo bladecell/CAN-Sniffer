@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { HTMLAttributes } from "svelte/elements";
   import { usePidData } from "$lib/pidHelpers.svelte.ts";
   import type { PidGridItem } from "$lib/types";
   import Icon from "../Icon.svelte";
@@ -14,9 +15,8 @@
   } from "layerchart";
   import { scaleLinear } from "d3-scale";
 
-  interface Props {
+  interface Props extends HTMLAttributes<HTMLElement> {
     item: PidGridItem;
-    [key: string]: any;
   }
 
   let { item, ...rest }: Props = $props();
@@ -80,7 +80,7 @@
   const majorTicks = $derived(angleScale.ticks(8));
   const minorTicksTemp = $derived(angleScale.ticks(40));
   const minorTicks = $derived(
-    minorTicksTemp.filter((t) => !majorTicks.includes(t)),
+    minorTicksTemp.filter((t: number) => !majorTicks.includes(t)),
   );
 
   // Used by speedometer style

@@ -139,15 +139,15 @@
   }
 
   let dirtyCount = $derived(
-    telemetryStore.local_piddef.filter((r: any) => r.pendingChanges === "Yes")
+    telemetryStore.local_piddef.filter((r) => r.pendingChanges === "Yes")
       .length,
   );
   let selectedCount = $derived(
-    telemetryStore.local_piddef.filter((r: any) => r.selected).length,
+    telemetryStore.local_piddef.filter((r) => r.selected).length,
   );
   let selectedDirtyCount = $derived(
     telemetryStore.local_piddef.filter(
-      (r: any) => r.selected && r.pendingChanges === "Yes",
+      (r) => r.selected && r.pendingChanges === "Yes",
     ).length,
   );
 
@@ -263,10 +263,10 @@
               disabled={selectedCount === 0}
               onclick={async () => {
                 const pidsToRemove = new Set(
-                  selectedElements.map((row: any) => parseInt(row.pid, 16)),
+                  selectedElements.map((row) => parseInt(row.pid, 16)),
                 );
                 const desiredRows = telemetryStore.local_piddef.filter(
-                  (row: any) =>
+                  (row) =>
                     row.loaded && !pidsToRemove.has(parseInt(row.pid, 16)),
                 );
                 await canStore.replacePids(desiredRows);

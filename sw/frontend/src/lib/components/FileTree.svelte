@@ -2,18 +2,13 @@
   import FileTree from "./FileTree.svelte";
   import { alertStore } from "$lib/alertStore.svelte";
   import Icon from "$lib/Icon.svelte";
+  import type { SdTreeNode } from "$lib/types";
   import { parseJsonResponse, sdCardFileEndpoint } from "$lib/api";
 
-  interface FileNode {
-    name?: string;
-    path: string;
-    type?: string;
-    size?: number;
-    children?: FileNode[];
-  }
+  const errorMessage = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
   interface Props {
-    node: FileNode;
+    node: SdTreeNode;
     isRoot?: boolean;
     allowedExtensions?: string[];
     onFileSelect?: (path: string) => void;
@@ -59,9 +54,9 @@
       
       alertStore.add(`Successfully deleted ${path}`, "success");
       if (onUploadSuccess) onUploadSuccess();
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      alertStore.add("Failed to delete: " + err.message, "error");
+      alertStore.add("Failed to delete: " + errorMessage(err), "error");
     }
   }
 
@@ -103,9 +98,9 @@
       
       alertStore.add(`Folder created successfully`, "success");
       if (onUploadSuccess) onUploadSuccess();
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      alertStore.add("Failed to create folder: " + err.message, "error");
+      alertStore.add("Failed to create folder: " + errorMessage(err), "error");
     }
   }
 
@@ -153,9 +148,9 @@
       
       alertStore.add("File uploaded successfully to " + fullPath, "success");
       if (onUploadSuccess) onUploadSuccess();
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      alertStore.add("Failed to upload file: " + err.message, "error");
+      alertStore.add("Failed to upload file: " + errorMessage(err), "error");
     } finally {
       isUploading = false;
       target.value = ""; // reset input
@@ -178,7 +173,7 @@
     return allowedExtensions.some(ext => name.endsWith(ext));
   }
 
-  function handleFileClick(node: FileNode) {
+  function handleFileClick(node: SdTreeNode) {
     if (isClickable(node.name) && onFileSelect) {
       let fullPath = node.path;
       if (!fullPath && node.name) {

@@ -1,10 +1,10 @@
 <script lang="ts">
+  import type { HTMLAttributes } from "svelte/elements";
   import Icon from "$lib/Icon.svelte";
   import type { ControlsGridItem, ControlType } from "$lib/types";
 
-  interface Props {
-    item: ControlsGridItem;
-    [key: string]: any;
+  interface Props extends HTMLAttributes<HTMLElement> {
+    item?: ControlsGridItem;
   }
 
   let { item, ...rest }: Props = $props();

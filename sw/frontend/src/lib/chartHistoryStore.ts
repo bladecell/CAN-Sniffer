@@ -7,7 +7,7 @@ class ChartHistoryStore {
     private listeners = new Map<number, Set<(timeData: number[], valueData: (number | null)[]) => void>>();
 
     constructor() {
-        canStore.subscribe((update: any) => {
+        canStore.subscribe((update) => {
             let pidHistory = this.history.get(update.pid);
             if (!pidHistory) {
                 pidHistory = { timeData: [], valueData: [] };
@@ -16,7 +16,7 @@ class ChartHistoryStore {
 
             const lastTime = pidHistory.timeData.length > 0 ? pidHistory.timeData[pidHistory.timeData.length - 1] : 0;
             
-            const pidDef = canStore.pidDefinitions?.find((c: any) => c.pid === update.pid);
+            const pidDef = canStore.pidDefinitions?.find((c) => c.pid === update.pid);
             const splitThreshold = pidDef?.update_interval_ms ? Math.max(2000, pidDef.update_interval_ms * 1.5) : 2000;
 
             if (lastTime > 0 && update.timestamp - lastTime > splitThreshold) {

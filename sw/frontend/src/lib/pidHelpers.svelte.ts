@@ -1,14 +1,14 @@
 import { canStore } from "$lib/canStore.svelte";
-import { PidDataMetrics } from "$lib/types";
+import type { PidDataMetrics } from "$lib/types";
 import { safeHexColor } from "$lib/color";
 /**
  * Reactive selector that extracts both static configurations and runtime 
  * stream data for a given PID from the global canStore.
  */
-export function usePidData(getPid: () => number | string): PidDataMetrics {
+export function usePidData(getPid: () => number): PidDataMetrics {
   // Invoke getPid() inside the derived macro so it registers as a dependency
   const definition = $derived(
-    canStore.pidDefinitions?.find((c: any) => c.pid === getPid())
+    canStore.pidDefinitions?.find((c) => c.pid === getPid())
   );
 
   const formattedColor = $derived(() => safeHexColor(definition?.color));
@@ -18,7 +18,7 @@ export function usePidData(getPid: () => number | string): PidDataMetrics {
 
   return {
     get label() { return definition?.name ?? "Metric"; },
-    get id() { return definition?.id ?? ""; },
+    get id() { return String(definition?.id ?? ""); },
     get description() { return definition?.description ?? ""; },
     get unit() { return definition?.unit ?? "%"; },
     get icon() { return definition?.icon ?? "gear"; },

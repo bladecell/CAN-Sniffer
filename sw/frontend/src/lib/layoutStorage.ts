@@ -9,13 +9,14 @@ const MAX_ITEMS = 200;
 const isPosNum = (v: unknown) => typeof v === "number" && Number.isFinite(v) && v > 0;
 const isNum = (v: unknown) => typeof v === "number" && Number.isFinite(v);
 
-function isValidItem(item: any): item is DashboardItem {
-  if (!item || typeof item !== "object") return false;
+function isValidItem(raw: unknown): raw is DashboardItem {
+  if (!raw || typeof raw !== "object") return false;
+  const item = raw as Record<string, unknown>;
   if (typeof item.id !== "string" || !item.id) return false;
-  if (!CARD_TYPES.includes(item.cardType)) return false;
+  if (!CARD_TYPES.includes(item.cardType as string)) return false;
   if (!isPosNum(item.w) || !isPosNum(item.h)) return false;
-  if (item.cardType === "pid") return isNum(item.pid) && PID_MODES.includes(item.displayMode);
-  if (!SPECIAL_MODES.includes(item.displayMode)) return false;
+  if (item.cardType === "pid") return isNum(item.pid) && PID_MODES.includes(item.displayMode as string);
+  if (!SPECIAL_MODES.includes(item.displayMode as string)) return false;
   if (item.cardType === "overview") {
     return Array.isArray(item.pids) && item.pids.length === 3 && item.pids.every(isNum);
   }

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { dndzone, SOURCES, TRIGGERS } from "svelte-dnd-action";
+  import { dndzone, SOURCES, TRIGGERS, type DndEvent } from "svelte-dnd-action";
   import { flip } from "svelte/animate";
   import { fade } from "svelte/transition";
 
@@ -83,12 +83,12 @@
     }
   }
 
-  function handleConsider(e: CustomEvent<any>) {
+  function handleConsider(e: CustomEvent<DndEvent<DashboardItem>>) {
     if (resizeHandler.state.resizingItemId) return;
     dashboardStore.items = e.detail.items;
   }
 
-  function handleFinalize(e: CustomEvent<any>) {
+  function handleFinalize(e: CustomEvent<DndEvent<DashboardItem>>) {
     if (resizeHandler.state.resizingItemId) return;
     dashboardStore.setItems(e.detail.items);
     dragDisabled = true; // ← already here, good
@@ -192,8 +192,8 @@
         type: "dashboard",
         transformDraggedElement: (element, item) => {
           if (element) {
-            element.style.setProperty("--card-w", (item.w || 10).toString());
-            element.style.setProperty("--card-h", (item.h || 7).toString());
+            element.style.setProperty("--card-w", (item?.w || 10).toString());
+            element.style.setProperty("--card-h", (item?.h || 7).toString());
           }
         },
       }}
