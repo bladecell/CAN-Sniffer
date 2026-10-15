@@ -61,7 +61,7 @@ Before sleep (STOPPING):
 1. `stop_web_server()`: deletes `WSDataStreamTask`, its semaphore, and stops `AsyncWebServer` (workers, httpd).
 2. `OBD2::deinit()`: stops its three tasks, clears PID values, VIN, DTCs and all subscriber lists, deletes its queues and semaphores. PID definitions stay. If it times out (5 s), the sequence stops here and retries on the next pass.
 3. `WIFI::deinit()` (returns void, so nothing is checked).
-4. `CanDriver::deinit()`: deletes the TX and health check tasks and the queues, disables and deletes the TWAI node, stops the simulator task. An error stops the sequence and retries.
+4. `CanDriver::deinit()`: stops the simulator, disables the node, then asks the TX and health tasks to exit (flag and notify, bounded 3 s wait, each task deletes itself) before deleting the TWAI node, queues, semaphore and TX ring. Safe to call twice. A task that does not leave in time returns `ESP_ERR_TIMEOUT` with nothing freed; an error stops the sequence and retries.
 5. RS pin high (transceiver standby), state SLEEPING.
 
 After wake: CAN, then (bus alive) OBD (which re-subscribes the connected-callbacks and reloads the PID JSON from the SD card), Wi-Fi, web server (which re-subscribes the PID stream callback).

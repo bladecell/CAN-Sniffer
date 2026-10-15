@@ -221,7 +221,13 @@ esp_err_t CanDriver::teardown()
     // No more TWAI callbacks (they notify the health task) once the node is disabled.
     if (nodeHdl != NULL)
     {
-        (void)twai_node_disable(nodeHdl);  // INVALID_STATE when init failed before enable: fine
+        // INVALID_STATE when init failed before enable or the node is bus-off: callbacks may still fire then, and bail
+        // out on stopRequested_.
+        const esp_err_t disabled = twai_node_disable(nodeHdl);
+        if (disabled != ESP_OK && disabled != ESP_ERR_INVALID_STATE)
+        {
+            ESP_LOGW(TAG, "Disabling the TWAI node failed: %s", esp_err_to_name(disabled));
+        }
     }
 
     if (txRunning_.load() || healthRunning_.load())
@@ -286,6 +292,7 @@ esp_err_t CanDriver::teardown()
     delete[] txRing_;
     txRing_     = nullptr;
     txRingSize_ = 0;
+    canState.store(STATE::NOT_INITIALIZED);  // a task or callback woken during teardown may have stored another state
     return ESP_OK;
 }
 

@@ -3,6 +3,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <atomic>
 #include <vector>
 
 #include "can_driver.hpp"
@@ -28,6 +29,11 @@ static uint8_t          simQueueStorage[SIM_QUEUE_DEPTH * sizeof(SimRequest)];
 static QueueHandle_t    simQueue = NULL;
 
 volatile uint32_t simDroppedFrames = 0;
+
+// stop_sim_task() asks the task to leave and waits; the task deletes itself, so it never dies holding a lock or its vectors.
+static std::atomic<bool> simStopRequested{false};
+static std::atomic<bool> simRunning{false};
+static constexpr uint32_t SIM_STOP_TIMEOUT_MS = 2000;
 
 // Test aid, debug builds only: when > 0, ECU 1 answers DTC requests with a 40-DTC list whose consecutive frames are this many
 // ms apart (50 gives about 600 ms, longer than the requester's base wait). 0 keeps the default behaviour.
@@ -66,6 +72,8 @@ void start_sim_task(CanDriver* driver)
         simQueue = xQueueCreateStatic(SIM_QUEUE_DEPTH, sizeof(SimRequest), simQueueStorage, &simQueueBuffer);
     }
     xQueueReset(simQueue);
+    simStopRequested.store(false);
+    simRunning.store(true);
     // Using xTaskCreate for automatic core selection (Floating Task)
     BaseType_t result = xTaskCreatePinnedToCore(dataSimTaskWrapper, "DataSimTask", 4096, (void*)driver,
                                                 tskIDLE_PRIORITY + 2, &xDataSimTaskHandle, CORE_ID_CAN_TASKS);
@@ -73,6 +81,7 @@ void start_sim_task(CanDriver* driver)
     if (result != pdPASS)
     {
         xDataSimTaskHandle = NULL;
+        simRunning.store(false);
         ESP_LOGE(TAG, "Failed to create DataSimTask!");
     }
 }
@@ -81,8 +90,18 @@ void stop_sim_task()
 {
     if (xDataSimTaskHandle != NULL)
     {
-        vTaskDelete(xDataSimTaskHandle);
-
+        simStopRequested.store(true);
+        SimRequest wake = {};  // length 0: the task checks the stop flag first
+        (void)xQueueSendToFront(simQueue, &wake, 0);
+        for (uint32_t waited = 0; simRunning.load() && waited < SIM_STOP_TIMEOUT_MS; waited += 10)
+        {
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+        if (simRunning.load())
+        {
+            ESP_LOGE(TAG, "DataSimTask did not stop in %u ms", static_cast<unsigned>(SIM_STOP_TIMEOUT_MS));
+            return;  // handle kept: the task is still alive
+        }
         xDataSimTaskHandle = NULL;
     }
 }
@@ -91,6 +110,8 @@ void dataSimTaskWrapper(void* param)
 {
     CanDriver* driver = static_cast<CanDriver*>(param);
     dataSimTask(*driver);
+    simRunning.store(false);  // last access to simulator state
+    vTaskDelete(NULL);
 }
 
 // A multi-frame response that waits for the tester's flow control (sent to the ECU's physical request ID).
@@ -169,12 +190,16 @@ void dataSimTask(CanDriver& canDriver)
     static const uint16_t dtcsEcu1[] = {0x0300, 0x0408, 0x1A10, 0x2345};
     SimTransfer           transfer[SIM_ECU_COUNT];
 
-    while (1)
+    while (!simStopRequested.load())
     {
         SimRequest req;
         if (xQueueReceive(simQueue, &req, portMAX_DELAY) != pdPASS)
         {
             continue;
+        }
+        if (simStopRequested.load())
+        {
+            break;
         }
         if (req.length < 2)
         {

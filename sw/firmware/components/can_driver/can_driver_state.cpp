@@ -95,6 +95,10 @@ void CanDriver::healthCheckTask()
                     if (successfulPingsCount >= 3)
                     {
                         ESP_LOGI(TAG, "CAN bus connected");
+                        if (stopRequested_.load())
+                        {
+                            break;
+                        }
                         canState.store(STATE::CONNECTED);
                         xSemaphoreGive(canConnectedSemaphore);
                         connectionChangeCb(true);
@@ -110,6 +114,10 @@ void CanDriver::healthCheckTask()
             case STATE::CONNECTED:
             {
                 ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+                if (stopRequested_.load())
+                {
+                    break;
+                }
                 if (consecutiveAckErrors.load() > 3)
                 {
                     ESP_LOGW(TAG, "CAN bus disconnected due to ACK errors");
@@ -126,6 +134,10 @@ void CanDriver::healthCheckTask()
             }
             case STATE::BUS_OFF:
             {
+                if (stopRequested_.load())
+                {
+                    break;
+                }
                 if (prevState == STATE::CONNECTED)
                 {
                     connectionChangeCb(false);

@@ -128,7 +128,7 @@ void CanDriver::txTask()
             memcpy(slot.data, f.data, sizeof(slot.data));
             slot.msg.header     = f.header;
             slot.msg.buffer     = slot.data;
-            slot.msg.buffer_len = f.length;
+            slot.msg.buffer_len = f.length > sizeof(slot.data) ? sizeof(slot.data) : f.length;
 
             esp_err_t ret = twai_node_transmit(nodeHdl, &slot.msg, pdMS_TO_TICKS(200));
             if (ret != ESP_OK)

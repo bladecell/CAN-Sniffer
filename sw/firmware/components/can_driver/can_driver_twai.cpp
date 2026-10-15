@@ -37,6 +37,10 @@ bool IRAM_ATTR CanDriver::twai_rx_cb(twai_node_handle_t handle, const twai_rx_do
     {
         frame.header = rx_frame.header;
         frame.length = twaifd_dlc2len(rx_frame.header.dlc);
+        if (frame.length > sizeof(frame.data))
+        {
+            frame.length = sizeof(frame.data);  // DLC 9-15 means 12-64 bytes; only 8 fit
+        }
         if (driver->debug_mode)
         {
             if (driver->simNotify_)
@@ -60,6 +64,12 @@ bool IRAM_ATTR CanDriver::twai_tx_cb(twai_node_handle_t handle, const twai_tx_do
 {
     CanDriver* driver                   = static_cast<CanDriver*>(user_ctx);
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    // Teardown in progress (twai_node_disable can fail in bus-off, so callbacks may still fire): touch nothing.
+    if (driver->stopRequested_.load())
+    {
+        return false;
+    }
 
     driver->notifyTxDone(edata->done_tx_frame, edata->is_tx_success);
 
@@ -88,6 +98,17 @@ bool IRAM_ATTR CanDriver::twai_state_change_cb(twai_node_handle_t handle, const 
 
     CanDriver* driver                   = static_cast<CanDriver*>(user_ctx);
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    if (driver->stopRequested_.load())
+    {
+        return false;
+    }
+
+    // Teardown in progress (twai_node_disable can fail in bus-off, so callbacks may still fire): touch nothing.
+    if (driver->stopRequested_.load())
+    {
+        return false;
+    }
 
     if (edata->new_sta == TWAI_ERROR_ACTIVE)
     {
@@ -118,6 +139,12 @@ bool IRAM_ATTR CanDriver::twai_bus_err_cb(twai_node_handle_t handle, const twai_
 {
     CanDriver* driver                   = static_cast<CanDriver*>(user_ctx);
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    // Teardown in progress (twai_node_disable can fail in bus-off, so callbacks may still fire): touch nothing.
+    if (driver->stopRequested_.load())
+    {
+        return false;
+    }
 
     // Log specific errors (your existing code)
     if (edata->err_flags.arb_lost)
