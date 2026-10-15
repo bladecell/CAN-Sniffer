@@ -8,6 +8,7 @@
 
 #include "can_driver.hpp"
 #include "obd2_common.hpp"
+#include "obd2_frame.hpp"
 #include "pid_priority_queue.hpp"
 
 namespace pidjson
@@ -152,9 +153,7 @@ ParseResult parse(const cJSON* array, std::vector<PIDDefinitionData>& out)
             return fail(422, "Missing or invalid PID definition field");
         }
 
-        const bool validModeAndPayload = (mode == MODE_CURRENT_DATA && pid >= 1 && pid <= 0xFF && length == 2) ||
-                                         (mode == MODE_READ_DATA_BY_IDENTIFIER && length == 3) ||
-                                         (mode == MODE_DERIVED_DATA && length == 0);
+        const bool validModeAndPayload = obd2frame::isValidPidSpec(mode, pid, length);
         if ((interval != 0 && interval < MIN_TRANSMIT_PERIOD_MS) || !validModeAndPayload || definition.formula.empty())
         {
             return fail(422, "Invalid PID interval, mode, PID, or length");

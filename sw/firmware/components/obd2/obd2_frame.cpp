@@ -169,16 +169,35 @@ void buildFlowControl(RequestBytes& out)
     clearRequest(out, {0x30});
 }
 
-void buildPidRequest(uint8_t length, uint8_t mode, uint16_t pid, RequestBytes& out)
+bool isValidPidSpec(uint8_t mode, uint16_t pid, uint8_t length)
+{
+    switch (mode)
+    {
+        case MODE_CURRENT_DATA:
+            return pid >= 1 && pid <= 0xFF && length == 2;
+        case MODE_READ_DATA_BY_IDENTIFIER:
+            return length == 3;
+        case MODE_DERIVED_DATA:
+            return length == 0;
+        default:
+            return false;
+    }
+}
+
+bool buildPidRequest(uint8_t mode, uint16_t pid, RequestBytes& out)
 {
     if (mode == MODE_READ_DATA_BY_IDENTIFIER)
     {
-        clearRequest(out, {length, mode, static_cast<uint8_t>(pid >> 8), static_cast<uint8_t>(pid & 0xFF)});
+        clearRequest(out, {0x03, mode, static_cast<uint8_t>(pid >> 8), static_cast<uint8_t>(pid & 0xFF)});
+        return true;
     }
-    else
+    if (mode == MODE_CURRENT_DATA && pid >= 1 && pid <= 0xFF)
     {
-        clearRequest(out, {length, mode, static_cast<uint8_t>(pid & 0xFF)});
+        clearRequest(out, {0x02, mode, static_cast<uint8_t>(pid)});
+        return true;
     }
+    clearRequest(out, {});
+    return false;
 }
 
 esp_err_t extractDtcs(const std::vector<uint8_t>& payload, std::vector<uint16_t>& rawDtcs)

@@ -18,6 +18,10 @@ public:
         dtcData.mtx_     = xSemaphoreCreateMutex();
         TEST_ASSERT_EQUAL_INT(ESP_OK, initDef());
     }
+    esp_err_t replace(const std::vector<PIDDefinitionData>& d)
+    {
+        return replacePIDDefinitions(d, {}, {});
+    }
     esp_err_t add(uint8_t mode, uint16_t pid, uint8_t len, const char* formula)
     {
         return addPID(1, mode, pid, len, "n", "u", "d", formula, 0.f, 100.f, 1, 100, 0, "i");
@@ -122,6 +126,39 @@ static void test_add_duplicate_and_remove(void)
     TEST_ASSERT_EQUAL_INT(ESP_ERR_NOT_FOUND, m.removePID(0x0C));
 }
 
+static void test_add_pid_rejects_a_spec_that_would_frame_wrong(void)
+{
+    TestModel m;
+    const struct { uint8_t mode; uint16_t pid; uint8_t len; } bad[] = {
+        {0x01, 0x0C, 0}, {0x01, 0x0C, 3}, {0x01, 0x0C, 8}, {0x01, 0x0C, 9}, {0x01, 0x0100, 3}, {0x01, 0x0100, 2},
+        {0x01, 0x0000, 2}, {0x22, 0x00FF, 2}, {0x22, 0x2613, 2}, {0x22, 0x2613, 8}, {0x45, 0x1234, 2}, {0x03, 0x0001, 1},
+        {0x00, 0x0001, 2}, {0xFF, 0x0001, 3},
+    };
+    for (const auto& c : bad)
+    {
+        TEST_ASSERT_EQUAL_INT(ESP_ERR_INVALID_ARG, m.add(c.mode, c.pid, c.len, "A"));
+        TEST_ASSERT_FALSE(m.pidExists(c.pid));
+    }
+    TEST_ASSERT_EQUAL_INT(ESP_OK, m.add(0x01, 0x0C, 2, "A"));
+    TEST_ASSERT_EQUAL_INT(ESP_OK, m.add(0x22, 0x00FF, 3, "A"));
+    TEST_ASSERT_EQUAL_INT(ESP_OK, m.add(0x45, 0x1234, 0, "getPID(12)"));
+}
+
+static void test_replace_definitions_rejects_a_bad_spec_and_changes_nothing(void)
+{
+    TestModel m;
+    TEST_ASSERT_EQUAL_INT(ESP_OK, m.add(0x01, 0x0C, 2, "A"));
+    PIDDefinitionData good = {1, 0x01, 0x0D, 2, "n", "u", "d", "A", 0.f, 100.f, 100, 0, 1, "i"};
+    PIDDefinitionData bad  = good;
+    bad.pid                = 0x0E;
+    bad.len                = 8;
+    TEST_ASSERT_EQUAL_INT(ESP_ERR_INVALID_ARG, m.replace({good, bad}));
+    TEST_ASSERT_TRUE(m.pidExists(0x0C));  // the old set is intact
+    TEST_ASSERT_FALSE(m.pidExists(0x0D));
+    TEST_ASSERT_EQUAL_INT(ESP_OK, m.replace({good}));
+    TEST_ASSERT_TRUE(m.pidExists(0x0D));
+}
+
 static void test_decode_dtc(void)
 {
     TestModel m;
@@ -170,6 +207,8 @@ extern "C" void run_obd2_model_tests(void)
     RUN_TEST(test_unknown_pid_is_not_found);
     RUN_TEST(test_bad_formula_or_nan_never_stores_a_value);
     RUN_TEST(test_add_duplicate_and_remove);
+    RUN_TEST(test_add_pid_rejects_a_spec_that_would_frame_wrong);
+    RUN_TEST(test_replace_definitions_rejects_a_bad_spec_and_changes_nothing);
     RUN_TEST(test_decode_dtc);
     RUN_TEST(test_push_recurring_unique_skips_a_queued_duplicate);
 }

@@ -66,9 +66,14 @@ void buildClearDtcRequest(RequestBytes& out);                      // 01 04     
 void buildDiagSessionRequest(uint8_t session, RequestBytes& out);  // 02 10 session
 void buildCurrentDataRequest(uint8_t pid, RequestBytes& out);      // 02 01 pid
 void buildFlowControl(RequestBytes& out);                          // 30 00 00         (continue to send, no block limit, no separation time)
-// A configured PID: byte 0 is the configured request length (docs/pid-config.md `length`: 2 for mode 01, 3 for mode 22).
-// Mode 0x22 carries a 16-bit DID, every other mode an 8-bit PID.
-void buildPidRequest(uint8_t length, uint8_t mode, uint16_t pid, RequestBytes& out);
+// A configured PID. The PCI length comes from the mode, never from the caller: mode 01 -> `02 01 pid` (PID 1..0xFF),
+// mode 0x22 -> `03 22 didHi didLo`. Any other mode (including derived) or a PID out of range builds nothing: returns false
+// and zeroes `out`, so nothing wrong can reach the bus.
+bool buildPidRequest(uint8_t mode, uint16_t pid, RequestBytes& out);
+
+// The one rule for a PID definition (REST add, bulk JSON, model): mode 01 with PID 1..0xFF and length 2, mode 0x22 with
+// length 3, derived (0x45) with length 0. Anything else would put an invalid single-frame PCI on the bus.
+bool isValidPidSpec(uint8_t mode, uint16_t pid, uint8_t length);
 
 // ---- Multi-ECU response collection (DTC modes 03/07/0A and VIN, mode 09/02) ----
 // A functional request is answered by several ECUs at once; each reassembles in its own session keyed by the response

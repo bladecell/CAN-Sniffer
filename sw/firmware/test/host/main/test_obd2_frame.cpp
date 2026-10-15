@@ -362,12 +362,55 @@ static void test_request_frames_have_exact_bytes(void)
     expectBytes({0x02, 0x01, 0x40}, b);
     buildFlowControl(b);
     expectBytes({0x30, 0x00, 0x00}, b);
-    buildPidRequest(2, 0x01, 0x0C, b);
+    TEST_ASSERT_TRUE(buildPidRequest(0x01, 0x0C, b));
     expectBytes({0x02, 0x01, 0x0C}, b);
-    buildPidRequest(3, 0x22, 0x2613, b);
+    TEST_ASSERT_TRUE(buildPidRequest(0x22, 0x2613, b));
     expectBytes({0x03, 0x22, 0x26, 0x13}, b);
-    buildPidRequest(2, 0x01, 0x010C, b);  // a mode 01 PID is 8 bits
-    expectBytes({0x02, 0x01, 0x0C}, b);
+    TEST_ASSERT_TRUE(buildPidRequest(0x22, 0x00FF, b));  // a short DID still carries two bytes and PCI 3
+    expectBytes({0x03, 0x22, 0x00, 0xFF}, b);
+}
+
+static void test_pid_request_builder_refuses_anything_it_cannot_frame(void)
+{
+    RequestBytes b;
+    const uint8_t zero[CAN_DATA_MAX] = {};
+    const struct { uint8_t mode; uint16_t pid; } bad[] = {
+        {0x01, 0x0100}, {0x01, 0x0000}, {0x01, 0xFFFF}, {0x45, 0x1234}, {0x03, 0x0001}, {0x09, 0x0002},
+        {0x00, 0x0001}, {0x10, 0x0001}, {0x62, 0x0001}, {0xFF, 0x00FF},
+    };
+    for (const auto& c : bad)
+    {
+        memset(b, 0xEE, sizeof(b));
+        TEST_ASSERT_FALSE(buildPidRequest(c.mode, c.pid, b));
+        TEST_ASSERT_EQUAL_HEX8_ARRAY(zero, b, CAN_DATA_MAX);  // nothing built
+    }
+}
+
+static void test_pid_spec_rule(void)
+{
+    TEST_ASSERT_TRUE(isValidPidSpec(0x01, 0x0C, 2));
+    TEST_ASSERT_TRUE(isValidPidSpec(0x01, 0xFF, 2));
+    TEST_ASSERT_TRUE(isValidPidSpec(0x22, 0x2613, 3));
+    TEST_ASSERT_TRUE(isValidPidSpec(0x22, 0x00FF, 3));
+    TEST_ASSERT_TRUE(isValidPidSpec(0x45, 0x1234, 0));
+    for (uint8_t len : {0, 1, 3, 4, 8, 9, 255})
+    {
+        TEST_ASSERT_FALSE(isValidPidSpec(0x01, 0x0C, len));
+    }
+    TEST_ASSERT_FALSE(isValidPidSpec(0x01, 0x0100, 3));  // 16-bit PID in mode 01
+    TEST_ASSERT_FALSE(isValidPidSpec(0x01, 0x0100, 2));
+    TEST_ASSERT_FALSE(isValidPidSpec(0x01, 0x0000, 2));
+    TEST_ASSERT_FALSE(isValidPidSpec(0x22, 0x00FF, 2));  // DID <= 0xFF with the mode 01 length
+    for (uint8_t len : {0, 1, 2, 4, 8, 9})
+    {
+        TEST_ASSERT_FALSE(isValidPidSpec(0x22, 0x2613, len));
+    }
+    TEST_ASSERT_FALSE(isValidPidSpec(0x45, 0x1234, 2));
+    TEST_ASSERT_FALSE(isValidPidSpec(0x45, 0x1234, 3));
+    TEST_ASSERT_FALSE(isValidPidSpec(0x03, 0x0001, 1));
+    TEST_ASSERT_FALSE(isValidPidSpec(0x09, 0x0002, 2));
+    TEST_ASSERT_FALSE(isValidPidSpec(0x00, 0x0001, 2));
+    TEST_ASSERT_FALSE(isValidPidSpec(0xFF, 0x0001, 3));
 }
 
 static void test_clear_dtc_request_is_one_byte_after_the_pci(void)
@@ -390,6 +433,8 @@ extern "C" void run_obd2_frame_tests(void)
     RUN_TEST(test_consecutive_sequence_wraps_after_15);
     RUN_TEST(test_request_frames_have_exact_bytes);
     RUN_TEST(test_clear_dtc_request_is_one_byte_after_the_pci);
+    RUN_TEST(test_pid_request_builder_refuses_anything_it_cannot_frame);
+    RUN_TEST(test_pid_spec_rule);
     RUN_TEST(test_extract_vin);
     RUN_TEST(test_extract_vin_rejects_short_payload);
     RUN_TEST(test_dtcs_single_frame);

@@ -25,7 +25,12 @@ esp_err_t OBD2::queryMsg(PollRequest& req)
     }
     else
     {
-        obd2frame::buildPidRequest(req.payload.obd.len, req.payload.obd.mode, req.payload.obd.pid, tx.data);
+        if (!obd2frame::buildPidRequest(req.payload.obd.mode, req.payload.obd.pid, tx.data))
+        {
+            ESP_LOGW(TAG, "Refusing to send PID 0x%04X: invalid mode 0x%02X", static_cast<unsigned>(req.payload.obd.pid),
+                     static_cast<unsigned>(req.payload.obd.mode));
+            return ESP_ERR_INVALID_ARG;
+        }
         dlc = 8;
     }
 

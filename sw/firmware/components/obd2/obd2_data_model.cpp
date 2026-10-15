@@ -72,6 +72,10 @@ esp_err_t OBD2DataModel::addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t
                                 std::string unit, std::string desc, std::string formula, float minV, float maxV,
                                 uint8_t priority, uint16_t interval, uint32_t color, std::string icon)
 {
+    if (!obd2frame::isValidPidSpec(mode, pid, len))
+    {
+        return ESP_ERR_INVALID_ARG;  // would put an invalid single-frame PCI on the bus
+    }
     return withPidMapLock(
         [&]() -> esp_err_t
         {
@@ -339,6 +343,10 @@ esp_err_t OBD2DataModel::replacePIDDefinitions(const std::vector<PIDDefinitionDa
 
     for (const auto& definition : definitions)
     {
+        if (!obd2frame::isValidPidSpec(definition.mode, definition.pid, definition.len))
+        {
+            return ESP_ERR_INVALID_ARG;
+        }
         auto result = stagedDefinitions.emplace(
             std::piecewise_construct, std::forward_as_tuple(definition.pid),
             std::forward_as_tuple(definition.id, definition.mode, definition.pid, definition.len, definition.name,
