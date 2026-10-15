@@ -199,6 +199,7 @@ private:
     bool        matchesService(const uint8_t* data, size_t length) const;
     Session*    findSession(uint32_t id);
     void        dropSession(Session& s);
+    void        markResponder(uint32_t idx);
     void        finishPayload(uint32_t id, const uint8_t* payload, size_t length);
     void        addDtc(uint16_t raw);
 

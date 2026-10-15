@@ -41,6 +41,12 @@ static constexpr uint32_t SIM_STOP_TIMEOUT_MS = 2000;
 #define SIM_ECU1_CF_DELAY_MS 0
 #endif
 
+// Test aid, debug builds only: when 1, every ECU answers mode 0A with the negative response 7F 0A 11 (service not
+// supported). 0 keeps the default behaviour.
+#ifndef SIM_MODE_0A_NOT_SUPPORTED
+#define SIM_MODE_0A_NOT_SUPPORTED 0
+#endif
+
 static constexpr uint32_t SIM_ECU_COUNT       = 2;
 static constexpr uint32_t SIM_REQUEST_BASE_ID = OBD2_RESPONSE_BASE_ID - RESPONSE_ID_OFFSET;  // 0x7E0
 
@@ -231,6 +237,17 @@ void dataSimTask(CanDriver& canDriver)
 
         const uint8_t requested_pid = req.data[2];
         const uint8_t mode          = req.data[1];
+
+#if SIM_MODE_0A_NOT_SUPPORTED
+        if (mode == MODE_PERMANENT_DTCS && (req.id == OBD2_FUNCTIONAL_ID || req.id == SIM_REQUEST_BASE_ID ||
+                                            req.id == SIM_REQUEST_BASE_ID + 1))
+        {
+            const uint8_t nrc[8] = {0x03, RESPONSE_NEGATIVE_RESPONSE_CODE, MODE_PERMANENT_DTCS, 0x11};
+            injectFrame(canDriver, OBD2_RESPONSE_BASE_ID, nrc);
+            injectFrame(canDriver, OBD2_RESPONSE_BASE_ID + 1, nrc);
+            continue;
+        }
+#endif
 
         // ECU 1 answers the functional ID and its own physical ID.
         const bool ecu1Addressed = req.id == OBD2_FUNCTIONAL_ID || req.id == SIM_REQUEST_BASE_ID + 1;

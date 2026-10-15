@@ -304,6 +304,7 @@ namespace
 {
 constexpr uint8_t SID_NEGATIVE_RESPONSE = RESPONSE_NEGATIVE_RESPONSE_CODE;
 constexpr uint8_t NRC_RESPONSE_PENDING  = 0x78;
+constexpr uint8_t NRC_SERVICE_NOT_SUPPORTED = 0x11;
 constexpr uint8_t FLOW_CONTROL_CTS      = 0x30;
 
 uint32_t elapsed(uint32_t now, uint32_t since)
@@ -462,16 +463,21 @@ void DiagCollector::addDtc(uint16_t raw)
     }
 }
 
-void DiagCollector::finishPayload(uint32_t id, const uint8_t* payload, size_t length)
+// The ECU gave a definitive answer for this request (data, or "not supported"): it counts once, pending is over.
+void DiagCollector::markResponder(uint32_t idx)
 {
-    const uint32_t idx = id - DIAG_RESPONSE_ID_FIRST;
-    pendingCount_[idx] = 0;
+    pendingCount_[idx]  = 0;
     pendingActive_[idx] = false;
     if ((respondedMask_ & (1u << idx)) == 0)
     {
         respondedMask_ = static_cast<uint16_t>(respondedMask_ | (1u << idx));
         responders_++;
     }
+}
+
+void DiagCollector::finishPayload(uint32_t id, const uint8_t* payload, size_t length)
+{
+    markResponder(id - DIAG_RESPONSE_ID_FIRST);
 
     if (kind_ == DiagKind::Dtc)
     {
@@ -532,6 +538,14 @@ DiagFrameResult DiagCollector::onFrame(uint32_t canId, const uint8_t* data, size
                     return res;
                 }
                 res.consumed = true;
+                if (data[3] == NRC_SERVICE_NOT_SUPPORTED && kind_ == DiagKind::Dtc)
+                {
+                    // 7F <mode> 11: the ECU does not implement this DTC service (mode 0A often). That is a complete,
+                    // empty answer, not a failure. 0x12 is not treated this way: these services have no sub-function.
+                    markResponder(idx);
+                    lastActivityMs_ = nowMs;
+                    return res;
+                }
                 if (data[3] != NRC_RESPONSE_PENDING)
                 {
                     pendingActive_[idx] = false;

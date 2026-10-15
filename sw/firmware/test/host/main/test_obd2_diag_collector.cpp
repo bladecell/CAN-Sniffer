@@ -509,6 +509,106 @@ static void test_diag_vin_result_is_ok_with_one_valid_vin_or_for_dtcs(void)
     }
 }
 
+static void test_diag_service_not_supported_is_an_empty_success(void)
+{
+    // 7F <mode> 11: the ECU says it does not implement the service (mode 0A is often missing). Not an error.
+    for (uint8_t mode : {0x03, 0x07, 0x0A})
+    {
+        DiagCollector c;
+        startDtc(c, mode);
+        DiagFrameResult r = feed(c, 0x7E8, frame8({0x03, 0x7F, mode, 0x11}), 5);
+        TEST_ASSERT_TRUE(r.consumed);
+        TEST_ASSERT_EQUAL_INT(ESP_OK, r.err);
+        TEST_ASSERT_EQUAL_UINT32(1, c.responders());
+        TEST_ASSERT_EQUAL_UINT32(0, c.dtcCount());
+        TEST_ASSERT_EQUAL_INT(static_cast<int>(DiagStatus::Waiting), static_cast<int>(c.poll(5 + T.quietGapMs - 1)));
+        // Done after the quiet gap, far before the first-response wait or the requester timeout would matter.
+        TEST_ASSERT_EQUAL_INT(static_cast<int>(DiagStatus::Complete), static_cast<int>(c.poll(5 + T.quietGapMs)));
+        TEST_ASSERT_EQUAL_INT(ESP_OK, c.result());
+        TEST_ASSERT_FALSE(c.anyPending());
+    }
+}
+
+static void test_diag_other_negative_responses_stay_errors(void)
+{
+    // 0x12 (sub-function not supported) has no meaning for the parameterless DTC services, so it is not "unsupported".
+    for (uint8_t nrc : {0x10, 0x12, 0x13, 0x21, 0x22, 0x31, 0x7E, 0x7F, 0xFF})
+    {
+        DiagCollector c;
+        startDtc(c, 0x0A);
+        TEST_ASSERT_TRUE(feed(c, 0x7E8, frame8({0x03, 0x7F, 0x0A, nrc}), 5).consumed);
+        TEST_ASSERT_EQUAL_UINT32(0, c.responders());
+        TEST_ASSERT_EQUAL_INT(static_cast<int>(DiagStatus::Failed), static_cast<int>(c.poll(T.firstResponseWaitMs)));
+    }
+}
+
+static void test_diag_silent_ecu_still_fails(void)
+{
+    DiagCollector c;
+    startDtc(c, 0x0A);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(DiagStatus::Waiting), static_cast<int>(c.poll(T.firstResponseWaitMs - 1)));
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(DiagStatus::Failed), static_cast<int>(c.poll(T.firstResponseWaitMs)));
+}
+
+static void test_diag_pending_then_not_supported_ends_the_wait(void)
+{
+    DiagCollector c;
+    startDtc(c, 0x0A);
+    feed(c, 0x7E8, frame8({0x03, 0x7F, 0x0A, 0x78}), 5);
+    TEST_ASSERT_TRUE(c.anyPending());
+    feed(c, 0x7E8, frame8({0x03, 0x7F, 0x0A, 0x11}), 400);
+    TEST_ASSERT_FALSE(c.anyPending());
+    TEST_ASSERT_EQUAL_UINT32(1, c.responders());
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(DiagStatus::Complete), static_cast<int>(c.poll(400 + T.quietGapMs)));
+}
+
+static void test_diag_one_ecu_unsupported_another_has_dtcs(void)
+{
+    DiagCollector c;
+    startDtc(c, 0x07);
+    feed(c, 0x7E8, frame8({0x03, 0x7F, 0x07, 0x11}), 1);
+    feed(c, 0x7E9, frame8({0x06, 0x47, 0x02, 0x01, 0x33, 0x02, 0x44}), 3);
+    TEST_ASSERT_EQUAL_UINT32(2, c.responders());
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(DiagStatus::Complete), static_cast<int>(c.poll(3 + T.quietGapMs)));
+    TEST_ASSERT_EQUAL_UINT32(2, c.dtcCount());
+    TEST_ASSERT_TRUE(hasDtc(c, 0x0133) && hasDtc(c, 0x0244));
+}
+
+static void test_diag_all_ecus_unsupported_and_repeats_count_once(void)
+{
+    DiagCollector c;
+    startDtc(c, 0x0A);
+    feed(c, 0x7E8, frame8({0x03, 0x7F, 0x0A, 0x11}), 1);
+    feed(c, 0x7E8, frame8({0x03, 0x7F, 0x0A, 0x11}), 2);  // a repeat from the same ECU
+    feed(c, 0x7E9, frame8({0x03, 0x7F, 0x0A, 0x11}), 3);
+    TEST_ASSERT_EQUAL_UINT32(2, c.responders());
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(DiagStatus::Complete), static_cast<int>(c.poll(3 + T.quietGapMs)));
+    TEST_ASSERT_EQUAL_UINT32(0, c.dtcCount());
+}
+
+static void test_diag_not_supported_for_another_service_or_vin_is_not_a_response(void)
+{
+    {
+        DiagCollector c;
+        startDtc(c, 0x03);
+        TEST_ASSERT_FALSE(feed(c, 0x7E8, frame8({0x03, 0x7F, 0x0A, 0x11}), 1).consumed);  // answer to a different request
+        TEST_ASSERT_EQUAL_UINT32(0, c.responders());
+    }
+    {
+        DiagCollector c;  // truncated negative response
+        startDtc(c, 0x0A);
+        TEST_ASSERT_FALSE(feed(c, 0x7E8, frame8({0x02, 0x7F, 0x0A}), 1).consumed);
+        TEST_ASSERT_EQUAL_UINT32(0, c.responders());
+    }
+    {
+        DiagCollector c;  // a VIN needs data: "service not supported" is still no VIN
+        startVin(c);
+        TEST_ASSERT_TRUE(feed(c, 0x7E8, frame8({0x03, 0x7F, 0x09, 0x11}), 1).consumed);
+        TEST_ASSERT_EQUAL_UINT32(0, c.responders());
+        TEST_ASSERT_EQUAL_INT(static_cast<int>(DiagStatus::Failed), static_cast<int>(c.poll(T.firstResponseWaitMs)));
+    }
+}
+
 static void test_diag_hostile_first_frame_lengths(void)
 {
     DiagCollector c;
@@ -842,6 +942,13 @@ extern "C" void run_obd2_diag_collector_tests(void)
     RUN_TEST(test_diag_short_vin_payloads_give_no_vin);
     RUN_TEST(test_diag_vin_result_is_an_error_without_a_valid_vin);
     RUN_TEST(test_diag_vin_result_is_ok_with_one_valid_vin_or_for_dtcs);
+    RUN_TEST(test_diag_service_not_supported_is_an_empty_success);
+    RUN_TEST(test_diag_other_negative_responses_stay_errors);
+    RUN_TEST(test_diag_silent_ecu_still_fails);
+    RUN_TEST(test_diag_pending_then_not_supported_ends_the_wait);
+    RUN_TEST(test_diag_one_ecu_unsupported_another_has_dtcs);
+    RUN_TEST(test_diag_all_ecus_unsupported_and_repeats_count_once);
+    RUN_TEST(test_diag_not_supported_for_another_service_or_vin_is_not_a_response);
     RUN_TEST(test_diag_hostile_first_frame_lengths);
     RUN_TEST(test_diag_bad_sequence_drops_only_that_ecus_session);
     RUN_TEST(test_diag_duplicate_and_wrong_sequence_variants);
