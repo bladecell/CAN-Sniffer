@@ -11,8 +11,6 @@ export function usePidData(getPid: () => number): PidDataMetrics {
     canStore.pidDefinitions?.find((c) => c.pid === getPid())
   );
 
-  const formattedColor = $derived(() => safeHexColor(definition?.color));
-
   // Track the runtime stream dynamically using the evaluated PID
   const runtime = $derived(canStore.pids.get(getPid()));
 
@@ -22,7 +20,7 @@ export function usePidData(getPid: () => number): PidDataMetrics {
     get description() { return definition?.description ?? ""; },
     get unit() { return definition?.unit ?? "%"; },
     get icon() { return definition?.icon ?? "gear"; },
-    get color() { return formattedColor(); },
+    get color() { return safeHexColor(definition?.color); },
     get min() { return definition?.minValue ?? 0; },
     get max() { return definition?.maxValue ?? 100; },
     get updateInterval() { return definition?.update_interval_ms ?? 1000; },

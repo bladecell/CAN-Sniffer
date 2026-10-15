@@ -5,6 +5,7 @@
   import ControlsCard from "$lib/components/ControlsCard.svelte";
   import type { Column, PidDefinition } from "$lib/types";
   import DTCFault from "./lib/components/DTCFault.svelte";
+  import { safeHexColor } from "$lib/color";
 
   function createCardFromPID(pidData: PidDefinition) {
     return {
@@ -13,7 +14,7 @@
       description: pidData.description,
       unit: pidData.unit,
       icon: pidData.icon,
-      color: `#${pidData.color.toString(16).padStart(6, "0")}`,
+      color: safeHexColor(pidData.color),
       update_interval_ms: pidData.update_interval_ms,
       min: pidData.minValue || 0,
       max: pidData.maxValue || 100,
