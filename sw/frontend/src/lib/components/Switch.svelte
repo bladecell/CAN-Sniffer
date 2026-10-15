@@ -7,7 +7,13 @@
     onchange?: (e: Event) => void;
   }
 
-  let { checked = $bindable(), disabled = false, onchange, ...rest }: Props = $props();
+  let {
+    checked = $bindable(),
+    disabled = false,
+    onchange,
+    "aria-label": ariaLabel,
+    ...rest
+  }: Props = $props();
 
   function handleToggle(e: Event) {
     if (disabled) return;
@@ -16,7 +22,13 @@
 </script>
 
 <label class="switch" class:disabled {...rest}>
-  <input type="checkbox" bind:checked {disabled} onchange={handleToggle} />
+  <input
+    type="checkbox"
+    bind:checked
+    {disabled}
+    aria-label={ariaLabel}
+    onchange={handleToggle}
+  />
   <span class="slider"></span>
 </label>
 
@@ -50,11 +62,14 @@
     cursor: not-allowed;
   }
 
+  /* Hidden but still focusable: the visible ring is drawn on .slider below. */
   .switch input {
-    display: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: 0;
     opacity: 0;
-    width: 0;
-    height: 0;
+    pointer-events: none;
   }
 
   .slider {
@@ -97,6 +112,6 @@
   }
 
   input:focus-visible + .slider {
-    box-shadow: 0 0 0 2px var(--secondary-container);
+    box-shadow: 0 0 0 2px var(--primary);
   }
 </style>

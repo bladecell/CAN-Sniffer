@@ -131,6 +131,21 @@
     selectedRowIndex = selectedRowIndex === index ? -1 : index;
   }
 
+  // Header controls (select-all checkbox, toggle) live inside the sortable th.
+  function fromHeaderControl(e: Event) {
+    return e.target instanceof Element && e.target.closest(".header-control") !== null;
+  }
+
+  function ariaSort(key: string) {
+    if (sortKey !== key) return "none";
+    return sortDirection === "asc" ? "ascending" : "descending";
+  }
+
+  // Only the focused th/tr itself, not a checkbox or switch inside it.
+  function isOwnKey(e: KeyboardEvent) {
+    return e.target === e.currentTarget && (e.key === "Enter" || e.key === " ");
+  }
+
   function handleSort(key: string) {
     if (sortKey === key) {
       sortDirection = sortDirection === "asc" ? "desc" : "asc";
@@ -372,29 +387,35 @@
             <th
               scope="col"
               class="sortable-header"
-              onclick={() => handleSort(col.key)}
+              tabindex="0"
+              aria-sort={ariaSort(col.key)}
+              onclick={(e) => {
+                if (fromHeaderControl(e)) return e.stopPropagation();
+                handleSort(col.key);
+              }}
+              onkeydown={(e) => {
+                if (!isOwnKey(e)) return;
+                e.preventDefault();
+                handleSort(col.key);
+              }}
             >
               <div class="header-content">
                 {#if col.showHeaderLabel ?? (col.type !== "toggle" && col.type !== "checkbox")}
                   <span>{col.label}</span>
                 {/if}
                 {#if col.showHeaderToggle ?? (col.type === "toggle" || col.type === "checkbox")}
-                  <!-- svelte-ignore a11y_click_events_have_key_events -->
-                  <!-- svelte-ignore a11y_no_static_element_interactions -->
-                  <div
-                    class="header-control"
-                    onclick={(e) => e.stopPropagation()}
-                    style="display: flex;"
-                  >
+                  <div class="header-control" style="display: flex;">
                     {#if col.type === "toggle"}
                       <Switch
                         checked={isAllChecked(col.key)}
                         onchange={(e) => handleHeaderToggle(col.key, e)}
+                        aria-label={`Toggle all ${col.label}`}
                         style="--toggle-width: 2em; --toggle-height: 1em;"
                       />
                     {:else}
                       <input
                         type="checkbox"
+                        aria-label={`Select all ${col.label}`}
                         checked={isAllChecked(col.key)}
                         onchange={(e) => handleHeaderToggle(col.key, e)}
                       />
@@ -419,6 +440,11 @@
                 e.stopPropagation();
                 selectRow(originalIndex);
               }}
+              onkeydown={(e) => {
+                if (!isOwnKey(e)) return;
+                e.preventDefault();
+                selectRow(originalIndex);
+              }}
               tabindex="0"
               aria-selected={selectedRowIndex === originalIndex}
             >
@@ -430,6 +456,7 @@
                     <div class="control-wrapper">
                       <input
                         type="checkbox"
+                        aria-label={col.label}
                         bind:checked={row[col.key]}
                         onclick={(e) => e.stopPropagation()}
                       />
@@ -437,6 +464,7 @@
                   {:else if col.type === "toggle"}
                     <div class="control-wrapper">
                       <Switch
+                        aria-label={col.label}
                         bind:checked={row[col.key]}
                         onclick={(e) => e.stopPropagation()}
                       />
@@ -737,10 +765,10 @@
     cursor: pointer;
   }
 
-  .toolbar-btn:focus,
-  .column-toggle-btn:focus {
-    outline: none;
-    box-shadow: none;
+  .toolbar-btn:focus-visible,
+  .column-toggle-btn:focus-visible {
+    outline: 2px solid var(--pico-primary);
+    outline-offset: 2px;
   }
 
   .btn-ghost {
@@ -944,9 +972,15 @@
     color: var(--badge-color);
   }
 
-  td input[type="checkbox"]:focus {
-    outline: none !important;
-    box-shadow: none !important;
+  td input[type="checkbox"]:focus-visible {
+    outline: 2px solid var(--pico-primary) !important;
+    outline-offset: 2px;
+  }
+
+  .sortable-header:focus-visible,
+  tbody tr:focus-visible {
+    outline: 2px solid var(--pico-primary);
+    outline-offset: -2px;
   }
 
   table {

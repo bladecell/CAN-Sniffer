@@ -27,6 +27,7 @@
 
 
   let iconDropdownOpen = $state(false);
+  let iconDropdownRef: HTMLElement | undefined = $state();
 
   $effect(() => {
     if (
@@ -541,12 +542,14 @@
             <div>
               <div class="icon-selector-wrapper">
                 <div class="icon-select-container">
-                  <div class="custom-icon-dropdown">
+                  <div class="custom-icon-dropdown" bind:this={iconDropdownRef}>
                     <button
                       class="dropdown-trigger"
                       onclick={() => (iconDropdownOpen = !iconDropdownOpen)}
                       aria-label="icon"
                       aria-describedby="icon-helper"
+                      aria-expanded={iconDropdownOpen}
+                      aria-controls="icon-menu"
                     >
                       {#if telemetryStore.iconInput}
                         <div class="trigger-content">
@@ -564,10 +567,7 @@
                       <Icon name="chevron-down" class="caret" size={14} />
                     </button>
                     {#if iconDropdownOpen}
-                      <!-- svelte-ignore a11y_click_events_have_key_events -->
-                      <!-- svelte-ignore a11y_no_static_element_interactions -->
-                      <div class="dropdown-overlay" onclick={() => (iconDropdownOpen = false)}></div>
-                      <div class="dropdown-menu blur-background">
+                      <div id="icon-menu" class="dropdown-menu blur-background">
                         {#each icons as iconName}
                           <button
                             class="dropdown-item"
@@ -624,15 +624,24 @@
           style="display: grid; grid-template-columns: repeat({telemetryStore.chartCols}, 1fr); grid-template-rows: repeat({telemetryStore.chartRows}, 1fr); gap: 1rem; flex: 1;"
         >
           {#each Array(telemetryStore.chartRows * telemetryStore.chartCols) as _, i}
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div 
-              class="chart-cell" 
+            <div
+              class="chart-cell"
+              role="group"
+              aria-label={`Chart ${i + 1}`}
               class:active={telemetryStore.activeChartIndex === i}
               style:border-color={telemetryStore.activeChartIndex === i && telemetryStore.chartPids[i]?.length > 0 ? `${getChartAccent(telemetryStore.chartPids[i])}30` : undefined}
               style:background-color={telemetryStore.activeChartIndex === i && telemetryStore.chartPids[i]?.length > 0 ? `${getChartAccent(telemetryStore.chartPids[i])}15` : undefined}
-              onclick={() => setActiveChart(i)}
+              onpointerdown={() => setActiveChart(i)}
             >
+              <!-- Keyboard activation. Pointer selection is on the group so the chart's own buttons keep working. -->
+              <button
+                type="button"
+                class="chart-select"
+                aria-pressed={telemetryStore.activeChartIndex === i}
+                onclick={() => setActiveChart(i)}
+              >
+                Select chart {i + 1}
+              </button>
               <div class="chart-cell-inner">
                 <LayerChartLarge pids={telemetryStore.chartPids[i] || []} isActive={telemetryStore.activeChartIndex === i} />
               </div>
@@ -642,6 +651,17 @@
       </div>
     {/if}
   </div>
+
+<svelte:window
+  onkeydown={(e) => {
+    if (e.key === "Escape") iconDropdownOpen = false;
+  }}
+  onclick={(e) => {
+    if (iconDropdownOpen && !iconDropdownRef?.contains(e.target as Node)) {
+      iconDropdownOpen = false;
+    }
+  }}
+/>
 
 <DataTable
   onExport={handleExport}
@@ -903,6 +923,31 @@
   .chart-cell.active {
     border-color: rgba(255, 255, 255, 0.15);
     background: rgba(0, 0, 0, 0.15);
+  }
+
+  .chart-cell {
+    position: relative;
+  }
+
+  /* Hidden until focused, so the keyboard path is visible without changing the layout. */
+  .chart-select {
+    position: absolute;
+    top: 0.25rem;
+    left: 0.25rem;
+    z-index: 1;
+    width: auto;
+    margin: 0;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.7rem;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .chart-select:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
+    outline: 2px solid var(--pico-primary);
+    outline-offset: 2px;
   }
 
   .chart-cell-inner {

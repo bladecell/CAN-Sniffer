@@ -4,6 +4,7 @@
   import { telemetryStore } from "$lib/telemetryStore.svelte";
   import { parseJsonResponse, sdCardFileEndpoint } from "$lib/api";
   import FileTree from "./FileTree.svelte";
+  import { dialogFocus } from "$lib/dialogFocus";
   import type { SdTreeNode } from "$lib/types";
 
   interface Props {
@@ -73,16 +74,23 @@
 </script>
 
 {#if isOpen}
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-  <div class="modal-backdrop" onclick={onClose}>
-    <article
-      onclick={(e) => e.stopPropagation()}
+  <div
+    class="modal-backdrop"
+    role="presentation"
+    onclick={(e) => {
+      if (e.target === e.currentTarget) onClose();
+    }}
+  >
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="sd-import-title"
+      tabindex="-1"
+      {@attach dialogFocus(() => onClose())}
       class="pico-orange-glass-modal blur-background"
     >
       <header class="modal-header-hull">
-        <h5 class="modal-title-heading">Select PID Configuration File</h5>
+        <h5 id="sd-import-title" class="modal-title-heading">Select PID Configuration File</h5>
         <button aria-label="Close" class="close-modal-x" onclick={onClose}
           >✕</button
         >
@@ -109,7 +117,7 @@
           <div class="alert-box error">Failed to load directory tree.</div>
         {/if}
       </div>
-    </article>
+    </div>
   </div>
 {/if}
 
@@ -122,6 +130,8 @@
     margin: 0;
     padding: 0;
     overflow: hidden;
+    border-radius: var(--pico-border-radius);
+    box-shadow: var(--pico-card-box-shadow);
   }
   .modal-header-hull {
     display: flex;

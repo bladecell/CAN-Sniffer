@@ -9,6 +9,7 @@
   } from "$lib/types";
   import { MODULE_CONFIGS, getModuleBounds } from "$lib/types";
   import { untrack } from "svelte";
+  import { dialogFocus } from "$lib/dialogFocus";
 
   interface Props {
     isOpen: boolean;
@@ -143,17 +144,23 @@
 </script>
 
 {#if isOpen}
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="modal-backdrop" onclick={handleCancel}>
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <article
-      onclick={(e) => e.stopPropagation()}
+  <div
+    class="modal-backdrop"
+    role="presentation"
+    onclick={(e) => {
+      if (e.target === e.currentTarget) handleCancel();
+    }}
+  >
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="pid-settings-title"
+      tabindex="-1"
+      {@attach dialogFocus(handleCancel)}
       class="pico-orange-glass-modal blur-background"
     >
       <header class="modal-header-hull">
-        <h5 class="modal-title-heading">
+        <h5 id="pid-settings-title" class="modal-title-heading">
           {isNewCard
             ? "Create System Component"
             : "Configure Component Parameters"}
@@ -310,7 +317,7 @@
           <button type="submit" class="apply-btn">Apply</button>
         </footer>
       </form>
-    </article>
+    </div>
   </div>
 {/if}
 
@@ -321,6 +328,8 @@
     margin: 0;
     padding: 0;
     overflow: hidden;
+    border-radius: var(--pico-border-radius);
+    box-shadow: var(--pico-card-box-shadow);
   }
   .modal-header-hull {
     display: flex;
