@@ -85,6 +85,7 @@ esp_err_t CanDriver::init(const Config& config)
 esp_err_t CanDriver::bringUp(const Config& config)
 {
     stopRequested_.store(false);
+    nodeConfig.clk_src                = TWAI_CLK_SRC_DEFAULT;
     nodeConfig.io_cfg.tx              = config.tx_pin;
     nodeConfig.io_cfg.rx              = config.rx_pin;
     nodeConfig.bit_timing.bitrate     = static_cast<uint32_t>(config.bitrate);

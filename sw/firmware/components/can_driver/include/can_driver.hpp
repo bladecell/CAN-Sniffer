@@ -60,11 +60,11 @@ public:
 
     struct Config
     {
-        Bitrate                   bitrate;
-        gpio_num_t                tx_pin;
-        gpio_num_t                rx_pin;
-        gpio_num_t                lbk_pin;
-        gpio_num_t                rs_pin;
+        Bitrate                   bitrate = Bitrate::BITRATE_500K;
+        gpio_num_t                tx_pin  = GPIO_NUM_NC;
+        gpio_num_t                rx_pin  = GPIO_NUM_NC;
+        gpio_num_t                lbk_pin = GPIO_NUM_NC;
+        gpio_num_t                rs_pin  = GPIO_NUM_NC;
         bool                      debug          = false;
         RS_MODE                   rs_mode        = RS_MODE::HIGH_SPEED;
         uint32_t                  tx_queue_depth = 20U;
