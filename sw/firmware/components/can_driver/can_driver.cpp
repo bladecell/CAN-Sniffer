@@ -28,20 +28,6 @@ void CanDriver::setDebugMode(bool enable)
     nodeConfig.flags.enable_loopback  = enable ? 1 : 0;
     gpio_set_level(LBK_PIN, enable ? 1 : 0);
     debug_mode = enable ? 1 : 0;
-    if (enable)
-    {
-        if (simStart_)
-        {
-            simStart_(this);
-        }
-    }
-    else
-    {
-        if (simStop_)
-        {
-            simStop_();
-        }
-    }
 }
 
 bool CanDriver::hasResources() const
@@ -144,6 +130,20 @@ esp_err_t CanDriver::bringUp(const Config& config)
         return ESP_ERR_NO_MEM;
     }
 
+    // The simulator injects into rxQueue, so it starts only now that the queues exist.
+    if (config.debug)
+    {
+        if (simStart_)
+        {
+            simStart_(this);
+        }
+    }
+    else if (simStop_ && !simStop_())
+    {
+        ESP_LOGE(TAG, "Simulator still running; cannot start without debug mode");
+        return ESP_ERR_TIMEOUT;
+    }
+
     ret = twai_new_node_onchip(&nodeConfig, &nodeHdl);
     if (ret != ESP_OK)
     {
@@ -220,9 +220,10 @@ esp_err_t CanDriver::teardown()
     stopRequested_.store(true);
 
     // The simulator task feeds rxQueue: stop it before the queue goes.
-    if (simStop_)
+    if (simStop_ && !simStop_())
     {
-        simStop_();
+        ESP_LOGE(TAG, "Simulator did not stop; leaving resources in place");
+        return ESP_ERR_TIMEOUT;
     }
 
     // No more TWAI callbacks (they notify the health task) once the node is disabled.

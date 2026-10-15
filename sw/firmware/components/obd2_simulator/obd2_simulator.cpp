@@ -92,7 +92,7 @@ void start_sim_task(CanDriver* driver)
     }
 }
 
-void stop_sim_task()
+bool stop_sim_task()
 {
     if (xDataSimTaskHandle != NULL)
     {
@@ -106,10 +106,11 @@ void stop_sim_task()
         if (simRunning.load())
         {
             ESP_LOGE(TAG, "DataSimTask did not stop in %u ms", static_cast<unsigned>(SIM_STOP_TIMEOUT_MS));
-            return;  // handle kept: the task is still alive
+            return false;  // handle kept: the task is still alive
         }
         xDataSimTaskHandle = NULL;
     }
+    return true;
 }
 
 void dataSimTaskWrapper(void* param)
@@ -130,16 +131,27 @@ struct SimTransfer
     uint8_t  seq   = 1;
 };
 
+// The queue handle is null while the driver is torn down.
+static void injectRaw(CanDriver& canDriver, const CanDriver::CanFrame& f)
+{
+    QueueHandle_t q = canDriver.getRxQueueHandle();
+    if (q == nullptr)
+    {
+        return;
+    }
+    if (xQueueSend(q, &f, 0) != pdTRUE)
+    {
+        ESP_LOGW(TAG, "Failed to inject simulated frame.");
+    }
+}
+
 static void injectFrame(CanDriver& canDriver, uint32_t id, const uint8_t (&bytes)[8])
 {
     CanDriver::CanFrame f = {};
     f.header.id           = id;
     memcpy(f.data, bytes, sizeof(bytes));
     f.length = PID_DATA_LENGTH;  // Max length for CAN 2.0A
-    if (xQueueSend(canDriver.getRxQueueHandle(), &f, 0) != pdTRUE)
-    {
-        ESP_LOGW(TAG, "Failed to inject simulated frame.");
-    }
+    injectRaw(canDriver, f);
 }
 
 // Single frame, or first frame plus a pending transfer that the flow control releases.
@@ -171,7 +183,7 @@ static void sendPayload(CanDriver& canDriver, uint32_t id, SimTransfer& t, const
 
 static void sendConsecutiveFrames(CanDriver& canDriver, uint32_t id, SimTransfer& t, uint32_t gapMs)
 {
-    while (t.active && t.pos < t.total)
+    while (t.active && t.pos < t.total && !simStopRequested.load())
     {
         if (gapMs != 0)
         {
@@ -358,10 +370,7 @@ void dataSimTask(CanDriver& canDriver)
                 }
 
                 // Inject the response frame into the RX queue
-                if (xQueueSend(canDriver.getRxQueueHandle(), &response_frame, 0) != pdTRUE)
-                {
-                    ESP_LOGW(TAG, "Failed to inject simulated frame.");
-                }
+                injectRaw(canDriver, response_frame);
                 break;
             }
             case MODE_READ_DATA_BY_IDENTIFIER:
@@ -401,10 +410,7 @@ void dataSimTask(CanDriver& canDriver)
                         continue;
                 }
 
-                if (xQueueSend(canDriver.getRxQueueHandle(), &response_frame, 0) != pdTRUE)
-                {
-                    ESP_LOGW(TAG, "Failed to inject simulated frame.");
-                }
+                injectRaw(canDriver, response_frame);
                 break;
             }
             case MODE_CLEAR_DTCS:
@@ -415,10 +421,7 @@ void dataSimTask(CanDriver& canDriver)
                 response_frame.data[1]             = RESPONSE_CLEAR_DTCS;  // Response Mode (0x04 + 0x40)
                 response_frame.length              = PID_DATA_LENGTH;      // Max length for CAN 2.0A
 
-                if (xQueueSend(canDriver.getRxQueueHandle(), &response_frame, 0) != pdTRUE)
-                {
-                    ESP_LOGW(TAG, "Failed to inject simulated frame.");
-                }
+                injectRaw(canDriver, response_frame);
                 break;
             }
             case MODE_DTCS:

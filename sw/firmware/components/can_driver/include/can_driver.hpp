@@ -97,6 +97,7 @@ public:
         return canState.load();
     }
 
+    // Loopback pins and TWAI flags only; the simulator is started and stopped by bringUp()/teardown().
     void setDebugMode(bool enable);
 
     // Safe to call repeatedly. A failed init() releases everything it acquired. ESP_ERR_INVALID_STATE: a previous deinit()
@@ -154,7 +155,8 @@ public:
 
     // Simulation hooks (injected by the OBD2 simulator component at runtime)
     typedef void (*SimStartFn)(CanDriver*);
-    typedef void (*SimStopFn)();
+    // Returns false if the simulator task is still running (it may still touch rxQueue, so the queue must stay).
+    typedef bool (*SimStopFn)();
     // ISR context; must be IRAM_ATTR. Gets the CAN ID and the data bytes of every frame seen on the loopback bus.
     typedef void (*SimNotifyFn)(uint32_t id, const uint8_t* data, uint8_t length, BaseType_t* woken);
     void setSimHooks(SimStartFn start, SimStopFn stop, SimNotifyFn notify)

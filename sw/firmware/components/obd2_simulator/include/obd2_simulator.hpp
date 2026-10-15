@@ -19,7 +19,8 @@ extern volatile uint32_t simDroppedFrames;
 void dataSimTask(CanDriver &canDriver);
 void dataSimTaskWrapper(void *param);
 void start_sim_task(CanDriver *driver);
-void stop_sim_task();
+// true when the task is gone (or never ran); false if it did not leave in time.
+bool stop_sim_task();
 void sendVIN(bool multiframe_in_progress);
 uint32_t sinDataSim(uint32_t t_ms, float frequency, uint32_t size);
 
