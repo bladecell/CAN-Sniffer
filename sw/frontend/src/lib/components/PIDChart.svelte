@@ -5,8 +5,7 @@
   import { usePidData } from "$lib/pidHelpers.svelte.ts";
   import { chartHistoryStore, MAX_HISTORY_SEC } from "$lib/chartHistoryStore";
   import type { PidGridItem } from "$lib/types";
-  import { Chart, Svg, Spline, Area } from "layerchart";
-  import { scaleTime } from "d3-scale";
+  import SmallCardChart from "./SmallCardChart.svelte";
 
   interface Props extends HTMLAttributes<HTMLElement> {
     item: PidGridItem;
@@ -66,34 +65,13 @@
     </div>
   </header>
 
-  <div class="chart-wrapper">
-    {#if chartData.length > 0}
-      <Chart
-        data={chartData}
-        x="date"
-        xScale={scaleTime()}
-        xDomain={xDomain}
-        y="value"
-        yDomain={[metric.min, metric.max]}
-        padding={{ top: 10, bottom: 2, left: 0, right: 0 }}
-      >
-        <Svg>
-          <defs>
-            <linearGradient id="chart-area-gradient-{item.pid}" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stop-color={metric.color ?? "#01AAFF"} stop-opacity="0.4" />
-              <stop offset="100%" stop-color={metric.color ?? "#01AAFF"} stop-opacity="0.0" />
-            </linearGradient>
-          </defs>
-          <Area fill="url(#chart-area-gradient-{item.pid})" />
-          <Spline
-            stroke={metric.color ?? "#01AAFF"}
-            strokeWidth={3}
-            class="fill-none"
-          />
-        </Svg>
-      </Chart>
-    {/if}
-  </div>
+  <SmallCardChart
+    data={chartData}
+    {xDomain}
+    yDomain={[metric.min, metric.max]}
+    color={metric.color ?? "#01AAFF"}
+    gradientId="chart-area-gradient-{item.pid}"
+  />
 </article>
 
 <style>
@@ -122,14 +100,4 @@
     color: var(--module-accent);
   }
 
-  .chart-wrapper {
-    flex-grow: 1;
-    width: calc(100% + 32px);
-    margin-left: -16px;
-    margin-right: -16px;
-    position: relative;
-    min-height: 0;
-    min-width: 0;
-    overflow: hidden;
-  }
 </style>

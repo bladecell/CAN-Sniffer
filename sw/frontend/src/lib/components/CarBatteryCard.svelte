@@ -85,6 +85,7 @@
   class="dashboard-card battery-card"
   data-state={reading.state}
   style:--c={color}
+  style:--module-accent={color}
   {...rest}
 >
   <header class="dashboard-card-header">
@@ -95,6 +96,11 @@
       <div class="dashboard-card-label">Car battery</div>
       <div class="dashboard-card-subtitle">OBD port voltage</div>
     </div>
+    {#if item.displayMode === "chart"}
+      <div class="chart-badge" aria-label={valueLabel}>
+        {valueText}<span class="unit">V</span>
+      </div>
+    {/if}
   </header>
 
   <!-- Focusable on purpose: keyboard and screen-reader users need a stop to hear the reading. -->
@@ -177,6 +183,25 @@
     --bc-track: #313033;
     background: color-mix(in srgb, var(--c) 5%, transparent);
     transition: box-shadow 0.2s ease;
+  }
+
+  .chart-badge {
+    font-size: 1.25rem;
+    font-weight: 700;
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-family: var(--pico-font-family-monospace);
+    display: flex;
+    align-items: baseline;
+    gap: 2px;
+    color: var(--c);
+    background: color-mix(in srgb, var(--c) 10%, transparent);
+  }
+
+  .chart-badge .unit {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--c);
   }
 
   .battery-meter {
