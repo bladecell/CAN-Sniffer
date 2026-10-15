@@ -2,6 +2,7 @@
 
 #include <cstring>
 
+#include "can_config_limits.hpp"
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "utilities.h"
@@ -288,6 +289,15 @@ esp_err_t Settings::getCanConfig(CanDriver::Config& config)
     if (check_err(nvs_get_u8(handle, "c_filter", &val8)))
     {
         config.filter = (val8 != 0);
+    }
+
+    if (!can_limits::canConfigValid(static_cast<double>(config.rx_queue_size), static_cast<double>(config.tx_queue_depth)))
+    {
+        const CanDriver::Config defaults;
+        ESP_LOGW(TAG, "Stored CAN queue sizes out of range (rx %u, tx %u); using defaults",
+                 static_cast<unsigned>(config.rx_queue_size), static_cast<unsigned>(config.tx_queue_depth));
+        config.rx_queue_size  = defaults.rx_queue_size;
+        config.tx_queue_depth = defaults.tx_queue_depth;
     }
 
     size_t req_size = sizeof(twai_mask_filter_config_t);

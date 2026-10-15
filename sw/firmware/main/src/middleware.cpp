@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "cJSON.h"
+#include "can_config_limits.hpp"
 #include "confirm_token.hpp"
 #include "esp_check.h"
 #include "esp_err.h"
@@ -1758,6 +1759,18 @@ static size_t apply_wifi_settings(cJSON* s, WIFI::Config& c)
     return n;
 }
 
+// Checks the raw JSON numbers: casting a negative or huge double to an unsigned type is undefined behaviour.
+static bool can_queue_sizes_ok(cJSON* s)
+{
+    cJSON* rx = cJSON_GetObjectItemCaseSensitive(s, "rx_queue_size");
+    cJSON* tx = cJSON_GetObjectItemCaseSensitive(s, "tx_queue_depth");
+    if (cJSON_IsNumber(rx) && !can_limits::rxQueueSizeValid(rx->valuedouble))
+    {
+        return false;
+    }
+    return !(cJSON_IsNumber(tx) && !can_limits::txQueueDepthValid(tx->valuedouble));
+}
+
 static size_t apply_can_settings(cJSON* s, CanDriver::Config& c)
 {
     size_t n = 0;
@@ -1848,6 +1861,12 @@ static void process_single_setting_item(cJSON* item, esp_err_t& overall_err, std
         {
             overall_err = res;
             reason      = esp_err_to_name(res);
+            return;
+        }
+        if (!can_queue_sizes_ok(settings_node))
+        {
+            overall_err = ESP_ERR_INVALID_ARG;
+            reason      = "rx_queue_size must be 1..256 and tx_queue_depth 1..64";
             return;
         }
         no_fields = (apply_can_settings(settings_node, can_cfg) == 0);

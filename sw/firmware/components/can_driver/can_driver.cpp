@@ -1,4 +1,5 @@
 #include "can_driver_internal.hpp"
+#include "can_config_limits.hpp"
 
 SemaphoreHandle_t canConnectedSemaphore = nullptr;
 
@@ -84,6 +85,12 @@ esp_err_t CanDriver::init(const Config& config)
 
 esp_err_t CanDriver::bringUp(const Config& config)
 {
+    if (!can_limits::canConfigValid(static_cast<double>(config.rx_queue_size), static_cast<double>(config.tx_queue_depth)))
+    {
+        ESP_LOGE(TAG, "Invalid queue sizes: rx %u (1..256), tx %u (1..64)", static_cast<unsigned>(config.rx_queue_size),
+                 static_cast<unsigned>(config.tx_queue_depth));
+        return ESP_ERR_INVALID_ARG;
+    }
     stopRequested_.store(false);
     nodeConfig.io_cfg.tx              = config.tx_pin;
     nodeConfig.io_cfg.rx              = config.rx_pin;

@@ -9,6 +9,7 @@ void run_obd2_model_tests(void);
 void run_pid_json_tests(void);
 void run_pid_json_numbers_tests(void);
 void run_confirm_token_tests(void);
+void run_can_config_limits_tests(void);
 
 /* The linux IDF port starts FreeRTOS and calls app_main(); exit with the failure count. */
 void app_main(void)
@@ -22,5 +23,6 @@ void app_main(void)
     run_pid_json_tests();
     run_pid_json_numbers_tests();
     run_confirm_token_tests();
+    run_can_config_limits_tests();
     exit(UNITY_END() == 0 ? 0 : 1);
 }
