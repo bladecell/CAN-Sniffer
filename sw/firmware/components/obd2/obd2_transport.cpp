@@ -183,6 +183,14 @@ void OBD2::commitDiagResult()
     {
         char vin[VIN_LENGTH] = {};
         const bool valid     = diagCollector_.vin(vin);
+        if (diagCollector_.result() != ESP_OK)
+        {
+            // ECUs answered but none sent a usable VIN: report that, keep the previous VIN, isValid and lastUpdated.
+            ESP_LOGW(TAG, "VIN response without a valid 17-character VIN");
+            diagResult_.store(diagCollector_.result());
+            xSemaphoreGive(vinData.vinReadySemaphore);
+            return;
+        }
         if (diagCollector_.conflictingVins() > 0)
         {
             ESP_LOGW(TAG, "%u ECU(s) reported a different VIN; keeping the first valid one",
@@ -193,12 +201,10 @@ void OBD2::commitDiagResult()
             // Do not signal: the waiting request then times out with an error instead of returning a stale VIN as success.
             return;
         }
-        if (valid)
-        {
-            memcpy(vinData.vin, vin, VIN_LENGTH);
-        }
+        memcpy(vinData.vin, vin, VIN_LENGTH);
         vinData.isValid     = valid;
         vinData.lastUpdated = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        diagResult_.store(ESP_OK);
         xSemaphoreGive(vinData.vinReadySemaphore);
         xSemaphoreGive(vinData.mtx_);
         return;
@@ -246,6 +252,7 @@ inline void OBD2::sendFlowControlFrame(uint32_t id)
 esp_err_t OBD2::runDiagRequest(uint8_t mode, SemaphoreHandle_t sem, PollRequest& r)
 {
     diagSent_.store(false);
+    diagResult_.store(ESP_OK);
     const uint32_t generation = ++diagGen_;
     diagRequest_.store((generation << 8) | mode);
 
@@ -258,7 +265,7 @@ esp_err_t OBD2::runDiagRequest(uint8_t mode, SemaphoreHandle_t sem, PollRequest&
         {
             if (xSemaphoreTake(sem, pdMS_TO_TICKS(50)) == pdTRUE)
             {
-                result = stopRequested_ ? ESP_ERR_INVALID_STATE : ESP_OK;
+                result = stopRequested_ ? ESP_ERR_INVALID_STATE : diagResult_.load();
                 break;
             }
             if (!canDriver.isBusConnected())

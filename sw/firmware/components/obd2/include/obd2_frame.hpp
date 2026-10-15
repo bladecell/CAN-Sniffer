@@ -147,6 +147,9 @@ public:
     size_t          dtcCount() const { return dtcCount_; }
     // First valid VIN. False if no ECU sent one. conflictingVins() counts valid but different VINs that were ignored.
     bool   vin(char (&out)[17]) const;
+    // What a completed collection means for the requester: ESP_OK, or for a VIN collection without any valid 17-character
+    // alphanumeric VIN ESP_ERR_INVALID_RESPONSE (the ECUs answered, the content is unusable). A DTC collection is always OK.
+    esp_err_t result() const;
     size_t conflictingVins() const { return vinConflicts_; }
 
 private:

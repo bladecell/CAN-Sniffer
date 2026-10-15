@@ -443,6 +443,72 @@ static void test_diag_short_vin_payloads_give_no_vin(void)
     TEST_ASSERT_FALSE(c.vin(vin));
 }
 
+static void test_diag_vin_result_is_an_error_without_a_valid_vin(void)
+{
+    const char* const bad[] = {
+        "WVWZZZ1JZ?W000001",   // punctuation
+        "wvwzzz1jzxw000001",   // lower case
+        "WVWZZZ1JZXW00000 ",   // space
+        "WVWZZZ1JZXW0000\x01\x7F",  // control and DEL bytes
+    };
+    for (const char* v : bad)
+    {
+        DiagCollector c;
+        startVin(c);
+        feedAll(c, 0x7E8, segment(vinPayload(v)), 0);
+        TEST_ASSERT_EQUAL_INT(static_cast<int>(DiagStatus::Complete), static_cast<int>(c.poll(60)));
+        TEST_ASSERT_EQUAL_INT(ESP_ERR_INVALID_RESPONSE, c.result());
+    }
+    {
+        DiagCollector c;  // non-ASCII bytes
+        startVin(c);
+        std::vector<uint8_t> p = {0x49, 0x02, 0x01};
+        for (int i = 0; i < 17; i++)
+        {
+            p.push_back(static_cast<uint8_t>(0x80 + i));
+        }
+        feedAll(c, 0x7E8, segment(p), 0);
+        TEST_ASSERT_EQUAL_INT(ESP_ERR_INVALID_RESPONSE, c.result());
+    }
+    {
+        DiagCollector c;  // short payload (header only, then 12 bytes)
+        startVin(c);
+        feed(c, 0x7E8, frame8({0x03, 0x49, 0x02, 0x01}), 1);
+        TEST_ASSERT_EQUAL_UINT32(1, c.responders());
+        TEST_ASSERT_EQUAL_INT(ESP_ERR_INVALID_RESPONSE, c.result());
+    }
+    {
+        DiagCollector c;  // two ECUs, both garbage
+        startVin(c);
+        feedAll(c, 0x7E8, segment(vinPayload("WVWZZZ1JZ?W000001")), 0);
+        feedAll(c, 0x7E9, segment(vinPayload("???????????????????")), 3);
+        TEST_ASSERT_EQUAL_INT(ESP_ERR_INVALID_RESPONSE, c.result());
+    }
+}
+
+static void test_diag_vin_result_is_ok_with_one_valid_vin_or_for_dtcs(void)
+{
+    {
+        DiagCollector c;  // one bad ECU does not spoil a good one
+        startVin(c);
+        feedAll(c, 0x7E8, segment(vinPayload("WVWZZZ1JZ?W000001")), 0);
+        feedAll(c, 0x7E9, segment(vinPayload("WAUZZZ8K9BA000002")), 3);
+        TEST_ASSERT_EQUAL_INT(ESP_OK, c.result());
+    }
+    {
+        DiagCollector c;
+        startVin(c);
+        feedAll(c, 0x7E8, segment(vinPayload("1HGBH41JXMN109186")), 0);
+        TEST_ASSERT_EQUAL_INT(ESP_OK, c.result());
+    }
+    {
+        DiagCollector c;  // a positive DTC reply with zero DTCs is a success
+        startDtc(c);
+        feed(c, 0x7E8, frame8({0x02, 0x43, 0x00}), 1);
+        TEST_ASSERT_EQUAL_INT(ESP_OK, c.result());
+    }
+}
+
 static void test_diag_hostile_first_frame_lengths(void)
 {
     DiagCollector c;
@@ -774,6 +840,8 @@ extern "C" void run_obd2_diag_collector_tests(void)
     RUN_TEST(test_diag_short_payloads_count_as_responders_without_data);
     RUN_TEST(test_diag_dtc_count_byte_layout);
     RUN_TEST(test_diag_short_vin_payloads_give_no_vin);
+    RUN_TEST(test_diag_vin_result_is_an_error_without_a_valid_vin);
+    RUN_TEST(test_diag_vin_result_is_ok_with_one_valid_vin_or_for_dtcs);
     RUN_TEST(test_diag_hostile_first_frame_lengths);
     RUN_TEST(test_diag_bad_sequence_drops_only_that_ecus_session);
     RUN_TEST(test_diag_duplicate_and_wrong_sequence_variants);

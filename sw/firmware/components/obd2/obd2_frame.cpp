@@ -402,6 +402,11 @@ bool DiagCollector::anyPending() const
     return false;
 }
 
+esp_err_t DiagCollector::result() const
+{
+    return (kind_ == DiagKind::Vin && !haveVin_) ? ESP_ERR_INVALID_RESPONSE : ESP_OK;
+}
+
 bool DiagCollector::vin(char (&out)[17]) const
 {
     if (!haveVin_)
