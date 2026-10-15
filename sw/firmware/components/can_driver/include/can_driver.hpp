@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstring>
 
 #include "driver/gpio.h"
 #include "esp_err.h"
@@ -226,7 +227,13 @@ private:
     SimNotifyFn simNotify_ = nullptr;
 
     // Twai Configuration
-    twai_onchip_node_config_t nodeConfig{};
+    twai_onchip_node_config_t nodeConfig = []
+    {
+        twai_onchip_node_config_t c;
+        memset(&c, 0, sizeof(c));
+        c.clk_src = TWAI_CLK_SRC_DEFAULT;
+        return c;
+    }();
     twai_node_handle_t        nodeHdl;
     twai_node_record_t        nodeRecord{};
     gpio_num_t                LBK_PIN;
