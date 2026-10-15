@@ -1342,7 +1342,9 @@ MiddlewareJsonResult m_pid_def_post(cJSON* data)
         cJSON* color    = cJSON_GetObjectItem(item, "color");
         cJSON* icon     = cJSON_GetObjectItem(item, "icon");
 
-        uint8_t parsed_len = (parsed_pid > 0xFF) ? 3 : 2;
+        // Default request length follows the mode (see obd2frame::isValidPidSpec); addPID rejects anything else.
+        const int  parsed_mode = mode->valueint;
+        uint8_t    parsed_len  = parsed_mode == MODE_READ_DATA_BY_IDENTIFIER ? 3 : (parsed_mode == MODE_DERIVED_DATA ? 0 : 2);
 
         std::string parsed_unit     = "";
         std::string parsed_desc     = "";
