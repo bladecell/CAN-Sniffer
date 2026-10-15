@@ -3,6 +3,10 @@
 twai_node_status_t CanDriver::getStatus()
 {
     twai_node_status_t status{};
+    if (nodeHdl == NULL)
+    {
+        return status;
+    }
     esp_err_t          ret = twai_node_get_info(nodeHdl, &status, &nodeRecord);
     if (ret != ESP_OK)
     {
@@ -35,10 +39,6 @@ bool IRAM_ATTR CanDriver::twai_rx_cb(twai_node_handle_t handle, const twai_rx_do
         frame.length = twaifd_dlc2len(rx_frame.header.dlc);
         if (driver->debug_mode)
         {
-            if (frame.length < 2)
-            {
-                return false;
-            }
             if (driver->simNotify_)
             {
                 driver->simNotify_(frame.header.id, frame.data, static_cast<uint8_t>(frame.length), &woken);

@@ -21,6 +21,7 @@ struct CanDriverLifecycleTestAccess;
 #define CORE_ID_CAN_TASKS 1
 #define HEALTHCHECK_PING_PERIOD_MS 2000
 #define NO_MESSAGE_SENT_HEALTHCHECK_PING_PERIOD_MS 5000
+#define TASK_STOP_TIMEOUT_MS 3000  // deinit waits this long for the TX and health tasks to leave on their own
 
 class CanDriver
 {
@@ -55,7 +56,7 @@ public:
         SLOPE_CONTROL = 1,
     };
 
-    bool debug_mode;
+    bool debug_mode = false;
 
     struct Config
     {
@@ -97,8 +98,12 @@ public:
 
     void setDebugMode(bool enable);
 
+    // Safe to call repeatedly. A failed init() releases everything it acquired. ESP_ERR_INVALID_STATE: a previous deinit()
+    // failed and left resources behind (call deinit() again first).
     esp_err_t init(const Config& config);
 
+    // Idempotent. Stops the TX and health tasks cooperatively; ESP_ERR_TIMEOUT (nothing freed, retry later) if they do not
+    // leave within TASK_STOP_TIMEOUT_MS or if the connection callback is still running after 5 s.
     esp_err_t deinit();
 
     twai_node_status_t getStatus();
@@ -178,6 +183,16 @@ private:
 
     static bool IRAM_ATTR twai_bus_err_cb(twai_node_handle_t handle, const twai_error_event_data_t* edata,
                                           void* user_ctx);
+
+    // Lifecycle (see can_driver.cpp). lifecycleMutex_ serializes init()/deinit(); stopRequested_ asks both tasks to leave;
+    // the *Running_ flags are the tasks' completion handshake (cleared by the task as its last action before vTaskDelete).
+    esp_err_t             bringUp(const Config& config);
+    esp_err_t             teardown();
+    bool                  hasResources() const;
+    SemaphoreHandle_t     lifecycleMutex_ = nullptr;
+    std::atomic<bool>     stopRequested_{false};
+    std::atomic<bool>     txRunning_{false};
+    std::atomic<bool>     healthRunning_{false};
 
     // Connection Callback
     void                       connectionChangeCb(bool connected);

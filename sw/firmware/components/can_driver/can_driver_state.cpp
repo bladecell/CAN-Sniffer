@@ -29,7 +29,6 @@ bool CanDriver::quickCheckBus()
 esp_err_t CanDriver::pingBus()
 {
     if (nodeHdl == NULL)
-
     {
         return ESP_FAIL;
     }
@@ -68,9 +67,12 @@ void CanDriver::healthCheckTask()
 
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
-    vTaskDelay(pdMS_TO_TICKS(50));
+    if (!stopRequested_.load())
+    {
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
 
-    while (true)
+    while (!stopRequested_.load())
     {
         switch (canState.load())
         {
@@ -145,7 +147,7 @@ void CanDriver::healthCheckTask()
         }
         prevState = canState.load();
     }
-    healthCheckTaskHandle = nullptr;
+    healthRunning_.store(false);  // last access to the driver; deinit frees the rest once this is clear
     vTaskDelete(NULL);
 }
 

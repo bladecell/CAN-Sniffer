@@ -106,7 +106,7 @@ void CanDriver::txTask()
 {
     CanDriver::CanFrame f;
     size_t              next = 0;
-    while (1)
+    while (!stopRequested_.load())
     {
         if (!isBusConnected())
         {
@@ -116,6 +116,10 @@ void CanDriver::txTask()
 
         if (xQueueReceive(txQueue, &f, pdMS_TO_TICKS(NO_MESSAGE_SENT_HEALTHCHECK_PING_PERIOD_MS)) == pdTRUE)
         {
+            if (stopRequested_.load())
+            {
+                break;  // deinit's wake-up frame or a frame queued behind it: nothing may go out any more
+            }
             TickType_t startTime = xTaskGetTickCount();
 
             // A fresh slot per frame: the previous one may still be pending in the driver (lost arbitration, no ACK).
@@ -138,4 +142,6 @@ void CanDriver::txTask()
             vTaskDelayUntil(&startTime, pdMS_TO_TICKS(MIN_TRANSMIT_PERIOD_MS));
         }
     }
+    txRunning_.store(false);  // last access to the driver; deinit frees the rest once this is clear
+    vTaskDelete(NULL);
 }
