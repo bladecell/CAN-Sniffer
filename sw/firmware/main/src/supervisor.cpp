@@ -226,6 +226,14 @@ void SUPERVISOR::task()
             case State::STOPPING:
             {
                 ESP_LOGI(TAG, "Shutting down modules for sleep...");
+                // Shutdown retries every second; a component that never stops must not drain the battery forever.
+                static uint8_t stopAttempts = 0;
+                constexpr uint8_t kMaxStopAttempts = 10;
+                if (++stopAttempts > kMaxStopAttempts)
+                {
+                    ESP_LOGE(TAG, "Shutdown failed %u times, restarting", kMaxStopAttempts);
+                    esp_restart();
+                }
 
                 // Deinit components
                 stop_web_server();
@@ -246,6 +254,7 @@ void SUPERVISOR::task()
                 // 4. Put CAN transceiver into Standby Mode
                 gpio_set_level(CAN_RS_GPIO, 1);
 
+                stopAttempts = 0;
                 eState = State::SLEEPING;
                 break;
             }
