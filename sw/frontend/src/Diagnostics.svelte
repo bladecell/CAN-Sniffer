@@ -1,9 +1,9 @@
 <script lang="ts">
   import type { DtcModeData, DTCFaultProps, singleDtc } from "$lib/types";
+  import { onDestroy } from "svelte";
   import { canStore } from "./lib/canStore.svelte";
   import DTCFault from "./lib/components/DTCFault.svelte";
   import Icon from "$lib/Icon.svelte";
-  import ClearDtcDialog from "$lib/components/ClearDtcDialog.svelte";
 
   const confirmedCodes = $derived(
     canStore?.dtc?.confirmed || {},
@@ -36,6 +36,10 @@
 
     return [...confirmed, ...pending, ...permanent];
   });
+
+  onDestroy(canStore.cancelClearDTCs);
+
+  const armed = $derived(canStore.clearState.kind === "armed");
 
   const status = $derived.by((): "healthy" | "warn" | "malfunction" => {
     if (confirmedCodes.dtc_count > 0) return "malfunction";
@@ -81,20 +85,27 @@ is detected
       <Icon name="magnifying-glass" size={16} />
       Scan Vehicle
     </button>
-    <button type="button" class="btn btn-clear" onclick={canStore.requestClearDTCs}
-      disabled={canStore.isClearing}>
+    <button
+      type="button"
+      class="btn btn-clear"
+      class:armed
+      onclick={canStore.pressClearDTCs}
+      onblur={canStore.cancelClearDTCs}
+      onkeydown={(e) => {
+        if (e.key === "Escape") canStore.cancelClearDTCs();
+        // A held Enter would fire repeated clicks: swallow them.
+        else if (e.repeat) e.preventDefault();
+      }}
+      aria-disabled={canStore.isClearing}
+    >
       <Icon name="trash" size={16} />
-      Clear Codes
+      {armed ? "Confirm" : "Clear Codes"}
     </button>
+    <span class="sr-only" role="status" aria-live="polite">
+      {armed ? "Press Confirm to clear trouble codes on the vehicle. Cancels in a few seconds, on Escape or when focus leaves." : ""}
+    </span>
   </div>
 </div>
-
-{#if canStore.clearConfirm}
-  <ClearDtcDialog
-    onconfirm={canStore.confirmClearDTCs}
-    oncancel={canStore.cancelClearDTCs}
-  />
-{/if}
 
 <div class="dtc-container">
   {#each activeFaults as fault}
@@ -183,6 +194,20 @@ is detected
 
   .btn-clear {
     --color: 231, 75, 26;
+  }
+  .btn-clear.armed {
+    --color: 245, 158, 11;
+    font-weight: 700;
+    outline: 2px solid rgb(245, 158, 11);
+    outline-offset: 2px;
+  }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
   /* .btn:focus,
   .btn:active,

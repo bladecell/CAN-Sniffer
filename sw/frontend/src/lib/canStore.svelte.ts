@@ -22,12 +22,20 @@ import { createStreamRefCount } from "./streamRefCount";
 import { createThrottle } from "./throttle";
 import { createLatest } from "./latest";
 import {
+    idle as clearIdle,
+    press as clearPress,
+    settle as clearSettle,
+    tick as clearTick,
+    cancel as clearCancel,
+    type ClearState,
+    type ClearResult,
+} from "./clearFlow";
+import {
     parseObd2Status,
     parseCanBusStatus,
     parseDtcGroups,
     parseDtcDescriptions,
     parseConfirmRequired,
-    type ConfirmRequired,
     buildDtcData,
     emptyDtcData,
     type CanBusStatus,
@@ -530,55 +538,60 @@ export class CanStore {
         }
     }
 
-    isClearing = $state(false);
+    /** Two-press clear (clearFlow.ts): press 1 gets a token, press 2 sends it. */
+    clearState = $state<ClearState>(clearIdle);
+    private clearTimer: ReturnType<typeof setTimeout> | null = null;
 
-    /** Set while the UI must ask the user before codes are cleared on the vehicle. */
-    clearConfirm = $state<ConfirmRequired | null>(null);
-
-    // POST clear_dtc. Without a token the firmware answers 409 and sends nothing to the car.
-    private async postClear(token?: string): Promise<ConfirmRequired | null> {
-        const url = token ? `/api/v1/req/clear_dtc?token=${encodeURIComponent(token)}` : "/api/v1/req/clear_dtc";
-        const response = await fetch(url, { method: "POST" });
-        if (response.status === 409) {
-            const confirm = parseConfirmRequired(409, await response.json().catch(() => null));
-            if (!confirm) throw new Error("Unexpected clear confirmation response");
-            return confirm;
-        }
-        await parseJsonResponse(response);
-        return null;
+    get isClearing() {
+        return this.clearState.kind === "sending";
     }
 
-    private async runClear(token?: string) {
-        this.isClearing = true;
+    // POST clear_dtc. Without a token the firmware answers 409 and sends nothing to the car.
+    private async postClear(token?: string): Promise<ClearResult> {
+        const url = token ? `/api/v1/req/clear_dtc?token=${encodeURIComponent(token)}` : "/api/v1/req/clear_dtc";
         try {
-            const confirm = await this.postClear(token);
-            this.clearConfirm = confirm;
-            if (!confirm) await this.requestDTC();
+            const response = await fetch(url, { method: "POST" });
+            if (response.status === 409) {
+                const c = parseConfirmRequired(409, await response.json().catch(() => null));
+                if (!c) throw new Error("Unexpected clear confirmation response");
+                return { kind: "confirm", ...c };
+            }
+            await parseJsonResponse(response);
+            return { kind: "done" };
         } catch (e) {
-            this.clearConfirm = null;
             console.error("Failed to clear DTCs:", e);
             const reason = e instanceof Error ? `: ${e.message}` : "";
             alertStore.add(`Failed to clear DTCs.${reason}`, "error");
-        } finally {
-            this.isClearing = false;
+            return { kind: "error" };
         }
     }
 
-    /** First step: asks the firmware for a token and opens the confirm dialog. */
-    requestClearDTCs = async () => {
-        if (this.isClearing) return;
-        await this.runClear();
+    private setClearState(next: ClearState) {
+        this.clearState = next;
+        if (this.clearTimer) clearTimeout(this.clearTimer);
+        this.clearTimer = null;
+        if (next.kind === "armed") {
+            // Revert on expiry. Never sends anything.
+            this.clearTimer = setTimeout(() => this.setClearState(clearTick(this.clearState, performance.now())), Math.max(0, next.expiresAt - performance.now()));
+        }
+    }
+
+    /** The Clear Codes button. Press 1 arms it, press 2 (while armed) clears. */
+    pressClearDTCs = async () => {
+        const sentAt = performance.now();
+        const p = clearPress(this.clearState, sentAt);
+        if (!p.send) return;
+        this.setClearState(p.state);
+        const result = await this.postClear(p.send.token);
+        const settled = clearSettle(this.clearState, result, performance.now(), sentAt);
+        this.setClearState(settled.state);
+        if (settled.notice === "expired") alertStore.add("Clear confirmation expired. Press Clear Codes again.", "warning");
+        if (result.kind === "done") await this.requestDTC();
     };
 
-    /** Second step, only from the dialog's confirm button. A new 409 reopens the dialog with the new token. */
-    confirmClearDTCs = async () => {
-        const token = this.clearConfirm?.token;
-        this.clearConfirm = null;
-        if (token) await this.runClear(token);
-    };
-
+    /** Blur or Escape: disarm without sending anything. */
     cancelClearDTCs = () => {
-        this.clearConfirm = null;
+        this.setClearState(clearCancel(this.clearState));
     };
 
     serializePidDefinition(def: any) {
