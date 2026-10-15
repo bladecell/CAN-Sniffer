@@ -198,8 +198,6 @@ is detected
   .btn-clear.armed {
     --color: 245, 158, 11;
     font-weight: 700;
-    outline: 2px solid rgb(245, 158, 11);
-    outline-offset: 2px;
   }
   .sr-only {
     position: absolute;
