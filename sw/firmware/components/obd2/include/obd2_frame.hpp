@@ -75,10 +75,11 @@ bool buildPidRequest(uint8_t mode, uint16_t pid, RequestBytes& out);
 // length 3, derived (0x45) with length 0. Anything else would put an invalid single-frame PCI on the bus.
 bool isValidPidSpec(uint8_t mode, uint16_t pid, uint8_t length);
 
-// ---- TX-done and flow-control timing (used from the CAN TX-done ISR, so inline and branch-only) ----
+// ---- TX-done and flow-control timing (used from the CAN TX-done ISR, so always inlined into the IRAM caller) ----
+#define OBD2_ISR_INLINE inline __attribute__((always_inline))
 // True if the frame that just left the controller is the running DTC / VIN request (mode 0x03/0x07/0x0A, or 0x09 for the
 // VIN): functional ID and the exact bytes buildDtcRequest / buildVinRequest produce. Nothing else starts the response timer.
-inline bool isDiagRequestFrame(uint8_t requestMode, uint32_t id, const uint8_t* data, size_t length)
+OBD2_ISR_INLINE bool isDiagRequestFrame(uint8_t requestMode, uint32_t id, const uint8_t* data, size_t length)
 {
     if (id != OBD2_FUNCTIONAL_ID || data == nullptr || length < 2)
     {
@@ -93,14 +94,14 @@ inline bool isDiagRequestFrame(uint8_t requestMode, uint32_t id, const uint8_t* 
 }
 
 // True for our ISO-TP flow control frame to a physical request ID 0x7E0-0x7E7 (buildFlowControl: first byte 0x30).
-inline bool isFlowControlFrame(uint32_t id, const uint8_t* data, size_t length)
+OBD2_ISR_INLINE bool isFlowControlFrame(uint32_t id, const uint8_t* data, size_t length)
 {
     return data != nullptr && length >= 1 && data[0] == 0x30 && id >= OBD2_RESPONSE_BASE_ID - RESPONSE_ID_OFFSET &&
            id <= OBD2_RESPONSE_BASE_ID - RESPONSE_ID_OFFSET + 7;
 }
 
 // The flow control frame must be on the bus within N_Ar of the first frame being received (wrap-safe, ms).
-inline bool isoTpFlowControlLate(uint32_t firstFrameReceivedMs, uint32_t flowControlOnBusMs)
+OBD2_ISR_INLINE bool isoTpFlowControlLate(uint32_t firstFrameReceivedMs, uint32_t flowControlOnBusMs)
 {
     return static_cast<uint32_t>(flowControlOnBusMs - firstFrameReceivedMs) > ISOTP_N_AR_MS;
 }

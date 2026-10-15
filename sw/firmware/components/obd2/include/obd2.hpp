@@ -125,13 +125,15 @@ private:
     // task; the requester and the poll task only touch the atomics.
     obd2frame::DiagCollector diagCollector_;
     std::atomic<uint32_t>    diagRequest_{0};   // (generation << 8) | request mode; mode 0 = no collection
-    std::atomic<uint32_t>    diagSentMs_{0};    // when the poll task put the request on the bus
+    std::atomic<uint32_t>    diagSentMs_{0};    // when the request frame left the controller (TX-done ISR)
     std::atomic<bool>        diagSent_{false};
-    std::atomic<bool>        diagTxFailed_{false};  // the request frame was refused by the TX path: the requester fails at once
+    // The request frame (or our flow control) was refused by the TX path: the requester fails at once. TWAI completes frames
+    // in order, and a stale failure from an earlier request would mean the bus is not accepting frames, which fails the new
+    // request too, so no per-request tag is carried.
+    std::atomic<bool>        diagTxFailed_{false};
     // Flow control timing: the receive task stamps the first frame, the TX-done hook measures against it.
     std::atomic<uint32_t>    fcFirstFrameMs_[8] = {};
-    std::atomic<uint32_t>    fcSentCount_{0};       // flow control frames seen leaving the controller
-    std::atomic<uint32_t>    fcLateCount_{0};       // flow control frames that missed N_Ar
+    std::atomic<uint32_t>    fcLateCount_{0};       // flow control frames that missed N_Ar or could not be queued
     std::atomic<uint32_t>    fcLastLatencyMs_{0};
     std::atomic<uint32_t>    fcMaxLatencyMs_{0};
     uint32_t                 fcLateLogged_ = 0;     // receive task only
@@ -229,7 +231,7 @@ private:
     esp_err_t   parseDerivedData(const CanDriver::CanFrame& f);
     esp_err_t   parseRMDSC(const CanDriver::CanFrame& f);
     esp_err_t   handleNegativeResponse(const CanDriver::CanFrame& f);
-    inline void sendFlowControlFrame(uint32_t id);
+    inline esp_err_t sendFlowControlFrame(uint32_t id);
 
     supportedPIDsGroup_t supportedPIDsGroup = {};
     bool                 discoveryActive_ = false;

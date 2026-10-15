@@ -78,7 +78,6 @@ void IRAM_ATTR OBD2::onTxDone(void* arg, uint32_t id, const uint8_t* data, uint8
         const uint32_t sinceMs = self->fcFirstFrameMs_[id - (OBD2_RESPONSE_BASE_ID - RESPONSE_ID_OFFSET)].load();
         const uint32_t latency = static_cast<uint32_t>(nowMs - sinceMs);
         self->fcLastLatencyMs_.store(latency);
-        self->fcSentCount_.fetch_add(1);
         if (latency > self->fcMaxLatencyMs_.load())
         {
             self->fcMaxLatencyMs_.store(latency);
@@ -159,9 +158,12 @@ bool OBD2::handleDiagFrame(const CanDriver::CanFrame& f)
         // Flow control first: stamp the first frame, then queue the frame at the front of the TX queue without waiting
         // (N_Ar). Only afterwards try to keep the poll task off the bus; failing to get it is harmless.
         fcFirstFrameMs_[f.header.id - obd2frame::DIAG_RESPONSE_ID_FIRST].store(rxMs);
-        if (!stopRequested_)
+        if (!stopRequested_ && sendFlowControlFrame(r.flowControlId) != ESP_OK)
         {
-            sendFlowControlFrame(r.flowControlId);
+            // Not queued (TX queue full, bus down): the ECU will abort the message. Count it with the late ones (the
+            // receive loop logs the count) and fail the waiting request instead of letting it run into its timeout.
+            fcLateCount_.fetch_add(1);
+            diagTxFailed_.store(true);
         }
         tryHoldDiagBus();
     }
@@ -269,7 +271,7 @@ void OBD2::commitDiagResult()
     }
 }
 
-inline void OBD2::sendFlowControlFrame(uint32_t id)
+inline esp_err_t OBD2::sendFlowControlFrame(uint32_t id)
 {
     PollRequest r         = {};
     r.id                  = id;
@@ -282,7 +284,7 @@ inline void OBD2::sendFlowControlFrame(uint32_t id)
     r.isRecurring         = false;
     r.retries_left        = DEFAULT_NUMER_OF_RETRIES;
 
-    queryMsg(r, true);
+    return queryMsg(r, true);
 }
 
 // Requester side: start the collection, enqueue the request, wait for the merged result, end the collection.

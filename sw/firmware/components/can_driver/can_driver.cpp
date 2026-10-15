@@ -1,5 +1,8 @@
 #include "can_driver.hpp"
 
+#include <cstring>
+#include <new>
+
 #include "esp_log.h"
 #include "freertos/projdefs.h"
 #include "freertos/queue.h"
@@ -88,6 +91,17 @@ esp_err_t CanDriver::init(const Config& config)
     {
         ESP_LOGE(TAG, "Failed to create RX queue");
         return ESP_FAIL;
+    }
+
+    // TX frame ring (see TxSlot): one slot more than the driver's queue depth.
+    delete[] txRing_;
+    txRingSize_ = static_cast<size_t>(config.tx_queue_depth) + 1;
+    txRing_     = new (std::nothrow) TxSlot[txRingSize_]();
+    if (txRing_ == nullptr)
+    {
+        txRingSize_ = 0;
+        ESP_LOGE(TAG, "Failed to allocate the TX frame ring");
+        return ESP_ERR_NO_MEM;
     }
 
     // Create TX Queue
@@ -234,6 +248,10 @@ esp_err_t CanDriver::deinit()
         xSemaphoreGive(connectionChangeCallbackFence);
         return ret;
     }
+    // The node and the TX task are gone: nothing references the ring any more.
+    delete[] txRing_;
+    txRing_     = nullptr;
+    txRingSize_ = 0;
 
     if (simStop_)
     {
@@ -716,8 +734,7 @@ void CanDriver::txTaskWrapper(void* param)
 void CanDriver::txTask()
 {
     CanDriver::CanFrame f;
-    // The driver reads the frame until TX done, so it must outlive one loop iteration.
-    twai_frame_t tx_msg = {};
+    size_t              next = 0;
     while (1)
     {
         if (!isBusConnected())
@@ -730,15 +747,19 @@ void CanDriver::txTask()
         {
             TickType_t startTime = xTaskGetTickCount();
 
-            tx_msg.header     = f.header;
-            tx_msg.buffer     = f.data;
-            tx_msg.buffer_len = f.length;
+            // A fresh slot per frame: the previous one may still be pending in the driver (lost arbitration, no ACK).
+            TxSlot& slot = txRing_[next];
+            next         = (next + 1) % txRingSize_;
+            memcpy(slot.data, f.data, sizeof(slot.data));
+            slot.msg.header     = f.header;
+            slot.msg.buffer     = slot.data;
+            slot.msg.buffer_len = f.length;
 
-            esp_err_t ret = twai_node_transmit(nodeHdl, &tx_msg, pdMS_TO_TICKS(200));
+            esp_err_t ret = twai_node_transmit(nodeHdl, &slot.msg, pdMS_TO_TICKS(200));
             if (ret != ESP_OK)
             {
                 ESP_LOGE(TAG, "Failed to transmit message: %s", esp_err_to_name(ret));
-                notifyTxDone(&tx_msg, false);  // the waiting requester learns that nothing went out
+                notifyTxDone(&slot.msg, false);  // the waiting requester learns that nothing went out
             }
 
             LOG_CAN_FRAME(TAG, "TX -> ", f.header.id, f.data, twaifd_dlc2len(f.header.dlc));

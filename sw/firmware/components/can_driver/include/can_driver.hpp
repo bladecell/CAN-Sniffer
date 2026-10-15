@@ -191,6 +191,16 @@ private:
     RxCallback_t rxCallback    = nullptr;
     void*        rxCallbackArg = nullptr;
 
+    // The TWAI driver queues only a pointer to the twai_frame_t and reports that same pointer in TX done, so a frame and its
+    // data must stay untouched until then. At most tx_queue_depth frames wait in the driver plus one on the wire: a ring of
+    // depth + 1 slots, allocated once in init() and freed in deinit() after the node is deleted. Used by the TX task only.
+    struct TxSlot
+    {
+        twai_frame_t msg;
+        uint8_t      data[8];
+    };
+    TxSlot* txRing_     = nullptr;
+    size_t  txRingSize_ = 0;
     std::atomic<TxDoneFn> txDoneFn_{nullptr};
     std::atomic<void*>    txDoneArg_{nullptr};
     void IRAM_ATTR        notifyTxDone(const twai_frame_t* frame, bool success);

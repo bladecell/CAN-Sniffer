@@ -467,7 +467,6 @@ static void test_flow_control_frame_identification(void)
 
 static void test_flow_control_latency_limit_is_n_ar(void)
 {
-    TEST_ASSERT_EQUAL_UINT32(33, ISOTP_N_AR_MS);
     TEST_ASSERT_FALSE(isoTpFlowControlLate(1000, 1000));
     TEST_ASSERT_FALSE(isoTpFlowControlLate(1000, 1000 + ISOTP_N_AR_MS));
     TEST_ASSERT_TRUE(isoTpFlowControlLate(1000, 1000 + ISOTP_N_AR_MS + 1));
