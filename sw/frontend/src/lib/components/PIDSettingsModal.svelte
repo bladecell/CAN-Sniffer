@@ -6,6 +6,7 @@
     PidGridItem,
     SpecialGridItem,
     OverviewGridItem,
+    BatteryGridItem,
   } from "$lib/types";
   import { MODULE_CONFIGS, getModuleBounds } from "$lib/types";
   import { untrack } from "svelte";
@@ -109,6 +110,11 @@
       overItem.displayMode = "default";
       overItem.pids = [0x0c, 0x2206, 0x04];
       overItem.color = "#3b82f6";
+    } else if (localItem.cardType === "battery") {
+      const batteryItem = localItem as BatteryGridItem;
+      batteryItem.displayMode = "glyph";
+      delete batteryItem.gaugeStyle;
+      delete batteryItem.barStyle;
     } else {
       const specialItem = localItem as SpecialGridItem;
       specialItem.displayMode = "default";
@@ -182,7 +188,7 @@
           class="orange-select-field"
         >
           <option value="pid">OBD-II Parameter</option>
-          <option value="battery">System Battery Monitor</option>
+          <option value="battery">Car Battery (12 V)</option>
           <option value="dtcs">Diagnostic Trouble Codes (DTC)</option>
           <option value="overview">Performance Overview</option>
         </select>
@@ -263,6 +269,20 @@
                 <option value="gradient">Gradient Progress</option>
               </select>
             {/if}
+
+            {#if pidItem.displayMode === "bar"}
+              <label for="pid-bar-style-select" class="field-heading"
+                >Bar Style</label
+              >
+              <select
+                id="pid-bar-style-select"
+                bind:value={pidItem.barStyle}
+                class="orange-select-field"
+              >
+                <option value={undefined}>Solid (Default)</option>
+                <option value="zones">Zones (equal thirds)</option>
+              </select>
+            {/if}
           </div>
         {:else if localItem.cardType === "overview"}
           {@const overItem = localItem as OverviewGridItem}
@@ -303,6 +323,58 @@
                 </div>
               {/each}
             </div>
+          </div>
+        {:else if localItem.cardType === "battery"}
+          {@const batteryItem = localItem as BatteryGridItem}
+          <div class="conditional-settings-panel animate-fade-in">
+            <div class="panel-section-title">Car Battery Parameters</div>
+
+            <label for="battery-visualization-select" class="field-heading"
+              >Widget Visualization Mode</label
+            >
+            <select
+              id="battery-visualization-select"
+              bind:value={batteryItem.displayMode}
+              onchange={handleVisualizationChange}
+              class="orange-select-field"
+            >
+              <option value="glyph">Battery Glyph</option>
+              <option value="bar">Horizontal Bar</option>
+              <option value="gauge">Radial Gauge</option>
+              <option value="chart">Live History Chart</option>
+            </select>
+
+            {#if batteryItem.displayMode === "bar"}
+              <label for="battery-bar-style-select" class="field-heading"
+                >Bar Style</label
+              >
+              <select
+                id="battery-bar-style-select"
+                bind:value={batteryItem.barStyle}
+                class="orange-select-field"
+              >
+                <option value={undefined}>Zones (Default)</option>
+                <option value="solid">Solid fill</option>
+              </select>
+            {/if}
+
+            {#if batteryItem.displayMode === "gauge"}
+              <label for="battery-gauge-style-select" class="field-heading"
+                >Gauge Style</label
+              >
+              <select
+                id="battery-gauge-style-select"
+                bind:value={batteryItem.gaugeStyle}
+                class="orange-select-field"
+              >
+                <option value={undefined}>Arc (Default 240°)</option>
+                <option value="arc">Arc (240°)</option>
+                <option value="half">Half (180°)</option>
+                <option value="donut">Donut (360°)</option>
+                <option value="speedometer">Speedometer (Detailed)</option>
+                <option value="gradient">Gradient Progress</option>
+              </select>
+            {/if}
           </div>
         {:else}
           <div class="static-presets-notice animate-fade-in">

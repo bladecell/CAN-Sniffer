@@ -69,7 +69,7 @@ export class DashboardStore {
       return {
         id,
         cardType: type,
-        displayMode: "default",
+        displayMode: type === "battery" ? "glyph" : "default",
         w: bounds.min.w,
         h: bounds.min.h,
       } as DashboardItem;

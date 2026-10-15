@@ -8,12 +8,14 @@
   import PIDBar from "./PIDBar.svelte";
   import OverviewCard from "./OverviewCard.svelte";
   import DTCCard from "./DTCCard.svelte";
+  import CarBatteryCard from "./CarBatteryCard.svelte";
 
   import type {
     DashboardItem,
     PidGridItem,
     OverviewGridItem,
     SpecialGridItem,
+    BatteryGridItem,
   } from "$lib/types";
   import { dashboardStore } from "$lib/dashboardStore.svelte.ts";
   import { canStore } from "$lib/canStore.svelte";
@@ -156,7 +158,7 @@
     {:else if item.cardType === "overview"}
       <OverviewCard item={item as OverviewGridItem} />
     {:else if item.cardType === "battery"}
-      <div class="static-panel-placeholder">Battery Monitor</div>
+      <CarBatteryCard item={item as BatteryGridItem} />
     {:else if item.cardType === "dtcs"}
       <DTCCard item={item as SpecialGridItem} />
     {/if}
@@ -280,21 +282,6 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
-  }
-
-  .static-panel-placeholder {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex: 1;
-    color: var(--pico-muted-color);
-    font-size: 0.85rem;
-    font-weight: 500;
-    background: color-mix(
-      in srgb,
-      var(--pico-card-background) 60%,
-      transparent
-    );
   }
 
   /* --- PICO MENU --- */

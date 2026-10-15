@@ -16,17 +16,30 @@ export interface BaseGridItem {
 }
 
 export type GaugeStyle = "arc" | "donut" | "half" | "speedometer" | "gradient";
+export const GAUGE_STYLES: readonly GaugeStyle[] = ["arc", "donut", "half", "speedometer", "gradient"];
+
+/** Car battery card: glyph, bar, gauge or chart. */
+export type BatteryDisplayMode = "glyph" | "bar" | "gauge" | "chart";
+export const BATTERY_DISPLAY_MODES: readonly BatteryDisplayMode[] = ["glyph", "bar", "gauge", "chart"];
+/** Bar styles: one fill (solid) or zones (threshold bands for batteries, equal thirds for PIDs). */
+export type BarStyle = "solid" | "zones";
+export const BAR_STYLES: readonly BarStyle[] = ["solid", "zones"];
 
 export interface PidGridItem extends BaseGridItem {
   cardType: "pid";
   pid: number;
   displayMode: PidDisplayMode;
   gaugeStyle?: GaugeStyle;
+  /** Bar mode only. Missing means solid. */
+  barStyle?: BarStyle;
 }
 
+/** Car battery (12 V) card. Older saved layouts carry a placeholder displayMode; layoutStorage maps it to glyph. */
 export interface BatteryGridItem extends BaseGridItem {
   cardType: "battery";
-  displayMode: SpecialDisplayMode;
+  displayMode: BatteryDisplayMode;
+  gaugeStyle?: GaugeStyle;
+  barStyle?: BarStyle;
 }
 
 export interface DtcGridItem extends BaseGridItem {
@@ -271,7 +284,12 @@ export const MODULE_CONFIGS = {
     gauge: { min: { w: 12, h: 12 }, max: { w: 24, h: 24 } },
     bar: { min: { w: 10, h: 8 }, max: { w: 20, h: 15 } }
   },
-  battery: { min: { w: 10, h: 7 }, max: { w: 18, h: 12 } },
+  battery: {
+    glyph: { min: { w: 10, h: 7 }, max: { w: 18, h: 12 } },
+    bar: { min: { w: 10, h: 8 }, max: { w: 20, h: 15 } },
+    gauge: { min: { w: 12, h: 12 }, max: { w: 24, h: 24 } },
+    chart: { min: { w: 15, h: 12 }, max: { w: 60, h: 30 } },
+  },
   dtcs: { min: { w: 14, h: 8 }, max: { w: 30, h: 20 } },
   overview: { min: { w: 17, h: 11 }, max: { w: 60, h: 20 } }
 } satisfies Record<string, Bounds | Record<string, Bounds>>;
@@ -289,10 +307,13 @@ export function getModuleBounds(item: { cardType: CardType; displayMode?: string
   if (item.cardType === "pid") {
     return MODULE_CONFIGS.pid[item.displayMode as PidDisplayMode] ?? DEFAULT_BOUNDS;
   }
+  if (item.cardType === "battery") {
+    return MODULE_CONFIGS.battery[item.displayMode as BatteryDisplayMode] ?? MODULE_CONFIGS.battery.glyph;
+  }
 
   // Safe runtime lookup without 'any' typecasting
   if (item.cardType in MODULE_CONFIGS) {
-    const staticConfig = MODULE_CONFIGS[item.cardType as keyof Omit<ModuleConfigs, "pid">];
+    const staticConfig = MODULE_CONFIGS[item.cardType as keyof Omit<ModuleConfigs, "pid" | "battery">];
     return staticConfig ?? DEFAULT_BOUNDS;
   }
 
