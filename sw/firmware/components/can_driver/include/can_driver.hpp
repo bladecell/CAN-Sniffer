@@ -154,7 +154,8 @@ public:
     void setRxCallback(RxCallback_t callback, void* arg);
 
     // Simulation hooks (injected by the OBD2 simulator component at runtime)
-    typedef void (*SimStartFn)(CanDriver*);
+    // Returns false if the simulator task could not be started.
+    typedef bool (*SimStartFn)(CanDriver*);
     // Returns false if the simulator task is still running (it may still touch rxQueue, so the queue must stay).
     typedef bool (*SimStopFn)();
     // ISR context; must be IRAM_ATTR. Gets the CAN ID and the data bytes of every frame seen on the loopback bus.

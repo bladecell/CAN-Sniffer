@@ -133,9 +133,10 @@ esp_err_t CanDriver::bringUp(const Config& config)
     // The simulator injects into rxQueue, so it starts only now that the queues exist.
     if (config.debug)
     {
-        if (simStart_)
+        if (simStart_ && !simStart_(this))
         {
-            simStart_(this);
+            ESP_LOGE(TAG, "Simulator failed to start");
+            return ESP_ERR_NO_MEM;
         }
     }
     else if (simStop_ && !simStop_())

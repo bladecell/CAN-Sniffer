@@ -67,11 +67,11 @@ void IRAM_ATTR sim_notify(uint32_t id, const uint8_t* data, uint8_t length, Base
     }
 }
 
-void start_sim_task(CanDriver* driver)
+bool start_sim_task(CanDriver* driver)
 {
     if (xDataSimTaskHandle != NULL)
     {
-        return;
+        return true;
     }
     if (simQueue == NULL)
     {
@@ -89,7 +89,9 @@ void start_sim_task(CanDriver* driver)
         xDataSimTaskHandle = NULL;
         simRunning.store(false);
         ESP_LOGE(TAG, "Failed to create DataSimTask!");
+        return false;
     }
+    return true;
 }
 
 bool stop_sim_task()
