@@ -11,6 +11,7 @@
   } from "layerchart";
   import { scaleLinear } from "d3-scale";
   import type { GaugeStyle } from "$lib/types";
+  import { clampToRange } from "$lib/valueBar";
 
   interface Props {
     value: number;
@@ -23,6 +24,9 @@
   }
 
   let { value, min, max, displayValue, unit, color, gaugeStyle }: Props = $props();
+
+  // The fill and the needle use the pinned value. An unpinned value would wrap around the arc.
+  const shownValue = $derived(clampToRange(value, min, max));
 
   let cw = $state(200);
   let ch = $state(140);
@@ -87,7 +91,7 @@
   // Used by speedometer style
   const needleAngleRad = $derived(
     (angleScale(
-      Math.max(min, Math.min(max, value)),
+      shownValue,
     ) *
       Math.PI) /
       180,
@@ -179,7 +183,7 @@
                 <ClipPath>
                   {#snippet clip()}
                     <Arc
-                      value={value}
+                      value={shownValue}
                       domain={[min, max]}
                       range={styleConfig.range}
                       outerRadius={R}
@@ -260,7 +264,7 @@
             </g>
           {:else}
             <Arc
-              value={value}
+              value={shownValue}
               domain={[min, max]}
               range={styleConfig.range}
               innerRadius={-18}
@@ -298,7 +302,7 @@
 <style>
   .dashboard-card-body {
     flex: 1 1 0;
-    min-height: 140px;
+    min-height: var(--gauge-min-h, 140px);
     width: 100%;
     display: flex;
     overflow: visible;

@@ -21,9 +21,9 @@ export const GAUGE_STYLES: readonly GaugeStyle[] = ["arc", "donut", "half", "spe
 /** Car battery card: glyph, bar, gauge or chart. */
 export type BatteryDisplayMode = "glyph" | "bar" | "gauge" | "chart";
 export const BATTERY_DISPLAY_MODES: readonly BatteryDisplayMode[] = ["glyph", "bar", "gauge", "chart"];
-/** Bar styles: one fill (solid) or zones (threshold bands for batteries, equal thirds for PIDs). */
-export type BarStyle = "solid" | "zones";
-export const BAR_STYLES: readonly BarStyle[] = ["solid", "zones"];
+/** Bar styles. solid and zones (batteries: threshold bands, PIDs: equal thirds) are the originals. */
+export type BarStyle = "solid" | "zones" | "segmented" | "gradient" | "marker";
+export const BAR_STYLES: readonly BarStyle[] = ["solid", "zones", "segmented", "gradient", "marker"];
 
 export interface PidGridItem extends BaseGridItem {
   cardType: "pid";

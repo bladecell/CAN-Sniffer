@@ -8,6 +8,8 @@ export const BATTERY_SCALE_MAX_V = 15.5;
 export const BATTERY_STALE_MS = 3000;
 /** Tolerated clock skew between the tick and a frame. Anything further in the future is no data. */
 const BATTERY_SKEW_MS = 1000;
+/** Below this a reading is not a car battery: the ADC floats or the sensor is faulty. It is no data, not Critical. */
+export const BATTERY_MIN_VALID_V = 5;
 /** Above this a value is hostile or corrupt, not a 12 V battery. */
 const BATTERY_MAX_VALID_V = 20;
 
@@ -45,7 +47,7 @@ export function batteryState(volts: number | null): BatteryState {
 /** Returns the voltage, or null for anything that is not a plausible battery reading. */
 export function sanitizeVoltage(raw: unknown): number | null {
   if (typeof raw !== "number" || !Number.isFinite(raw)) return null;
-  if (raw <= 0 || raw > BATTERY_MAX_VALID_V) return null;
+  if (raw < BATTERY_MIN_VALID_V || raw > BATTERY_MAX_VALID_V) return null;
   return raw;
 }
 

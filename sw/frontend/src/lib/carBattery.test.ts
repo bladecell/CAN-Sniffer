@@ -23,6 +23,11 @@ describe("batteryState bands (suggested thresholds, docs/power.md for 13.2 V)", 
     expect(batteryState(volts)).toBe(state);
   });
 
+  test("5.0 V up to 10.5 V is still the critical band", () => {
+    expect(batteryState(5.0)).toBe("critical");
+    expect(batteryState(10.49)).toBe("critical");
+  });
+
   test("a missing value is no data", () => {
     expect(batteryState(null)).toBe("nodata");
   });
@@ -31,6 +36,16 @@ describe("batteryState bands (suggested thresholds, docs/power.md for 13.2 V)", 
 describe("sanitizeVoltage", () => {
   test("returns a plausible voltage unchanged", () => {
     expect(sanitizeVoltage(12.6)).toBe(12.6);
+  });
+
+  test("the cutoff is 5.0 V: 4.99 V is no data, 5.0 V is a reading", () => {
+    expect(sanitizeVoltage(4.99)).toBeNull();
+    expect(sanitizeVoltage(5.0)).toBe(5.0);
+  });
+
+  test("0.9 V (ADC floating or sensor fault) is no data, not Critical", () => {
+    expect(sanitizeVoltage(0.9)).toBeNull();
+    expect(batteryReading({ volts: 0.9, now: 1_000_100, wsConnected: true, busUp: true, frameAt: 1_000_000 }).state).toBe("nodata");
   });
 
   test.each([

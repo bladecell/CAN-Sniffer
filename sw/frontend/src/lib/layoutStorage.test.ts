@@ -65,4 +65,22 @@ describe("parseStoredLayout: car battery cards", () => {
     expect((items[0] as PidGridItem).barStyle).toBe("zones");
     expect((items[1] as PidGridItem).barStyle).toBeUndefined();
   });
+
+  test.each(["segmented", "gradient", "marker"])("a PID bar keeps the %s style", (style) => {
+    const [item] = parseStoredLayout(
+      JSON.stringify([{ id: "p", cardType: "pid", pid: 12, displayMode: "bar", barStyle: style, w: 10, h: 8 }]),
+    );
+    expect((item as PidGridItem).barStyle).toBe(style);
+  });
+
+  test("a battery bar keeps the new styles", () => {
+    const items = parseStoredLayout(
+      JSON.stringify([
+        { id: "b1", cardType: "battery", displayMode: "bar", barStyle: "marker", w: 12, h: 8 },
+        { id: "b2", cardType: "battery", displayMode: "bar", barStyle: "gradient", w: 12, h: 8 },
+      ]),
+    );
+    expect((items[0] as BatteryGridItem).barStyle).toBe("marker");
+    expect((items[1] as BatteryGridItem).barStyle).toBe("gradient");
+  });
 });

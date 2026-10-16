@@ -52,7 +52,7 @@
   const valueText = $derived(reading.volts === null ? "--" : reading.volts.toFixed(1));
   const valueLabel = $derived(
     reading.volts === null
-      ? "No reading from the bus"
+      ? "No valid reading"
       : `${valueText} volts, ${BATTERY_LABEL[reading.state]}`,
   );
 
@@ -205,6 +205,8 @@
   }
 
   .battery-meter {
+    /* The gauge's 140 px minimum would push the status footer out of the card. */
+    --gauge-min-h: 0px;
     flex: 1 1 0;
     min-height: 0;
     display: flex;
@@ -240,6 +242,7 @@
   }
 
   .mode-glyph {
+    flex: 1 1 auto;
     display: flex;
     align-items: center;
     gap: 16px;
@@ -294,6 +297,8 @@
     flex-direction: column;
     gap: 8px;
     min-width: 0;
+    align-self: flex-end;
+    margin-left: auto;
   }
 
   .mode-bar {

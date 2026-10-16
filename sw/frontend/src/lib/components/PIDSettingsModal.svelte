@@ -7,6 +7,7 @@
     SpecialGridItem,
     OverviewGridItem,
     BatteryGridItem,
+    BarStyle,
   } from "$lib/types";
   import { MODULE_CONFIGS, getModuleBounds } from "$lib/types";
   import { untrack } from "svelte";
@@ -276,11 +277,15 @@
               >
               <select
                 id="pid-bar-style-select"
-                bind:value={pidItem.barStyle}
+                value={pidItem.barStyle ?? "solid"}
+                onchange={(e) => (pidItem.barStyle = e.currentTarget.value as BarStyle)}
                 class="orange-select-field"
               >
-                <option value={undefined}>Solid (Default)</option>
+                <option value="solid">Solid (Default)</option>
                 <option value="zones">Zones (equal thirds)</option>
+                <option value="segmented">Segmented</option>
+                <option value="gradient">Gradient</option>
+                <option value="marker">Marker</option>
               </select>
             {/if}
           </div>
@@ -338,7 +343,7 @@
               onchange={handleVisualizationChange}
               class="orange-select-field"
             >
-              <option value="glyph">Battery Glyph</option>
+              <option value="glyph">Battery</option>
               <option value="bar">Horizontal Bar</option>
               <option value="gauge">Radial Gauge</option>
               <option value="chart">Live History Chart</option>
@@ -350,11 +355,15 @@
               >
               <select
                 id="battery-bar-style-select"
-                bind:value={batteryItem.barStyle}
+                value={batteryItem.barStyle ?? "zones"}
+                onchange={(e) => (batteryItem.barStyle = e.currentTarget.value as BarStyle)}
                 class="orange-select-field"
               >
-                <option value={undefined}>Zones (Default)</option>
-                <option value="solid">Solid fill</option>
+                <option value="zones">Zones (Default)</option>
+                <option value="solid">Solid</option>
+                <option value="segmented">Segmented</option>
+                <option value="gradient">Gradient</option>
+                <option value="marker">Marker</option>
               </select>
             {/if}
 
