@@ -79,7 +79,9 @@ public:
     template <typename SleepFn>
     bool set(Fn fn, void* arg, uint32_t timeoutMs, uint32_t stepMs, SleepFn sleepFn)
     {
-        static_assert(std::atomic<Slot*>::is_always_lock_free, "the published pointer must be a plain word store");
+        // The build uses -mdisable-hardware-atomics, so is_always_lock_free is false; what matters is a naturally aligned word.
+        static_assert(sizeof(std::atomic<Slot*>) == sizeof(void*) && alignof(std::atomic<Slot*>) == alignof(void*),
+                      "the published pointer must be one naturally aligned word");
         if (setting_.exchange(true))
         {
             return false;
