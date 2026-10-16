@@ -2,6 +2,12 @@
 
 esp_err_t CanDriver::transmit(CanDriver::CanFrame& tx_frame, int timeout_ms)
 {
+    OpGate::Scope op(opGate_);
+    if (!op.admitted())
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
     if (!isInitialized() || !isBusConnected())
     {
         return ESP_ERR_INVALID_STATE;
@@ -18,6 +24,12 @@ esp_err_t CanDriver::transmit(CanDriver::CanFrame& tx_frame, int timeout_ms)
 
 esp_err_t CanDriver::transmitUrgent(CanDriver::CanFrame& tx_frame)
 {
+    OpGate::Scope op(opGate_);
+    if (!op.admitted())
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
     if (!isInitialized() || !isBusConnected())
     {
         return ESP_ERR_INVALID_STATE;
@@ -45,6 +57,12 @@ void CanDriver::notifyTxDone(const twai_frame_t* frame, bool success)
 
 esp_err_t CanDriver::receive(CanDriver::CanFrame& frame, int timeout_ms)
 {
+    OpGate::Scope op(opGate_);
+    if (!op.admitted())
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
     if (!isInitialized() || !rxQueue || !isBusConnected())
     {
         return ESP_ERR_INVALID_STATE;
@@ -64,6 +82,12 @@ esp_err_t CanDriver::receive(CanDriver::CanFrame& frame, int timeout_ms)
 
 size_t CanDriver::availableMessages()
 {
+    OpGate::Scope op(opGate_);
+    if (!op.admitted())
+    {
+        return 0;
+    }
+
     if (!rxQueue)
     {
         return 0;
@@ -73,6 +97,12 @@ size_t CanDriver::availableMessages()
 
 esp_err_t CanDriver::flushRxQueue()
 {
+    OpGate::Scope op(opGate_);
+    if (!op.admitted())
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
     if (!rxQueue)
     {
         return ESP_ERR_INVALID_STATE;

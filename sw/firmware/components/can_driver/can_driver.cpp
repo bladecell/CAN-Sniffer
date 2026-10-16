@@ -208,6 +208,7 @@ esp_err_t CanDriver::bringUp(const Config& config)
     }
 
     canState.store(STATE::NOT_CONNECTED);
+    opGate_.open();
     vTaskDelay(pdMS_TO_TICKS(10));
     xTaskNotifyGive(healthCheckTaskHandle);
     return ESP_OK;
@@ -219,6 +220,16 @@ esp_err_t CanDriver::teardown()
 {
     canState.store(STATE::NOT_INITIALIZED);  // transmit()/receive() refuse from here on
     stopRequested_.store(true);
+
+    // New calls are rejected from here; the ones inside finish (the TX task still runs, so a sender blocked on a full
+    // queue gets through) or time out before anything is freed.
+    opGate_.close();
+    if (!opGate_.drain(TASK_STOP_TIMEOUT_MS, 10, [](uint32_t ms) { vTaskDelay(pdMS_TO_TICKS(ms)); }))
+    {
+        ESP_LOGE(TAG, "%u CAN calls still in flight after %d ms; leaving resources in place",
+                 static_cast<unsigned>(opGate_.inFlight()), TASK_STOP_TIMEOUT_MS);
+        return ESP_ERR_TIMEOUT;
+    }
 
     // The simulator task feeds rxQueue: stop it before the queue goes.
     if (simStop_ && !simStop_())

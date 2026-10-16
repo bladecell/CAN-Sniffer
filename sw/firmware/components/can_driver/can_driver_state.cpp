@@ -2,6 +2,12 @@
 
 bool CanDriver::quickCheckBus()
 {
+    OpGate::Scope op(opGate_);
+    if (!op.admitted())
+    {
+        return false;
+    }
+
     if (!isInitialized())
     {
         return false;

@@ -8,6 +8,7 @@
 #include "esp_twai.h"
 #include "esp_twai_onchip.h"
 #include "freertos/FreeRTOS.h"
+#include "op_gate.hpp"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -104,8 +105,9 @@ public:
     // failed and left resources behind (call deinit() again first).
     esp_err_t init(const Config& config);
 
-    // Idempotent. Stops the TX and health tasks cooperatively; ESP_ERR_TIMEOUT (nothing freed, retry later) if they do not
-    // leave within TASK_STOP_TIMEOUT_MS or if the connection callback is still running after 5 s.
+    // Idempotent. Rejects new transmit/receive calls, waits for the ones in flight, then stops the TX and health tasks
+    // cooperatively; ESP_ERR_TIMEOUT (nothing freed, retry later) if a call in flight or a task does not leave within
+    // TASK_STOP_TIMEOUT_MS or if the connection callback is still running after 5 s.
     esp_err_t deinit();
 
     twai_node_status_t getStatus();
@@ -194,6 +196,10 @@ private:
     esp_err_t             teardown();
     bool                  hasResources() const;
     SemaphoreHandle_t     lifecycleMutex_ = nullptr;
+    // Admission for the public calls that touch queues or the TWAI node (transmit, transmitUrgent, receive,
+    // availableMessages, flushRxQueue, getStatus, quickCheckBus). Closed by teardown(), which then waits for the calls in
+    // flight before freeing anything. A call blocked longer than TASK_STOP_TIMEOUT_MS makes teardown fail with TIMEOUT.
+    OpGate                opGate_;
     std::atomic<bool>     stopRequested_{false};
     std::atomic<bool>     txRunning_{false};
     std::atomic<bool>     healthRunning_{false};

@@ -3,7 +3,8 @@
 twai_node_status_t CanDriver::getStatus()
 {
     twai_node_status_t status{};
-    if (nodeHdl == NULL)
+    OpGate::Scope      op(opGate_);
+    if (!op.admitted() || nodeHdl == NULL)
     {
         return status;
     }
