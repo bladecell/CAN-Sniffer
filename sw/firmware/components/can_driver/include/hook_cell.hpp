@@ -39,12 +39,17 @@ public:
         Fn    fn  = nullptr;
         void* arg = nullptr;
 
-        HOOK_CELL_INLINE explicit Guard(HookCell& c)
+        // probe (tests only; nullptr folds away when inlined) runs between counting into the slot and the recheck.
+        HOOK_CELL_INLINE explicit Guard(HookCell& c, void (*probe)() = nullptr)
         {
             for (int i = 0; i < kRetries; i++)
             {
                 Slot* p = c.cur_.load();
                 p->readers.fetch_add(1);
+                if (probe != nullptr)
+                {
+                    probe();
+                }
                 if (c.cur_.load() == p)
                 {
                     slot_ = p;
@@ -74,6 +79,7 @@ public:
     template <typename SleepFn>
     bool set(Fn fn, void* arg, uint32_t timeoutMs, uint32_t stepMs, SleepFn sleepFn)
     {
+        static_assert(std::atomic<Slot*>::is_always_lock_free, "the published pointer must be a plain word store");
         if (setting_.exchange(true))
         {
             return false;
@@ -96,6 +102,10 @@ private:
     template <typename SleepFn>
     static bool waitIdle(Slot* s, uint32_t timeoutMs, uint32_t stepMs, SleepFn sleepFn)
     {
+        if (stepMs == 0)
+        {
+            stepMs = 1;  // 0 would never reach the timeout
+        }
         for (uint32_t waited = 0; s->readers.load() != 0; waited += stepMs)
         {
             if (waited >= timeoutMs)

@@ -174,7 +174,10 @@ esp_err_t OBD2::stopInternal(bool)
         xSemaphoreGive(admissionMtx_);
     }
     if (callbackInstalled) {
-        canDriver.setTxDoneHook(nullptr, nullptr);
+        if (!canDriver.setTxDoneHook(nullptr, nullptr))
+        {
+            return ESP_ERR_TIMEOUT;  // a TX-done callback is still running on this object: nothing may be freed yet
+        }
         const TickType_t remaining = remainingTicks();
         if (remaining == 0)
         {
@@ -553,7 +556,10 @@ esp_err_t OBD2::init()
     xSemaphoreTake(admissionMtx_, portMAX_DELAY);
     canCallbackInstalled_ = true;
     xSemaphoreGive(admissionMtx_);
-    canDriver.setTxDoneHook(&OBD2::onTxDone, this);
+    if (!canDriver.setTxDoneHook(&OBD2::onTxDone, this))
+    {
+        return failInit(ESP_ERR_TIMEOUT);  // canCallbackInstalled_ is set, so the rollback clears whatever got installed
+    }
 
     // Register/fence first, then take the bus snapshot to avoid missing a transition.
     if (canDriver.isBusConnected())
