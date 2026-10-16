@@ -1,5 +1,10 @@
 #include "can_driver_internal.hpp"
 
+static int clampCallTimeoutMs(int ms)
+{
+    return ms < 0 ? 0 : (ms > MAX_CALL_TIMEOUT_MS ? MAX_CALL_TIMEOUT_MS : ms);
+}
+
 esp_err_t CanDriver::transmit(CanDriver::CanFrame& tx_frame, int timeout_ms)
 {
     OpGate::Scope op(opGate_);
@@ -13,7 +18,7 @@ esp_err_t CanDriver::transmit(CanDriver::CanFrame& tx_frame, int timeout_ms)
         return ESP_ERR_INVALID_STATE;
     }
 
-    if (xQueueSend(txQueue, &tx_frame, pdMS_TO_TICKS(timeout_ms)) != pdTRUE)
+    if (xQueueSend(txQueue, &tx_frame, pdMS_TO_TICKS(clampCallTimeoutMs(timeout_ms))) != pdTRUE)
     {
         ESP_LOGE(TAG, "Failed to send message to tx queue");
         return ESP_FAIL;
@@ -68,7 +73,7 @@ esp_err_t CanDriver::receive(CanDriver::CanFrame& frame, int timeout_ms)
         return ESP_ERR_INVALID_STATE;
     }
 
-    TickType_t ticks = (timeout_ms == 0) ? 0 : pdMS_TO_TICKS(timeout_ms);
+    TickType_t ticks = pdMS_TO_TICKS(clampCallTimeoutMs(timeout_ms));
 
     if (xQueueReceive(rxQueue, &frame, ticks) == pdTRUE)
     {

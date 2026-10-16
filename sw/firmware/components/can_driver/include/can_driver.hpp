@@ -8,10 +8,10 @@
 #include "esp_twai.h"
 #include "esp_twai_onchip.h"
 #include "freertos/FreeRTOS.h"
-#include "op_gate.hpp"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "op_gate.hpp"
 
 struct CanDriverLifecycleTestAccess;
 
@@ -23,6 +23,7 @@ struct CanDriverLifecycleTestAccess;
 #define CORE_ID_CAN_TASKS 1
 #define HEALTHCHECK_PING_PERIOD_MS 2000
 #define NO_MESSAGE_SENT_HEALTHCHECK_PING_PERIOD_MS 5000
+#define MAX_CALL_TIMEOUT_MS 2000   // transmit()/receive() clamp their wait to this, so deinit's drain (below) always outlasts it
 #define TASK_STOP_TIMEOUT_MS 3000  // deinit waits this long for the TX and health tasks to leave on their own
 
 class CanDriver
@@ -198,7 +199,7 @@ private:
     SemaphoreHandle_t     lifecycleMutex_ = nullptr;
     // Admission for the public calls that touch queues or the TWAI node (transmit, transmitUrgent, receive,
     // availableMessages, flushRxQueue, getStatus, quickCheckBus). Closed by teardown(), which then waits for the calls in
-    // flight before freeing anything. A call blocked longer than TASK_STOP_TIMEOUT_MS makes teardown fail with TIMEOUT.
+    // flight before freeing anything. A call is blocked at most MAX_CALL_TIMEOUT_MS (transmit/receive clamp their timeout), under the drain bound.
     OpGate                opGate_;
     std::atomic<bool>     stopRequested_{false};
     std::atomic<bool>     txRunning_{false};

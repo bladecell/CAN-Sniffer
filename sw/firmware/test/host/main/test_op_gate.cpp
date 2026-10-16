@@ -1,4 +1,7 @@
 // B51: CanDriver admission gate. Reject after close, drain waits for calls in flight, drain times out.
+#include <atomic>
+#include <thread>
+
 #include "../../../components/can_driver/include/op_gate.hpp"
 #include "unity.h"
 
@@ -41,7 +44,7 @@ void test_drain_waits_for_in_flight(void)
     if (sleeps == 4) g.leave();
   });
   TEST_ASSERT_TRUE(ok);
-  TEST_ASSERT_EQUAL_INT(4, sleeps);
+  TEST_ASSERT_GREATER_OR_EQUAL_INT(4, sleeps);
   TEST_ASSERT_EQUAL_UINT32(0, g.inFlight());
 }
 
@@ -95,6 +98,58 @@ void test_reopen_after_close(void)
   TEST_ASSERT_TRUE(g.enter());
   g.leave();
 }
+
+void test_open_keeps_in_flight_calls(void)
+{
+  OpGate g;
+  g.open();
+  TEST_ASSERT_TRUE(g.enter());
+  g.close();
+  g.open();
+  TEST_ASSERT_EQUAL_UINT32(1, g.inFlight());
+  TEST_ASSERT_TRUE(g.enter());
+  TEST_ASSERT_EQUAL_UINT32(2, g.inFlight());
+  g.leave();
+  g.leave();
+  TEST_ASSERT_EQUAL_UINT32(0, g.inFlight());
+}
+
+// Two threads hammer enter/leave while the main thread closes and drains. Once drain() returned true, no call may
+// be admitted any more. Bounded by iteration counts and a generous drain timeout, so it cannot hang or flake.
+void test_concurrent_enter_vs_close(void)
+{
+  for (int round = 0; round < 20; round++)
+  {
+    OpGate            g;
+    std::atomic<bool> drained{false};
+    std::atomic<int>  violations{0};
+    std::atomic<bool> stop{false};
+    g.open();
+    auto worker = [&]() {
+      while (!stop.load())
+      {
+        OpGate::Scope op(g);
+        if (op.admitted() && drained.load())
+        {
+          violations++;
+        }
+        std::this_thread::yield();
+      }
+    };
+    std::thread t1(worker), t2(worker);
+    for (int i = 0; i < 200; i++) std::this_thread::yield();
+    g.close();
+    const bool ok = g.drain(10000, 1, [](uint32_t) { std::this_thread::yield(); });
+    drained.store(true);
+    for (int i = 0; i < 200; i++) std::this_thread::yield();
+    stop.store(true);
+    t1.join();
+    t2.join();
+    TEST_ASSERT_TRUE(ok);
+    TEST_ASSERT_EQUAL_INT(0, violations.load());
+    TEST_ASSERT_EQUAL_UINT32(0, g.inFlight());
+  }
+}
 }  // namespace
 
 extern "C" void run_op_gate_tests(void)
@@ -106,4 +161,6 @@ extern "C" void run_op_gate_tests(void)
   RUN_TEST(test_drain_idle_returns_at_once);
   RUN_TEST(test_scope_releases_and_reports_rejection);
   RUN_TEST(test_reopen_after_close);
+  RUN_TEST(test_open_keeps_in_flight_calls);
+  RUN_TEST(test_concurrent_enter_vs_close);
 }

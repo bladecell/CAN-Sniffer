@@ -218,18 +218,18 @@ esp_err_t CanDriver::bringUp(const Config& config)
 // partial init, after a failed earlier teardown and when called twice. Caller holds lifecycleMutex_.
 esp_err_t CanDriver::teardown()
 {
-    canState.store(STATE::NOT_INITIALIZED);  // transmit()/receive() refuse from here on
-    stopRequested_.store(true);
-
-    // New calls are rejected from here; the ones inside finish (the TX task still runs, so a sender blocked on a full
-    // queue gets through) or time out before anything is freed.
+    // New calls are rejected from here; the ones inside finish (state and stopRequested_ are untouched, so the TX task
+    // keeps draining and a sender blocked on a full queue gets through) or time out before anything is freed.
     opGate_.close();
-    if (!opGate_.drain(TASK_STOP_TIMEOUT_MS, 10, [](uint32_t ms) { vTaskDelay(pdMS_TO_TICKS(ms)); }))
+    const bool drained = opGate_.drain(TASK_STOP_TIMEOUT_MS, 10, [](uint32_t ms) { vTaskDelay(pdMS_TO_TICKS(ms)); });
+    canState.store(STATE::NOT_INITIALIZED);  // from here init() sees a driver that is down, not "already up"
+    if (!drained)
     {
         ESP_LOGE(TAG, "%u CAN calls still in flight after %d ms; leaving resources in place",
                  static_cast<unsigned>(opGate_.inFlight()), TASK_STOP_TIMEOUT_MS);
         return ESP_ERR_TIMEOUT;
     }
+    stopRequested_.store(true);
 
     // The simulator task feeds rxQueue: stop it before the queue goes.
     if (simStop_ && !simStop_())
