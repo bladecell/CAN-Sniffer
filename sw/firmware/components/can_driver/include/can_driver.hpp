@@ -11,6 +11,7 @@
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "hook_cell.hpp"
 #include "op_gate.hpp"
 
 struct CanDriverLifecycleTestAccess;
@@ -121,11 +122,12 @@ public:
     // IRAM-safe, short and non-blocking) and, from the TX task, for a frame twai_node_transmit refused (success false).
     // `data` holds the first `length` (at most 8) data bytes and is only valid during the call.
     typedef void (*TxDoneFn)(void* arg, uint32_t id, const uint8_t* data, uint8_t length, bool success);
-    void setTxDoneHook(TxDoneFn fn, void* arg)
+    // fn and arg are published as one unit (HookCell). Returns true once no call of the previous pair is running any more,
+    // so the caller may free the old arg; false if another set is running or a callback did not finish within 200 ms.
+    // Never call it from the hook itself.
+    bool setTxDoneHook(TxDoneFn fn, void* arg)
     {
-        txDoneFn_.store(nullptr);  // never run a new function with the old argument
-        txDoneArg_.store(arg);
-        txDoneFn_.store(fn);
+        return txDoneHook_.set(fn, arg, 200, 1, [](uint32_t ms) { vTaskDelay(pdMS_TO_TICKS(ms) > 0 ? pdMS_TO_TICKS(ms) : 1); });
     }
 
     esp_err_t receive(CanDriver::CanFrame& frame, int timeout_ms = 100);
@@ -227,8 +229,7 @@ private:
     };
     TxSlot* txRing_     = nullptr;
     size_t  txRingSize_ = 0;
-    std::atomic<TxDoneFn> txDoneFn_{nullptr};
-    std::atomic<void*>    txDoneArg_{nullptr};
+    HookCell<TxDoneFn> txDoneHook_;
     void IRAM_ATTR        notifyTxDone(const twai_frame_t* frame, bool success);
 
     // Simulation hooks (nullptr until injected by the simulator component)

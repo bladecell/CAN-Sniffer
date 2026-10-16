@@ -51,13 +51,17 @@ esp_err_t CanDriver::transmitUrgent(CanDriver::CanFrame& tx_frame)
 
 void CanDriver::notifyTxDone(const twai_frame_t* frame, bool success)
 {
-    const TxDoneFn fn = txDoneFn_.load();
-    if (fn == nullptr || frame == nullptr || frame->buffer == nullptr)
+    if (frame == nullptr || frame->buffer == nullptr)
+    {
+        return;
+    }
+    HookCell<TxDoneFn>::Guard hook(txDoneHook_);  // holds the {fn,arg} pair steady until the callback returns
+    if (hook.fn == nullptr)
     {
         return;
     }
     const uint8_t length = frame->buffer_len > 8 ? 8 : static_cast<uint8_t>(frame->buffer_len);
-    fn(txDoneArg_.load(), frame->header.id, frame->buffer, length, success);
+    hook.fn(hook.arg, frame->header.id, frame->buffer, length, success);
 }
 
 esp_err_t CanDriver::receive(CanDriver::CanFrame& frame, int timeout_ms)
