@@ -39,7 +39,7 @@ CONFIG_ESP_TASK_WDT_EN=y
 CONFIG_ESP_TASK_WDT_PANIC=y
 CONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT=y
 CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
-CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF=y
+# ELF format and SHA256 checksum are selected by ESP_COREDUMP_ENABLE in IDF 6 (hidden symbols)
 
 # Hostile JSON (REST bodies, SD files) must not recurse deep enough to overflow a task stack; PID JSON is 2 levels
 CONFIG_CJSON_NESTING_LIMIT=32

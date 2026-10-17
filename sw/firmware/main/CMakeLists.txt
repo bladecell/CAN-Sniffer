@@ -9,9 +9,6 @@ idf_component_register(
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -Wall -Wextra -Werror)
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
 add_custom_target(build_svelte_frontend
     COMMAND bun run build
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../../frontend"
