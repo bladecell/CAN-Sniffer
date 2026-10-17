@@ -1,6 +1,6 @@
 # CAN Sniffer: instructions for agents
 
-This is an ESP32-S3 CAN/OBD-II sniffer. The firmware runs on ESP-IDF 5.5.3 with FreeRTOS, in C and C++. It reads PIDs, DTCs and the VIN, records trips to the SD card, and serves a Svelte web frontend. HW v1.2 is the current board; HW v2 adds an LTE modem with GNSS, MQTT and ignition sense.
+This is an ESP32-S3 CAN/OBD-II sniffer. The firmware runs on ESP-IDF 6.1 (Picolibc, GCC 15) with FreeRTOS, in C and C++. It reads PIDs, DTCs and the VIN, records trips to the SD card, and serves a Svelte web frontend. HW v1.2 is the current board; HW v2 adds an LTE modem with GNSS, MQTT and ignition sense.
 
 ## Repo layout
 ```
@@ -56,8 +56,9 @@ The device sits in a car unattended. A reboot loop drains the battery, and a han
 ## Commands
 Run commands from the git root. The IDF environment isn't in a plain shell, so source it in the same command, and point `idf.py` at the project with `-C sw/firmware`:
 ```sh
-. ~/.esp/esp-idf/export.sh && idf.py -C sw/firmware build
+. ~/.espressif/tools/activate_idf_v6.1.sh && idf.py -C sw/firmware build
 ```
+IDF 6.1 lives in `~/.espressif/v6.1/esp-idf` (installed by eim, tools and venv under `~/.espressif/tools`). `~/.esp/esp-idf-v6.1/export.sh` fails: its Python env `idf6.1_py3.14_env` was never created. The activate script also runs `eim select v6.1`. To avoid that, export `IDF_PATH`, `IDF_TOOLS_PATH`, `IDF_PYTHON_ENV_PATH=~/.espressif/tools/python/v6.1/venv` and the tool `bin` dirs yourself (see `activate_idf_v6.1.sh -e`). `tools/ci.sh` sources `$IDF_PATH/export.sh` only if `idf.py` is not on PATH, so run it from an activated shell. `~/.esp/esp-idf` is still 5.5.3 and no longer builds this tree.
 - Quality gate: `tools/ci.sh`. It runs the frontend check and build, the firmware build (`-Werror`), the size report, cppcheck, clang-tidy and host tests.
 - Host tests only: `tools/ci.sh --host`
 - Set target (once): `idf.py -C sw/firmware set-target esp32s3`

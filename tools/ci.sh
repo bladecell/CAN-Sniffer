@@ -16,7 +16,7 @@ HOST_ONLY=0
 step() { printf '\n==> %s\n' "$*"; }
 
 # --- ESP-IDF environment ---
-IDF_EXPORT="${IDF_PATH:-$HOME/.esp/esp-idf}/export.sh"
+IDF_EXPORT="${IDF_PATH:-$HOME/.espressif/v6.1/esp-idf}/export.sh"
 if ! command -v idf.py >/dev/null 2>&1; then
   [ -f "$IDF_EXPORT" ] || { echo "ESP-IDF not found at $IDF_EXPORT (set IDF_PATH)"; exit 1; }
   # shellcheck disable=SC1090

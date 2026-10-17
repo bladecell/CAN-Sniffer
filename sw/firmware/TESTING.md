@@ -93,7 +93,7 @@ The standalone ESP-IDF Unity app under `tests/on_target` links only the existing
 `obd2`, `can_driver`, and `tinyexpr` components plus Unity. It does not build the
 normal `main` app or initialize Wi-Fi, the supervisor, web server, or SD card.
 Build it from `sw/firmware` with the repository's ESP-IDF installation
-(currently ESP-IDF v5.5.3, ESP32-S3 target) and an isolated build directory so
+(currently ESP-IDF v6.1, ESP32-S3 target) and an isolated build directory so
 the normal `sdkconfig` is untouched:
 
 ```sh

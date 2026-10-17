@@ -1,6 +1,6 @@
 # Architecture
 
-Facts below were read from the code at app version 0.5.0 (`sw/firmware/main/include/utilities.h`). ESP-IDF 5.5.3, ESP32-S3, C++17.
+Facts below were read from the code at app version 0.5.0 (`sw/firmware/main/include/utilities.h`). ESP-IDF 6.1 (GCC 15.2, Picolibc, default `-std=gnu++26`), ESP32-S3.
 
 ## Components
 All paths are relative to `sw/firmware/`. Dependencies are the `REQUIRES` / `PRIV_REQUIRES` in each `CMakeLists.txt`, plus the includes the code really uses.
