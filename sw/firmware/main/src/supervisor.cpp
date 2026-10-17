@@ -418,13 +418,11 @@ esp_err_t SUPERVISOR::setup_settings()
 esp_err_t SUPERVISOR::setup_flash_filesystem()
 {
     // 1. Mount WWW Partition (Read-Only)
-    esp_vfs_littlefs_conf_t www_conf = {.base_path              = "/www",
-                                        .partition_label        = "www",
-                                        .partition              = nullptr,
-                                        .format_if_mount_failed = false,
-                                        .read_only              = true,
-                                        .dont_mount             = false,
-                                        .grow_on_mount          = false};
+    // Value-init then assign: IDF 6 littlefs adds a conditional `blockdev` member that designated init would flag.
+    esp_vfs_littlefs_conf_t www_conf{};
+    www_conf.base_path       = "/www";
+    www_conf.partition_label = "www";
+    www_conf.read_only       = true;
 
     esp_err_t err = esp_vfs_littlefs_register(&www_conf);
     if (err != ESP_OK)

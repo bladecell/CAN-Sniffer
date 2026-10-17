@@ -1546,7 +1546,7 @@ void ws_send_byte(uint8_t byte)
     packet[0] = byte;
 
     httpd_ws_frame_t ws_frame = {
-        .final = true, .fragmented = false, .type = HTTPD_WS_TYPE_BINARY, .payload = packet, .len = 1};
+        .final = true, .fragmented = false, .type = HTTPD_WS_TYPE_BINARY, .payload = packet, .len = 1, .left_len = 0};
 
     AsyncWebServer::getInstance().wsBroadcast(&ws_frame);
 }
@@ -1648,7 +1648,8 @@ void pid_stream_callback(uint16_t pid)
                                      .fragmented = false,
                                      .type       = HTTPD_WS_TYPE_BINARY,
                                      .payload    = packet,
-                                     .len        = PID_STREAM_PACKET_SIZE};
+                                     .len        = PID_STREAM_PACKET_SIZE,
+                                     .left_len   = 0};
 
         AsyncWebServer::getInstance().wsBroadcast(&ws_frame);
     }
@@ -1665,7 +1666,8 @@ void ws_send_can_status()
                                      .fragmented = false,
                                      .type       = HTTPD_WS_TYPE_BINARY,
                                      .payload    = packet,
-                                     .len        = CAN_STATUS_PACKET_SIZE};
+                                     .len        = CAN_STATUS_PACKET_SIZE,
+                                     .left_len   = 0};
         AsyncWebServer::getInstance().wsBroadcast(&ws_frame);
     }
 }

@@ -32,6 +32,7 @@ bool IRAM_ATTR CanDriver::twai_rx_cb(twai_node_handle_t handle, const twai_rx_do
         .header     = {},
         .buffer     = frame.data,
         .buffer_len = sizeof(frame.data) / sizeof(uint8_t),
+        .tx_queue_priority = 0,
     };
 
     if (ESP_OK == twai_node_receive_from_isr(handle, &rx_frame))
