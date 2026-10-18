@@ -484,20 +484,8 @@ MiddlewareJsonResult m_obdii_get()
 
 MiddlewareJsonResult m_system_get()
 {
-    // card_present() takes the SD mutex internally with portMAX_DELAY. Acquire
-    // a bounded operation first so this endpoint cannot wait indefinitely for
-    // another SD operation; the recursive acquisition in card_present() then
-    // completes immediately while this lease is held.
-    bool sd_card_detected = false;
-    {
-        auto operation = SDCard::getInstance().acquire_operation(SD_OPERATION_TIMEOUT);
-        if (!operation)
-        {
-            return sd_operation_error(operation.status());
-        }
-
-        sd_card_detected = SDCard::getInstance().card_present();
-    }
+    // card_present() is a GPIO read and needs no SD lease, so a long transfer cannot fail this call (WEB-6).
+    const bool sd_card_detected = SDCard::getInstance().card_present();
 
     cJSON* root = cJSON_CreateObject();
     if (root == nullptr)
