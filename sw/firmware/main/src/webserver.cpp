@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "api_routes.hpp"
 #include "async_web_server.hpp"
 #include "body_reader.hpp"
 #include "cJSON.h"
@@ -1462,44 +1463,9 @@ static void WSDataStreamTask(void* pvParameters)
 // 4. ROUTE TABLE & REGISTRATION
 // ============================================================================
 
-const RouteDef api_routes[] = {{"/", HTTP_GET, index_handler},
-
-                               {"/api/v1/pid_def/*", HTTP_GET, g_pid_def_index_handler},
-                               {"/api/v1/pid_def/*", HTTP_DELETE, d_pid_def_index_handler},
-                               {"/api/v1/pid_def", HTTP_GET, g_pid_def_index_handler},
-                               {"/api/v1/pid_def", HTTP_POST, p_pid_def_index_handler},
-                               {"/api/v1/pid_def", HTTP_PUT, put_pid_def_index_handler},
-                               {"/api/v1/pid_def/save", HTTP_POST, p_pid_def_save_index_handler},
-                               {"/api/v1/pid_def/load", HTTP_POST, p_pid_def_load_index_handler},
-
-                               {"/api/v1/can_bus", HTTP_GET, g_can_bus_index_handler},
-                               {"/api/v1/obd2", HTTP_GET, g_obdii_index_handler},
-
-                               {"/api/v1/pid_data/*", HTTP_GET, g_pid_data_index_handler},
-                               {"/api/v1/pid_data", HTTP_GET, g_pid_data_index_handler},
-                               {"/api/v1/req/auto_poll*", HTTP_POST, p_auto_poll_index_handler},
-                               {"/api/v1/req/static_pid", HTTP_POST, p_static_pid_index_handler},
-
-                               {"/api/v1/vin", HTTP_GET, g_vin_index_handler},
-                               {"/api/v1/req/vin", HTTP_POST, p_vin_index_handler},
-                               {"/api/v1/dtc*", HTTP_GET, g_dtc_index_handler},
-                               {"/api/v1/req/dtc*", HTTP_POST, p_dtc_index_handler},
-                               {"/api/v1/req/clear_dtc", HTTP_POST, p_clear_dtc_index_handler},
-
-                               {"/api/v1/system", HTTP_GET, g_system_index_handler},
-                               {"/api/v1/system/reboot", HTTP_POST, p_system_reboot_index_handler},
-                               {"/api/v1/system/copy_file", HTTP_POST, p_system_copy_file_index_handler},
-
-                               {"/api/v1/sd_card/info", HTTP_GET, g_sd_card_info_handler},
-                               {"/api/v1/sd_card/format", HTTP_POST, p_sd_card_format_handler},
-                               {"/api/v1/sd_card/tree", HTTP_GET, g_sd_card_file_tree_handler},
-                               {"/api/v1/sd_card/tree/*", HTTP_GET, g_sd_card_file_tree_handler},
-                               {"/api/v1/sd_card/file/*", HTTP_POST, p_file_upload_handler},
-                               {"/api/v1/sd_card/file/*", HTTP_DELETE, d_file_delete_handler},
-                               {"/api/v1/sd_card/file/*", HTTP_GET, g_sd_card_file_read_handler},
-
-                               {"/api/v1/settings", HTTP_GET, g_settings_index_handler},
-                               {"/api/v1/settings", HTTP_POST, p_settings_index_handler}};
+#define ROUTE_ENTRY(uri, method, handler) {uri, HTTP_##method, handler},
+const RouteDef api_routes[] = {API_ROUTES(ROUTE_ENTRY)};
+#undef ROUTE_ENTRY
 
 static esp_err_t register_routes()
 {
