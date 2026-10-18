@@ -1,6 +1,6 @@
 # Architecture
 
-Facts below were read from the code at app version 0.5.0 (`sw/firmware/main/include/utilities.h`). ESP-IDF 6.1 (GCC 15.2, Picolibc, default `-std=gnu++26`), ESP32-S3.
+Facts below were read from the code at app version 1.2.4 (`sw/firmware/main/include/utilities.h`). ESP-IDF 6.1 (GCC 15.2, Picolibc, default `-std=gnu++26`), ESP32-S3.
 
 ## Components
 All paths are relative to `sw/firmware/`. Dependencies are the `REQUIRES` / `PRIV_REQUIRES` in each `CMakeLists.txt`, plus the includes the code really uses.
@@ -24,6 +24,7 @@ All paths are relative to `sw/firmware/`. Dependencies are the `REQUIRES` / `PRI
 
 Layering discrepancies, as built:
 - `webserver.cpp` calls `SDCard` directly for SD file upload and download, instead of going through `middleware.cpp`. The rule in `CLAUDE.md` says firmware data goes through the middleware.
+- `webserver.cpp` calls `OBD2::getInstance().subscribe(pid_stream_callback)` directly (`setup_web_server`) to push PID updates to WebSocket clients, instead of going through `middleware.cpp`.
 - `supervisor.cpp` includes `middleware.hpp` (it calls `m_pid_def_put` to load PID JSON), so the supervisor depends on the web layer.
 - `main/main.cpp.disabled_sd` is a stray, unused file.
 
