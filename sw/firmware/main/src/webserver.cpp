@@ -8,6 +8,7 @@
 #include <cerrno>
 #include <climits>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
@@ -23,6 +24,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "http_error.hpp"
 #include "http_parse.hpp"
 #include "http_parser.h"
 #include "input_limits.hpp"
@@ -92,62 +94,29 @@ static esp_err_t get_sd_rest_path(httpd_req_t* req, const char* api_route, char*
     return to_esp_err(http_parse::sdRestPath(req->uri, api_route, out, out_size, allow_root));
 }
 
-static const char* http_status_text(int status)
-{
-    switch (status)
-    {
-        case 200: return "200 OK";
-        case 201: return "201 Created";
-        case 204: return "204 No Content";
-        case 400: return "400 Bad Request";
-        case 401: return "401 Unauthorized";
-        case 403: return "403 Forbidden";
-        case 404: return "404 Not Found";
-        case 408: return "408 Request Timeout";
-        case 409: return "409 Conflict";
-        case 413: return "413 Content Too Large";
-        case 422: return "422 Unprocessable Entity";
-        case 429: return "429 Too Many Requests";
-        case 500: return "500 Internal Server Error";
-        case 503: return "503 Service Unavailable";
-        case 504: return "504 Gateway Timeout";
-        default: return nullptr;
-    }
-}
-
-static const char* json_error_body(int status)
-{
-    switch (status)
-    {
-        case 400: return "{\"status\":\"error\",\"reason\":\"Bad request\"}";
-        case 404: return "{\"status\":\"error\",\"reason\":\"Not found\"}";
-        case 408: return "{\"status\":\"error\",\"reason\":\"Request timeout\"}";
-        case 413: return "{\"status\":\"error\",\"reason\":\"Content too large\"}";
-        case 422: return "{\"status\":\"error\",\"reason\":\"Unprocessable entity\"}";
-        case 503: return "{\"status\":\"error\",\"reason\":\"Service unavailable\"}";
-        case 504: return "{\"status\":\"error\",\"reason\":\"Gateway timeout\"}";
-        default: return "{\"status\":\"error\",\"reason\":\"Internal server error\"}";
-    }
-}
-
+// Every error leaves through AsyncWebServer::sendError (http_error.hpp): one JSON shape, one Content-Type.
 static esp_err_t send_json_error_response(httpd_req_t* req, int status)
 {
-    if (http_status_text(status) == nullptr)
-    {
-        status = 500;
-    }
+    return AsyncWebServer::sendError(req, status);
+}
 
-    esp_err_t ret = httpd_resp_set_status(req, http_status_text(status));
-    if (ret != ESP_OK)
+// Error bodies built by the middleware (or make_upload_result) get the stable `code` here, so no call site has to
+// remember it. Bodies that are not errors (the 409 confirm_required challenge) are left alone.
+static void ensure_error_fields(cJSON* root, int http_status)
+{
+    const cJSON* status = cJSON_GetObjectItemCaseSensitive(root, "status");
+    if (http_status < 400 || !cJSON_IsString(status) || strcmp(status->valuestring, "error") != 0)
     {
-        return ret;
+        return;
     }
-    ret = httpd_resp_set_type(req, "application/json");
-    if (ret != ESP_OK)
+    if (cJSON_GetObjectItemCaseSensitive(root, "reason") == nullptr)
     {
-        return ret;
+        cJSON_AddStringToObject(root, "reason", http_error::defaultReason(http_status));
     }
-    return httpd_resp_send(req, json_error_body(status), HTTPD_RESP_USE_STRLEN);
+    if (cJSON_GetObjectItemCaseSensitive(root, "code") == nullptr)
+    {
+        cJSON_AddStringToObject(root, "code", http_error::defaultCode(http_status));
+    }
 }
 
 static esp_err_t send_json_response(httpd_req_t* req, MiddlewareJsonResult result)
@@ -158,13 +127,10 @@ static esp_err_t send_json_response(httpd_req_t* req, MiddlewareJsonResult resul
         ESP_LOGE(TAG, "Failed to allocate JSON response");
         // A null body can accompany a meaningful middleware status. Preserve
         // mapped non-2xx statuses, but treat a successful/null result as OOM.
-        const int fallback_status = (result.http_status >= 300 && result.http_status < 600 &&
-                                     http_status_text(result.http_status) != nullptr)
-                                        ? result.http_status
-                                        : 500;
-        return send_json_error_response(req, fallback_status);
+        return send_json_error_response(req, http_error::errorStatus(result.http_status));
     }
 
+    ensure_error_fields(root, result.http_status);
     const char* json_str = cJSON_PrintUnformatted(root);
     if (json_str == NULL)
     {
@@ -175,10 +141,17 @@ static esp_err_t send_json_response(httpd_req_t* req, MiddlewareJsonResult resul
 
     if (result.http_status != 200)
     {
-        const char* status_text = http_status_text(result.http_status);
-        httpd_resp_set_status(req, status_text != nullptr ? status_text : http_status_text(500));
+        const char* status_text = http_error::statusLine(result.http_status);
+        httpd_resp_set_status(req, status_text != nullptr ? status_text : http_error::statusLine(500));
     }
     httpd_resp_set_type(req, "application/json");
+    char retry_after[12];
+    if (result.http_status >= 400 && http_error::retryAfterS(result.http_status) != 0)
+    {
+        (void)snprintf(retry_after, sizeof(retry_after), "%u",
+                 static_cast<unsigned>(http_error::retryAfterS(result.http_status)));
+        httpd_resp_set_hdr(req, "Retry-After", retry_after);  // lives until the send below
+    }
     esp_err_t ret = httpd_resp_send(req, json_str, HTTPD_RESP_USE_STRLEN);
 
     cJSON_free((void*)json_str);
@@ -414,20 +387,20 @@ cJSON* get_validated_json_payload(httpd_req_t* req, size_t max_size, int64_t dea
 
     if (total_len <= 0)
     {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Content-Length required");
+        AsyncWebServer::sendError(req, 400, "Content-Length required");
         return nullptr;
     }
 
     if (total_len > max_size)
     {
-        httpd_resp_send_err(req, HTTPD_413_CONTENT_TOO_LARGE, "JSON too large");
+        AsyncWebServer::sendError(req, 413, "JSON too large");
         return nullptr;
     }
 
     char* buf = (char*)malloc(total_len + 1);
     if (buf == nullptr)
     {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Server OOM");
+        AsyncWebServer::sendError(req, 500, "Server OOM");
         return nullptr;
     }
 
@@ -437,7 +410,7 @@ cJSON* get_validated_json_payload(httpd_req_t* req, size_t max_size, int64_t dea
     if (received != body_reader::Result::Ok)
     {
         free(buf);
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Incomplete request body");
+        AsyncWebServer::sendError(req, 400, "Incomplete request body");
         return nullptr;
     }
     buf[total_len] = '\0';
@@ -466,7 +439,7 @@ cJSON* get_validated_json_payload(httpd_req_t* req, size_t max_size, int64_t dea
 
     if (root == nullptr)
     {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+        AsyncWebServer::sendError(req, 400, "Invalid JSON", http_error::kBadJson);
     }
 
     return root;
@@ -658,7 +631,7 @@ esp_err_t g_dtc_index_handler(httpd_req_t* req, void* arg)
     {
         if (get_query_int(req, "mode", &mode) != ESP_OK)
         {
-            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid DTC mode");
+            return AsyncWebServer::sendError(req, 400, "Invalid DTC mode");
         }
         MiddlewareJsonResult data = m_dtc_get(mode);
         return send_json_response(req, data);
@@ -674,14 +647,14 @@ esp_err_t g_dtc_index_handler(httpd_req_t* req, void* arg)
         {
             if (!is_valid_dtc_code(codes[i]))
             {
-                return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid DTC code");
+                return AsyncWebServer::sendError(req, 400, "Invalid DTC code");
             }
         }
         MiddlewareJsonResult data = m_dtc_description_get(codes, count);
         return send_json_response(req, data);
     }
 
-    return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid DTC query");
+    return AsyncWebServer::sendError(req, 400, "Invalid DTC query");
 }
 
 esp_err_t p_dtc_index_handler(httpd_req_t* req, void* arg)
@@ -689,7 +662,7 @@ esp_err_t p_dtc_index_handler(httpd_req_t* req, void* arg)
     int mode = -1;
     if (get_query_int(req, "mode", &mode) != ESP_OK && (httpd_req_get_url_query_len(req) > 0))
     {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid DTC mode");
+        return AsyncWebServer::sendError(req, 400, "Invalid DTC mode");
     }
     return send_json_response(req, m_dtc_request(mode));
 }
@@ -708,13 +681,13 @@ esp_err_t g_pid_def_index_handler(httpd_req_t* req, void* arg)
     esp_err_t pid_path = get_path_pid(req, "/api/v1/pid_def/", &target_pid);
     if (pid_path == ESP_ERR_INVALID_ARG)
     {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid PID requested");
+        return AsyncWebServer::sendError(req, 400, "Invalid PID requested");
     }
     if (pid_path == ESP_OK)
     {
         if (target_pid < 0 || target_pid > 0xFFFF)
         {
-            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid PID requested");
+            return AsyncWebServer::sendError(req, 400, "Invalid PID requested");
         }
     }
     return send_json_response(req, m_pid_def_get(target_pid));
@@ -802,13 +775,13 @@ esp_err_t d_pid_def_index_handler(httpd_req_t* req, void* arg)
     esp_err_t pid_path = get_path_pid(req, "/api/v1/pid_def/", &target_pid);
     if (pid_path == ESP_ERR_INVALID_ARG)
     {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid PID requested");
+        return AsyncWebServer::sendError(req, 400, "Invalid PID requested");
     }
     if (pid_path == ESP_OK)
     {
         if (target_pid < 0 || target_pid > 0xFFFF)
         {
-            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid PID requested");
+            return AsyncWebServer::sendError(req, 400, "Invalid PID requested");
         }
     }
     return send_json_response(req, m_pid_def_delete(target_pid));
@@ -820,13 +793,13 @@ esp_err_t g_pid_data_index_handler(httpd_req_t* req, void* arg)
     esp_err_t pid_path = get_path_pid(req, "/api/v1/pid_data/", &target_pid);
     if (pid_path == ESP_ERR_INVALID_ARG)
     {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid PID requested");
+        return AsyncWebServer::sendError(req, 400, "Invalid PID requested");
     }
     if (pid_path == ESP_OK)
     {
         if (target_pid < 0 || target_pid > 0xFFFF)
         {
-            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid PID requested");
+            return AsyncWebServer::sendError(req, 400, "Invalid PID requested");
         }
     }
     return send_json_response(req, m_pid_data_get(target_pid));
@@ -837,7 +810,7 @@ esp_err_t p_auto_poll_index_handler(httpd_req_t* req, void* arg)
     bool on = false;
     if (get_query_bool(req, "auto_poll", &on) != ESP_OK)
     {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid query parameter");
+        return AsyncWebServer::sendError(req, 400, "Invalid query parameter");
     }
 
     return send_json_response(req, m_auto_poll_set(on));
@@ -882,7 +855,7 @@ esp_err_t g_sd_card_file_tree_handler(httpd_req_t* req, void* arg)
     char        path_buf[CONFIG_HTTPD_MAX_URI_LEN + 1];
     if (get_sd_rest_path(req, api_route, path_buf, sizeof(path_buf), true) != ESP_OK)
     {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid SD card path");
+        return AsyncWebServer::sendError(req, 400, "Invalid SD card path", http_error::kBadPath);
     }
 
     return send_json_response(req, m_sdcard_file_tree_get(path_buf));
@@ -908,7 +881,7 @@ esp_err_t g_sd_card_file_read_handler(httpd_req_t* req, void* arg)
     char path_buf[CONFIG_HTTPD_MAX_URI_LEN + 1];
     if (get_sd_rest_path(req, api_route, path_buf, sizeof(path_buf), false) != ESP_OK)
     {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid SD card path");
+        return AsyncWebServer::sendError(req, 400, "Invalid SD card path", http_error::kBadPath);
     }
 
     // Keep this bounded lease through stat, open, every read/send, and close.
@@ -930,13 +903,13 @@ esp_err_t g_sd_card_file_read_handler(httpd_req_t* req, void* arg)
         }
         if (stat_err == ESP_ERR_NOT_FOUND)
         {
-            return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File not found");
+            return AsyncWebServer::sendError(req, 404, "File not found");
         }
         return send_json_error_response(req, 500);
     }
     if (!S_ISREG(file_stat.st_mode))
     {
-        return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File not found");
+        return AsyncWebServer::sendError(req, 404, "File not found");
     }
 
     FILE*           fd       = nullptr;
@@ -953,7 +926,7 @@ esp_err_t g_sd_card_file_read_handler(httpd_req_t* req, void* arg)
         }
         if (open_err == ESP_ERR_NOT_FOUND)
         {
-            return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File not found");
+            return AsyncWebServer::sendError(req, 404, "File not found");
         }
         return send_json_error_response(req, 500);
     }
@@ -1275,7 +1248,7 @@ esp_err_t d_file_delete_handler(httpd_req_t* req, void* arg)
     char        path_buf[CONFIG_HTTPD_MAX_URI_LEN + 1];
     if (get_sd_rest_path(req, api_route, path_buf, sizeof(path_buf), false) != ESP_OK)
     {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid SD card path");
+        return AsyncWebServer::sendError(req, 400, "Invalid SD card path", http_error::kBadPath);
     }
 
     return send_json_response(req, m_sdcard_file_delete_delete(path_buf));

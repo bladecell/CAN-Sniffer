@@ -1,5 +1,7 @@
 #include <unistd.h>
 
+#include <cstdio>
+
 #include <new>
 #include "async_web_server.hpp"
 
@@ -31,6 +33,34 @@ static void ws_send_work_func(void* arg)
     httpd_ws_send_frame_async(ctx->server, ctx->fd, &ws_frame);
 
     free(ctx);
+}
+
+esp_err_t AsyncWebServer::sendError(httpd_req_t* req, int status, const char* reason, const char* code,
+                                    uint32_t retryAfterS)
+{
+    status = http_error::errorStatus(status);
+    char body[http_error::kBodyMax];
+    if (http_error::buildBody(body, sizeof(body), status, reason, code) == 0)
+    {
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    esp_err_t err = httpd_resp_set_status(req, http_error::statusLine(status));
+    if (err == ESP_OK)
+    {
+        err = httpd_resp_set_type(req, "application/json");
+    }
+    char retryBuf[12];
+    if (retryAfterS == 0)
+    {
+        retryAfterS = http_error::retryAfterS(status);
+    }
+    if (err == ESP_OK && retryAfterS != 0)
+    {
+        (void)snprintf(retryBuf, sizeof(retryBuf), "%u", static_cast<unsigned>(retryAfterS));
+        err = httpd_resp_set_hdr(req, "Retry-After", retryBuf);  // retryBuf lives until the send below
+    }
+    return err == ESP_OK ? httpd_resp_send(req, body, HTTPD_RESP_USE_STRLEN) : err;
 }
 
 AsyncWebServer::AsyncWebServer() : server_(NULL), request_queue(NULL)
@@ -188,8 +218,7 @@ void AsyncWebServer::drainQueue()
         {
             continue;
         }
-        httpd_resp_set_status(job.req, "503 Shutting Down");
-        httpd_resp_sendstr(job.req, "{\"error\":\"Server is shutting down.\"}");
+        sendError(job.req, 503, "Server is shutting down", http_error::kShuttingDown);
         httpd_req_async_handler_complete(job.req);
     }
 }
@@ -235,8 +264,7 @@ esp_err_t AsyncWebServer::async_handler(httpd_req_t* req)
     else
     {
         ESP_LOGW(TAG, "Server overload, dropping request to %s", req->uri);
-        httpd_resp_set_status(req, "503 Busy");
-        httpd_resp_sendstr(req, "{\"error\": \"Server busy, no background workers available.\"}");
+        sendError(req, 503, "Server busy, no background workers available", http_error::kBusy);
         return ESP_OK;
     }
 }
@@ -246,8 +274,7 @@ esp_err_t AsyncWebServer::queue_request(httpd_req_t* req)
     if (!running_)
     {
         // Server is stopping; reject new work synchronously instead of detaching it.
-        httpd_resp_set_status(req, "503 Shutting Down");
-        httpd_resp_sendstr(req, "{\"error\":\"Server is shutting down.\"}");
+        sendError(req, 503, "Server is shutting down", http_error::kShuttingDown);
         return ESP_OK;
     }
 
@@ -270,8 +297,7 @@ esp_err_t AsyncWebServer::queue_request(httpd_req_t* req)
     if (req_count_this_window_ > max_requests_per_sec_)
     {
         ESP_LOGW(TAG, "Rate limit exceeded, uri=%s", copy->uri);
-        httpd_resp_set_status(copy, "429 Too Many Requests");
-        httpd_resp_sendstr(copy, "{\"error\":\"Rate limit exceeded.\"}");
+        sendError(copy, 429, "Rate limit exceeded", http_error::kRateLimited);
         httpd_req_async_handler_complete(copy);
         return ESP_OK;
     }
@@ -288,8 +314,7 @@ esp_err_t AsyncWebServer::queue_request(httpd_req_t* req)
     if (xQueueSend(request_queue, &job, 0) != pdTRUE)
     {
         ESP_LOGW(TAG, "Server busy, internal queue full.");
-        httpd_resp_set_status(copy, "503 Busy");
-        httpd_resp_sendstr(copy, "{\"error\":\"Server busy.\"}");
+        sendError(copy, 503, "Server busy", http_error::kBusy);
         httpd_req_async_handler_complete(copy);
         return ESP_OK;
     }

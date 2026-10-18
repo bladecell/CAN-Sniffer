@@ -12,13 +12,14 @@ Source of truth in the firmware: the route table `api_routes` in `sw/firmware/ma
 - Request body limits: 2048 bytes for JSON bodies, except `PUT /pid_def` (64 KiB), the two PID file calls (256 bytes), and SD upload (4 MiB). JSON bodies need a `Content-Length` header and must arrive within 5 s in total (`PUT /pid_def`: 20 s), else 400 `Incomplete request body`; chunked bodies are rejected with 400.
 - Versioning: none. There is no API version field. `GET /api/v1/system` returns `app_version` (`APP_VERSION_STRING`, built from `APP_VERSION_MAJOR/MINOR/PATCH` in `utilities.h`; `"1.2.4"` when checked), which is the only thing the frontend could compare.
 
-### Error shapes
-Three shapes occur. The frontend (`lib/api.ts`) treats a non-2xx status or a body with `"status":"error"` as an error and shows `reason`.
-1. Middleware errors: `{"status":"error","reason":"<text>"}` with the HTTP status. `reason` is usually an `esp_err_to_name` string such as `ESP_ERR_NOT_FOUND`. A handler that gets no body from the middleware answers with a fixed body for the status: 400 "Bad request", 404 "Not found", 408 "Request timeout", 413 "Content too large", 422 "Unprocessable entity", 503 "Service unavailable", 504 "Gateway timeout", else 500 "Internal server error".
-2. Handler errors from `httpd_resp_send_err`: the status is set and the body is a plain text message (for example `Invalid PID requested`, `Invalid JSON`, `Content-Length required`, `JSON too large`, `Incomplete request body`, `Invalid SD card path`, `File not found`). Not JSON.
-3. Async layer errors: `{"error":"<text>"}` with status `429 Too Many Requests`, `503 Busy` or `503 Shutting Down` (not valid reason phrases). No `Content-Type` is set.
-
-Unknown paths and unsupported methods get the ESP-IDF defaults (404, 405, 414 and so on), as plain text.
+### Error body
+Every error, from every layer (async server, handlers, middleware), has one shape and `Content-Type: application/json`:
+`{"status":"error","reason":"<human text>","code":"<STABLE_TOKEN>"}`. `reason` is for people and may change. `code` is for clients and stays stable: a status default (`BAD_REQUEST`, `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `METHOD_NOT_ALLOWED`, `REQUEST_TIMEOUT`, `CONFLICT`, `TOO_LARGE`, `UNPROCESSABLE`, `RATE_LIMITED`, `INTERNAL`, `BAD_GATEWAY`, `BUSY`, `GATEWAY_TIMEOUT`), a specific token (`BAD_JSON`, `BAD_PATH`, `SHUTTING_DOWN`) or an `esp_err_to_name` string such as `ESP_ERR_NOT_FOUND`. `429` and `503` carry `Retry-After: 1`. Status lines use standard reason phrases (`503 Service Unavailable`). The frontend (`lib/api.ts`) treats a non-2xx status or a body with `"status":"error"` as an error and shows `reason`.
+- The one non-error 4xx is the `409` `clear_dtc` challenge: `{"status":"confirm_required",...}`.
+- Bulk calls answer 200 with `"status":"partial_success"` (see `POST /pid_def`, `POST /req/dtc`).
+- Source: `components/async_web_server/include/http_error.hpp` (status lines, default codes, body builder; host-tested) and `AsyncWebServer::sendError`. The middleware builds the same fields in `json_error_body`; the code is filled from the HTTP status when the body is sent.
+- A handler that gets no body from the middleware (allocation failed) answers with the status default `reason` and `code`.
+- Unknown paths and unsupported methods are answered by the ESP-IDF server itself: `404`, `405`, `414`, `431` and so on, with a `text/html` plain message, not this JSON. Clients should not rely on a JSON body for those.
 
 Status mapping used by `status_for_error` in the middleware, where a route says "mapped": `ESP_ERR_INVALID_ARG` → 400 (or the route's own default), `ESP_ERR_NOT_FOUND` → 404, `ESP_ERR_TIMEOUT` → 504, `ESP_ERR_INVALID_STATE` and `ESP_ERR_INVALID_SIZE` → 503, everything else → 500. For SD routes `ESP_ERR_TIMEOUT` from acquiring the SD lock (1 s) is reported as 503 `"SD card busy"` instead.
 

@@ -46,7 +46,9 @@ static MiddlewareJsonResult json_result(cJSON* body, int status = 200)
     return {body, status};
 }
 
-static cJSON* json_error_body(const char* reason)
+// {"status":"error","reason","code"} (http_error.hpp). A null code is filled from the HTTP status when the body is sent
+// (ensure_error_fields in webserver.cpp), so only esp_err based errors name theirs here.
+static cJSON* json_error_body(const char* reason, const char* code = nullptr)
 {
     cJSON* root = cJSON_CreateObject();
     if (root != nullptr)
@@ -55,6 +57,10 @@ static cJSON* json_error_body(const char* reason)
         if (reason != nullptr)
         {
             cJSON_AddStringToObject(root, "reason", reason);
+        }
+        if (code != nullptr)
+        {
+            cJSON_AddStringToObject(root, "code", code);
         }
     }
     return root;
@@ -94,7 +100,7 @@ static MiddlewareJsonResult sd_operation_error(esp_err_t err)
         return json_result(json_error_body("SD card busy"), 503);
     }
 
-    return json_result(json_error_body(esp_err_to_name(err)), status_for_error(err));
+    return json_result(json_error_body(esp_err_to_name(err), esp_err_to_name(err)), status_for_error(err));
 }
 
 static bool is_confirmed_missing_errno(int error_number)
@@ -361,7 +367,7 @@ MiddlewareJsonResult m_auto_poll_set(bool on)
     const esp_err_t err = OBD2::getInstance().setAutoPoll(on);
     if (err != ESP_OK)
     {
-        return json_result(json_error_body(esp_err_to_name(err)), 503);
+        return json_result(json_error_body(esp_err_to_name(err), esp_err_to_name(err)), 503);
     }
     cJSON* root = cJSON_CreateObject();
     if (root == nullptr)
@@ -632,12 +638,12 @@ MiddlewareJsonResult m_sdcard_file_tree_get(const char* path)
                            : tree_error == ESP_ERR_INVALID_ARG                                    ? 400
                            : tree_error == ESP_ERR_TIMEOUT || tree_error == ESP_ERR_INVALID_STATE ? 503
                                                                                                   : 500;
-        return json_result(json_error_body(esp_err_to_name(tree_error)), status);
+        return json_result(json_error_body(esp_err_to_name(tree_error), esp_err_to_name(tree_error)), status);
     }
 
     if (root == nullptr)
     {
-        return json_result(json_error_body(esp_err_to_name(ESP_ERR_NO_MEM)), 500);
+        return json_result(json_error_body(esp_err_to_name(ESP_ERR_NO_MEM), esp_err_to_name(ESP_ERR_NO_MEM)), 500);
     }
 
     cJSON_AddStringToObject(root, "status", "success");

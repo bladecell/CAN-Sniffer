@@ -21,6 +21,7 @@ void run_battery_calc_tests(void);
 void run_reset_reason_tests(void);
 void run_http_parse_tests(void);
 void run_api_routes_tests(void);
+void run_http_error_tests(void);
 
 /* The linux IDF port starts FreeRTOS and calls app_main(); exit with the failure count. */
 void app_main(void)
@@ -46,5 +47,6 @@ void app_main(void)
     run_reset_reason_tests();
     run_http_parse_tests();
     run_api_routes_tests();
+    run_http_error_tests();
     exit(UNITY_END() == 0 ? 0 : 1);
 }

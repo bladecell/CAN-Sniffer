@@ -8,6 +8,7 @@
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "http_error.hpp"
 
 #define MAX_WS_CLIENTS CONFIG_LWIP_MAX_LISTENING_TCP
 
@@ -54,6 +55,12 @@ public:
     };
 
     static const char* get_method_str(int method);
+
+    // The one way to answer an error: valid reason phrase, Content-Type application/json, body
+    // {"status":"error","reason","code"} (http_error.hpp), Retry-After for 429/503. A null reason or code uses the
+    // status default; retryAfterS 0 uses the status default too. Works on detached async requests as well.
+    static esp_err_t sendError(httpd_req_t* req, int status, const char* reason = nullptr, const char* code = nullptr,
+                               uint32_t retryAfterS = 0);
 
     esp_err_t        queue_request(httpd_req_t* req);
     static esp_err_t async_handler(httpd_req_t* req);
