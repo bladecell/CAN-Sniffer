@@ -9,9 +9,12 @@
   import { canStore } from "$lib/canStore.svelte.ts";
   import { onMount } from "svelte";
   import ToastContainer from "./lib/components/ToastContainer.svelte";
+  import AuthDialog from "./lib/components/AuthDialog.svelte";
+  import { auth } from "$lib/auth.svelte";
 
   onMount(() => {
     canStore.connect();
+    auth.refresh();
 
     // 3. Listen for manual URL changes (Back/Forward button)
     const handleHashChange = () => {
@@ -60,6 +63,7 @@
 </main>
 
 <ToastContainer />
+<AuthDialog />
 
 <style>
   .main-content {

@@ -15,6 +15,7 @@ import type {
 } from "./types";
 import { validatePidDefinitionSet } from "./pidValidation";
 import { parseJsonResponse, parseJsonResponseAllowEmpty } from "./api";
+import { auth } from "./auth.svelte";
 import { normalizePidDefinition, parsePidList, serializePidDefinition } from "./pidDefinition";
 import type { PidRow } from "./telemetryStore.svelte";
 import { parseWsFrame, type WsFrame } from "./wsFrames";
@@ -126,6 +127,8 @@ export class CanStore {
 
             this.getVin();
             this.getDTC();
+            // Session and claim state come from GET /auth; a reconnect may follow a reboot that cleared the token.
+            auth.refresh();
         };
 
         this.socket.onclose = () => {
@@ -554,7 +557,7 @@ export class CanStore {
     private async postClear(token?: string): Promise<ClearResult> {
         const url = token ? `/api/v1/req/clear_dtc?token=${encodeURIComponent(token)}` : "/api/v1/req/clear_dtc";
         try {
-            const response = await fetch(url, { method: "POST" });
+            const response = await auth.gatedFetch(url, { method: "POST" });
             if (response.status === 409) {
                 const c = parseConfirmRequired(409, await response.json().catch(() => null));
                 if (!c) throw new Error("Unexpected clear confirmation response");
@@ -622,7 +625,7 @@ export class CanStore {
                 throw new Error("PID definitions payload exceeds 64 KiB (HTTP 413).");
             }
 
-            const response = await fetch("/api/v1/pid_def", {
+            const response = await auth.gatedFetch("/api/v1/pid_def", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: serializedPayload,
@@ -650,7 +653,7 @@ export class CanStore {
         }
 
         try {
-            const response = await fetch('/api/v1/pid_def/save', {
+            const response = await auth.gatedFetch('/api/v1/pid_def/save', {
                 method: 'POST'
             });
 

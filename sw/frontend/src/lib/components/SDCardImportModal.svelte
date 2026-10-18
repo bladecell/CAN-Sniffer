@@ -3,6 +3,7 @@
   import { alertStore } from "$lib/alertStore.svelte";
   import { telemetryStore } from "$lib/telemetryStore.svelte";
   import { parseJsonResponse, sdCardFileEndpoint } from "$lib/api";
+  import { auth } from "$lib/auth.svelte";
   import FileTree from "./FileTree.svelte";
   import { dialogFocus } from "$lib/dialogFocus";
   import type { SdTreeNode } from "$lib/types";
@@ -27,7 +28,7 @@
   async function loadTree() {
     loadingTree = true;
     try {
-      const response = await fetch("/api/v1/sd_card/tree");
+      const response = await auth.gatedFetch("/api/v1/sd_card/tree");
       tree = await parseJsonResponse(response);
     } catch (e) {
       const reason = e instanceof Error ? `: ${e.message}` : "";
@@ -47,7 +48,7 @@
     try {
       const endpoint = sdCardFileEndpoint(path);
       console.log("Fetching SD card file from:", endpoint);
-      const response = await fetch(endpoint);
+      const response = await auth.gatedFetch(endpoint);
       if (!response.ok) {
         console.error("HTTP error:", response.status, response.statusText);
         throw new Error("HTTP " + response.status);
