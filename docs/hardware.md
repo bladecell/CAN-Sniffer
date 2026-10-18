@@ -27,6 +27,7 @@ Pick the board in menuconfig (`CAN Sniffer` > `Hardware revision`) or in `sdkcon
 | SD (SPI) | MISO 12, MOSI 10, SCLK 11, CS 9 | v1.1: MISO 10, MOSI 12, SCLK 11, CS 13 |
 | SD detect | 13 | v1.1: 9 |
 | LED | 47 | |
+| BOOT button | 0 | Strapping pin (low at reset = download mode), so firmware only reads it: input with pull-up, interrupt on both edges, debounced 30 ms. Use: press = "I am at the device" for the PIN claim, hold 10 s = PIN recovery (`api.md`, Authentication). Same pin on v1.1 and v1.2; v2 map not defined yet |
 | IMU (I²C / SPI) | TODO | |
 | IMU interrupt | TODO | must be an RTC GPIO for deep-sleep wake |
 | OBD voltage sense (ADC) | TODO | divider ratio: TODO |

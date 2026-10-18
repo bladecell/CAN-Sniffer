@@ -23,7 +23,7 @@ python3 - "$FW" "$DB" "$OUT/compile_commands.json" <<'PY'
 import json, re, sys
 fw, src, dst = sys.argv[1:4]
 drop = re.compile(r' (-mdisable-hardware-atomics|-Wno-old-style-declaration|-fstrict-volatile-bitfields|'
-                  r'-fno-tree-switch-conversion|-fno-test-coverage|-mlongcalls|-mlong-calls|-Werror(=\S+)?|-fmacro-prefix-map=\S+|'
+                  r'-fno-tree-switch-conversion|-fno-malloc-dce|-fzero-init-padding-bits=\S+|-fno-test-coverage|-mlongcalls|-mlong-calls|-Werror(=\S+)?|-fmacro-prefix-map=\S+|'
                   r'-fdebug-prefix-map=\S+|-ffile-prefix-map=\S+|"?@\S+/toolchain/c(xx)?flags"?)(?= )')
 out = []
 for e in json.load(open(src)):

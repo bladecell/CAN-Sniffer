@@ -15,6 +15,7 @@ All paths are relative to `sw/firmware/`. Dependencies are the `REQUIRES` / `PRI
 | OBD2 simulator | `components/obd2_simulator/` | Answers requests with synthetic frames when the CAN config has `debug=true`. Two ECUs: 0x7E8 answers everything (PIDs, DTC, VIN), 0x7E9 only DTC and VIN requests (own DTC set overlapping ECU 0, same VIN); flow control sent to 0x7E0 or 0x7E1 releases that ECU's consecutive frames. The RX ISR passes CAN ID and data bytes to a 16-entry static queue (`simDroppedFrames` counts overflows) | can_driver, obd2 |
 | SD card | `components/sd_card/` | SDMMC mount, hot-plug via the card-detect pin, task-affine operation lease (recursive mutex; the supervisor's status poll waits at most 250 ms; download 5 min, upload 60 s and delete 30 s deadlines), file ops, path validation | driver, fatfs, freertos, sdmmc; private: json |
 | WiFi | `components/wifi/` | AP, STA or AP+STA, STA retry then AP fallback, mDNS | esp_wifi, nvs_flash, espressif/mdns |
+| Button | `components/button/` (`button.c`, `include/button.h`, IDF-free `include/button_logic.h`) | GPIO0 (BOOT) reader: both-edge interrupt wakes one task, 30 ms debounce, `button_last_press_us()`, hold hook after 10 s (PIN recovery, P2.10c). Read-only: GPIO0 is a strapping pin and is never driven. Started and stopped by `setup_web_server()` / `stop_web_server()`, because only the API uses it. `init()` failure is logged and the device runs on without claim and recovery | esp_driver_gpio, esp_timer |
 | Async web server | `components/async_web_server/` | Wraps `esp_http_server`: request queue, worker tasks, rate limit, WebSocket broadcast | esp_http_server, esp_timer |
 | Web server (routes) | `main/src/webserver.cpp`, `main/src/middleware.cpp` | REST routes, WebSocket handler. `webserver.cpp` does HTTP parsing and calls `m_*` functions in `middleware.cpp`, which return cJSON | OBD2, SD card, Settings, Supervisor, CAN driver |
 | Frontend | `../frontend/` (Svelte, built with bun) | UI, served as one gzipped file from the `www` LittleFS partition | REST and WebSocket only |
@@ -40,6 +41,7 @@ Priorities are absolute FreeRTOS numbers (`tskIDLE_PRIORITY` is 0). "Core" is th
 | `SupervisorTask` | `main/src/supervisor.cpp` | 1 | 4096 | 1 | `vTaskDelay(1000 ms)` at the end of every loop; in SLEEPING also `vTaskDelay` of the sleep time |
 | `led_worker` | `main/include/led_status.hpp` | any | 1536 | 2 | binary semaphore with timeout |
 | `WSDataStreamTask` | `main/src/webserver.cpp` | 1 | 4096 | 1 | `vTaskDelayUntil` 1000 ms; when no WebSocket client is connected, `xSemaphoreTake(WSDataStreamSemaphore, portMAX_DELAY)` |
+| `button` | `components/button/` | any | 4096 | 2 | `ulTaskNotifyTake` forever while idle (woken by the GPIO0 ISR); while BOOT is held, with a timeout until the 10 s hold. Exists only while the web server is up |
 | `httpd` | ESP-IDF HTTP server (`httpd_start`) | any | 8192 (set in `async_web_server.cpp`) | 5 (`HTTPD_DEFAULT_CONFIG`) | `select()` on sockets. Also runs the WebSocket send work queued by `wsBroadcast` |
 | `async_req_worker` x6 | `components/async_web_server/` | any | 8192 | 5 | `xQueueReceive(request_queue, portMAX_DELAY)`. Queue depth is 12 (2 x workers). All REST handlers run here |
 | `can_tx` | `components/can_driver/` | 1 | 4096 | 4 (`TX_TASK_PRIO`) | `canConnectedSemaphore` while the bus is not CONNECTED; otherwise `txQueue` with a 5000 ms timeout. After each frame it waits until 4 ms (`MIN_TRANSMIT_PERIOD_MS`) have passed |
@@ -75,7 +77,7 @@ Task watchdog: enabled, 5 s timeout, panic on timeout is off, idle tasks of both
 | 6 | CAN | Reads the CAN config from NVS (defaults on first boot), installs the simulator hooks if `debug`, `CanDriver::init` | no |
 | 7 | OBD | Registers the connected-callbacks, `OBD2::init()` (needs the CAN driver initialized), waits 1 s, then loads the PID JSON from the SD card. No card mounted: warns and returns OK with no PIDs. Card mounted but the file is missing or fails to parse: returns an error | no |
 | 8 | WIFI | Reads the Wi-Fi config from NVS (defaults on first boot), `WIFI::init` + `start` | yes |
-| 9 | WEBSERVER | `setup_web_server()`: starts `AsyncWebServer`, registers routes, subscribes `pid_stream_callback` to PID updates, creates `WSDataStreamTask` | yes |
+| 9 | WEBSERVER | `setup_web_server()`: starts `AsyncWebServer`, registers routes, subscribes `pid_stream_callback` to PID updates, creates `WSDataStreamTask`, then `button_init()` (a failure only disables PIN claim and recovery) | yes |
 
 Failure handling:
 - A step that fails and is not critical is logged and skipped. The next step still runs and the state goes on to NOT_CONNECTED. The web server then runs with that feature missing (for example OBD calls return 503).

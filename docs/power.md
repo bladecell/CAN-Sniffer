@@ -59,7 +59,7 @@ The cycle is about `sleep time + 1 s` (supervisor loop delay) plus the wake work
 
 ### Deinit and init order
 Before sleep (STOPPING):
-1. `stop_web_server()`: asks `WSDataStreamTask` to leave its loop and waits up to 1 s for it to exit by itself, stops `AsyncWebServer` (workers, httpd), and only then deletes the task's semaphore, so the WebSocket handshake handler never sees a deleted semaphore. Waits at most 3 s for the workers; if one is still inside a handler it returns `ESP_ERR_TIMEOUT`, nothing further is stopped and the sequence retries on the next pass.
+1. `stop_web_server()`: asks `WSDataStreamTask` to leave its loop and waits up to 1 s for it to exit by itself, stops `AsyncWebServer` (workers, httpd), then `button_deinit()` (removes the GPIO0 ISR handler, the `button` task exits, mutex and semaphore are freed, the pin goes back to its reset default; a task that does not leave within 500 ms returns `ESP_ERR_TIMEOUT` and the sequence retries), and only then deletes the task's semaphore, so the WebSocket handshake handler never sees a deleted semaphore. Waits at most 3 s for the workers; if one is still inside a handler it returns `ESP_ERR_TIMEOUT`, nothing further is stopped and the sequence retries on the next pass.
 2. `OBD2::deinit()`: stops its three tasks, clears PID values, VIN, DTCs and all subscriber lists, deletes its queues and semaphores. PID definitions stay. If it times out (5 s), the sequence stops here and retries on the next pass.
 3. `WIFI::deinit()` (returns void, so nothing is checked). It also frees mDNS (`mdns_free`) and clears the flag, so the next `start()` binds mDNS to the new netifs.
 4. `CanDriver::deinit()`: stops the simulator, disables the node, then asks the TX and health tasks to exit (flag and notify, bounded 3 s wait, each task deletes itself) before deleting the TWAI node, queues, semaphore and TX ring. Safe to call twice. A task that does not leave in time returns `ESP_ERR_TIMEOUT` with nothing freed; an error stops the sequence and retries.
@@ -76,6 +76,13 @@ Not deinitialized before sleep, and have no `deinit()`: Settings (NVS), power ma
 - ERROR state: fixed by P2.9e, see States.
 - While the bus is up (RUNNING) the device never sleeps. While the bus is down and the voltage stays above 13.2 V it never sleeps either.
 - `main()` keeps polling the supervisor state every 250 ms until it is RUNNING, including while the device sleeps.
+
+### BOOT button (GPIO0) and sleep
+- The button is not a wake source. The only wake source is the timer, and the web server (the only user of the button) is down while the device sleeps, so a press then has no effect and nothing is latched.
+- It lives and dies with the web server: initialised at the end of `setup_web_server()`, released in `stop_web_server()`. Every wake that brings the web server back also re-initialises it, and "a press since boot" means a press since that init (`button_last_press_us()` is 0 after init).
+- While idle the button costs nothing: no timer, no polling; the task blocks on a notification and the pin interrupt (both edges) is the only wake-up. It does not hold a PM lock, and the supervisor's `ESP_PM_NO_LIGHT_SLEEP` lock is held while awake anyway.
+- GPIO0 is a strapping pin: holding it low at reset enters download mode. The driver only reads it (input, internal pull-up) and never drives it. A button that is already down when the driver starts (held through a reset or a wake) is ignored until it has been released once, so it can neither open the claim window nor start a recovery hold.
+- The hold gesture (10 s) is wired to PIN recovery by the auth code (`docs/api.md`, Authentication).
 
 ## Design intent (not built)
 Kept from the first draft of this doc. None of it exists in the code.

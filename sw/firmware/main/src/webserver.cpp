@@ -15,6 +15,7 @@
 #include "api_routes.hpp"
 #include "async_web_server.hpp"
 #include "body_reader.hpp"
+#include "button.h"
 #include "cJSON.h"
 #include "esp_check.h"
 #include "esp_err.h"
@@ -1552,6 +1553,13 @@ esp_err_t setup_web_server()
         return ESP_FAIL;
     }
 
+    // The BOOT button only matters while the API is up (claim and recovery). Without it the device keeps running.
+    const esp_err_t buttonErr = button_init();
+    if (buttonErr != ESP_OK)
+    {
+        ESP_LOGW(TAG, "BOOT button unavailable (%s); PIN claim and recovery disabled", esp_err_to_name(buttonErr));
+    }
+
     return ESP_OK;
 }
 
@@ -1585,6 +1593,12 @@ esp_err_t stop_web_server()
     if (err != ESP_OK)
     {
         return err;
+    }
+
+    if (button_deinit() != ESP_OK)
+    {
+        ESP_LOGW(TAG, "BOOT button task did not exit; the next stop retries");
+        return ESP_ERR_TIMEOUT;
     }
 
     if (WSDataStreamSemaphore != nullptr)
