@@ -533,7 +533,17 @@ static esp_err_t load_section(const char* name, Cfg& cfg, const Cfg& defaults, G
     }
     else if (err == ESP_ERR_NVS_CORRUPT_KEY_PART)
     {
-        ESP_LOGE(TAG, "NVS corruption detected! Factory resetting...");
+        const uint32_t resets = error_policy::validCount(s_errorMagic, s_errorRestarts);
+        if (!error_policy::nvsResetAllowed(resets))
+        {
+            ESP_LOGE(TAG, "NVS still corrupt after %u factory resets; failing %s setup (ERROR back-off)",
+                     static_cast<unsigned>(resets), name);
+            return ESP_FAIL;
+        }
+        s_errorMagic    = error_policy::kMagic;
+        s_errorRestarts = resets + 1;
+        ESP_LOGE(TAG, "NVS corruption detected! Factory resetting (%u of %u)...", static_cast<unsigned>(resets + 1),
+                 static_cast<unsigned>(error_policy::kMaxNvsResets));
         Settings::getInstance().factoryReset();
         SUPERVISOR::getInstance().restart_system();
         return ESP_FAIL;

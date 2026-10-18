@@ -14,6 +14,14 @@ constexpr uint32_t kBaseBackoffS = 60;
 constexpr uint32_t kMaxBackoffS  = 3600;
 constexpr uint32_t kMaxCount     = 16;
 constexpr uint32_t kMagic        = 0xE220B007u;
+constexpr uint32_t kMaxNvsResets = 3;  // factory resets in a row before the supervisor goes to ERROR instead
+
+// Factory reset + reboot on a corrupt NVS key partition shares the consecutive-failure count with the ERROR restarts, so
+// a reset that does not cure the corruption cannot loop forever.
+constexpr bool nvsResetAllowed(uint32_t count)
+{
+  return count < kMaxNvsResets;
+}
 
 constexpr uint32_t backoffS(uint32_t count)
 {
