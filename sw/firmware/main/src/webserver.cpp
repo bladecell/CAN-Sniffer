@@ -756,7 +756,7 @@ esp_err_t p_system_reboot_index_handler(httpd_req_t* req, void* arg)
     return send_json_response(req, m_system_reboot());
 }
 
-esp_err_t p_system_copy_file_index_handler(httpd_req_t* req, void* arg)
+esp_err_t p_sd_card_copy_handler(httpd_req_t* req, void* arg)
 {
     cJSON* root = get_validated_json_payload(req, 2048);
     if (root == nullptr)
@@ -764,7 +764,7 @@ esp_err_t p_system_copy_file_index_handler(httpd_req_t* req, void* arg)
         return ESP_OK;
     }
 
-    MiddlewareJsonResult resp = m_system_copy_file(root);
+    MiddlewareJsonResult resp = m_sd_card_copy(root);
     cJSON_Delete(root);
     return send_json_response(req, resp);
 }

@@ -72,7 +72,8 @@ void test_commands_and_dtc_are_exact(void)
 // P2.12: renamed routes are gone, no aliases.
 void test_renamed_routes_are_removed(void)
 {
-  const char* const removed[][2] = {{"POST", "/api/v1/req/auto_poll"}, {"POST", "/api/v1/settings"}, {"POST", "/api/v1/sd_card/file/*"}};
+  const char* const removed[][2] = {{"POST", "/api/v1/req/auto_poll"}, {"POST", "/api/v1/settings"}, {"POST", "/api/v1/sd_card/file/*"},
+                                {"POST", "/api/v1/system/copy_file"}};
   for (const auto& r : removed)
   {
     for (size_t i = 0; i < kCount; i++)
@@ -99,7 +100,7 @@ const GatedRoute kGated[] = {
     {"GET", "/api/v1/sd_card/tree"},      {"GET", "/api/v1/sd_card/tree/*"},
     {"GET", "/api/v1/sd_card/file/*"},    {"PUT", "/api/v1/sd_card/file/*"},
     {"DELETE", "/api/v1/sd_card/file/*"}, {"POST", "/api/v1/sd_card/format"},
-    {"POST", "/api/v1/system/copy_file"}, {"POST", "/api/v1/system/reboot"},
+    {"POST", "/api/v1/sd_card/copy"}, {"POST", "/api/v1/system/reboot"},
     {"POST", "/api/v1/pid_def"},          {"PUT", "/api/v1/pid_def"},
     {"DELETE", "/api/v1/pid_def/*"},      {"POST", "/api/v1/pid_def/save"},
     {"POST", "/api/v1/pid_def/load"},     {"POST", "/api/v1/req/clear_dtc"},

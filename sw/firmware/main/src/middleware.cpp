@@ -31,6 +31,7 @@
 #include "pid_json.hpp"
 #include "sd_card.hpp"
 #include "settings.hpp"
+#include "sd_path.hpp"
 #include "settings_patch.hpp"
 #include "settings_validation.hpp"
 #include "string"
@@ -1575,27 +1576,30 @@ MiddlewareJsonResult m_pid_def_load(cJSON* payload)
     return json_result(root, status);
 }
 
-MiddlewareJsonResult m_system_copy_file(cJSON* payload)
+MiddlewareJsonResult m_sd_card_copy(cJSON* payload)
 {
     if (payload == nullptr || !cJSON_IsObject(payload))
     {
         return json_result(json_error_body("Payload must be a JSON object"), 400);
     }
 
-    cJSON* src_node  = cJSON_GetObjectItem(payload, "source_path");
-    cJSON* dest_node = cJSON_GetObjectItem(payload, "destination_path");
+    cJSON* src_node  = cJSON_GetObjectItem(payload, "source");
+    cJSON* dest_node = cJSON_GetObjectItem(payload, "destination");
 
     if (!cJSON_IsString(src_node) || !cJSON_IsString(dest_node))
     {
-        return json_result(json_error_body("Missing or invalid 'source_path' or 'destination_path'"), 400);
+        return json_result(json_error_body("Missing or invalid 'source' or 'destination'"), 400);
     }
 
-    const char* src_path  = src_node->valuestring;
-    const char* dest_path = dest_node->valuestring;
-
-    if (!SDCard::is_path_under(src_path, "/sdcard") || !SDCard::is_path_under(dest_path, "/sdcard"))
+    // Paths in the body are relative to the SD mount point, like the <path> of /sd_card/file. Hostile or directory paths
+    // are refused before any file is touched.
+    // 272 bytes each: "/sdcard/" plus a path of at most 255 characters (the settings path limit). Longer paths are refused.
+    char src_path[272];
+    char dest_path[272];
+    if (!sd_path::absoluteFile("/sdcard", src_node->valuestring, src_path, sizeof(src_path)) ||
+        !sd_path::absoluteFile("/sdcard", dest_node->valuestring, dest_path, sizeof(dest_path)))
     {
-        return json_result(json_error_body("source_path and destination_path must be under /sdcard"), 400);
+        return json_result(json_error_body("source and destination must be valid relative file paths"), 400);
     }
 
     esp_err_t err = ESP_OK;

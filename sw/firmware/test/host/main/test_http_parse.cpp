@@ -29,6 +29,38 @@ void test_valid_relative_root_only_when_allowed(void)
   TEST_ASSERT_FALSE(sd_path::validRelative(nullptr, true));
 }
 
+void test_absolute_file_joins_mount_and_relative(void)
+{
+  char out[32];
+  TEST_ASSERT_TRUE(sd_path::absoluteFile("/sdcard", "/config/a.json", out, sizeof(out)));
+  TEST_ASSERT_EQUAL_STRING("/sdcard/config/a.json", out);
+  TEST_ASSERT_TRUE(sd_path::absoluteFile("/sdcard", "a.json", out, sizeof(out)));
+  TEST_ASSERT_EQUAL_STRING("/sdcard/a.json", out);
+}
+
+void test_absolute_file_rejects_hostile_and_directories(void)
+{
+  char        out[32];
+  const char* bad[] = {"", "/", "/a/", "/..", "/a/../b", "../a", "//a", "/a\\b", "/sdcard/../x", "/a?b"};
+  for (const char* p : bad)
+  {
+    out[0] = 'x';
+    TEST_ASSERT_FALSE_MESSAGE(sd_path::absoluteFile("/sdcard", p, out, sizeof(out)), p);
+    TEST_ASSERT_EQUAL_CHAR('\0', out[0]);
+  }
+  TEST_ASSERT_FALSE(sd_path::absoluteFile("/sdcard", nullptr, out, sizeof(out)));
+  TEST_ASSERT_FALSE(sd_path::absoluteFile("/sdcard", "/a", out, 0));
+}
+
+void test_absolute_file_never_truncates(void)
+{
+  char out[16];  // "/sdcard/" is 8, so 7 chars of path fit with the NUL
+  TEST_ASSERT_TRUE(sd_path::absoluteFile("/sdcard", "/abcdefg", out, sizeof(out)));
+  TEST_ASSERT_EQUAL_STRING("/sdcard/abcdefg", out);
+  TEST_ASSERT_FALSE(sd_path::absoluteFile("/sdcard", "/abcdefgh", out, sizeof(out)));
+  TEST_ASSERT_EQUAL_CHAR('\0', out[0]);
+}
+
 void test_valid_relative_rejects_hostile(void)
 {
   const char* bad[] = {"/..",      "/../x",   "/a/../b", "/a/..",  "/.",     "/a/./b", "//a",     "/a//b",
@@ -287,6 +319,9 @@ extern "C" void run_http_parse_tests(void)
   RUN_TEST(test_strict_int);
   RUN_TEST(test_path_int);
   RUN_TEST(test_strict_bool);
+  RUN_TEST(test_absolute_file_joins_mount_and_relative);
+  RUN_TEST(test_absolute_file_rejects_hostile_and_directories);
+  RUN_TEST(test_absolute_file_never_truncates);
   RUN_TEST(test_query_keys);
   RUN_TEST(test_dtc_percent_decode);
   RUN_TEST(test_dtc_code_list);

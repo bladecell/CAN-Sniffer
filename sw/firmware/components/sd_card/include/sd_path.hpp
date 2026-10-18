@@ -79,4 +79,35 @@ inline bool isUnder(const char* path, const char* root)
   return path[rootLen] == '\0' || path[rootLen] == '/';
 }
 
+// "<mount>/<rel>" for a file operation: rel is a valid relative path ("/a/b" or "a/b"), not the root and not a directory
+// (no trailing slash). out is cleared on failure and never holds a truncated path.
+inline bool absoluteFile(const char* mount, const char* rel, char* out, size_t cap)
+{
+  if (out == nullptr || cap == 0)
+  {
+    return false;
+  }
+  out[0] = '\0';
+  if (mount == nullptr || !validRelative(rel, false))
+  {
+    return false;
+  }
+  const size_t relLen = strlen(rel);
+  if (rel[relLen - 1] == '/')
+  {
+    return false;
+  }
+  const char*  tail     = rel[0] == '/' ? rel + 1 : rel;
+  const size_t mountLen = strlen(mount);
+  const size_t tailLen  = strlen(tail);
+  if (mountLen + 1 + tailLen + 1 > cap)
+  {
+    return false;
+  }
+  memcpy(out, mount, mountLen);
+  out[mountLen] = '/';
+  memcpy(out + mountLen + 1, tail, tailLen + 1);
+  return true;
+}
+
 }  // namespace sd_path

@@ -43,7 +43,7 @@ MiddlewareJsonResult m_obdii_get();
 MiddlewareJsonResult m_obdii_set(cJSON* payload);
 MiddlewareJsonResult m_system_get();
 MiddlewareJsonResult m_system_reboot();
-MiddlewareJsonResult m_system_copy_file(cJSON* payload);
+MiddlewareJsonResult m_sd_card_copy(cJSON* payload);
 MiddlewareJsonResult m_sdcard_info_get();
 MiddlewareJsonResult m_sdcard_format_post();
 // Directory tree below `path`, bounded by `limits` (depth, entry count, top-level offset). The body has "truncated".
