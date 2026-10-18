@@ -439,7 +439,9 @@ const char* AsyncWebServer::get_method_str(int method)
     }
 }
 
-esp_err_t AsyncWebServer::registerSocketRoute(const char* uri, esp_err_t (*handler)(httpd_req_t* r), void* ctx)
+esp_err_t AsyncWebServer::registerSocketRoute(const char* uri, esp_err_t (*handler)(httpd_req_t* r), void* ctx,
+                                              esp_err_t (*preHandshake)(httpd_req_t* r),
+                                              esp_err_t (*postHandshake)(httpd_req_t* r))
 {
     httpd_uri_t http_uri = {};
 
@@ -449,6 +451,12 @@ esp_err_t AsyncWebServer::registerSocketRoute(const char* uri, esp_err_t (*handl
     http_uri.user_ctx                 = ctx;
     http_uri.is_websocket             = true;
     http_uri.handle_ws_control_frames = true;
+#ifdef CONFIG_HTTPD_WS_PRE_HANDSHAKE_CB_SUPPORT
+    http_uri.ws_pre_handshake_cb = preHandshake;
+#endif
+#ifdef CONFIG_HTTPD_WS_POST_HANDSHAKE_CB_SUPPORT
+    http_uri.ws_post_handshake_cb = postHandshake;
+#endif
 
     esp_err_t err = httpd_register_uri_handler(server_, &http_uri);
 

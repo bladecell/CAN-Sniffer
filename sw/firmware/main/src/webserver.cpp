@@ -1612,24 +1612,25 @@ void ws_send_byte(uint8_t byte)
     AsyncWebServer::getInstance().wsBroadcast(&ws_frame);
 }
 
-esp_err_t ws_socket_handler(httpd_req_t* req)
-{
-    int sockfd = httpd_req_to_sockfd(req);
+// IDF does not call ws_socket_handler for the upgrade GET, so the Origin check and the stream start live in handshake
+// hooks. Without them an evil Origin was accepted and the 1 Hz CAN status frame never started.
+#if !defined(CONFIG_HTTPD_WS_PRE_HANDSHAKE_CB_SUPPORT) || !defined(CONFIG_HTTPD_WS_POST_HANDSHAKE_CB_SUPPORT)
+#error "WebSocket handshake callbacks are off: set CONFIG_HTTPD_WS_PRE_HANDSHAKE_CB_SUPPORT and CONFIG_HTTPD_WS_POST_HANDSHAKE_CB_SUPPORT"
+#endif
 
-    if (req->method == HTTP_GET)
+// Browsers allow cross-site WebSockets, so the upgrade request is the only chance to look at Origin.
+static esp_err_t ws_pre_handshake(httpd_req_t* req)
+{
+    return pass_host_origin(req) ? ESP_OK : ESP_FAIL;  // pass_host_origin already sent the 403
+}
+
+static esp_err_t ws_post_handshake(httpd_req_t* req)
+{
+    ESP_LOGI(TAG, "WS Connect: Client #%d", httpd_req_to_sockfd(req));
+    wsStreamingEnabled.store(true);
+    if (WSDataStreamSemaphore != nullptr)
     {
-        // The upgrade request is the only chance to look at Origin: browsers allow cross-site WebSockets.
-        if (!pass_host_origin(req))
-        {
-            return ESP_OK;
-        }
-        ESP_LOGI(TAG, "WS Connect: Client #%d", sockfd);
-        wsStreamingEnabled.store(true);
-        if (WSDataStreamSemaphore != nullptr)
-        {
-            xSemaphoreGive(WSDataStreamSemaphore);
-        }
-        return ESP_OK;
+        xSemaphoreGive(WSDataStreamSemaphore);
     }
 
     httpd_ws_frame_t ws_pkt;
@@ -1650,6 +1651,12 @@ esp_err_t ws_socket_handler(httpd_req_t* req)
             wsStreamingEnabled.store(false);
         }
         return httpd_ws_send_frame(req, &ws_pkt);
+    return ESP_OK;
+}
+
+esp_err_t ws_socket_handler(httpd_req_t* req)
+{
+    int sockfd = httpd_req_to_sockfd(req);
     }
 
     if (!input_limits::wsFrameLenOk(ws_pkt.len))
@@ -1799,7 +1806,7 @@ static esp_err_t register_routes()
                                                   const_cast<RouteDef*>(&api_routes[i])),
                             TAG, "route %s", api_routes[i].uri);
     }
-    return server.registerSocketRoute("/ws", ws_socket_handler, NULL);
+    return server.registerSocketRoute("/ws", ws_socket_handler, NULL, ws_pre_handshake, ws_post_handshake);
 }
 
 }  // namespace

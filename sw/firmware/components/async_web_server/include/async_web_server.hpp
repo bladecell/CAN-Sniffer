@@ -76,7 +76,11 @@ public:
     // Registration failures (no memory, httpd table full) are returned so start-up can fail instead of booting with a hole.
     esp_err_t registerRoute(const char* uri, httpd_method_t method, AsyncHandler func, void* arg);
 
-    esp_err_t registerSocketRoute(const char* uri, esp_err_t (*handler)(httpd_req_t* r), void* ctx = NULL);
+    // IDF never calls `handler` for the upgrade GET, only for frames. `preHandshake` runs before the 101 response (return
+    // non-OK to refuse and close), `postHandshake` right after it. Both need CONFIG_HTTPD_WS_{PRE,POST}_HANDSHAKE_CB_SUPPORT.
+    esp_err_t registerSocketRoute(const char* uri, esp_err_t (*handler)(httpd_req_t* r), void* ctx = NULL,
+                                  esp_err_t (*preHandshake)(httpd_req_t* r)  = nullptr,
+                                  esp_err_t (*postHandshake)(httpd_req_t* r) = nullptr);
 
     void wsBroadcast(httpd_ws_frame_t* ws_pkt);
 
