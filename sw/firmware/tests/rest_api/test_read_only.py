@@ -109,11 +109,10 @@ def test_dtc_schema(api, device_reachable):
 
 def test_settings_schema(api, device_reachable):
     payload = get_json(api, "/api/v1/settings")
-    assert isinstance(payload, list)
-    for section in payload:
+    assert isinstance(payload, dict)
+    assert set(payload) == {"wifi", "can", "system"}
+    for section in payload.values():
         assert isinstance(section, dict)
-        assert isinstance(section.get("name"), str)
-        assert isinstance(section.get("settings"), dict)
 
 
 def test_sd_info_schema(sd_info):

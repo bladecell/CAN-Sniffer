@@ -9,8 +9,9 @@ pytestmark = [pytest.mark.integration, pytest.mark.sd_write]
 
 
 def assert_success(response):
-    assert response.status_code == 200, response.text
-    assert response.json().get("status") == "success", response.text
+    assert response.status_code in (200, 201, 204), response.text
+    if response.status_code != 204:
+        assert response.json().get("status") == "success", response.text
 
 
 def assert_json_error(response, expected_status):
@@ -61,11 +62,11 @@ def test_unique_sd_directory_file_roundtrip(api, mounted_sd, sd_write_enabled):
     payload = b"CAN Sniffer pytest SD roundtrip\n"
 
     try:
-        response = api.request("POST", f"/api/v1/sd_card/file{directory_path}", data=b"")
+        response = api.request("PUT", f"/api/v1/sd_card/file{directory_path}", data=b"")
         assert_success(response)
         directory_created = True
 
-        response = api.request("POST", f"/api/v1/sd_card/file{file_path}", data=payload)
+        response = api.request("PUT", f"/api/v1/sd_card/file{file_path}", data=payload)
         assert_success(response)
         file_created = True
 
@@ -100,9 +101,9 @@ def test_encoded_filename_roundtrip_through_upload_tree_read_and_delete(api, mou
     file_created = False
 
     try:
-        assert_success(api.request("POST", encoded_file_route(directory_path), data=b""))
+        assert_success(api.request("PUT", encoded_file_route(directory_path), data=b""))
         directory_created = True
-        assert_success(api.request("POST", encoded_file_route(file_path), data=payload))
+        assert_success(api.request("PUT", encoded_file_route(file_path), data=payload))
         file_created = True
 
         response = api.request("GET", f"/api/v1/sd_card/tree{quote(directory_path, safe='/')}")
@@ -131,7 +132,7 @@ def test_file_child_of_regular_file_is_not_found(api, mounted_sd, sd_write_enabl
     file_created = False
 
     try:
-        assert_success(api.request("POST", f"/api/v1/sd_card/file{file_path}", data=b"not a directory"))
+        assert_success(api.request("PUT", f"/api/v1/sd_card/file{file_path}", data=b"not a directory"))
         file_created = True
 
         response = api.request("GET", f"/api/v1/sd_card/file{file_path}/child.txt")
@@ -147,7 +148,7 @@ def test_upload_accepts_explicit_zero_content_length(api, mounted_sd, raw_http_h
 
     try:
         # Raw transport makes the explicit header distinct from an omitted one.
-        response = raw_http_headers("POST", encoded_file_route(file_path), ("Content-Length: 0",))
+        response = raw_http_headers("PUT", encoded_file_route(file_path), ("Content-Length: 0",))
         assert_raw_success(response)
         file_created = True
 
@@ -176,17 +177,17 @@ def test_upload_requires_a_valid_content_length_before_truncating(
     file_created = False
 
     try:
-        assert_success(api.request("POST", f"/api/v1/sd_card/file{file_path}", data=original_payload))
+        assert_success(api.request("PUT", f"/api/v1/sd_card/file{file_path}", data=original_payload))
         file_created = True
 
-        response = raw_http_headers("POST", f"/api/v1/sd_card/file{file_path}", headers)
+        response = raw_http_headers("PUT", f"/api/v1/sd_card/file{file_path}", headers)
         assert_raw_content_length_error(response)
 
         response = api.request("GET", f"/api/v1/sd_card/file{file_path}")
         assert response.status_code == 200, response.text
         assert response.content == original_payload
 
-        response = raw_http_headers("POST", f"/api/v1/sd_card/file{absent_file_path}", headers)
+        response = raw_http_headers("PUT", f"/api/v1/sd_card/file{absent_file_path}", headers)
         assert_raw_content_length_error(response)
 
         response = api.request("GET", f"/api/v1/sd_card/file{absent_file_path}")
@@ -204,13 +205,13 @@ def test_oversized_upload_is_rejected_before_a_body_or_target_mutation(
     file_created = False
 
     try:
-        assert_success(api.request("POST", encoded_file_route(file_path), data=original_payload))
+        assert_success(api.request("PUT", encoded_file_route(file_path), data=original_payload))
         file_created = True
 
         # Deliberately send only the request headers. A 16 MiB + 1 declaration
         # must be rejected before the handler waits for or writes any body bytes.
         response = raw_http_headers(
-            "POST", encoded_file_route(file_path), ("Content-Length: 16777217",)
+            "PUT", encoded_file_route(file_path), ("Content-Length: 16777217",)
         )
         assert_raw_json_error(response, 413)
 
@@ -239,11 +240,11 @@ def test_file_serving_uses_safe_headers_mime_and_disposition(api, mounted_sd, sd
         assert response.headers.get("Cache-Control") == "no-store"
 
     try:
-        assert_success(api.request("POST", encoded_file_route(directory_path), data=b""))
+        assert_success(api.request("PUT", encoded_file_route(directory_path), data=b""))
         directory_created = True
         for filename, payload in files.items():
             file_path = f"{directory_path}{filename}"
-            assert_success(api.request("POST", encoded_file_route(file_path), data=payload))
+            assert_success(api.request("PUT", encoded_file_route(file_path), data=payload))
             created_files.add(file_path)
 
         response = api.request("GET", encoded_file_route(f"{directory_path}{text_name}"))
@@ -277,23 +278,22 @@ def test_copy_file_rejects_self_copy_without_truncating_source(api, mounted_sd, 
     dirname = f"pytest-copy-self-{uuid.uuid4().hex}"
     directory_path = f"/{dirname}/"
     file_path = f"{directory_path}source.txt"
-    device_file_path = f"/sdcard{file_path}"
     payload = b"self-copy must preserve this content\n"
     directory_created = False
     file_created = False
 
     try:
-        assert_success(api.request("POST", f"/api/v1/sd_card/file{directory_path}", data=b""))
+        assert_success(api.request("PUT", f"/api/v1/sd_card/file{directory_path}", data=b""))
         directory_created = True
-        assert_success(api.request("POST", f"/api/v1/sd_card/file{file_path}", data=payload))
+        assert_success(api.request("PUT", f"/api/v1/sd_card/file{file_path}", data=payload))
         file_created = True
 
-        case_alias_path = "/sdcard" + file_path.upper()
-        for destination_path in (device_file_path, f"{device_file_path}/", case_alias_path):
+        case_alias_path = file_path.upper()
+        for destination_path in (file_path, f"{file_path}/", case_alias_path):
             response = api.request(
                 "POST",
-                "/api/v1/system/copy_file",
-                json={"source_path": device_file_path, "destination_path": destination_path},
+                "/api/v1/sd_card/copy",
+                json={"source": file_path, "destination": destination_path},
             )
             assert_json_error(response, 400)
 

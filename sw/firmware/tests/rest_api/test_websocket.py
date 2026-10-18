@@ -160,8 +160,8 @@ def continuous_polling_state(api):
 
 
 def set_auto_poll(api, running):
-    response = api.request("POST", f"/api/v1/req/auto_poll?auto_poll={str(running).lower()}")
-    assert response.status_code == 201, response.text
+    response = api.request("PATCH", "/api/v1/obd2", json={"auto_poll": running})
+    assert response.status_code == 200, response.text
 
 
 def test_pid_websocket_packets_have_rest_status_flags(api, base_url, device_reachable):

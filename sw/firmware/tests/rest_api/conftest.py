@@ -80,6 +80,11 @@ class ApiClient:
     def request(self, method: str, path: str, **kwargs):
         kwargs.setdefault("timeout", REQUEST_TIMEOUT)
         kwargs.setdefault("allow_redirects", False)
+        if method == "PUT" and "data" in kwargs and "json" not in kwargs:
+            headers = dict(kwargs.get("headers") or {})
+            if not any(k.lower() == "content-type" for k in headers):
+                headers["Content-Type"] = "application/octet-stream"
+            kwargs["headers"] = headers
         self.limiter.wait()
         response = self.session.request(method, urljoin(self.base_url, path.lstrip("/")), **kwargs)
         if response.status_code == 429:

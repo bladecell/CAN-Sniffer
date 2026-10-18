@@ -19,8 +19,8 @@ console = Console()
 
 def start_auto_poll():
     try:
-        response = requests.post(
-            f"{CAN_SNIFFER_URL}/api/v1/req/auto_poll?auto_poll=true", timeout=5
+        response = requests.patch(
+            f"{CAN_SNIFFER_URL}/api/v1/obd2", json={"auto_poll": True}, timeout=5
         )
         console.print(
             f"[bold cyan]PID poll response:[/] [green]{response.status_code}[/]"

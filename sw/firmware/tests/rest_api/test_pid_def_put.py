@@ -156,7 +156,7 @@ def assert_successful_put(response):
 
 
 def assert_successful_sd_upload(response):
-    assert response.status_code == 200, response.text
+    assert response.status_code in (200, 201), response.text
     assert response.json().get("status") == "success", response.text
 
 
@@ -265,7 +265,7 @@ def test_pid_def_save_load_persists_canonical_length_and_accepts_legacy_len(
     conflicting["len"] = conflicting["length"] + 1
 
     try:
-        response = api.request("POST", f"/api/v1/sd_card/file{directory_path}", data=b"")
+        response = api.request("PUT", f"/api/v1/sd_card/file{directory_path}", data=b"")
         assert_successful_sd_upload(response)
         directory_created = True
 
@@ -306,7 +306,7 @@ def test_pid_def_save_load_persists_canonical_length_and_accepts_legacy_len(
         assert [storage_definition_to_get_shape(definition) for definition in persisted] == expected["data"]
 
         response = api.request(
-            "POST", f"/api/v1/sd_card/file{legacy_path}", data=json_body([legacy])
+            "PUT", f"/api/v1/sd_card/file{legacy_path}", data=json_body([legacy])
         )
         assert_successful_sd_upload(response)
         created_files.add(legacy_path)
@@ -319,7 +319,7 @@ def test_pid_def_save_load_persists_canonical_length_and_accepts_legacy_len(
         assert get_pid_definitions(api) == expected
 
         response = api.request(
-            "POST", f"/api/v1/sd_card/file{conflicting_path}", data=json_body([conflicting])
+            "PUT", f"/api/v1/sd_card/file{conflicting_path}", data=json_body([conflicting])
         )
         assert_successful_sd_upload(response)
         created_files.add(conflicting_path)
@@ -330,7 +330,7 @@ def test_pid_def_save_load_persists_canonical_length_and_accepts_legacy_len(
         assert get_pid_definitions(api) == expected
 
         for corrupt_path, corrupt_body in corrupt_paths.items():
-            response = api.request("POST", f"/api/v1/sd_card/file{corrupt_path}", data=corrupt_body)
+            response = api.request("PUT", f"/api/v1/sd_card/file{corrupt_path}", data=corrupt_body)
             assert_successful_sd_upload(response)
             created_files.add(corrupt_path)
 
@@ -351,9 +351,9 @@ def test_pid_def_save_load_persists_canonical_length_and_accepts_legacy_len(
         finally:
             for file_path in created_files:
                 response = api.request("DELETE", f"/api/v1/sd_card/file{file_path}")
-                assert response.status_code == 200, response.text
+                assert response.status_code == 204, response.text
             if directory_created:
                 response = api.request("DELETE", f"/api/v1/sd_card/file{directory_path}")
-                assert response.status_code == 200, response.text
+                assert response.status_code == 204, response.text
 
     assert get_pid_definitions(api) == snapshot

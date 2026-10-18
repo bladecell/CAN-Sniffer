@@ -40,7 +40,7 @@ def test_settings_rejects_scalar_or_malformed_payload_with_json_error(
     api, device_reachable, body
 ):
     response = api.request(
-        "POST",
+        "PATCH",
         "/api/v1/settings",
         data=body,
         headers={"Content-Type": "application/json"},
@@ -54,7 +54,7 @@ def test_settings_rejects_scalar_or_malformed_payload_with_json_error(
     [
         pytest.param(b"{}", id="missing-fields"),
         pytest.param(
-            b'{"source_path":"/sdcard/source","destination_path":1}',
+            b'{"source":"/source.json","destination":1}',
             id="invalid-field-type",
         ),
     ],
@@ -64,7 +64,7 @@ def test_copy_file_rejects_malformed_or_missing_fields_with_json_error(
 ):
     response = api.request(
         "POST",
-        "/api/v1/system/copy_file",
+        "/api/v1/sd_card/copy",
         data=body,
         headers={"Content-Type": "application/json"},
     )
@@ -73,13 +73,13 @@ def test_copy_file_rejects_malformed_or_missing_fields_with_json_error(
 
 
 def test_copy_file_reports_confirmed_missing_source_as_not_found(api, mounted_sd):
-    source_path = f"/sdcard/gate6-missing-{uuid.uuid4().hex}.json"
-    destination_path = f"/sdcard/gate6-destination-{uuid.uuid4().hex}.json"
+    source_path = f"/gate6-missing-{uuid.uuid4().hex}.json"
+    destination_path = f"/gate6-destination-{uuid.uuid4().hex}.json"
 
     response = api.request(
         "POST",
-        "/api/v1/system/copy_file",
-        json={"source_path": source_path, "destination_path": destination_path},
+        "/api/v1/sd_card/copy",
+        json={"source": source_path, "destination": destination_path},
     )
 
     assert_json_error(response, 404)
@@ -114,14 +114,14 @@ def test_dtc_rejects_unsupported_mode_before_can_work(api, device_reachable):
     ],
 )
 def test_dtc_description_rejects_invalid_codes_before_lookup(api, device_reachable, codes):
-    response = api.request("GET", "/api/v1/dtc", params={"codes": codes})
+    response = api.request("GET", "/api/v1/dtc/descriptions", params={"codes": codes})
 
     assert response.status_code == 400, response.text
 
 
 def test_dtc_description_accepts_multiple_standard_codes(api, device_reachable):
     codes = "P0123,B3ABC,C0DEF,U3000"
-    response = api.request("GET", "/api/v1/dtc", params={"codes": codes})
+    response = api.request("GET", "/api/v1/dtc/descriptions", params={"codes": codes})
 
     assert response.request.path_url.endswith("codes=P0123%2CB3ABC%2CC0DEF%2CU3000")
 
@@ -135,7 +135,7 @@ def test_dtc_description_accepts_multiple_standard_codes(api, device_reachable):
 
 
 def test_dtc_description_accepts_literal_commas(raw_http, device_reachable):
-    response = raw_http("GET", "/api/v1/dtc?codes=P0123,B3ABC,C0DEF,U3000")
+    response = raw_http("GET", "/api/v1/dtc/descriptions?codes=P0123,B3ABC,C0DEF,U3000")
 
     # As above, the description database is optional, but literal separators
     # must also get past query validation.
@@ -145,10 +145,10 @@ def test_dtc_description_accepts_literal_commas(raw_http, device_reachable):
 @pytest.mark.parametrize(
     "target",
     [
-        pytest.param("/api/v1/dtc?codes=P0123%2", id="malformed-percent-escape"),
-        pytest.param("/api/v1/dtc?codes=P0123%2C%2CB3ABC", id="encoded-empty-item"),
+        pytest.param("/api/v1/dtc/descriptions?codes=P0123%2", id="malformed-percent-escape"),
+        pytest.param("/api/v1/dtc/descriptions?codes=P0123%2C%2CB3ABC", id="encoded-empty-item"),
         pytest.param(
-            "/api/v1/dtc?codes=" + "%2C".join(["P0123"] * 31),
+            "/api/v1/dtc/descriptions?codes=" + "%2C".join(["P0123"] * 31),
             id="more-than-maximum-code-count",
         ),
     ],
