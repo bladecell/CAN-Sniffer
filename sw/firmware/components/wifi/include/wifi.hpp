@@ -240,6 +240,23 @@ private:
 
     uint8_t m_retry_count = 0;
 
+    // Callback vectors are touched by the event task and by on*()/deinit(): copy or push under m_mutex only (WIFI-2).
+    template <typename V>
+    V snapshotCallbacks(const V& v) const
+    {
+        if (xSemaphoreTake(m_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) { return V{}; }
+        V copy = v;
+        xSemaphoreGive(m_mutex);
+        return copy;
+    }
+    template <typename V, typename F>
+    void pushCallback(V& v, const F& cb)
+    {
+        if (xSemaphoreTake(m_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) { return; }
+        v.push_back(cb);
+        xSemaphoreGive(m_mutex);
+    }
+
     // Helper methods
     void        addClient(const uint8_t* mac, uint8_t aid);
     void        removeClient(const uint8_t* mac);

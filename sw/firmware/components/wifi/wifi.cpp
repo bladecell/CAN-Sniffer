@@ -168,7 +168,7 @@ esp_err_t WIFI::setAPConfig()
     wifi_config_t ap_config = {};
     strlcpy((char*)ap_config.ap.ssid, m_config.ssid.c_str(), sizeof(ap_config.ap.ssid));
     strlcpy((char*)ap_config.ap.password, m_config.password.c_str(), sizeof(ap_config.ap.password));
-    ap_config.ap.ssid_len           = m_config.ssid.length();
+    ap_config.ap.ssid_len           = static_cast<uint8_t>(std::min(m_config.ssid.length(), sizeof(ap_config.ap.ssid) - 1));
     ap_config.ap.channel            = m_config.channel;
     ap_config.ap.authmode           = m_config.auth_mode;
     ap_config.ap.ssid_hidden        = m_config.ssid_hidden ? 1 : 0;
@@ -382,6 +382,7 @@ esp_err_t WIFI::deinit()
     m_disconnect_callbacks.clear();
     m_sta_connected_callbacks.clear();
     m_sta_disconnected_callbacks.clear();
+    m_start_callbacks.clear();
     m_clients.clear();
     xSemaphoreGive(m_mutex);
     m_scan = {};
@@ -441,7 +442,7 @@ void WIFI::handleClientConnected(wifi_event_ap_staconnected_t* event)
     ESP_LOGI(TAG, "AP Client connected - MAC: " MACSTR ", AID: %d", MAC2STR(event->mac), event->aid);
     addClient(event->mac, event->aid);
 
-    auto callbacks = m_connect_callbacks;
+    auto callbacks = snapshotCallbacks(m_connect_callbacks);
     for (auto& cb : callbacks)
     {
         cb(event->mac, event->aid);
@@ -453,7 +454,7 @@ void WIFI::handleClientDisconnected(wifi_event_ap_stadisconnected_t* event)
     ESP_LOGI(TAG, "AP Client disconnected - MAC: " MACSTR ", AID: %d", MAC2STR(event->mac), event->aid);
     removeClient(event->mac);
 
-    auto callbacks = m_disconnect_callbacks;
+    auto callbacks = snapshotCallbacks(m_disconnect_callbacks);
     for (auto& cb : callbacks)
     {
         cb(event->mac, event->aid);
@@ -463,7 +464,7 @@ void WIFI::handleClientDisconnected(wifi_event_ap_stadisconnected_t* event)
 void WIFI::handleAPStart()
 {
     ESP_LOGI(TAG, "AP Interface Started");
-    auto callbacks = m_start_callbacks;
+    auto callbacks = snapshotCallbacks(m_start_callbacks);
     for (auto& cb : callbacks)
     {
         cb();
@@ -490,9 +491,7 @@ void WIFI::handleStaGotIP(ip_event_got_ip_t* event)
     esp_ip4addr_ntoa(&event->ip_info.ip, ip_str, sizeof(ip_str));
     ESP_LOGI(TAG, "STA Got IP: %s", ip_str);
 
-    xSemaphoreTake(m_mutex, portMAX_DELAY);
-    auto callbacks = m_sta_connected_callbacks;
-    xSemaphoreGive(m_mutex);
+    auto callbacks = snapshotCallbacks(m_sta_connected_callbacks);
 
     for (auto& cb : callbacks)
     {
@@ -513,7 +512,7 @@ void WIFI::handleStaDisconnected(wifi_event_sta_disconnected_t* event)
     ESP_LOGW("WIFI", "Disconnected! Reason: %s (%d)", get_wifi_reason_str(event->reason), event->reason);
     setState(State::STA_DISCONNECTED);
 
-    for (auto& cb : m_sta_disconnected_callbacks)
+    for (auto& cb : snapshotCallbacks(m_sta_disconnected_callbacks))
     {
         cb();
     }
@@ -625,23 +624,23 @@ void WIFI::reconnectTimer(void* arg)
 
 void WIFI::onClientConnected(const ClientConnectCallback& callback)
 {
-    m_connect_callbacks.push_back(callback);
+    pushCallback(m_connect_callbacks, callback);
 }
 void WIFI::onClientDisconnected(const ClientDisconnectCallback& callback)
 {
-    m_disconnect_callbacks.push_back(callback);
+    pushCallback(m_disconnect_callbacks, callback);
 }
 void WIFI::onAPStarted(const APStartCallback& callback)
 {
-    m_start_callbacks.push_back(callback);
+    pushCallback(m_start_callbacks, callback);
 }
 void WIFI::onStaConnected(const StaConnectedCallback& callback)
 {
-    m_sta_connected_callbacks.push_back(callback);
+    pushCallback(m_sta_connected_callbacks, callback);
 }
 void WIFI::onStaDisconnected(const StaDisconnectedCallback& callback)
 {
-    m_sta_disconnected_callbacks.push_back(callback);
+    pushCallback(m_sta_disconnected_callbacks, callback);
 }
 
 uint8_t WIFI::getConnectedClientCount() const
