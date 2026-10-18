@@ -600,7 +600,7 @@ MiddlewareJsonResult m_sdcard_format_post()
     return json_result(root, status);
 }
 
-MiddlewareJsonResult m_sdcard_file_tree_get(const char* path)
+MiddlewareJsonResult m_sdcard_file_tree_get(const char* path, const sd_tree::Limits& limits)
 {
     auto& sd        = SDCard::getInstance();
     auto  operation = sd.acquire_operation(SD_OPERATION_TIMEOUT, true);
@@ -610,7 +610,7 @@ MiddlewareJsonResult m_sdcard_file_tree_get(const char* path)
     }
 
     cJSON*    root       = nullptr;
-    esp_err_t tree_error = sd.get_file_tree(path, 5, root);
+    esp_err_t tree_error = sd.get_file_tree(path, limits, root);
     if (tree_error != ESP_OK)
     {
         cJSON_Delete(root);

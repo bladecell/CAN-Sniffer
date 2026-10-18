@@ -893,19 +893,13 @@ esp_err_t SDCard::read_file(const char* relative_path, void* buffer, size_t max_
     return ESP_OK;
 }
 
-cJSON* SDCard::scan_directory(const char* relative_path, int depth)
-{
-    cJSON* tree = nullptr;
-    if (get_file_tree(relative_path, depth, tree) != ESP_OK)
-    {
-        return nullptr;
-    }
-    return tree;
-}
-
-esp_err_t SDCard::get_file_tree(const char* relative_path, int depth, cJSON*& tree)
+esp_err_t SDCard::get_file_tree(const char* relative_path, const sd_tree::Limits& limits, cJSON*& tree)
 {
     tree = nullptr;
+    if (relative_path == nullptr || !limits.valid())
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
 
     Operation operation = acquire_operation(portMAX_DELAY);
     if (!operation)
@@ -913,14 +907,27 @@ esp_err_t SDCard::get_file_tree(const char* relative_path, int depth, cJSON*& tr
         return operation.status();
     }
 
-    return scan_directory_locked(relative_path, depth, tree);
+    sd_tree::Budget budget(limits);
+    const esp_err_t err = scan_directory_locked(relative_path, 0, budget, tree);
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+    if (cJSON_AddBoolToObject(tree, "truncated", budget.truncated()) == nullptr)
+    {
+        cJSON_Delete(tree);
+        tree = nullptr;
+        return ESP_ERR_NO_MEM;
+    }
+    return ESP_OK;
 }
 
-esp_err_t SDCard::scan_directory_locked(const char* relative_path, int depth, cJSON*& tree)
+// `level` counts the directories between this one and the requested one (0 = the requested directory).
+esp_err_t SDCard::scan_directory_locked(const char* relative_path, int level, sd_tree::Budget& budget, cJSON*& tree)
 {
     tree = nullptr;
 
-    if (depth > SCAN_DEPTH_LIMIT)
+    if (level > SCAN_DEPTH_LIMIT)
     {
         return ESP_ERR_INVALID_SIZE;
     }
@@ -932,7 +939,11 @@ esp_err_t SDCard::scan_directory_locked(const char* relative_path, int depth, cJ
         char next_full[PATH_MAX];
     };
 
-    std::unique_ptr<ScanBuffers> bufs(new ScanBuffers);
+    std::unique_ptr<ScanBuffers> bufs(new (std::nothrow) ScanBuffers);
+    if (!bufs)
+    {
+        return ESP_ERR_NO_MEM;
+    }
 
     const esp_err_t path_error = get_absolute_path(relative_path, bufs->full_path, sizeof(bufs->full_path));
     if (path_error != ESP_OK)
@@ -1001,6 +1012,16 @@ esp_err_t SDCard::scan_directory_locked(const char* relative_path, int depth, cJ
             continue;
         }
 
+        const sd_tree::Budget::Verdict verdict = budget.next(level);
+        if (verdict == sd_tree::Budget::Verdict::Skip)
+        {
+            continue;
+        }
+        if (verdict == sd_tree::Budget::Verdict::Stop)
+        {
+            break;  // limit reached: keep what is already in the tree
+        }
+
         const size_t relative_len = strlen(relative_path);
         const char*  separator = (relative_len > 0 && relative_path[relative_len - 1] == '/') ? "" : "/";
         int next_rel_len = snprintf(bufs->next_rel, sizeof(bufs->next_rel), "%s%s%s", relative_path, separator,
@@ -1028,7 +1049,24 @@ esp_err_t SDCard::scan_directory_locked(const char* relative_path, int depth, cJ
         if (S_ISDIR(st.st_mode))
         {
             cJSON* sub_dir = nullptr;
-            esp_err_t err  = scan_directory_locked(bufs->next_rel, depth + 1, sub_dir);
+            if (!budget.mayExpand(level))
+            {
+                // Listed but not opened: the client asks again with this path to see inside.
+                budget.markTruncated();
+                sub_dir = cJSON_CreateObject();
+                if (sub_dir == nullptr || cJSON_AddStringToObject(sub_dir, "path", bufs->next_rel) == nullptr ||
+                    cJSON_AddArrayToObject(sub_dir, "children") == nullptr ||
+                    cJSON_AddTrueToObject(sub_dir, "truncated") == nullptr)
+                {
+                    cJSON_Delete(sub_dir);
+                    closedir(dir);
+                    cJSON_Delete(root);
+                    return ESP_ERR_NO_MEM;
+                }
+                cJSON_AddItemToArray(children, sub_dir);
+                continue;
+            }
+            esp_err_t err = scan_directory_locked(bufs->next_rel, level + 1, budget, sub_dir);
             if (err != ESP_OK)
             {
                 closedir(dir);

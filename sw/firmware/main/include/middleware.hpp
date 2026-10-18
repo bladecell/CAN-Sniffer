@@ -4,6 +4,7 @@
 
 #include "cJSON.h"
 #include "esp_err.h"
+#include "tree_limits.hpp"
 
 // Forward declarations to minimize includes
 class PIDDefinition;
@@ -42,7 +43,8 @@ MiddlewareJsonResult m_system_reboot();
 MiddlewareJsonResult m_system_copy_file(cJSON* payload);
 MiddlewareJsonResult m_sdcard_info_get();
 MiddlewareJsonResult m_sdcard_format_post();
-MiddlewareJsonResult m_sdcard_file_tree_get(const char* path);
+// Directory tree below `path`, bounded by `limits` (depth, entry count, top-level offset). The body has "truncated".
+MiddlewareJsonResult m_sdcard_file_tree_get(const char* path, const sd_tree::Limits& limits);
 MiddlewareJsonResult m_sdcard_file_delete_delete(const char* path);
 MiddlewareJsonResult m_vin_get();
 MiddlewareJsonResult m_dtc_get(int mode);

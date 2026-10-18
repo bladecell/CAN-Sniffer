@@ -14,6 +14,7 @@
 #include "freertos/task.h"
 #include "sdmmc_cmd.h"
 #include "soc/gpio_num.h"
+#include "tree_limits.hpp"
 
 #define MAX_FREQUENCY_KHZ 20000
 #define SCAN_DEPTH_LIMIT 10
@@ -122,8 +123,10 @@ public:
     // Builds a directory tree while retaining the caller's SD operation. The
     // output is only populated on success; filesystem failures are returned
     // to the caller instead of being represented as an empty tree.
-    esp_err_t get_file_tree(const char* relative_path, int depth, cJSON*& tree);
-    cJSON*    scan_directory(const char* relative_path, int depth);
+    // `limits` bounds depth and entry count (tree_limits.hpp). The root object gets "truncated": true when entries were
+    // left out (limit reached, or a directory below `limits.depth` was not listed); such a directory node has
+    // "truncated": true and no children.
+    esp_err_t get_file_tree(const char* relative_path, const sd_tree::Limits& limits, cJSON*& tree);
     esp_err_t get_absolute_path(const char* relative_path, char* out_buf, size_t out_size);
 
     // Validates a decoded, slash-separated path relative to the SD mount point.
@@ -151,7 +154,7 @@ private:
     SDCard& operator=(SDCard&&)      = delete;
 
     bool ensure_operation_mutex();
-    esp_err_t scan_directory_locked(const char* relative_path, int depth, cJSON*& tree);
+    esp_err_t scan_directory_locked(const char* relative_path, int level, sd_tree::Budget& budget, cJSON*& tree);
 
     bool       last_stable_state = false;
     gpio_num_t cd_pin            = GPIO_NUM_NC;

@@ -12,6 +12,7 @@
 #include <strings.h>
 
 #include "sd_path.hpp"
+#include "tree_limits.hpp"
 
 namespace http_parse
 {
@@ -215,6 +216,84 @@ inline Result queryKeys(const char* uri, const char* const* allowed, size_t n, u
       return Result::InvalidArg;  // trailing '&'
     }
   }
+  return Result::Ok;
+}
+
+// GET /sd_card/tree query: optional depth (0..kMaxListDepth), limit (1..kMaxLimit) and offset (0..kMaxOffset), each at
+// most once, no other key, decimal digits only. `out` keeps its defaults for absent keys and is untouched on error.
+constexpr size_t kMaxTreeOffset = 100000;
+
+inline Result treeLimits(const char* uri, sd_tree::Limits* out)
+{
+  static const char* const keys[] = {"depth", "limit", "offset"};
+  unsigned                 present = 0;
+  if (out == nullptr || queryKeys(uri, keys, 3, &present) != Result::Ok)
+  {
+    return Result::InvalidArg;
+  }
+  sd_tree::Limits parsed = *out;
+  const char*     query  = strchr(uri, '?');
+  if (query != nullptr)
+  {
+    query++;
+  }
+  while (query != nullptr && *query != '\0')
+  {
+    const char* eq  = query;
+    while (*eq != '\0' && *eq != '=' && *eq != '&')
+    {
+      eq++;
+    }
+    const char* end = eq;
+    while (*end != '\0' && *end != '&')
+    {
+      end++;
+    }
+    const size_t keyLen = static_cast<size_t>(eq - query);
+    const char*  value  = (*eq == '=') ? eq + 1 : eq;
+    const size_t valLen = static_cast<size_t>(end - value);
+    char         text[12];
+    if (valLen == 0 || valLen >= sizeof(text))
+    {
+      return Result::InvalidArg;
+    }
+    for (size_t i = 0; i < valLen; i++)
+    {
+      if (value[i] < '0' || value[i] > '9')
+      {
+        return Result::InvalidArg;  // no sign, no space
+      }
+      text[i] = value[i];
+    }
+    text[valLen] = '\0';
+    int n        = 0;
+    if (strictInt(text, &n) != Result::Ok || n < 0)
+    {
+      return Result::InvalidArg;
+    }
+    if (keyLen == 5 && strncmp(query, "depth", 5) == 0)
+    {
+      parsed.depth = n;
+    }
+    else if (keyLen == 5 && strncmp(query, "limit", 5) == 0)
+    {
+      parsed.limit = static_cast<size_t>(n);
+    }
+    else
+    {
+      if (static_cast<size_t>(n) > kMaxTreeOffset)
+      {
+        return Result::InvalidArg;
+      }
+      parsed.offset = static_cast<size_t>(n);
+    }
+    query = (*end == '&') ? end + 1 : end;
+  }
+  if (!parsed.valid())
+  {
+    return Result::InvalidArg;
+  }
+  *out = parsed;
   return Result::Ok;
 }
 

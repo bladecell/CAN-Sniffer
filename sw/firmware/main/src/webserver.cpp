@@ -889,7 +889,13 @@ esp_err_t g_sd_card_file_tree_handler(httpd_req_t* req, void* arg)
         return AsyncWebServer::sendError(req, 400, "Invalid SD card path", http_error::kBadPath);
     }
 
-    return send_json_response(req, m_sdcard_file_tree_get(path_buf));
+    sd_tree::Limits limits;
+    if (to_esp_err(http_parse::treeLimits(req->uri, &limits)) != ESP_OK)
+    {
+        return AsyncWebServer::sendError(req, 400, "depth must be 0..5, limit 1..512, offset 0..100000");
+    }
+
+    return send_json_response(req, m_sdcard_file_tree_get(path_buf, limits));
 }
 
 esp_err_t g_sd_card_file_read_handler(httpd_req_t* req, void* arg)
