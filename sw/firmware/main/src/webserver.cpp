@@ -14,6 +14,7 @@
 #include "async_web_server.hpp"
 #include "body_reader.hpp"
 #include "cJSON.h"
+#include "esp_check.h"
 #include "esp_err.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
@@ -1500,16 +1501,17 @@ const RouteDef api_routes[] = {{"/", HTTP_GET, index_handler},
                                {"/api/v1/settings", HTTP_GET, g_settings_index_handler},
                                {"/api/v1/settings", HTTP_POST, p_settings_index_handler}};
 
-static void register_routes()
+static esp_err_t register_routes()
 {
     AsyncWebServer& server     = AsyncWebServer::getInstance();
     size_t          num_routes = sizeof(api_routes) / sizeof(api_routes[0]);
 
     for (size_t i = 0; i < num_routes; i++)
     {
-        server.registerRoute(api_routes[i].uri, api_routes[i].method, api_routes[i].handler, NULL);
+        ESP_RETURN_ON_ERROR(server.registerRoute(api_routes[i].uri, api_routes[i].method, api_routes[i].handler, NULL),
+                            TAG, "route %s", api_routes[i].uri);
     }
-    server.registerSocketRoute("/ws", ws_socket_handler, NULL);
+    return server.registerSocketRoute("/ws", ws_socket_handler, NULL);
 }
 
 }  // namespace
@@ -1540,7 +1542,13 @@ esp_err_t setup_web_server()
         return ret;
     }
 
-    register_routes();
+    ret = register_routes();
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Route registration failed (%s); web server disabled", esp_err_to_name(ret));
+        AsyncWebServer::getInstance().stop();
+        return ret;
+    }
 
     OBD2::getInstance().subscribe(pid_stream_callback);
 

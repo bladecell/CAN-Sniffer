@@ -62,9 +62,10 @@ public:
     // Waits at most STOP_WAIT_US for the workers. ESP_ERR_TIMEOUT: a worker is still in a handler, nothing was freed and
     // the server keeps running; call again later.
     esp_err_t stop();
-    void      registerRoute(const char* uri, httpd_method_t method, AsyncHandler func, void* arg);
+    // Registration failures (no memory, httpd table full) are returned so start-up can fail instead of booting with a hole.
+    esp_err_t registerRoute(const char* uri, httpd_method_t method, AsyncHandler func, void* arg);
 
-    void registerSocketRoute(const char* uri, esp_err_t (*handler)(httpd_req_t* r), void* ctx = NULL);
+    esp_err_t registerSocketRoute(const char* uri, esp_err_t (*handler)(httpd_req_t* r), void* ctx = NULL);
 
     void wsBroadcast(httpd_ws_frame_t* ws_pkt);
 
@@ -97,6 +98,7 @@ private:
     std::vector<RouteContext*> route_contexts;
 
     esp_err_t   start_workers(uint8_t num_workers, uint32_t stack_size, uint8_t priority, int core_id);
+    void        drainQueue();
     void        worker_task();
     static void worker_task_wrapper(void* arg);
 

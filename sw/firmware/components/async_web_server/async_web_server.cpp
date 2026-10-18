@@ -51,12 +51,23 @@ esp_err_t AsyncWebServer::start(Config config)
     shutdown_sem_ = xSemaphoreCreateCounting(config.async_worker_task_num, 0);
     if (!shutdown_sem_)
     {
-        return ESP_FAIL;
+        running_ = false;
+        return ESP_ERR_NO_MEM;
     }
 
     worker_handles.reserve(config.async_worker_task_num);
-    start_workers(config.async_worker_task_num, config.async_worker_stack_size, config.async_worker_task_priority,
-                  config.worker_core_id);
+    esp_err_t err = start_workers(config.async_worker_task_num, config.async_worker_stack_size,
+                                  config.async_worker_task_priority, config.worker_core_id);
+    if (err == ESP_OK && worker_handles.empty())
+    {
+        err = ESP_ERR_NO_MEM;
+    }
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to start async workers: %s", esp_err_to_name(err));
+        stop();  // frees the queue, semaphore and any worker that did start
+        return err;
+    }
 
     config.httpd_config.max_open_sockets = config.max_open_sockets;
     config.httpd_config.lru_purge_enable = false;
@@ -66,7 +77,15 @@ esp_err_t AsyncWebServer::start(Config config)
     socketClosedHook_     = config.on_socket_closed;
     config.httpd_config.close_fn = &AsyncWebServer::closeSocket;
 
-    ESP_RETURN_ON_ERROR(httpd_start(&server_, &config.httpd_config), TAG, "Failed to start server");
+    server_ = NULL;
+    err     = httpd_start(&server_, &config.httpd_config);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to start server: %s", esp_err_to_name(err));
+        server_ = NULL;
+        stop();
+        return err;
+    }
     ESP_LOGI(TAG, "Server started successfully.");
     return ESP_OK;
 }
@@ -120,6 +139,10 @@ esp_err_t AsyncWebServer::stop()
         }
     }
 
+    // Workers leave on the poison pill or when running_ drops, so requests may still sit in the queue (ASYNC-2).
+    // Answer each with 503 and release it, while httpd is still alive.
+    drainQueue();
+
     // Now safe to stop the httpd server: no worker is touching its data.
     if (server_)
     {
@@ -151,14 +174,34 @@ esp_err_t AsyncWebServer::stop()
     return ESP_OK;
 }
 
-void AsyncWebServer::registerRoute(const char* uri, httpd_method_t method, AsyncHandler func, void* arg)
+// Caller guarantees no worker is running. Poison pills have no request and are discarded.
+void AsyncWebServer::drainQueue()
+{
+    if (!request_queue)
+    {
+        return;
+    }
+    AsyncRequest job;
+    while (xQueueReceive(request_queue, &job, 0) == pdTRUE)
+    {
+        if (job.req == nullptr)
+        {
+            continue;
+        }
+        httpd_resp_set_status(job.req, "503 Shutting Down");
+        httpd_resp_sendstr(job.req, "{\"error\":\"Server is shutting down.\"}");
+        httpd_req_async_handler_complete(job.req);
+    }
+}
+
+esp_err_t AsyncWebServer::registerRoute(const char* uri, httpd_method_t method, AsyncHandler func, void* arg)
 {
     // 1. Allocate memory to hold the function pointer
     RouteContext* ctx = new (std::nothrow) RouteContext;
     if (!ctx)
     {
         ESP_LOGE(TAG, "Out of memory registering %s", uri);
-        return;
+        return ESP_ERR_NO_MEM;
     }
     ctx->handler      = func;
     ctx->arg          = arg;
@@ -174,9 +217,10 @@ void AsyncWebServer::registerRoute(const char* uri, httpd_method_t method, Async
     {
         delete ctx;
         ESP_LOGE(TAG, "Failed to register handler for %s", uri);
-        return;
+        return err;
     }
     route_contexts.push_back(ctx);
+    return ESP_OK;
 }
 
 esp_err_t AsyncWebServer::async_handler(httpd_req_t* req)
@@ -359,7 +403,7 @@ const char* AsyncWebServer::get_method_str(int method)
     }
 }
 
-void AsyncWebServer::registerSocketRoute(const char* uri, esp_err_t (*handler)(httpd_req_t* r), void* ctx)
+esp_err_t AsyncWebServer::registerSocketRoute(const char* uri, esp_err_t (*handler)(httpd_req_t* r), void* ctx)
 {
     httpd_uri_t http_uri = {};
 
@@ -376,6 +420,7 @@ void AsyncWebServer::registerSocketRoute(const char* uri, esp_err_t (*handler)(h
     {
         ESP_LOGE(TAG, "Failed to register WS handler for %s", uri);
     }
+    return err;
 }
 
 void AsyncWebServer::wsBroadcast(httpd_ws_frame_t* ws_pkt)
