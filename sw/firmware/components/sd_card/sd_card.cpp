@@ -25,6 +25,7 @@ namespace
 
 // SD-2: the supervisor polls the card detect pin every second; it must not queue behind a long transfer.
 constexpr TickType_t STATUS_LEASE_TIMEOUT = pdMS_TO_TICKS(250);
+constexpr TickType_t DEINIT_LEASE_TIMEOUT = pdMS_TO_TICKS(5000);
 // Recursive delete holds the lease the whole time.
 constexpr int64_t DELETE_DEADLINE_US = 30LL * 1000 * 1000;
 
@@ -329,17 +330,51 @@ esp_err_t SDCard::init(const SDCard::Config& config)
     return ESP_OK;
 }
 
+esp_err_t SDCard::deinit()
+{
+    if (!ensure_operation_mutex())
+    {
+        return ESP_ERR_NO_MEM;
+    }
+
+    Operation operation = acquire_operation(DEINIT_LEASE_TIMEOUT);
+    if (!operation)
+    {
+        return operation.status();
+    }
+
+    if (cd_pin == GPIO_NUM_NC && card == nullptr)
+    {
+        return ESP_OK;
+    }
+
+    esp_err_t ret = unmount_sdcard();
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "SD deinit: unmount failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    if (cd_pin != GPIO_NUM_NC)
+    {
+        gpio_reset_pin(cd_pin);
+        cd_pin = GPIO_NUM_NC;
+    }
+    last_stable_state = false;
+    return ESP_OK;
+}
+
 bool SDCard::card_present()
 {
     // A GPIO read needs no lease; taking it made the supervisor wait behind every file transfer (SD-2).
-    return (gpio_get_level(cd_pin) == 0);
+    return cd_pin != GPIO_NUM_NC && gpio_get_level(cd_pin) == 0;
 }
 
 void SDCard::update_card_status()
 {
     // Bounded: while a download, upload or delete holds the lease a card is in use, so skip this round.
     Operation operation = acquire_operation(STATUS_LEASE_TIMEOUT);
-    if (!operation)
+    if (!operation || cd_pin == GPIO_NUM_NC)
     {
         return;
     }

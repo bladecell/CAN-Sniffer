@@ -3,6 +3,7 @@
 #include "supervisor.hpp"
 
 #include <cctype>
+#include <cmath>
 #include <cerrno>
 #include <cstring>
 #include <limits>
@@ -204,6 +205,10 @@ void SUPERVISOR::task()
                     ESP_LOGW(TAG, "Waiting for CAN bus connection...");
                     float voltage = get_battery_voltage();
 
+                    if (std::isnan(voltage))
+                    {
+                        ESP_LOGW(TAG, "Battery voltage unknown (ADC unavailable); using the bus state only");
+                    }
                     if (voltage > 13.2f)
                     {
                         ESP_LOGI(TAG, "Alternator is running (%.2fV). Staying awake.", voltage);
@@ -266,6 +271,9 @@ void SUPERVISOR::task()
                 // 4. Put CAN transceiver into Standby Mode
                 gpio_set_level(CAN_RS_GPIO, 1);
 
+                // LED off and its task released for the sleep; the wake path calls init() again.
+                LedStatus::getInstance().deinit();
+
                 stopAttempts = 0;
                 eState = State::SLEEPING;
                 break;
@@ -276,7 +284,11 @@ void SUPERVISOR::task()
 
                 uint64_t sleep_time_us = 10000000;  // 10 seconds normal sleep
 
-                if (voltage < LONG_SLEEP_VOLTAGE_LIMIT)
+                if (std::isnan(voltage))
+                {
+                    ESP_LOGW(TAG, "Battery voltage unknown (ADC unavailable). Normal sleep...");
+                }
+                else if (voltage < LONG_SLEEP_VOLTAGE_LIMIT)
                 {
                     sleep_time_us = 60000000;  // 60 seconds battery low sleep
                     ESP_LOGW(TAG, "Battery low (%.2fV)! Sleeping aggressively...", voltage);
@@ -311,6 +323,11 @@ void SUPERVISOR::task()
                 ESP_LOGI(TAG, "Checking bus activity...");
 
                 gpio_set_level(CAN_RS_GPIO, 0);
+
+                if (LedStatus::getInstance().init(LED_GPIO) != ESP_OK)
+                {
+                    ESP_LOGW(TAG, "LED init after wake failed; running without status LED");
+                }
 
                 esp_err_t startupErr = setup_can();
                 if (startupErr != ESP_OK)
@@ -374,6 +391,7 @@ void SUPERVISOR::task()
                         break;
                     }
                     gpio_set_level(CAN_RS_GPIO, 1);
+                    LedStatus::getInstance().deinit();
                 }
                 break;
             }

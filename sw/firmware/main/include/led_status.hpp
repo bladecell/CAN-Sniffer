@@ -32,39 +32,79 @@ public:
         ERROR,
     };
 
-    void init(gpio_num_t pin, uint32_t active_low = 0)
+    // Idempotent. On failure nothing stays allocated and every other call is a no-op.
+    esp_err_t init(gpio_num_t pin, uint32_t active_low = 0)
     {
         if (state_.load() != State::NOT_INITIALIZED)
         {
             ESP_LOGW("LED_STATUS", "LED already initialized");
-            return;
+            return ESP_OK;
         }
-        pin_ = pin;
+        sem_ = xSemaphoreCreateBinary();
+        if (sem_ == nullptr)
+        {
+            return ESP_ERR_NO_MEM;
+        }
+        pin_        = pin;
+        active_low_ = active_low;
+        stop_.store(false);
+        exited_.store(false);
+        if (xTaskCreate(runWrapper, "led_worker", 1536, this, 2, &task_handle_) != pdPASS)
+        {
+            task_handle_ = nullptr;
+            vSemaphoreDelete(sem_);
+            sem_ = nullptr;
+            return ESP_ERR_NO_MEM;
+        }
         gpio_reset_pin(pin_);
         gpio_set_direction(pin_, GPIO_MODE_OUTPUT);
-        sem_ = xSemaphoreCreateBinary();
-        if (task_handle_ == nullptr)
-        {
-            xTaskCreate(runWrapper, "led_worker", 1536, this, 2, &task_handle_);
-        }
-        active_low_ = active_low;
+        state_.store(State::OFF);
         turn_off();
+        return ESP_OK;
+    }
+
+    // LED off, worker task stopped (it leaves on its own, never vTaskDelete from outside), pin released. Safe to call
+    // when not initialised; init() works again afterwards. ESP_ERR_TIMEOUT: the worker did not leave, nothing freed.
+    esp_err_t deinit()
+    {
+        if (state_.load() == State::NOT_INITIALIZED)
+        {
+            return ESP_OK;
+        }
+        state_.store(State::NOT_INITIALIZED);  // blink()/turn_on()... become no-ops from here
+        stop_.store(true);
+        xSemaphoreGive(sem_);
+        for (int i = 0; i < 50 && !exited_.load(); i++)
+        {
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+        if (!exited_.load())
+        {
+            state_.store(State::OFF);  // still owned by the worker; leave the object usable
+            stop_.store(false);
+            return ESP_ERR_TIMEOUT;
+        }
+        task_handle_ = nullptr;
+        state_.store(State::NOT_INITIALIZED);  // the worker may have stored ON/OFF while it was finishing a blink
+        gpio_set_level(pin_, active_low_ ? 1 : 0);
+        gpio_reset_pin(pin_);
+        vSemaphoreDelete(sem_);
+        sem_ = nullptr;
+        ledState_.store(0);
+        return ESP_OK;
     }
 
     ~LedStatus()
     {
-        if (task_handle_ != nullptr)
-        {
-            vTaskDelete(task_handle_);
-        }
-        if (sem_ != nullptr)
-        {
-            vSemaphoreDelete(sem_);
-        }
+        deinit();
     }
 
     void turn_on()
     {
+        if (!ready())
+        {
+            return;
+        }
         state_.store(State::ON);
         wait_time_.store(portMAX_DELAY);
         xSemaphoreGive(sem_);
@@ -72,6 +112,10 @@ public:
 
     void turn_off()
     {
+        if (!ready())
+        {
+            return;
+        }
         state_.store(State::OFF);
         wait_time_.store(portMAX_DELAY);
         xSemaphoreGive(sem_);
@@ -79,6 +123,10 @@ public:
 
     void toggle()
     {
+        if (!ready())
+        {
+            return;
+        }
         int current = ledState_.load();
         if (current == 0)
         {
@@ -93,7 +141,7 @@ public:
 
     void blink(uint32_t count, uint32_t on_time_ms, uint32_t off_time_ms)
     {
-        if (state_.load() == State::BLINK)
+        if (!ready() || state_.load() == State::BLINK)
         {
             return;
         }
@@ -105,6 +153,11 @@ public:
     }
 
 private:
+    bool ready() const
+    {
+        return state_.load() != State::NOT_INITIALIZED && sem_ != nullptr;
+    }
+
     LedStatus()
     {
     }
@@ -117,10 +170,14 @@ private:
     }
     void run()
     {
-        while (true)
+        while (!stop_.load())
         {
             TickType_t delay = wait_time_.load();
             xSemaphoreTake(sem_, delay > 0 ? delay : 1);
+            if (stop_.load())
+            {
+                break;
+            }
 
             State state = static_cast<State>(state_.load());
             switch (state)
@@ -144,7 +201,9 @@ private:
                     break;
             }
         }
-    };
+        exited_.store(true);
+        vTaskDelete(nullptr);
+    }
 
     void on()
     {
@@ -202,6 +261,8 @@ private:
     std::atomic<TickType_t> on_time_     = 0;
     std::atomic<TickType_t> off_time_    = 0;
     std::atomic<TickType_t> count_       = 0;
+    std::atomic<bool>       stop_        = false;
+    std::atomic<bool>       exited_      = false;
     TaskHandle_t            task_handle_ = nullptr;
     SemaphoreHandle_t       sem_         = nullptr;
 };

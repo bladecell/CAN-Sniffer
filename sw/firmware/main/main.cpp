@@ -41,7 +41,10 @@ extern "C" void app_main(void)
              (unsigned)esp_get_free_heap_size(), (unsigned)esp_get_minimum_free_heap_size());
     esp_log_level_set("CAN_DRIVER", ESP_LOG_DEBUG);
     LedStatus& led = LedStatus::getInstance();
-    led.init(LED_GPIO);
+    if (led.init(LED_GPIO) != ESP_OK)
+    {
+        ESP_LOGW(TAG, "LED init failed; running without status LED");
+    }
     // esp_log_level_set("ASYNC_WEB_SERVER", ESP_LOG_DEBUG);
 
     SUPERVISOR::getInstance().start();

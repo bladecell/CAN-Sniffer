@@ -218,8 +218,7 @@ err:
 
 esp_err_t WIFI::start_mdns_service()
 {
-    static bool mdns_initialized = false;
-    if (mdns_initialized)
+    if (m_mdns_up)
     {
         return ESP_OK;
     }
@@ -227,7 +226,7 @@ esp_err_t WIFI::start_mdns_service()
     esp_err_t err = mdns_init();
     if (err == ESP_ERR_INVALID_STATE)
     {
-        mdns_initialized = true;
+        m_mdns_up = true;
         return ESP_OK;
     }
     if (err != ESP_OK)
@@ -238,9 +237,18 @@ esp_err_t WIFI::start_mdns_service()
     mdns_hostname_set(HOSTNAME);
     mdns_instance_name_set(MDNS_INSTANCE);
     mdns_service_add(NULL, "_http", "_tcp", 80, NULL, 0);
-    
-    mdns_initialized = true;
+
+    m_mdns_up = true;
     return ESP_OK;
+}
+
+void WIFI::stop_mdns_service()
+{
+    if (m_mdns_up)
+    {
+        mdns_free();
+        m_mdns_up = false;
+    }
 }
 
 esp_err_t WIFI::stop()
@@ -264,6 +272,9 @@ esp_err_t WIFI::stop()
 
 void WIFI::deinit()
 {
+    // mDNS is bound to the netifs destroyed below; leaving it up would keep it on dead netifs after the next init (WIFI-1).
+    stop_mdns_service();
+
     if (getState() != State::UNINITIALIZED && getState() != State::INITIALIZED)
     {
         stop();

@@ -136,6 +136,8 @@ private:
     static void internal_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data);
 
     esp_err_t start_mdns_service();
+    void      stop_mdns_service();
+    bool      m_mdns_up = false;  // mdns_init() done and not yet freed; cleared by deinit() so wake re-binds the new netifs
 
     // State management
     void setState(State state);

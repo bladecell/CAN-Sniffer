@@ -469,7 +469,9 @@ MiddlewareJsonResult m_system_get()
     cJSON_AddStringToObject(root, "restart_reason", SUPERVISOR::getInstance().get_restart_reason().c_str());
     cJSON_AddStringToObject(root, "mac", SUPERVISOR::getInstance().get_MAC_address().c_str());
     cJSON_AddNumberToObject(root, "state", static_cast<uint32_t>(SUPERVISOR::getInstance().get_state()));
-    cJSON_AddNumberToObject(root, "battery_voltage", SUPERVISOR::getInstance().get_battery_voltage());
+    // 0 = unknown (ADC unavailable or a conversion failed); the frontend ignores values at or below 1 V.
+    const float battery_v = SUPERVISOR::getInstance().get_battery_voltage();
+    cJSON_AddNumberToObject(root, "battery_voltage", std::isnan(battery_v) ? 0.0 : battery_v);
     cJSON_AddBoolToObject(root, "sd_card_detected", sd_card_detected);
 
     cJSON* component_status = cJSON_CreateArray();
@@ -1186,6 +1188,10 @@ esp_err_t can_status_packet_get(uint8_t* out_packet)
 
     // float battery voltage
     float battery_voltage = SUPERVISOR::getInstance().get_battery_voltage();
+    if (std::isnan(battery_voltage))
+    {
+        battery_voltage = 0.0f;  // unknown
+    }
     memcpy(&float_bits, &battery_voltage, sizeof(battery_voltage));
     out_packet[offset++] = (float_bits >> 0) & 0xFF;
     out_packet[offset++] = (float_bits >> 8) & 0xFF;

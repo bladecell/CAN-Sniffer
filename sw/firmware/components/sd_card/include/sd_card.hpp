@@ -82,6 +82,10 @@ public:
     };
 
     esp_err_t init(const SDCard::Config& config);
+    // Unmounts and releases the card-detect pin. Bounded wait for the lease (ESP_ERR_TIMEOUT: a transfer is running, retry).
+    // After it, update_card_status() and card_present() do nothing until init() runs again. Not part of the sleep sequence
+    // yet: the supervisor still polls the card while asleep.
+    esp_err_t deinit();
 
     // Acquires the SD mutex for a caller-specified time. If require_mounted is
     // true, a successful operation also guarantees mounted() is true.

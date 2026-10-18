@@ -34,7 +34,7 @@ The supervisor loop runs once per second (`vTaskDelay(1000)`), and each pass als
 | Input | HW | Signal | Threshold / timeout |
 |---|---|---|---|
 | CAN bus health | v1.2 | `CanDriver::isBusConnected()`: false when more than 3 consecutive ACK errors or stuff errors are seen, or the controller is bus-off | the bus must stay down for 60 s (`SLEEP_TRANSITION_TIMER_S`, one count per 1 s loop) |
-| OBD port voltage | v1.2 | `battery_read()`: ADC1 channel 1 (GPIO 2 on the ESP32-S3), 12 dB attenuation, 12 bit, 16 sample average, divider 1 MΩ / 270 kΩ (ratio 4.704), rounded to 0.1 V. Uses the raw count scaled to 3300 mV, no ADC calibration | above **13.2 V** (alternator running): stay awake and restart the 60 s count. At or below: the count runs |
+| OBD port voltage | v1.2 | `battery_read()`: ADC1 channel 1 (GPIO 2 on the ESP32-S3), 12 dB attenuation, 12 bit, 16 sample average, divider 1 MΩ / 270 kΩ (ratio 4.704), rounded to 0.1 V. Returns NaN ("unknown") when the ADC is not initialised or any of the 16 conversions fails; the supervisor then logs it, never counts it as above 13.2 V, and sleeps for the normal 10 s. `/system` and the `0x03` frame report unknown as 0. Uses the raw count scaled to 3300 mV, no ADC calibration | above **13.2 V** (alternator running): stay awake and restart the 60 s count. At or below: the count runs |
 | Battery voltage while asleep | v1.2 | same ADC | below **11.4 V** (`LONG_SLEEP_VOLTAGE_LIMIT`, hard coded, a `TODO: save this to nvs` is in the source): sleep 60 s per cycle instead of 10 s |
 | Ignition sense (OBD pin 1) | v2 | – | not built |
 
@@ -61,13 +61,13 @@ The cycle is about `sleep time + 1 s` (supervisor loop delay) plus the wake work
 Before sleep (STOPPING):
 1. `stop_web_server()`: asks `WSDataStreamTask` to leave its loop and waits up to 1 s for it to exit by itself, stops `AsyncWebServer` (workers, httpd), and only then deletes the task's semaphore, so the WebSocket handshake handler never sees a deleted semaphore. Waits at most 3 s for the workers; if one is still inside a handler it returns `ESP_ERR_TIMEOUT`, nothing further is stopped and the sequence retries on the next pass.
 2. `OBD2::deinit()`: stops its three tasks, clears PID values, VIN, DTCs and all subscriber lists, deletes its queues and semaphores. PID definitions stay. If it times out (5 s), the sequence stops here and retries on the next pass.
-3. `WIFI::deinit()` (returns void, so nothing is checked).
+3. `WIFI::deinit()` (returns void, so nothing is checked). It also frees mDNS (`mdns_free`) and clears the flag, so the next `start()` binds mDNS to the new netifs.
 4. `CanDriver::deinit()`: stops the simulator, disables the node, then asks the TX and health tasks to exit (flag and notify, bounded 3 s wait, each task deletes itself) before deleting the TWAI node, queues, semaphore and TX ring. Safe to call twice. A task that does not leave in time returns `ESP_ERR_TIMEOUT` with nothing freed; an error stops the sequence and retries.
-5. RS pin high (transceiver standby), state SLEEPING.
+5. RS pin high (transceiver standby), `LedStatus::deinit()` (LED off, worker task and semaphore released), state SLEEPING.
 
-After wake: CAN, then (bus alive) OBD (which re-subscribes the connected-callbacks and reloads the PID JSON from the SD card), Wi-Fi, web server (which re-subscribes the PID stream callback).
+After wake: `LedStatus::init()`, CAN, then (bus alive) OBD (which re-subscribes the connected-callbacks and reloads the PID JSON from the SD card), Wi-Fi, web server (which re-subscribes the PID stream callback).
 
-Not deinitialized before sleep, and have no `deinit()`: Settings (NVS), power management, the `www` LittleFS mount, the SD card (stays mounted, still polled for hot-plug every second), the battery ADC unit, the LED worker task. `CLAUDE.md` requires every component to support `deinit()`; these do not.
+Not deinitialized before sleep, and have no `deinit()`: Settings (NVS), power management, the `www` LittleFS mount, the SD card (stays mounted, still polled for hot-plug every second) and the battery ADC unit (read while asleep to pick the sleep time). `SDCard::deinit()` and `battery_deinit()` exist (unmount and release the card-detect pin; delete the ADC unit) but are deliberately not called in the sleep sequence: both are used while asleep, so wiring them needs a wake-path re-init (open item).
 
 ### Where it differs from a battery-safe design
 - ERROR state: fixed by P2.9e, see States.
