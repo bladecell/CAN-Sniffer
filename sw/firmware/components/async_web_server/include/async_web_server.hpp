@@ -56,6 +56,8 @@ public:
     static esp_err_t async_handler(httpd_req_t* req);
 
     esp_err_t start(Config config);
+    // Waits at most STOP_WAIT_US for the workers. ESP_ERR_TIMEOUT: a worker is still in a handler, nothing was freed and
+    // the server keeps running; call again later.
     esp_err_t stop();
     void      registerRoute(const char* uri, httpd_method_t method, AsyncHandler func, void* arg);
 
@@ -76,7 +78,10 @@ private:
 
     httpd_handle_t server_;
 
+    static constexpr int64_t STOP_WAIT_US = 3LL * 1000 * 1000;
+
     volatile bool     running_      = false;
+    size_t            stoppedWorkers_ = 0;  // workers that gave shutdown_sem_ since start()
     SemaphoreHandle_t shutdown_sem_ = NULL;
 
     // Async requests are queued here while they wait to

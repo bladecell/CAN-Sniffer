@@ -42,7 +42,8 @@ AsyncWebServer::~AsyncWebServer()
 
 esp_err_t AsyncWebServer::start(Config config)
 {
-    running_ = true;
+    running_        = true;
+    stoppedWorkers_ = 0;
 
     shutdown_sem_ = xSemaphoreCreateCounting(config.async_worker_task_num, 0);
     if (!shutdown_sem_)
@@ -72,20 +73,32 @@ esp_err_t AsyncWebServer::stop()
     // Drain workers FIRST, while the server is still alive, so their request
     // data stays valid. Each worker exits after the poison pill (or when the
     // current request finishes) and gives shutdown_sem_ exactly once.
+    const size_t remaining = worker_handles.size() - stoppedWorkers_;
     if (request_queue)
     {
         AsyncRequest poison = {};
-        for (size_t i = 0; i < worker_handles.size(); i++)
+        for (size_t i = 0; i < remaining; i++)
         {
             xQueueSend(request_queue, &poison, pdMS_TO_TICKS(100));
         }
     }
 
+    // Bounded: a worker stuck in a handler must not hang the caller (the supervisor retries and caps its attempts).
+    // Nothing is freed on timeout; calling stop() again waits for the workers that are still running.
     if (shutdown_sem_)
     {
-        for (size_t i = 0; i < worker_handles.size(); i++)
+        const int64_t deadline = esp_timer_get_time() + STOP_WAIT_US;
+        while (stoppedWorkers_ < worker_handles.size())
         {
-            xSemaphoreTake(shutdown_sem_, portMAX_DELAY);
+            const int64_t left = deadline - esp_timer_get_time();
+            if (left <= 0 || xSemaphoreTake(shutdown_sem_, pdMS_TO_TICKS(left / 1000)) != pdTRUE)
+            {
+                ESP_LOGE(TAG, "%u of %u async workers still busy, server not stopped",
+                         static_cast<unsigned>(worker_handles.size() - stoppedWorkers_),
+                         static_cast<unsigned>(worker_handles.size()));
+                return ESP_ERR_TIMEOUT;
+            }
+            stoppedWorkers_++;
         }
     }
 
@@ -97,6 +110,7 @@ esp_err_t AsyncWebServer::stop()
     }
 
     worker_handles.clear();
+    stoppedWorkers_ = 0;
 
     if (shutdown_sem_)
     {

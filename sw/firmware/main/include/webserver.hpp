@@ -3,7 +3,10 @@
 
 #include <stddef.h>
 
-void stop_web_server();
+#include "esp_err.h"
+
+// ESP_ERR_TIMEOUT: a request handler did not finish in time; the server is still running, call again later.
+esp_err_t stop_web_server();
 #include "esp_err.h"
 
 // Forward declarations

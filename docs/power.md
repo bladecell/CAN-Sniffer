@@ -21,7 +21,7 @@ SLEEPING ─ wake, CAN init ok, bus alive ─→ restart OBD, Wi-Fi, web server 
 SLEEPING ─ wake, bus dead ─→ stay SLEEPING (CAN deinit, transceiver standby, sleep again)
 SLEEPING ─ CAN init fails after wake ─→ ERROR
 SLEEPING ─ OBD / Wi-Fi / web server start fails after wake ─→ STOPPING (retry the shutdown)
-STOPPING ─ OBD2 or CAN deinit fails ─→ stays STOPPING, retried every second
+STOPPING ─ web server, OBD2 or CAN deinit fails ─→ stays STOPPING, retried every second
 ```
 The supervisor loop runs once per second (`vTaskDelay(1000)`), and each pass also calls `SDCard::update_card_status()`.
 
@@ -58,7 +58,7 @@ The cycle is about `sleep time + 1 s` (supervisor loop delay) plus the wake work
 
 ### Deinit and init order
 Before sleep (STOPPING):
-1. `stop_web_server()`: deletes `WSDataStreamTask`, its semaphore, and stops `AsyncWebServer` (workers, httpd).
+1. `stop_web_server()`: deletes `WSDataStreamTask`, its semaphore, and stops `AsyncWebServer` (workers, httpd). Waits at most 3 s for the workers; if one is still inside a handler it returns `ESP_ERR_TIMEOUT`, nothing further is stopped and the sequence retries on the next pass.
 2. `OBD2::deinit()`: stops its three tasks, clears PID values, VIN, DTCs and all subscriber lists, deletes its queues and semaphores. PID definitions stay. If it times out (5 s), the sequence stops here and retries on the next pass.
 3. `WIFI::deinit()` (returns void, so nothing is checked).
 4. `CanDriver::deinit()`: stops the simulator, disables the node, then asks the TX and health tasks to exit (flag and notify, bounded 3 s wait, each task deletes itself) before deleting the TWAI node, queues, semaphore and TX ring. Safe to call twice. A task that does not leave in time returns `ESP_ERR_TIMEOUT` with nothing freed; an error stops the sequence and retries.

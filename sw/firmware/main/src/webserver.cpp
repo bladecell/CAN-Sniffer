@@ -12,6 +12,7 @@
 #include <cstring>
 
 #include "async_web_server.hpp"
+#include "body_reader.hpp"
 #include "cJSON.h"
 #include "esp_err.h"
 #include "esp_http_server.h"
@@ -42,6 +43,8 @@ struct RouteDef
 static const char* TAG = "WEB_SERVER";
 
 static constexpr int64_t JSON_PAYLOAD_RECEIVE_DEADLINE_US = 5LL * 1000 * 1000;
+// PUT /pid_def takes up to 64 KiB, so it gets more time; it is still absolute (ASYNC-1).
+static constexpr int64_t PID_DEF_PUT_RECEIVE_DEADLINE_US = 20LL * 1000 * 1000;
 static constexpr size_t  MAX_UPLOAD_CONTENT_LENGTH        = input_limits::UPLOAD_MAX;
 static constexpr int64_t UPLOAD_NO_PROGRESS_DEADLINE_US   = 5LL * 1000 * 1000;
 static constexpr int64_t UPLOAD_ABSOLUTE_DEADLINE_US      = 60LL * 1000 * 1000;
@@ -586,7 +589,7 @@ static esp_err_t get_download_query(httpd_req_t* req, bool* download)
     return ESP_ERR_INVALID_ARG;
 }
 
-cJSON* get_validated_json_payload(httpd_req_t* req, size_t max_size)
+cJSON* get_validated_json_payload(httpd_req_t* req, size_t max_size, int64_t deadline_us = JSON_PAYLOAD_RECEIVE_DEADLINE_US)
 {
     size_t total_len = req->content_len;
 
@@ -609,36 +612,14 @@ cJSON* get_validated_json_payload(httpd_req_t* req, size_t max_size)
         return nullptr;
     }
 
-    size_t received_total = 0;
-    const int64_t deadline = esp_timer_get_time() + JSON_PAYLOAD_RECEIVE_DEADLINE_US;
-    while (received_total < total_len)
+    const body_reader::Result received = body_reader::readBody(
+        [req](char* dst, size_t len) { return httpd_req_recv(req, dst, len); }, esp_timer_get_time, buf, total_len,
+        HTTPD_SOCK_ERR_TIMEOUT, esp_timer_get_time() + deadline_us);
+    if (received != body_reader::Result::Ok)
     {
-        if (esp_timer_get_time() >= deadline)
-        {
-            free(buf);
-            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Incomplete request body");
-            return nullptr;
-        }
-
-        int ret = httpd_req_recv(req, buf + received_total, total_len - received_total);
-        if (ret == HTTPD_SOCK_ERR_TIMEOUT)
-        {
-            if (esp_timer_get_time() < deadline)
-            {
-                continue;
-            }
-
-            free(buf);
-            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Incomplete request body");
-            return nullptr;
-        }
-        if (ret <= 0 || (size_t)ret > (total_len - received_total))
-        {
-            free(buf);
-            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Incomplete request body");
-            return nullptr;
-        }
-        received_total += (size_t)ret;
+        free(buf);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Incomplete request body");
+        return nullptr;
     }
     buf[total_len] = '\0';
 
@@ -669,69 +650,6 @@ cJSON* get_validated_json_payload(httpd_req_t* req, size_t max_size)
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
     }
 
-    return root;
-}
-
-static cJSON* get_full_json_payload(httpd_req_t* req, size_t max_size)
-{
-    if (req->content_len <= 0)
-    {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Content-Length required");
-        return nullptr;
-    }
-
-    const size_t totalLength = (size_t)req->content_len;
-    if (totalLength > max_size)
-    {
-        httpd_resp_send_err(req, HTTPD_413_CONTENT_TOO_LARGE, "JSON too large");
-        return nullptr;
-    }
-
-    char* buffer = (char*)malloc(totalLength + 1);
-    if (buffer == nullptr)
-    {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Server OOM");
-        return nullptr;
-    }
-
-    size_t receivedTotal = 0;
-    while (receivedTotal < totalLength)
-    {
-        int received = httpd_req_recv(req, buffer + receivedTotal, totalLength - receivedTotal);
-        if (received == HTTPD_SOCK_ERR_TIMEOUT)
-        {
-            continue;
-        }
-        if (received <= 0)
-        {
-            free(buffer);
-            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Incomplete request body");
-            return nullptr;
-        }
-        receivedTotal += (size_t)received;
-    }
-    buffer[totalLength] = '\0';
-
-    const char* parseEnd = nullptr;
-    cJSON* root = cJSON_ParseWithLengthOpts(buffer, totalLength, &parseEnd, 0);
-    if (root != nullptr && parseEnd != nullptr)
-    {
-        while (*parseEnd != '\0' && std::isspace((unsigned char)*parseEnd))
-        {
-            ++parseEnd;
-        }
-        if (*parseEnd != '\0')
-        {
-            cJSON_Delete(root);
-            root = nullptr;
-        }
-    }
-    free(buffer);
-
-    if (root == nullptr)
-    {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
-    }
     return root;
 }
 
@@ -998,7 +916,7 @@ esp_err_t p_pid_def_index_handler(httpd_req_t* req, void* arg)
 
 esp_err_t put_pid_def_index_handler(httpd_req_t* req, void* arg)
 {
-    cJSON* root = get_full_json_payload(req, 64 * 1024);
+    cJSON* root = get_validated_json_payload(req, 64 * 1024, PID_DEF_PUT_RECEIVE_DEADLINE_US);
     if (root == nullptr)
     {
         return ESP_OK;
@@ -1798,7 +1716,7 @@ esp_err_t setup_web_server()
     return ESP_OK;
 }
 
-void stop_web_server()
+esp_err_t stop_web_server()
 {
     if (xWSDataStreamTaskHandle)
     {
@@ -1810,7 +1728,7 @@ void stop_web_server()
         vSemaphoreDelete(WSDataStreamSemaphore);
         WSDataStreamSemaphore = nullptr;
     }
-    AsyncWebServer::getInstance().stop();
+    return AsyncWebServer::getInstance().stop();
 }
 
 // TODO add nrc endpoint and maybe callback with ws frame

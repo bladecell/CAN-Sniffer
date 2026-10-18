@@ -236,8 +236,13 @@ void SUPERVISOR::task()
                 }
 
                 // Deinit components
-                stop_web_server();
-                esp_err_t obdStop = OBD2::getInstance().deinit();
+                esp_err_t obdStop = stop_web_server();
+                if (obdStop != ESP_OK)
+                {
+                    ESP_LOGE(TAG, "Web server shutdown incomplete (%s); retrying", esp_err_to_name(obdStop));
+                    break;
+                }
+                obdStop = OBD2::getInstance().deinit();
                 if (obdStop != ESP_OK)
                 {
                     ESP_LOGE(TAG, "OBD2 shutdown incomplete (%s); retrying before CAN shutdown", esp_err_to_name(obdStop));
@@ -345,8 +350,15 @@ void SUPERVISOR::task()
                 {
                     ESP_LOGI(TAG, "Bus is dead. Going back to sleep.");
 
-                    stop_web_server();
-                    esp_err_t canStop = CanDriver::getInstance().deinit();
+                    esp_err_t canStop = stop_web_server();
+                    if (canStop != ESP_OK)
+                    {
+                        ESP_LOGE(TAG, "Web server shutdown after dead-bus check incomplete (%s); retrying ordered shutdown",
+                                 esp_err_to_name(canStop));
+                        eState = State::STOPPING;
+                        break;
+                    }
+                    canStop = CanDriver::getInstance().deinit();
                     if (canStop != ESP_OK)
                     {
                         ESP_LOGE(TAG, "CAN shutdown after dead-bus check failed: %s; retrying ordered shutdown",

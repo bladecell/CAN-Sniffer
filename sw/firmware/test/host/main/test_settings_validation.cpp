@@ -3,7 +3,7 @@
 #include <limits>
 #include <string>
 
-#include "../../../../main/include/settings_validation.hpp"
+#include "../../../main/include/settings_validation.hpp"
 #include "unity.h"
 
 namespace
