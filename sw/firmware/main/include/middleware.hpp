@@ -22,6 +22,7 @@ struct MiddlewareJsonResult
 {
     cJSON* body;
     int    http_status;
+    unsigned retry_after_s = 0;
 };
 
 // Middlewares
@@ -36,6 +37,8 @@ cJSON* m_pid_def_put(cJSON* data, int* http_status);
 // Sets the auto poll intent; the body is {auto_poll, polling} read after the setter ran (HTTP 201), or an error body and 503 when OBD2 is stopped or busy.
 MiddlewareJsonResult m_auto_poll_set(bool on);
 MiddlewareJsonResult m_can_bus_get();
+MiddlewareJsonResult m_wifi_scan_start();
+MiddlewareJsonResult m_wifi_scan_get();
 MiddlewareJsonResult m_obdii_get();
 MiddlewareJsonResult m_obdii_set(cJSON* payload);
 MiddlewareJsonResult m_system_get();

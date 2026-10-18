@@ -71,7 +71,7 @@ void test_commands_and_dtc_are_exact(void)
 
 void test_route_count_matches_docs(void)
 {
-  TEST_ASSERT_EQUAL_UINT32(36, kCount);  // docs/api.md: GET / plus 35 under /api/v1
+  TEST_ASSERT_EQUAL_UINT32(38, kCount);  // docs/api.md: GET / plus 37 under /api/v1
 }
 // The access-control decision (docs/decisions.md 2026-10-18), spelled out. A route is gated if and only if it is listed;
 // adding a route forces a decision here.
@@ -81,6 +81,7 @@ struct GatedRoute
   const char* uri;
 };
 const GatedRoute kGated[] = {
+    {"GET", "/api/v1/wifi/scan"},         {"POST", "/api/v1/wifi/scan"},
     {"GET", "/api/v1/settings"},          {"POST", "/api/v1/settings"},
     {"GET", "/api/v1/sd_card/tree"},      {"GET", "/api/v1/sd_card/tree/*"},
     {"GET", "/api/v1/sd_card/file/*"},    {"POST", "/api/v1/sd_card/file/*"},

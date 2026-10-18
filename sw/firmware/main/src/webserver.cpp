@@ -37,6 +37,7 @@
 #include "obd2.hpp"
 #include "sd_card.hpp"
 #include "wifi.hpp"
+#include "wifi_scan_http.hpp"
 
 struct RouteDef
 {
@@ -283,7 +284,7 @@ static esp_err_t send_json_response(httpd_req_t* req, MiddlewareJsonResult resul
     if (result.http_status >= 400 && http_error::retryAfterS(result.http_status) != 0)
     {
         (void)snprintf(retry_after, sizeof(retry_after), "%u",
-                 static_cast<unsigned>(http_error::retryAfterS(result.http_status)));
+                 result.retry_after_s ? result.retry_after_s : static_cast<unsigned>(http_error::retryAfterS(result.http_status)));
         httpd_resp_set_hdr(req, "Retry-After", retry_after);  // lives until the send below
     }
     esp_err_t ret = httpd_resp_send(req, json_str, HTTPD_RESP_USE_STRLEN);
@@ -734,6 +735,24 @@ esp_err_t index_handler(httpd_req_t* req, void* arg)
 esp_err_t g_system_index_handler(httpd_req_t* req, void* arg)
 {
     return send_json_response(req, m_system_get());
+}
+
+esp_err_t g_wifi_scan_handler(httpd_req_t* req, void* arg)
+{
+    if (!wifi_scan_http::accepts(req->uri, req->content_len, httpd_req_get_hdr_value_len(req, "Transfer-Encoding") != 0))
+    {
+        return AsyncWebServer::sendError(req, 400, "Wi-Fi scan accepts no body or query");
+    }
+    return send_json_response(req, m_wifi_scan_get());
+}
+
+esp_err_t p_wifi_scan_handler(httpd_req_t* req, void* arg)
+{
+    if (!wifi_scan_http::accepts(req->uri, req->content_len, httpd_req_get_hdr_value_len(req, "Transfer-Encoding") != 0))
+    {
+        return AsyncWebServer::sendError(req, 400, "Wi-Fi scan accepts no body or query");
+    }
+    return send_json_response(req, m_wifi_scan_start());
 }
 
 esp_err_t p_system_reboot_index_handler(httpd_req_t* req, void* arg)

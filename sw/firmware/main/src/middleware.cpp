@@ -35,6 +35,7 @@
 #include "string"
 #include "supervisor.hpp"
 #include "utilities.h"
+#include "wifi.hpp"
 
 static const char* TAG = "MIDDLEWARE";
 
@@ -101,6 +102,70 @@ static MiddlewareJsonResult dtc_db_io_error(cJSON* root, const std::string& reas
 constexpr TickType_t SD_OPERATION_TIMEOUT = pdMS_TO_TICKS(1000);
 
 }  // namespace
+
+MiddlewareJsonResult m_wifi_scan_start()
+{
+    uint32_t id = 0;
+    const auto result = WIFI::getInstance().startScan(id);
+    if (result != WIFI::ScanStartResult::Started)
+    {
+        const int status = result == WIFI::ScanStartResult::Cooldown ? 429 :
+                           result == WIFI::ScanStartResult::NoMemory ? 500 : 503;
+        const char* reason = result == WIFI::ScanStartResult::Cooldown ? "Wi-Fi scan cooldown" :
+                             result == WIFI::ScanStartResult::Busy ? "Wi-Fi scan busy" :
+                             result == WIFI::ScanStartResult::NoMemory ? "Wi-Fi scan allocation failed" : "Wi-Fi scan unavailable";
+        return {json_error_body(reason), status, status == 429 ? 10u : 0u};
+    }
+    cJSON* root = cJSON_CreateObject();
+    if (!root || !cJSON_AddStringToObject(root, "state", "scanning") || !cJSON_AddNumberToObject(root, "scan_id", id))
+    {
+        cJSON_Delete(root);
+        return {nullptr, 500};
+    }
+    return {root, 202};
+}
+
+MiddlewareJsonResult m_wifi_scan_get()
+{
+    WIFI::ScanSnapshot snapshot;
+    esp_err_t err = WIFI::getInstance().getScan(snapshot);
+    if (err != ESP_OK) { return {json_error_body("Wi-Fi scan unavailable"), 503}; }
+    if (snapshot.state == WIFI::ScanState::Failed)
+    {
+        return {json_error_body(esp_err_to_name(snapshot.error), esp_err_to_name(snapshot.error)),
+                snapshot.error == ESP_ERR_NO_MEM ? 500 : 503};
+    }
+
+    cJSON* root = cJSON_CreateObject();
+    cJSON* list = root ? cJSON_AddArrayToObject(root, "networks") : nullptr;
+    const char* state = snapshot.state == WIFI::ScanState::Scanning ? "scanning" :
+                        snapshot.state == WIFI::ScanState::Complete ? "complete" : "idle";
+    if (!list || !cJSON_AddStringToObject(root, "state", state) ||
+        !cJSON_AddNumberToObject(root, "scan_id", snapshot.id) ||
+        !cJSON_AddNumberToObject(root, "age_ms", snapshot.state == WIFI::ScanState::Complete ?
+                                  (esp_timer_get_time() - snapshot.completedUs) / 1000 : 0) ||
+        !cJSON_AddBoolToObject(root, "truncated", snapshot.truncated))
+    {
+        cJSON_Delete(root);
+        return {nullptr, 500};
+    }
+    for (uint16_t i = 0; i < snapshot.count; ++i)
+    {
+        const auto& item = snapshot.networks[i];
+        cJSON* entry = cJSON_CreateObject();
+        if (!entry || !cJSON_AddStringToObject(entry, "ssid", item.ssid) ||
+            !cJSON_AddStringToObject(entry, "ssid_hex", item.ssidHex) ||
+            !cJSON_AddNumberToObject(entry, "rssi", item.rssi) ||
+            !cJSON_AddNumberToObject(entry, "auth_mode", item.authMode) ||
+            !cJSON_AddNumberToObject(entry, "channel", item.channel) || !cJSON_AddItemToArray(list, entry))
+        {
+            cJSON_Delete(entry);
+            cJSON_Delete(root);
+            return {nullptr, 500};
+        }
+    }
+    return {root, 200};
+}
 
 cJSON* single_pid_def_get(uint16_t pid, esp_err_t* operation_error)
 {

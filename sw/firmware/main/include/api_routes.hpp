@@ -14,6 +14,8 @@
 
 // clang-format off
 #define API_ROUTES(X)                                                                          \
+  X("/api/v1/wifi/scan",             POST,   p_wifi_scan_handler,              1)                \
+  X("/api/v1/wifi/scan",             GET,    g_wifi_scan_handler,              1)                \
   X("/",                            GET,    index_handler,                   0)                \
   X("/api/v1/pid_def/*",            GET,    g_pid_def_index_handler,         0)                \
   X("/api/v1/pid_def/*",            DELETE, d_pid_def_index_handler,         1)                \

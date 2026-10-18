@@ -262,7 +262,12 @@ void SUPERVISOR::task()
                     ESP_LOGE(TAG, "OBD2 shutdown incomplete (%s); retrying before CAN shutdown", esp_err_to_name(obdStop));
                     break;
                 }
-                WIFI::getInstance().deinit();
+                obdStop = WIFI::getInstance().deinit();
+                if (obdStop != ESP_OK)
+                {
+                    ESP_LOGE(TAG, "Wi-Fi shutdown incomplete (%s); retrying", esp_err_to_name(obdStop));
+                    break;
+                }
                 obdStop = CanDriver::getInstance().deinit();
                 if (obdStop != ESP_OK)
                 {
@@ -450,7 +455,10 @@ void SUPERVISOR::task()
                 {
                     ESP_LOGW(TAG, "Shutdown before error sleep incomplete: %s", esp_err_to_name(stopErr));
                 }
-                WIFI::getInstance().deinit();
+                if (WIFI::getInstance().deinit() != ESP_OK)
+                {
+                    ESP_LOGW(TAG, "Wi-Fi shutdown incomplete before error sleep");
+                }
                 if (CanDriver::getInstance().deinit() == ESP_OK)
                 {
                     gpio_set_level(CAN_RS_GPIO, 1);  // transceiver standby

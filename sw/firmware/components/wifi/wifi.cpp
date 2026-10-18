@@ -16,6 +16,7 @@
 
 #include "esp_log.h"
 #include "esp_mac.h"
+#include "esp_wifi_default.h"
 #include "mdns.h"
 #include "nvs_flash.h"
 
@@ -40,8 +41,8 @@ ESP_EVENT_DEFINE_BASE(WIFI_INTERNAL_EVENT);
 
 enum
 {
-    WIFI_INT_EVENT_FALLBACK_AP,
-    WIFI_INT_EVENT_RETRY_CONNECTION
+    WIFI_INT_EVENT_RESUME,
+    WIFI_INT_EVENT_DRAIN
 };
 
 WIFI::WIFI()
@@ -54,7 +55,11 @@ WIFI::WIFI()
       m_mutex(xSemaphoreCreateMutex()),
       m_retry_count(0)
 {
-    if (m_mutex == nullptr)
+    m_lifecycleMutex = xSemaphoreCreateRecursiveMutex();
+    m_shutdownMutex = xSemaphoreCreateRecursiveMutex();
+    m_scanExited = xSemaphoreCreateBinary();
+    m_scanSignal = xSemaphoreCreateBinary();
+    if (!m_mutex || !m_lifecycleMutex || !m_shutdownMutex || !m_scanExited || !m_scanSignal)
     {
         ESP_LOGE(TAG, "Failed to create mutex!");
         m_state.store(State::ERROR, std::memory_order_release);
@@ -72,7 +77,11 @@ WIFI::WIFI()
 
 WIFI::~WIFI()
 {
-    deinit();
+    if (deinit() != ESP_OK) { return; }
+    if (m_scanExited) { vSemaphoreDelete(m_scanExited); }
+    if (m_scanSignal) { vSemaphoreDelete(m_scanSignal); }
+    if (m_shutdownMutex) { vSemaphoreDelete(m_shutdownMutex); }
+    if (m_lifecycleMutex) { vSemaphoreDelete(m_lifecycleMutex); }
     if (m_mutex)
     {
         vSemaphoreDelete(m_mutex);
@@ -81,6 +90,8 @@ WIFI::~WIFI()
 
 esp_err_t WIFI::init(const Config& config)
 {
+    LifecycleGuard guard(m_lifecycleMutex);
+    if (!guard.locked || m_deinitializing.load()) { return ESP_ERR_INVALID_STATE; }
     if (getState() != State::UNINITIALIZED)
     {
         ESP_LOGW(TAG, "Already initialized");
@@ -88,6 +99,9 @@ esp_err_t WIFI::init(const Config& config)
     }
 
     m_config = config;
+    m_scan = {};
+    m_scanFault = false;
+    m_reconnectPending = false;
 
     ERROR_CHECK(esp_netif_init(), "Failed to initialize netif", return ESP_ERR_INVALID_STATE);
     esp_err_t ret = esp_event_loop_create_default();
@@ -114,6 +128,15 @@ esp_err_t WIFI::init(const Config& config)
     ret                    = esp_wifi_init(&cfg);
 
     ERROR_CHECK(ret, "WiFi init failed", goto err);
+
+    {
+        esp_timer_create_args_t timer = {};
+        timer.callback = reconnectTimer;
+        timer.arg = this;
+        timer.name = "wifi_retry";
+        ret = esp_timer_create(&timer, &m_reconnectTimer);
+        ERROR_CHECK(ret, "Failed to create reconnect timer", goto err);
+    }
 
     ret = esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, this,
                                               &m_wifi_event_handler);
@@ -168,6 +191,8 @@ esp_err_t WIFI::setSTAConfig()
 
 esp_err_t WIFI::start()
 {
+    LifecycleGuard guard(m_lifecycleMutex);
+    if (!guard.locked || m_deinitializing.load()) { return ESP_ERR_INVALID_STATE; }
     if (getState() != State::INITIALIZED && getState() != State::STA_DISCONNECTED && getState() != State::STARTING)
     {
         ESP_LOGE(TAG, "Invalid state for start: %d", (int)getState());
@@ -193,6 +218,7 @@ esp_err_t WIFI::start()
     }
 
     ERROR_CHECK(esp_wifi_start(), "Failed to start WiFi", goto err);
+    m_closing = false;
 
     // Connect if STA mode is active
     if (m_config.mode == WIFI_MODE_STA || m_config.mode == WIFI_MODE_APSTA)
@@ -253,6 +279,12 @@ void WIFI::stop_mdns_service()
 
 esp_err_t WIFI::stop()
 {
+    LifecycleGuard shutdown(m_shutdownMutex);
+    if (!shutdown.locked) { return ESP_ERR_TIMEOUT; }
+    esp_err_t cancel = cancelScan();
+    if (cancel != ESP_OK) { return cancel; }
+    LifecycleGuard guard(m_lifecycleMutex);
+    if (!guard.locked) { return ESP_ERR_TIMEOUT; }
     if (getState() == State::UNINITIALIZED)
     {
         return ESP_ERR_INVALID_STATE;
@@ -266,44 +298,80 @@ esp_err_t WIFI::stop()
     }
 
     esp_err_t ret = esp_wifi_stop();
-    setState(State::INITIALIZED);
+    if (ret == ESP_ERR_WIFI_NOT_INIT || ret == ESP_ERR_WIFI_NOT_STARTED) { ret = ESP_OK; }
+    if (ret == ESP_OK && m_scanTemporarySta)
+    {
+        ret = esp_wifi_set_mode(m_config.mode);
+        if (ret == ESP_OK) { m_scanTemporarySta = false; }
+    }
+    if (ret == ESP_OK) { setState(State::INITIALIZED); }
     return ret;
 }
 
-void WIFI::deinit()
+esp_err_t WIFI::deinit()
 {
+    if (!m_mutex) { return ESP_ERR_NO_MEM; }
+    LifecycleGuard shutdown(m_shutdownMutex);
+    if (!shutdown.locked) { return ESP_ERR_TIMEOUT; }
+    m_deinitializing = true;
+    esp_err_t cancel = cancelScan();
+    if (cancel != ESP_OK) { return cancel; }
     // mDNS is bound to the netifs destroyed below; leaving it up would keep it on dead netifs after the next init (WIFI-1).
     stop_mdns_service();
 
     if (getState() != State::UNINITIALIZED && getState() != State::INITIALIZED)
     {
-        stop();
+        esp_err_t ret = stop();
+        if (ret != ESP_OK) { return ret; }
     }
 
     if (getState() != State::UNINITIALIZED)
     {
         if (m_wifi_event_handler)
         {
-            esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, m_wifi_event_handler);
+            esp_err_t ret = esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, m_wifi_event_handler);
+            if (ret != ESP_OK) { return ret; }
+            m_wifi_event_handler = nullptr;
         }
         if (m_ip_event_handler)
         {
-            esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, m_ip_event_handler);
+            esp_err_t ret = esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, m_ip_event_handler);
+            if (ret != ESP_OK) { return ret; }
+            m_ip_event_handler = nullptr;
         }
+        if (m_reconnectTimer)
+        {
+            esp_err_t ret = esp_timer_stop_blocking(m_reconnectTimer, pdMS_TO_TICKS(500));
+            if (ret != ESP_OK) { return ret; }
+            ret = esp_timer_delete(m_reconnectTimer);
+            if (ret != ESP_OK) { return ret; }
+            m_reconnectTimer = nullptr;
+        }
+        esp_err_t ret = esp_wifi_deinit();
+        if (ret != ESP_OK && ret != ESP_ERR_WIFI_NOT_INIT) { return ret; }
+        // Driver task is gone. Retire its queued events before a new registration can observe them on next init.
         if (m_internal_event_handler)
         {
-            esp_event_handler_instance_unregister(WIFI_INTERNAL_EVENT, ESP_EVENT_ANY_ID, m_internal_event_handler);
+            xSemaphoreTake(m_scanSignal, 0);
+            ret = esp_event_post(WIFI_INTERNAL_EVENT, WIFI_INT_EVENT_DRAIN, nullptr, 0, pdMS_TO_TICKS(100));
+            if (ret != ESP_OK || xSemaphoreTake(m_scanSignal, pdMS_TO_TICKS(1000)) != pdTRUE)
+            {
+                return ESP_ERR_TIMEOUT;
+            }
+            ret = esp_event_handler_instance_unregister(WIFI_INTERNAL_EVENT, ESP_EVENT_ANY_ID, m_internal_event_handler);
+            if (ret != ESP_OK) { return ret; }
+            m_internal_event_handler = nullptr;
         }
-
-        esp_wifi_deinit();
+        m_wifi_event_handler = nullptr;
+        m_ip_event_handler = nullptr;
         if (m_netif_ap)
         {
-            esp_netif_destroy(m_netif_ap);
+            esp_netif_destroy_default_wifi(m_netif_ap);
             m_netif_ap = nullptr;
         }
         if (m_netif_sta)
         {
-            esp_netif_destroy(m_netif_sta);
+            esp_netif_destroy_default_wifi(m_netif_sta);
             m_netif_sta = nullptr;
         }
 
@@ -316,6 +384,10 @@ void WIFI::deinit()
     m_sta_disconnected_callbacks.clear();
     m_clients.clear();
     xSemaphoreGive(m_mutex);
+    m_scan = {};
+    m_reconnectPending = false;
+    m_deinitializing = false;
+    return ESP_OK;
 }
 
 void WIFI::wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
@@ -324,6 +396,9 @@ void WIFI::wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t ev
 
     switch (event_id)
     {
+        case WIFI_EVENT_SCAN_DONE:
+            manager->scanDone(static_cast<wifi_event_sta_scan_done_t*>(event_data));
+            break;
         case WIFI_EVENT_AP_STACONNECTED:
             manager->handleClientConnected((wifi_event_ap_staconnected_t*)event_data);
             break;
@@ -407,6 +482,7 @@ void WIFI::handleStaConnected()
 
 void WIFI::handleStaGotIP(ip_event_got_ip_t* event)
 {
+    if (m_closing.load()) { return; }
     m_retry_count = 0;
     setState(State::RUNNING);
 
@@ -426,6 +502,14 @@ void WIFI::handleStaGotIP(ip_event_got_ip_t* event)
 
 void WIFI::handleStaDisconnected(wifi_event_sta_disconnected_t* event)
 {
+    LifecycleGuard guard(m_lifecycleMutex, 0);
+    if (m_closing.load()) { return; }
+    if (!guard.locked || m_scanActive)
+    {
+        deferConnection();
+        return;
+    }
+    if (!wifi_scan::mayReconnect(m_config.mode == WIFI_MODE_AP, m_closing.load(), m_scanActive)) { return; }
     ESP_LOGW("WIFI", "Disconnected! Reason: %s (%d)", get_wifi_reason_str(event->reason), event->reason);
     setState(State::STA_DISCONNECTED);
 
@@ -434,38 +518,57 @@ void WIFI::handleStaDisconnected(wifi_event_sta_disconnected_t* event)
         cb();
     }
 
-    if (m_retry_count < m_config.sta_max_retry)
-    {
-        m_retry_count++;
-
-        esp_event_post(WIFI_INTERNAL_EVENT, WIFI_INT_EVENT_RETRY_CONNECTION, NULL, 0, portMAX_DELAY);
-    }
-    else
-    {
-        ESP_LOGE(TAG, "Max retries reached. Posting AP Fallback event...");
-
-        esp_event_post(WIFI_INTERNAL_EVENT, WIFI_INT_EVENT_FALLBACK_AP, NULL, 0, portMAX_DELAY);
-    }
+    m_reconnectPending = true;
+    resumeConnection();
 }
 
 void WIFI::internal_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
 {
     WIFI* manager = static_cast<WIFI*>(arg);
 
-    if (event_id == WIFI_INT_EVENT_FALLBACK_AP)
+    if (event_id == WIFI_INT_EVENT_DRAIN)
+    {
+        xSemaphoreGive(manager->m_scanSignal);
+        return;
+    }
+
+    LifecycleGuard guard(manager->m_lifecycleMutex, 0);
+    if (manager->m_closing.load()) { return; }
+    if (!guard.locked || manager->m_scanActive)
+    {
+        manager->deferConnection();
+        return;
+    }
+
+    if (!wifi_scan::mayReconnect(manager->m_config.mode == WIFI_MODE_AP, manager->m_closing.load(), manager->m_scanActive))
+    {
+        manager->m_reconnectPending = false;
+        return;
+    }
+
+    if (event_id != WIFI_INT_EVENT_RESUME || !manager->m_reconnectPending.exchange(false)) { return; }
+    if (manager->m_retry_count >= manager->m_config.sta_max_retry)
     {
         ESP_LOGI(TAG, "Internal Event: Executing AP Fallback");
         manager->switchToAP();
     }
-    else if (event_id == WIFI_INT_EVENT_RETRY_CONNECTION)
+    else
     {
         ESP_LOGI(TAG, "Internal Event: Retrying STA Connection");
-        esp_wifi_connect();
+        ++manager->m_retry_count;
+        manager->setState(State::STA_CONNECTING);
+        if (esp_wifi_connect() != ESP_OK) { manager->deferConnection(); }
     }
 }
 
 esp_err_t WIFI::switchToAP()
 {
+    LifecycleGuard guard(m_lifecycleMutex, 0);
+    if (!guard.locked || m_scanActive || m_closing.load() || m_deinitializing.load())
+    {
+        m_reconnectPending = !m_closing.load();
+        return ESP_ERR_INVALID_STATE;
+    }
     ESP_LOGI(TAG, "Switching to AP Mode...");
 
     esp_wifi_stop();
@@ -488,6 +591,36 @@ esp_err_t WIFI::switchToAP()
 err:
     setState(State::ERROR);
     return ESP_FAIL;
+}
+
+void WIFI::resumeConnection()
+{
+    // Called with the lifecycle lock, never from the HTTP task's request filter.
+    if (m_closing.load() || !m_reconnectPending.load()) { return; }
+    if (esp_event_post(WIFI_INTERNAL_EVENT, WIFI_INT_EVENT_RESUME, nullptr, 0, 0) != ESP_OK) { deferConnection(); }
+}
+
+void WIFI::deferConnection()
+{
+    m_reconnectPending = true;
+    if (!m_closing.load() && m_reconnectTimer)
+    {
+        // INVALID_STATE means a retry is already scheduled; no idle polling timer is kept running.
+        const esp_err_t ret = esp_timer_start_once(m_reconnectTimer, 100000);
+        if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) { ESP_LOGW(TAG, "Reconnect scheduling failed: %s", esp_err_to_name(ret)); }
+    }
+}
+
+void WIFI::reconnectTimer(void* arg)
+{
+    auto* manager = static_cast<WIFI*>(arg);
+    if (!manager->m_closing.load() && manager->m_reconnectPending.load())
+    {
+        if (esp_event_post(WIFI_INTERNAL_EVENT, WIFI_INT_EVENT_RESUME, nullptr, 0, 0) != ESP_OK)
+        {
+            manager->deferConnection();
+        }
+    }
 }
 
 void WIFI::onClientConnected(const ClientConnectCallback& callback)

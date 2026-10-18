@@ -19,8 +19,11 @@
 #include "esp_err.h"
 #include "esp_event.h"
 #include "esp_wifi.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
+#include "wifi_scan_policy.hpp"
 
 class WIFI
 {
@@ -86,7 +89,30 @@ public:
     esp_err_t start();
     esp_err_t stop();
     esp_err_t switchToAP();
-    void      deinit();
+    esp_err_t deinit();
+
+    struct ScanNetwork
+    {
+        char ssid[33] = {};
+        char ssidHex[65] = {};
+        int8_t rssi = 0;
+        uint8_t channel = 0;
+        wifi_auth_mode_t authMode = WIFI_AUTH_OPEN;
+    };
+    enum class ScanState { Idle, Scanning, Complete, Failed };
+    struct ScanSnapshot
+    {
+        ScanState state = ScanState::Idle;
+        uint32_t id = 0;
+        esp_err_t error = ESP_OK;
+        int64_t completedUs = 0;
+        uint16_t count = 0;
+        bool truncated = false;
+        ScanNetwork networks[wifi_scan::kMaxResults] = {};
+    };
+    enum class ScanStartResult { Started, Busy, Down, Cooldown, NoMemory };
+    ScanStartResult startScan(uint32_t& id);
+    esp_err_t getScan(ScanSnapshot& snapshot);
 
     // Status
     WIFI::State getState() const
@@ -124,6 +150,39 @@ public:
     void onStaDisconnected(const StaDisconnectedCallback& callback);
 
 private:
+    struct LifecycleGuard
+    {
+        SemaphoreHandle_t mutex;
+        bool locked;
+        explicit LifecycleGuard(SemaphoreHandle_t handle, TickType_t wait = pdMS_TO_TICKS(1000))
+            : mutex(handle), locked(handle && xSemaphoreTakeRecursive(handle, wait) == pdTRUE) {}
+        ~LifecycleGuard() { if (locked) { xSemaphoreGiveRecursive(mutex); } }
+    };
+    static void scanTask(void* arg);
+    void runScan();
+    void scanDone(const wifi_event_sta_scan_done_t* event);
+    esp_err_t cancelScan();
+    void resumeConnection();
+    void deferConnection();
+    static void reconnectTimer(void* arg);
+    esp_timer_handle_t m_reconnectTimer = nullptr;
+    SemaphoreHandle_t m_lifecycleMutex = nullptr;
+    SemaphoreHandle_t m_shutdownMutex = nullptr;
+    SemaphoreHandle_t m_scanExited = nullptr;
+    SemaphoreHandle_t m_scanSignal = nullptr;
+    ScanSnapshot m_scan;
+    int64_t m_lastScanStartUs = -1;
+    bool m_scanActive = false;
+    bool m_scanCancel = false;
+    std::atomic<bool> m_scanDone{false};
+    wifi_scan::CompletionGate m_scanEvents;
+    std::atomic<bool> m_scanFault{false};
+    bool m_scanTemporarySta = false;
+    std::atomic<uint32_t> m_scanStatus{0};
+    int64_t m_scanDoneUs = 0;  // Published by the event handler before m_scanDone's release store.
+    std::atomic<bool> m_closing{true};
+    std::atomic<bool> m_deinitializing{false};
+    std::atomic<bool> m_reconnectPending{false};
     WIFI(const WIFI&)            = delete;
     WIFI& operator=(const WIFI&) = delete;
     // Event handler
