@@ -423,6 +423,37 @@ void test_key_derivation_never_runs_under_the_lock(void)
   TEST_ASSERT_EQUAL(0, lockDepth);
 }
 
+// ---- BOOT press ends the login wait ----------------------------------------------------------------------------
+void test_new_boot_press_clears_the_backoff(void)
+{
+  Fixture f = claimed();
+  for (int i = 0; i < 4; i++) f.core.login("000000", 6, (200 + i) * kSec, f.tok, &f.retry, 0);
+  TEST_ASSERT_EQUAL(Result::Backoff, f.core.login("123456", 6, 204 * kSec, f.tok, &f.retry, 0));
+  // a press nobody has seen yet: the right PIN works at once
+  TEST_ASSERT_EQUAL(Result::Ok, f.core.login("123456", 6, 205 * kSec, f.tok, &f.retry, 204 * kSec));
+}
+
+void test_the_same_press_does_not_clear_it_twice(void)
+{
+  Fixture f = claimed();
+  TEST_ASSERT_EQUAL(Result::BadPin, f.core.login("000000", 6, 200 * kSec, f.tok, &f.retry, 190 * kSec));
+  TEST_ASSERT_EQUAL(Result::Backoff, f.core.login("123456", 6, 200 * kSec, f.tok, &f.retry, 190 * kSec));  // press 190 already seen
+  TEST_ASSERT_EQUAL(Result::Ok, f.core.login("123456", 6, 200 * kSec, f.tok, &f.retry, 199 * kSec));      // a newer one
+}
+
+void test_press_clears_backoff_for_change_pin_and_status(void)
+{
+  Fixture f = claimed();
+  f.core.login("000000", 6, 200 * kSec, f.tok, &f.retry, 0);
+  AuthCore::Status s = f.core.status(0, 200 * kSec);
+  TEST_ASSERT_EQUAL_UINT32(1, s.retryAfterS);
+  s = f.core.status(200 * kSec, 200 * kSec);
+  TEST_ASSERT_EQUAL_UINT32(0, s.retryAfterS);
+  f.core.login("000000", 6, 201 * kSec, f.tok, &f.retry, 200 * kSec);
+  uint32_t r = 0;
+  TEST_ASSERT_EQUAL(Result::Ok, f.core.changePin("123456", 6, "654321", 6, 202 * kSec, &r, 201 * kSec));
+}
+
 // ---- change PIN ------------------------------------------------------------------------------------------------
 void test_change_pin_ends_all_sessions_and_switches_pin(void)
 {
@@ -602,6 +633,9 @@ extern "C" void run_auth_core_tests(void)
   RUN_TEST(test_backoff_grows_and_is_capped_over_a_brute_force_run);
   RUN_TEST(test_backoff_blocks_login_but_not_existing_sessions);
   RUN_TEST(test_key_derivation_never_runs_under_the_lock);
+  RUN_TEST(test_new_boot_press_clears_the_backoff);
+  RUN_TEST(test_the_same_press_does_not_clear_it_twice);
+  RUN_TEST(test_press_clears_backoff_for_change_pin_and_status);
   RUN_TEST(test_change_pin_ends_all_sessions_and_switches_pin);
   RUN_TEST(test_change_pin_wrong_old_pin_counts_and_changes_nothing);
   RUN_TEST(test_change_pin_rejects_bad_new_pin_without_spending_an_attempt);

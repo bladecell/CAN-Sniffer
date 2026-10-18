@@ -108,3 +108,7 @@ Implements the 2026-10-18 access-control decision. Choices that the decision lef
 
 ## 2026-10-18: clear_dtc loses its confirm token (P2.10c-cleardtc)
 Decided by the user: `POST /req/clear_dtc` is protected by the Bearer session (`gated` in `API_ROUTES`) and nothing else. The one-shot 409 `confirm_required` challenge, `ConfirmToken` (`confirm_token.hpp`) and its host test are removed; the call sends mode 0x04 at once. A leftover `?token=` is ignored, so the current frontend does not get a 400, but it also no longer gets a 409 first: without a session it gets `401`, with one the first call clears the codes. The confirmation is the frontend's own dialog (client side only). Consequence: any client holding a session can clear codes with one request; a script that relied on the 409 to be safe must now ask the user itself. The REST contract no longer has a non-error 4xx.
+
+## 2026-10-18: Security review decisions (P2.10d)
+Decided by the user after the P2.10c security review. Each item is its own commit.
+- **d1, owner lockout:** a BOOT press the auth core has not seen yet resets the login backoff (checked on every login, PIN change and `GET /auth`). Otherwise the global counter works as before. Without this, anyone on the open AP could keep the owner locked out for up to 15 min by failing logins; with it, physical presence beats the remote attacker.

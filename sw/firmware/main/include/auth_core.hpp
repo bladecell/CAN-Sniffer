@@ -68,6 +68,7 @@ public:
     sessions_.clear();
     backoff_.reset();
     gate_ = ClaimGate();
+    seenPressUs_ = 0;
     p_.unlock();
   }
 
@@ -155,10 +156,11 @@ public:
   }
 
   // `retryS` is set for Backoff (time left) and BadPin (the wait this failure caused).
-  Result login(const char* pin, size_t len, int64_t nowUs, char* tokenOut, uint32_t* retryS)
+  // `lastPressUs`: the newest BOOT press; one the core has not seen yet clears the backoff (the owner is at the device).
+  Result login(const char* pin, size_t len, int64_t nowUs, char* tokenOut, uint32_t* retryS, int64_t lastPressUs = 0)
   {
     PinRecord rec;
-    Result    r = gateLogin(nowUs, &rec, retryS);
+    Result    r = gateLogin(nowUs, lastPressUs, &rec, retryS);
     if (r != Result::Ok)
     {
       return r;
@@ -185,14 +187,15 @@ public:
   }
 
   // Needs the old PIN (a wrong one counts like a failed login). Ends every session, the caller's included.
-  Result changePin(const char* oldPin, size_t oldLen, const char* newPin, size_t newLen, int64_t nowUs, uint32_t* retryS)
+  Result changePin(const char* oldPin, size_t oldLen, const char* newPin, size_t newLen, int64_t nowUs, uint32_t* retryS,
+                   int64_t lastPressUs = 0)
   {
     if (!isValidPin(newPin, newLen))
     {
       return Result::BadFormat;
     }
     PinRecord cur;
-    Result    r = gateLogin(nowUs, &cur, retryS);
+    Result    r = gateLogin(nowUs, lastPressUs, &cur, retryS);
     if (r != Result::Ok)
     {
       return r;
@@ -244,6 +247,7 @@ public:
   Status status(int64_t lastPressUs, int64_t nowUs)
   {
     p_.lock();
+    notePress(lastPressUs);
     Status s{state_, backoff_.retryAfterS(ms(nowUs)),
              state_ == State::Unclaimed ? gate_.remainingS(lastPressUs, nowUs) : 0};
     p_.unlock();
@@ -251,13 +255,24 @@ public:
   }
 
 private:
+  // Lock held. A BOOT press the core has not seen before ends the login wait: someone is at the device.
+  void notePress(int64_t lastPressUs)
+  {
+    if (lastPressUs > 0 && lastPressUs != seenPressUs_)
+    {
+      seenPressUs_ = lastPressUs;
+      backoff_.reset();
+    }
+  }
+
   static uint64_t ms(int64_t us) { return us > 0 ? static_cast<uint64_t>(us) / 1000 : 0; }
 
   // Common front of login and changePin: state, backoff, snapshot of the record.
-  Result gateLogin(int64_t nowUs, PinRecord* rec, uint32_t* retryS)
+  Result gateLogin(int64_t nowUs, int64_t lastPressUs, PinRecord* rec, uint32_t* retryS)
   {
     *retryS = 0;
     p_.lock();
+    notePress(lastPressUs);
     Result r = Result::Ok;
     if (state_ == State::Unavailable)
     {
@@ -300,5 +315,6 @@ private:
   SessionTable sessions_;
   LoginBackoff backoff_;
   ClaimGate    gate_;
+  int64_t      seenPressUs_ = 0;
 };
 }  // namespace auth

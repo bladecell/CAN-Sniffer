@@ -255,7 +255,7 @@ auth::Result login(const char* pin, size_t len, char* tokenOut, uint32_t* retryS
   {
     return auth::Result::Unavailable;
   }
-  const auth::Result r = s_core.login(pin, len, nowUs(), tokenOut, retryS);
+  const auth::Result r = s_core.login(pin, len, nowUs(), tokenOut, retryS, button_last_press_us());
   if (r == auth::Result::BadPin)
   {
     ESP_LOGW(TAG, "login failed, next try in %us", static_cast<unsigned>(*retryS));
@@ -276,7 +276,7 @@ auth::Result changePin(const char* oldPin, size_t oldLen, const char* newPin, si
   {
     return auth::Result::Unavailable;
   }
-  const auth::Result r = s_core.changePin(oldPin, oldLen, newPin, newLen, nowUs(), retryS);
+  const auth::Result r = s_core.changePin(oldPin, oldLen, newPin, newLen, nowUs(), retryS, button_last_press_us());
   if (r == auth::Result::Ok)
   {
     ESP_LOGI(TAG, "PIN changed, all sessions ended");
