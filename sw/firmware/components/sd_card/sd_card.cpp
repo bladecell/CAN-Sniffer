@@ -607,7 +607,11 @@ esp_err_t SDCard::create_file(const char* relative_path)
     }
 
     const size_t buffer_size = PATH_MAX;
-    auto         filepath    = std::make_unique<char[]>(buffer_size);
+    std::unique_ptr<char[]> filepath(new (std::nothrow) char[buffer_size]());
+    if (!filepath)
+    {
+        return ESP_ERR_NO_MEM;
+    }
 
     esp_err_t err = get_absolute_path(relative_path, filepath.get(), buffer_size);
 
@@ -645,7 +649,11 @@ esp_err_t SDCard::create_directory(const char* relative_path)
     }
 
     const size_t buffer_size = PATH_MAX;
-    auto         filepath    = std::make_unique<char[]>(buffer_size);
+    std::unique_ptr<char[]> filepath(new (std::nothrow) char[buffer_size]());
+    if (!filepath)
+    {
+        return ESP_ERR_NO_MEM;
+    }
 
     esp_err_t err = get_absolute_path(relative_path, filepath.get(), buffer_size);
 
@@ -681,7 +689,11 @@ esp_err_t SDCard::delete_file(const char* relative_path)
     }
 
     const size_t buffer_size = PATH_MAX;
-    auto         filepath    = std::make_unique<char[]>(buffer_size);
+    std::unique_ptr<char[]> filepath(new (std::nothrow) char[buffer_size]());
+    if (!filepath)
+    {
+        return ESP_ERR_NO_MEM;
+    }
 
     esp_err_t err = get_absolute_path(relative_path, filepath.get(), buffer_size);
 
@@ -795,7 +807,11 @@ esp_err_t SDCard::write_file(const char* relative_path, const void* data, size_t
     }
 
     const size_t buffer_size = PATH_MAX;
-    auto         filepath    = std::make_unique<char[]>(buffer_size);
+    std::unique_ptr<char[]> filepath(new (std::nothrow) char[buffer_size]());
+    if (!filepath)
+    {
+        return ESP_ERR_NO_MEM;
+    }
 
     esp_err_t err = get_absolute_path(relative_path, filepath.get(), buffer_size);
 
@@ -859,7 +875,11 @@ esp_err_t SDCard::read_file(const char* relative_path, void* buffer, size_t max_
     }
 
     const size_t buffer_size = PATH_MAX;
-    auto         filepath    = std::make_unique<char[]>(buffer_size);
+    std::unique_ptr<char[]> filepath(new (std::nothrow) char[buffer_size]());
+    if (!filepath)
+    {
+        return ESP_ERR_NO_MEM;
+    }
 
     esp_err_t err = get_absolute_path(relative_path, filepath.get(), buffer_size);
 
@@ -880,9 +900,16 @@ esp_err_t SDCard::read_file(const char* relative_path, void* buffer, size_t max_
         return ESP_FAIL;
     }
 
-    size_t read_len = fread(buffer, 1, max_size, f);
+    size_t     read_len = fread(buffer, 1, max_size, f);
+    const bool read_err = ferror(f) != 0;
 
     (void)fclose(f);  // read-only handle, nothing to lose on close failure
+
+    if (read_err)
+    {
+        ESP_LOGE(TAG, "Read error on %s", filepath.get());
+        return ESP_FAIL;
+    }
 
     if (bytes_read != nullptr)
     {
@@ -1191,7 +1218,11 @@ esp_err_t SDCard::open_file(const char* relative_path, const char* mode, FILE*& 
     }
 
     const size_t buffer_size = PATH_MAX;
-    auto         filepath    = std::make_unique<char[]>(buffer_size);
+    std::unique_ptr<char[]> filepath(new (std::nothrow) char[buffer_size]());
+    if (!filepath)
+    {
+        return ESP_ERR_NO_MEM;
+    }
 
     esp_err_t err = get_absolute_path(relative_path, filepath.get(), buffer_size);
 
@@ -1234,7 +1265,7 @@ esp_err_t SDCard::file_write_chunk(FILE* fd, const char* chunk, size_t len)
         return operation.status();
     }
 
-    if (fd == nullptr)
+    if (fd == nullptr || (chunk == nullptr && len != 0))
     {
         return ESP_FAIL;
     }
@@ -1272,7 +1303,11 @@ esp_err_t SDCard::get_file_stat(const char* relative_path, struct stat* st)
     }
 
     const size_t buffer_size = PATH_MAX;
-    auto         filepath    = std::make_unique<char[]>(buffer_size);
+    std::unique_ptr<char[]> filepath(new (std::nothrow) char[buffer_size]());
+    if (!filepath)
+    {
+        return ESP_ERR_NO_MEM;
+    }
 
     esp_err_t err = get_absolute_path(relative_path, filepath.get(), buffer_size);
 
