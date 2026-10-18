@@ -31,6 +31,7 @@
 #include "pid_json.hpp"
 #include "sd_card.hpp"
 #include "settings.hpp"
+#include "settings_patch.hpp"
 #include "settings_validation.hpp"
 #include "string"
 #include "supervisor.hpp"
@@ -1652,7 +1653,7 @@ MiddlewareJsonResult m_system_copy_file(cJSON* payload)
 
 MiddlewareJsonResult m_settings_get()
 {
-    cJSON* root = cJSON_CreateArray();
+    cJSON* root = cJSON_CreateObject();
     if (root == nullptr)
     {
         return json_result(nullptr, 500);
@@ -1665,9 +1666,6 @@ MiddlewareJsonResult m_settings_get()
     esp_err_t    wifi_error = Settings::getInstance().getWifiConfig(wifi_cfg);
     if (wifi_error == ESP_OK)
     {
-        cJSON* wifi_item = cJSON_CreateObject();
-        cJSON_AddStringToObject(wifi_item, "name", "wifi");
-
         cJSON* wifi_settings = cJSON_CreateObject();
         cJSON_AddStringToObject(wifi_settings, "ssid", wifi_cfg.ssid.c_str());
         // cJSON_AddStringToObject(wifi_settings, "password", wifi_cfg.password.c_str());
@@ -1683,8 +1681,7 @@ MiddlewareJsonResult m_settings_get()
         cJSON_AddNumberToObject(wifi_settings, "mode", static_cast<int>(wifi_cfg.mode));
         cJSON_AddNumberToObject(wifi_settings, "sta_max_retry", wifi_cfg.sta_max_retry);
 
-        cJSON_AddItemToObject(wifi_item, "settings", wifi_settings);
-        cJSON_AddItemToArray(root, wifi_item);
+        cJSON_AddItemToObject(root, "wifi", wifi_settings);
     }
     else
     {
@@ -1696,9 +1693,6 @@ MiddlewareJsonResult m_settings_get()
     esp_err_t         can_error = Settings::getInstance().getCanConfig(can_cfg);
     if (can_error == ESP_OK)
     {
-        cJSON* can_item = cJSON_CreateObject();
-        cJSON_AddStringToObject(can_item, "name", "can");
-
         cJSON* can_settings = cJSON_CreateObject();
         cJSON_AddNumberToObject(can_settings, "bitrate", static_cast<uint32_t>(can_cfg.bitrate));
         cJSON_AddNumberToObject(can_settings, "tx_pin", can_cfg.tx_pin);
@@ -1717,8 +1711,7 @@ MiddlewareJsonResult m_settings_get()
         cJSON_AddBoolToObject(mfilter_json, "is_ext", can_cfg.mfilter_cfg.is_ext);
         cJSON_AddItemToObject(can_settings, "mfilter_cfg", mfilter_json);
 
-        cJSON_AddItemToObject(can_item, "settings", can_settings);
-        cJSON_AddItemToArray(root, can_item);
+        cJSON_AddItemToObject(root, "can", can_settings);
     }
     else if (read_error == ESP_OK)
     {
@@ -1730,15 +1723,11 @@ MiddlewareJsonResult m_settings_get()
     esp_err_t          supervisor_error = Settings::getInstance().getSupervisorConfig(supervisor_cfg);
     if (supervisor_error == ESP_OK)
     {
-        cJSON* sup_item = cJSON_CreateObject();
-        cJSON_AddStringToObject(sup_item, "name", "system");
-
         cJSON* sup_settings = cJSON_CreateObject();
         cJSON_AddStringToObject(sup_settings, "pid_def_path", supervisor_cfg.pid_def_path.c_str());
         cJSON_AddStringToObject(sup_settings, "dtc_desc_path", supervisor_cfg.dtc_desc_path.c_str());
 
-        cJSON_AddItemToObject(sup_item, "settings", sup_settings);
-        cJSON_AddItemToArray(root, sup_item);
+        cJSON_AddItemToObject(root, "system", sup_settings);
     }
     else if (read_error == ESP_OK)
     {
@@ -1876,130 +1865,76 @@ static SettingsFields apply_system_settings(cJSON* s, SUPERVISOR::Config& c)
     return f;
 }
 
-// Rejects the request (400, nothing saved for this section) on a bad field or an invalid merged section.
+// Rejects the section (nothing saved for it) on a bad field or an invalid merged section.
 template <typename Cfg>
-static bool section_ok(const SettingsFields& f, const Cfg& cfg, const char* (*check)(const Cfg&), esp_err_t& overall_err, std::string& reason)
+static bool section_ok(const SettingsFields& f, const Cfg& cfg, const char* (*check)(const Cfg&), std::string& reason)
 {
     const char* why = !f.err.empty() ? f.err.c_str() : (f.n != 0 ? check(cfg) : nullptr);
     if (why == nullptr)
     {
         return true;
     }
-    overall_err = ESP_ERR_INVALID_ARG;
-    reason      = why;
+    reason = why;
     return false;
 }
 
-static void process_single_setting_item(cJSON* item, esp_err_t& overall_err, std::string& reason)
+// Reads the stored section, merges the fields of `fields` into it and saves it. Invalid leaves the store untouched.
+template <typename Cfg>
+static settings_patch::Outcome patch_section(cJSON* fields, esp_err_t (Settings::*get)(Cfg&), esp_err_t (Settings::*set)(const Cfg&),
+                                             SettingsFields (*apply)(cJSON*, Cfg&), const char* (*check)(const Cfg&), std::string& reason)
 {
-    if (!cJSON_IsObject(item))
-    {
-        overall_err = ESP_ERR_INVALID_ARG;
-        reason      = "settings item must be a JSON object";
-        return;
-    }
-
-    cJSON* name_node = cJSON_GetObjectItemCaseSensitive(item, "name");
-    if (!cJSON_IsString(name_node) || name_node->valuestring == nullptr)
-    {
-        overall_err = ESP_ERR_INVALID_ARG;
-        reason      = "missing or invalid 'name'";
-        return;
-    }
-
-    std::string name = name_node->valuestring;
-
-    cJSON* settings_node = cJSON_GetObjectItemCaseSensitive(item, "settings");
-    if (settings_node == nullptr || !cJSON_IsObject(settings_node))
-    {
-        settings_node = item;
-    }
-
-    esp_err_t res       = ESP_OK;
-    bool      no_fields = false;
-
-    if (name == "wifi")
-    {
-        WIFI::Config wifi_cfg;
-        res = Settings::getInstance().getWifiConfig(wifi_cfg);
-        if (res != ESP_OK)
-        {
-            overall_err = res;
-            reason      = esp_err_to_name(res);
-            return;
-        }
-        const SettingsFields f = apply_wifi_settings(settings_node, wifi_cfg);
-        if (!section_ok(f, wifi_cfg, Settings::checkWifiConfig, overall_err, reason))
-        {
-            return;
-        }
-        no_fields = (f.n == 0);
-        if (!no_fields)
-        {
-            res = Settings::getInstance().setWifiConfig(wifi_cfg);
-        }
-    }
-    else if (name == "can")
-    {
-        CanDriver::Config can_cfg;
-        res = Settings::getInstance().getCanConfig(can_cfg);
-        if (res != ESP_OK)
-        {
-            overall_err = res;
-            reason      = esp_err_to_name(res);
-            return;
-        }
-        const SettingsFields f = apply_can_settings(settings_node, can_cfg);
-        if (!section_ok(f, can_cfg, Settings::checkCanConfig, overall_err, reason))
-        {
-            return;
-        }
-        no_fields = (f.n == 0);
-        if (!no_fields)
-        {
-            res = Settings::getInstance().setCanConfig(can_cfg);
-        }
-    }
-    else if (name == "system")
-    {
-        SUPERVISOR::Config sup_cfg;
-        res = Settings::getInstance().getSupervisorConfig(sup_cfg);
-        if (res != ESP_OK)
-        {
-            overall_err = res;
-            reason      = esp_err_to_name(res);
-            return;
-        }
-        const SettingsFields f = apply_system_settings(settings_node, sup_cfg);
-        if (!section_ok(f, sup_cfg, Settings::checkSupervisorConfig, overall_err, reason))
-        {
-            return;
-        }
-        no_fields = (f.n == 0);
-        if (!no_fields)
-        {
-            res = Settings::getInstance().setSupervisorConfig(sup_cfg);
-        }
-    }
-    else
-    {
-        overall_err = ESP_ERR_NOT_FOUND;
-        reason      = "unknown settings section";
-        return;
-    }
-
-    if (no_fields)
-    {
-        overall_err = ESP_ERR_INVALID_ARG;
-        reason      = "no valid settings fields";
-        return;
-    }
-
+    using settings_patch::Outcome;
+    Cfg       cfg;
+    esp_err_t res = (Settings::getInstance().*get)(cfg);
     if (res != ESP_OK)
     {
-        overall_err = res;
-        reason      = esp_err_to_name(res);
+        reason = esp_err_to_name(res);
+        return Outcome::Failed;
     }
+    const SettingsFields f = apply(fields, cfg);
+    if (!section_ok(f, cfg, check, reason))
+    {
+        return Outcome::Invalid;
+    }
+    if (f.n == 0)
+    {
+        reason = "no valid settings fields";
+        return Outcome::Invalid;
+    }
+    res = (Settings::getInstance().*set)(cfg);
+    if (res != ESP_OK)
+    {
+        reason = esp_err_to_name(res);
+        return Outcome::Failed;
+    }
+    return Outcome::Saved;
+}
+
+static settings_patch::Outcome patch_one_section(const char* name, cJSON* fields, std::string& reason)
+{
+    using settings_patch::Outcome;
+    using settings_patch::Section;
+    if (!cJSON_IsObject(fields))
+    {
+        reason = "section must be a JSON object";
+        return Outcome::Invalid;
+    }
+    switch (settings_patch::sectionOf(name))
+    {
+        case Section::Wifi:
+            return patch_section<WIFI::Config>(fields, &Settings::getWifiConfig, &Settings::setWifiConfig, apply_wifi_settings,
+                                               Settings::checkWifiConfig, reason);
+        case Section::Can:
+            return patch_section<CanDriver::Config>(fields, &Settings::getCanConfig, &Settings::setCanConfig, apply_can_settings,
+                                                    Settings::checkCanConfig, reason);
+        case Section::System:
+            return patch_section<SUPERVISOR::Config>(fields, &Settings::getSupervisorConfig, &Settings::setSupervisorConfig,
+                                                     apply_system_settings, Settings::checkSupervisorConfig, reason);
+        case Section::Unknown:
+            break;
+    }
+    reason = "unknown settings section";
+    return Outcome::Unknown;
 }
 
 MiddlewareJsonResult m_settings_set(cJSON* payload)
@@ -2008,46 +1943,64 @@ MiddlewareJsonResult m_settings_set(cJSON* payload)
     {
         return json_result(json_error_body("Payload cannot be null"), 400);
     }
-
-    esp_err_t   overall_err = ESP_OK;
-    std::string reason;
-
-    if (cJSON_IsArray(payload))
+    if (!cJSON_IsObject(payload))
     {
-        int size = cJSON_GetArraySize(payload);
-        for (int i = 0; i < size; i++)
-        {
-            cJSON* item = cJSON_GetArrayItem(payload, i);
-            process_single_setting_item(item, overall_err, reason);
-        }
-    }
-    else if (cJSON_IsObject(payload))
-    {
-        process_single_setting_item(payload, overall_err, reason);
-    }
-    else
-    {
-        return json_result(json_error_body("Payload must be a JSON array or object"), 400);
+        return json_result(json_error_body("Payload must be a JSON object keyed by section"), 400);
     }
 
-    cJSON* root = cJSON_CreateObject();
-    if (root == nullptr)
+    size_t n = 0;
+    for (cJSON* c = payload->child; c != nullptr; c = c->next)
     {
+        n++;
+    }
+    if (!settings_patch::sectionCountOk(n))
+    {
+        return json_result(json_error_body(n == 0 ? "No settings sections" : "Too many settings sections"), 400);
+    }
+
+    settings_patch::Outcome outcomes[settings_patch::kMaxSections] = {};
+    cJSON*                  errors = cJSON_CreateArray();
+    cJSON*                  root   = cJSON_CreateObject();
+    if (errors == nullptr || root == nullptr)
+    {
+        cJSON_Delete(errors);
+        cJSON_Delete(root);
         return json_result(nullptr, 500);
     }
-    if (overall_err == ESP_OK)
+
+    size_t i = 0;
+    for (cJSON* c = payload->child; c != nullptr && i < n; c = c->next, i++)
     {
-        cJSON_AddStringToObject(root, "status", "success");
+        std::string reason;
+        outcomes[i] = patch_one_section(c->string != nullptr ? c->string : "", c, reason);
+        if (outcomes[i] != settings_patch::Outcome::Saved)
+        {
+            cJSON* e = cJSON_CreateObject();
+            if (e != nullptr)
+            {
+                cJSON_AddStringToObject(e, "field", c->string != nullptr ? c->string : "");
+                cJSON_AddStringToObject(e, "reason", reason.c_str());
+                cJSON_AddItemToArray(errors, e);
+            }
+        }
+    }
+
+    const int status = settings_patch::httpStatus(outcomes, n);
+    cJSON_AddStringToObject(root, "status", status == 200 ? "success" : "error");
+    if (status != 200)
+    {
+        const cJSON* first = cJSON_GetArrayItem(errors, 0);
+        const cJSON* why   = first != nullptr ? cJSON_GetObjectItemCaseSensitive(first, "reason") : nullptr;
+        cJSON_AddStringToObject(root, "reason", cJSON_IsString(why) ? why->valuestring : "settings not saved");
+    }
+    cJSON_AddBoolToObject(root, "restart_required", settings_patch::restartRequired(outcomes, n));
+    if (status != 200)
+    {
+        cJSON_AddItemToObject(root, "errors", errors);
     }
     else
     {
-        cJSON_AddStringToObject(root, "status", "error");
-        cJSON_AddStringToObject(root, "reason", reason.empty() ? esp_err_to_name(overall_err) : reason.c_str());
+        cJSON_Delete(errors);
     }
-
-    const int status = overall_err == ESP_OK                ? 200
-                       : overall_err == ESP_ERR_INVALID_ARG ? 400
-                       : overall_err == ESP_ERR_NOT_FOUND   ? 422
-                                                            : 500;
     return json_result(root, status);
 }

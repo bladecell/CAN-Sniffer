@@ -162,7 +162,7 @@ static bool pass_host_origin(httpd_req_t* req)
 // A request that carries a body must say it is JSON, or an octet stream on the upload route.
 static bool pass_content_type(httpd_req_t* req, const RouteDef* route)
 {
-    if ((req->method != HTTP_POST && req->method != HTTP_PUT) || req->content_len == 0)
+    if ((req->method != HTTP_POST && req->method != HTTP_PUT && req->method != HTTP_PATCH) || req->content_len == 0)
     {
         return true;
     }
@@ -1182,7 +1182,7 @@ esp_err_t g_settings_index_handler(httpd_req_t* req, void* arg)
     return send_json_response(req, m_settings_get());
 }
 
-esp_err_t p_settings_index_handler(httpd_req_t* req, void* arg)
+esp_err_t patch_settings_index_handler(httpd_req_t* req, void* arg)
 {
     cJSON* root = get_validated_json_payload(req, 2048);
     if (root == nullptr)

@@ -82,7 +82,7 @@ struct GatedRoute
 };
 const GatedRoute kGated[] = {
     {"GET", "/api/v1/wifi/scan"},         {"POST", "/api/v1/wifi/scan"},
-    {"GET", "/api/v1/settings"},          {"POST", "/api/v1/settings"},
+    {"GET", "/api/v1/settings"},          {"PATCH", "/api/v1/settings"},
     {"GET", "/api/v1/sd_card/tree"},      {"GET", "/api/v1/sd_card/tree/*"},
     {"GET", "/api/v1/sd_card/file/*"},    {"POST", "/api/v1/sd_card/file/*"},
     {"DELETE", "/api/v1/sd_card/file/*"}, {"POST", "/api/v1/sd_card/format"},

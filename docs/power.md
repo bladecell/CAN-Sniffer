@@ -50,7 +50,7 @@ The old doc guessed "engine off ≈ below 13.0 V"; the code uses 13.2 V.
 The cycle is about `sleep time + 1 s` (supervisor loop delay) plus the wake work. Each wake transmits one CAN frame on the real bus, a standard OBD request. Sleep current and wake duration have not been measured (`plan/STATUS.md` → Metrics).
 
 ### Observed on a board (2026-10-10, HW v1.1, bench, `DEBUG_MODE 0`, nothing on the OBD port)
-- `DEBUG_MODE` is only the default for the CAN `debug` setting. A stored `c_debug` in NVS wins, so a device that ever ran with debug on keeps the loopback and simulator until `POST /api/v1/settings` sets `{"name":"can","settings":{"debug":false}}` and the device reboots. Without that the bus is "connected" and the device never sleeps.
+- `DEBUG_MODE` is only the default for the CAN `debug` setting. A stored `c_debug` in NVS wins, so a device that ever ran with debug on keeps the loopback and simulator until `PATCH /api/v1/settings` sets `{"can":{"debug":false}}` and the device reboots. Without that the bus is "connected" and the device never sleeps.
 - Boot, then `Waiting for CAN bus connection...` every second (NOT_CONNECTED, Wi-Fi and web server up).
 - 60 s after boot: `CAN disconnected for 60s (Voltage 1.00V), transitioning to SLEEP`, one second later `Shutting down modules for sleep...` (Wi-Fi goes down), then `Entering Light Sleep...`.
 - The voltage read 0.9 to 1.0 V (no supply on the OBD pin), which is below 11.4 V, so every cycle is 60 s with `Battery low ... Sleeping aggressively...`. Cycles seen: sleep at 64.3 s, wake at 124.3 s (`CAN driver initialized`, `Bus is dead. Going back to sleep.`), sleep at 125.3 s, wake at 185.3 s, and again. So a cycle is the sleep time plus about 1 s, as written above. No panic, no reset loop in 220 s.

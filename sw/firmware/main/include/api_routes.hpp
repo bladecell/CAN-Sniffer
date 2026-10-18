@@ -51,5 +51,5 @@
   X("/api/v1/auth/logout",          POST,   p_auth_logout_handler,           1)                \
   X("/api/v1/auth/pin",             PUT,    put_auth_pin_handler,            1)                \
   X("/api/v1/settings",             GET,    g_settings_index_handler,        1)                \
-  X("/api/v1/settings",             POST,   p_settings_index_handler,        1)
+  X("/api/v1/settings",             PATCH,  patch_settings_index_handler,    1)
 // clang-format on
