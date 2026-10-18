@@ -189,6 +189,5 @@ The supervisor puts the device into automatic light sleep when the bus stays dow
 - After heavy load `GET /api/v1/system` once took 8 to 12 s, or timed out, while other endpoints answered in 40 ms; a reboot cleared it.
 - Not measured under load: sleep and wake. Stack and heap margins under load: `plan/STATUS.md` Metrics.
 
-
 ## Development login bypass
 For frontend work without a token. Create `sw/firmware/sdkconfig.dev` (gitignored) with the single line `CONFIG_SNIFFER_AUTH_DEV_BYPASS=y`, then build into a separate directory so the tracked `sdkconfig` stays clean: `idf.py -C sw/firmware -B sw/firmware/build-dev -D SDKCONFIG=sw/firmware/build-dev/sdkconfig -D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.dev" build` (add `-p /dev/ttyACM0 flash` to flash it). `tools/ci.sh` never builds it and refuses a committed `=y`. Details: `decisions.md` (P2.10f), `api.md` (`dev_bypass`).
