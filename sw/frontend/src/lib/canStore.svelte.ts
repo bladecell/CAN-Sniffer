@@ -441,8 +441,10 @@ export class CanStore {
 
     async setAutoPoll(on: boolean) {
         try {
-            const response = await fetch(`/api/v1/req/auto_poll?auto_poll=${on}`, {
-                method: "POST",
+            const response = await fetch("/api/v1/obd2", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ auto_poll: on }),
             });
             const result = await parseJsonResponse<{ auto_poll: boolean; polling: boolean }>(response);
             if (this.obd2Status) {

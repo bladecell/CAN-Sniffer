@@ -64,9 +64,22 @@ void test_commands_and_dtc_are_exact(void)
   {
     sawDtc      = sawDtc || strcmp(kRoutes[i].uri, "/api/v1/dtc") == 0;
     sawReqDtc   = sawReqDtc || strcmp(kRoutes[i].uri, "/api/v1/req/dtc") == 0;
-    sawAutoPoll = sawAutoPoll || strcmp(kRoutes[i].uri, "/api/v1/req/auto_poll") == 0;
+    sawAutoPoll = sawAutoPoll || (strcmp(kRoutes[i].uri, "/api/v1/obd2") == 0 && strcmp(kRoutes[i].method, "PATCH") == 0);
   }
   TEST_ASSERT_TRUE(sawDtc && sawReqDtc && sawAutoPoll);
+}
+
+// P2.12: renamed routes are gone, no aliases.
+void test_renamed_routes_are_removed(void)
+{
+  const char* const removed[][2] = {{"POST", "/api/v1/req/auto_poll"}, {"POST", "/api/v1/settings"}};
+  for (const auto& r : removed)
+  {
+    for (size_t i = 0; i < kCount; i++)
+    {
+      TEST_ASSERT_FALSE_MESSAGE(strcmp(kRoutes[i].uri, r[1]) == 0 && strcmp(kRoutes[i].method, r[0]) == 0, r[1]);
+    }
+  }
 }
 
 void test_route_count_matches_docs(void)
@@ -133,7 +146,7 @@ void test_open_routes_stay_open(void)
                            {"GET", "/api/v1/sd_card/info"},
                            {"POST", "/api/v1/req/vin"},
                            {"POST", "/api/v1/req/dtc"},
-                           {"POST", "/api/v1/req/auto_poll"},
+                           {"PATCH", "/api/v1/obd2"},
                            {"POST", "/api/v1/req/static_pid"},
                            {"GET", "/api/v1/auth"},
                            {"POST", "/api/v1/auth/claim"},
@@ -159,6 +172,7 @@ extern "C" void run_api_routes_tests(void)
   RUN_TEST(test_gated_set_is_exactly_the_decision);
   RUN_TEST(test_open_routes_stay_open);
   RUN_TEST(test_wildcards_only_on_path_parameter_routes);
+  RUN_TEST(test_renamed_routes_are_removed);
   RUN_TEST(test_no_duplicate_uri_method_pairs);
   RUN_TEST(test_commands_and_dtc_are_exact);
   RUN_TEST(test_route_count_matches_docs);

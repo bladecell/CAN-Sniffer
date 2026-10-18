@@ -423,7 +423,7 @@ MiddlewareJsonResult m_auto_poll_set(bool on)
         return json_result(nullptr, 500);
     }
     add_auto_poll_state(root);
-    return json_result(root, 201);
+    return json_result(root, 200);
 }
 
 MiddlewareJsonResult m_can_bus_get()

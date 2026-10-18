@@ -26,7 +26,7 @@ The file, `POST` and `PUT` use these names. `GET` responses use other names for 
 | `color` | uint, 0–0xFFFFFF | Display color, RGB as one number (e.g. `16096779` = `0xF59F0B`) | `color` |
 | `icon` | string ≤64 | Display icon name | `icon` |
 
-Poll timing as built: a request is sent only while the CAN bus is connected and auto poll is on (`POST /api/v1/req/auto_poll?auto_poll=true`). Requests to the same CAN ID are at least 30 ms apart and the TX task sends at most one frame every 4 ms. Each time a recurring PID comes due with no update for `max(3 x interval, 1000 ms)`, one of 3 retries is used up. When they are used up it is marked invalid and dropped from the recurring schedule until auto poll is set again or discovery runs again.
+Poll timing as built: a request is sent only while the CAN bus is connected and auto poll is on (`PATCH /api/v1/obd2` with `{"auto_poll":true}`). Requests to the same CAN ID are at least 30 ms apart and the TX task sends at most one frame every 4 ms. Each time a recurring PID comes due with no update for `max(3 x interval, 1000 ms)`, one of 3 retries is used up. When they are used up it is marked invalid and dropped from the recurring schedule until auto poll is set again or discovery runs again.
 
 Mode 0x01 PIDs are polled only when the ECU's supported-PID bitmaps (PIDs 0x00, 0x20 … 0xC0, probed on every bus connect) list them. Mode 0x22 and derived PIDs are always treated as supported.
 

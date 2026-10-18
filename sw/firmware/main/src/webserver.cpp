@@ -34,6 +34,7 @@
 #include "http_parser.h"
 #include "input_limits.hpp"
 #include "middleware.hpp"
+#include "obd2_patch.hpp"
 #include "obd2.hpp"
 #include "sd_card.hpp"
 #include "wifi.hpp"
@@ -449,17 +450,6 @@ static esp_err_t get_path_pid(httpd_req_t* req, const char* route, int* value)
         return ESP_ERR_NOT_FOUND;
     }
     return to_esp_err(http_parse::pathInt(req->uri, route, value));
-}
-
-// ESP_ERR_NOT_FOUND: no such key. ESP_ERR_INVALID_ARG: present but not exactly true, false, 1 or 0.
-static esp_err_t get_query_bool(httpd_req_t* req, const char* key, bool* value)
-{
-    char val[16];
-    if (get_query_str(req, key, val, sizeof(val)))
-    {
-        return to_esp_err(http_parse::strictBool(val, value));
-    }
-    return ESP_ERR_NOT_FOUND;
 }
 
 // Checks the request's query keys against a whitelist (http_parse::queryKeys). `present` has bit i set when allowed[i]
@@ -986,12 +976,19 @@ esp_err_t g_pid_data_index_handler(httpd_req_t* req, void* arg)
     return send_json_response(req, m_pid_data_get(target_pid));
 }
 
-esp_err_t p_auto_poll_index_handler(httpd_req_t* req, void* arg)
+esp_err_t patch_obd2_index_handler(httpd_req_t* req, void* arg)
 {
-    bool on = false;
-    if (get_query_bool(req, "auto_poll", &on) != ESP_OK)
+    cJSON* root = get_validated_json_payload(req, 256);
+    if (root == nullptr)
     {
-        return AsyncWebServer::sendError(req, 400, "auto_poll must be true, false, 1 or 0");
+        return ESP_OK;
+    }
+    bool       on = false;
+    const bool ok = obd2_patch::parseAutoPoll(root, on);
+    cJSON_Delete(root);
+    if (!ok)
+    {
+        return AsyncWebServer::sendError(req, 400, "Body must be {\"auto_poll\": true|false}");
     }
 
     return send_json_response(req, m_auto_poll_set(on));

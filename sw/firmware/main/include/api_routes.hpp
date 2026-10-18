@@ -26,9 +26,9 @@
   X("/api/v1/pid_def/load",         POST,   p_pid_def_load_index_handler,    1)                \
   X("/api/v1/can_bus",              GET,    g_can_bus_index_handler,         0)                \
   X("/api/v1/obd2",                 GET,    g_obdii_index_handler,           0)                \
+  X("/api/v1/obd2",                 PATCH,  patch_obd2_index_handler,        0)                \
   X("/api/v1/pid_data/*",           GET,    g_pid_data_index_handler,        0)                \
   X("/api/v1/pid_data",             GET,    g_pid_data_index_handler,        0)                \
-  X("/api/v1/req/auto_poll",        POST,   p_auto_poll_index_handler,       0)                \
   X("/api/v1/req/static_pid",       POST,   p_static_pid_index_handler,      0)                \
   X("/api/v1/vin",                  GET,    g_vin_index_handler,             0)                \
   X("/api/v1/req/vin",              POST,   p_vin_index_handler,             0)                \
