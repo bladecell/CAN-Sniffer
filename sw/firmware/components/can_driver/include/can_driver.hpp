@@ -242,6 +242,9 @@ private:
         twai_onchip_node_config_t c;
         memset(&c, 0, sizeof(c));
         c.clk_src = TWAI_CLK_SRC_DEFAULT;
+        // memset leaves these at 0 = GPIO0 (BOOT button, strapping pin): unused optional outputs must be -1
+        c.io_cfg.quanta_clk_out    = GPIO_NUM_NC;
+        c.io_cfg.bus_off_indicator = GPIO_NUM_NC;
         return c;
     }();
     twai_node_handle_t        nodeHdl;
