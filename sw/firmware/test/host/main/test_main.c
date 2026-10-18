@@ -12,6 +12,7 @@ void run_confirm_token_tests(void);
 void run_can_config_limits_tests(void);
 void run_op_gate_tests(void);
 void run_hook_cell_tests(void);
+void run_settings_validation_tests(void);
 
 /* The linux IDF port starts FreeRTOS and calls app_main(); exit with the failure count. */
 void app_main(void)
@@ -28,5 +29,6 @@ void app_main(void)
     run_can_config_limits_tests();
     run_op_gate_tests();
     run_hook_cell_tests();
+    run_settings_validation_tests();
     exit(UNITY_END() == 0 ? 0 : 1);
 }

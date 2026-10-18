@@ -32,6 +32,16 @@ public:
     esp_err_t getSupervisorConfig(SUPERVISOR::Config& config);
     esp_err_t setDefaultSupervisorConfig();
 
+    // Hardware-free rules live in settings_validation.hpp. nullptr = valid, else the reason. The setters call these and
+    // return ESP_ERR_INVALID_ARG; the getters replace a stored value that fails them by the default for that key.
+    static const char* checkWifiConfig(const WIFI::Config& config);
+    static const char* checkCanConfig(const CanDriver::Config& config);
+    static const char* checkSupervisorConfig(const SUPERVISOR::Config& config);
+
+    static WIFI::Config       defaultWifiConfig();
+    static CanDriver::Config  defaultCanConfig();
+    static SUPERVISOR::Config defaultSupervisorConfig();
+
     // Completely wipes NVS
     esp_err_t factoryReset();
 

@@ -31,6 +31,7 @@
 #include "pid_json.hpp"
 #include "sd_card.hpp"
 #include "settings.hpp"
+#include "settings_validation.hpp"
 #include "string"
 #include "supervisor.hpp"
 #include "utilities.h"
@@ -1705,18 +1706,6 @@ MiddlewareJsonResult m_settings_get()
     return json_result(root, read_error == ESP_OK ? 200 : 500);
 }
 
-template <typename T>
-static bool cj_num(cJSON* obj, const char* key, T& out)
-{
-    cJSON* n = cJSON_GetObjectItemCaseSensitive(obj, key);
-    if (cJSON_IsNumber(n))
-    {
-        out = static_cast<T>(n->valuedouble);
-        return true;
-    }
-    return false;
-}
-
 static bool cj_str(cJSON* obj, const char* key, std::string& out)
 {
     cJSON* n = cJSON_GetObjectItemCaseSensitive(obj, key);
@@ -1740,73 +1729,123 @@ static bool cj_bool(cJSON* obj, const char* key, T& out)
     return false;
 }
 
-static size_t apply_wifi_settings(cJSON* s, WIFI::Config& c)
+// Reads the fields of one settings section. A number must be an integer inside [lo, hi] and pass `valid` before it is
+// cast: the double -> integer/enum cast of NaN, inf or an out-of-range value is undefined behaviour. The first bad field
+// sets `err`; later fields are skipped.
+struct SettingsFields
 {
-    size_t n = 0;
-    n += cj_str(s, "ssid", c.ssid);
-    n += cj_str(s, "password", c.password);
-    n += cj_str(s, "sta_ssid", c.sta_ssid);
-    n += cj_str(s, "sta_password", c.sta_password);
-    n += cj_num(s, "channel", c.channel);
-    n += cj_num(s, "max_connections", c.max_connections);
-    n += cj_num(s, "auth_mode", c.auth_mode);
-    n += cj_bool(s, "ssid_hidden", c.ssid_hidden);
-    n += cj_bool(s, "pmf_required", c.pmf_required);
-    n += cj_num(s, "gtk_rekey_interval", c.gtk_rekey_interval);
-    n += cj_num(s, "sta_auth_mode", c.sta_auth_mode);
-    n += cj_num(s, "mode", c.mode);
-    n += cj_num(s, "sta_max_retry", c.sta_max_retry);
-    return n;
-}
+    cJSON*      obj;
+    size_t      n = 0;
+    std::string err;
 
-// Checks the raw JSON numbers: casting a negative or huge double to an unsigned type is undefined behaviour.
-static bool can_queue_sizes_ok(cJSON* s)
-{
-    cJSON* rx = cJSON_GetObjectItemCaseSensitive(s, "rx_queue_size");
-    cJSON* tx = cJSON_GetObjectItemCaseSensitive(s, "tx_queue_depth");
-    if (cJSON_IsNumber(rx) && !can_limits::rxQueueSizeValid(rx->valuedouble))
+    explicit SettingsFields(cJSON* o) : obj(o) {}
+
+    template <typename T>
+    void num(const char* key, double lo, double hi, bool (*valid)(int64_t), T& dst)
     {
-        return false;
+        cJSON* v = err.empty() ? cJSON_GetObjectItemCaseSensitive(obj, key) : nullptr;
+        if (v == nullptr)
+        {
+            return;
+        }
+        int64_t x = 0;
+        if (!cJSON_IsNumber(v) || !settings_validation::checkedInt(v->valuedouble, lo, hi, x))
+        {
+            err = std::string(key) + " must be an integer in range";
+        }
+        else if (valid != nullptr && !valid(x))
+        {
+            err = std::string(key) + " has an unsupported value";
+        }
+        else
+        {
+            dst = static_cast<T>(x);
+            n++;
+        }
     }
-    return !(cJSON_IsNumber(tx) && !can_limits::txQueueDepthValid(tx->valuedouble));
+
+    void str(const char* key, std::string& dst) { n += err.empty() && cj_str(obj, key, dst); }
+
+    template <typename T>
+    void flag(const char* key, T& dst) { n += err.empty() && cj_bool(obj, key, dst); }
+};
+
+constexpr double kU8Max  = 255;
+constexpr double kU32Max = 4294967295.0;
+
+static SettingsFields apply_wifi_settings(cJSON* s, WIFI::Config& c)
+{
+    namespace sv = settings_validation;
+    SettingsFields f(s);
+    f.str("ssid", c.ssid);
+    f.str("password", c.password);
+    f.str("sta_ssid", c.sta_ssid);
+    f.str("sta_password", c.sta_password);
+    f.num("channel", 0, kU8Max, sv::channelValid, c.channel);
+    f.num("max_connections", 0, kU8Max, sv::maxConnValid, c.max_connections);
+    f.num("auth_mode", 0, kU8Max, sv::wifiAuthValid, c.auth_mode);
+    f.flag("ssid_hidden", c.ssid_hidden);
+    f.flag("pmf_required", c.pmf_required);
+    f.num("gtk_rekey_interval", 0, kU32Max, nullptr, c.gtk_rekey_interval);
+    f.num("sta_auth_mode", 0, kU8Max, sv::wifiAuthValid, c.sta_auth_mode);
+    f.num("mode", 0, kU8Max, sv::wifiModeValid, c.mode);
+    f.num("sta_max_retry", 0, kU8Max, nullptr, c.sta_max_retry);
+    return f;
 }
 
-static size_t apply_can_settings(cJSON* s, CanDriver::Config& c)
+static SettingsFields apply_can_settings(cJSON* s, CanDriver::Config& c)
 {
-    size_t n = 0;
-    n += cj_num(s, "bitrate", c.bitrate);
-    n += cj_num(s, "tx_pin", c.tx_pin);
-    n += cj_num(s, "rx_pin", c.rx_pin);
-    n += cj_num(s, "lbk_pin", c.lbk_pin);
-    n += cj_num(s, "rs_pin", c.rs_pin);
-    n += cj_bool(s, "debug", c.debug);
-    n += cj_num(s, "rs_mode", c.rs_mode);
-    n += cj_num(s, "tx_queue_depth", c.tx_queue_depth);
-    n += cj_num(s, "rx_queue_size", c.rx_queue_size);
-    n += cj_bool(s, "filter", c.filter);
+    namespace sv = settings_validation;
+    SettingsFields f(s);
+    f.num("bitrate", 0, kU32Max, sv::bitrateValid, c.bitrate);
+    f.num("tx_pin", -1000, 1000, sv::gpioUsable, c.tx_pin);
+    f.num("rx_pin", -1000, 1000, sv::gpioUsable, c.rx_pin);
+    f.num("lbk_pin", -1000, 1000, sv::gpioUsable, c.lbk_pin);
+    f.num("rs_pin", -1000, 1000, sv::gpioUsable, c.rs_pin);
+    f.flag("debug", c.debug);
+    f.num("rs_mode", 0, kU8Max, sv::rsModeValid, c.rs_mode);
+    f.num("tx_queue_depth", 0, kU32Max, [](int64_t v) { return can_limits::txQueueDepthValid(static_cast<double>(v)); }, c.tx_queue_depth);
+    f.num("rx_queue_size", 0, kU32Max, [](int64_t v) { return can_limits::rxQueueSizeValid(static_cast<double>(v)); }, c.rx_queue_size);
+    f.flag("filter", c.filter);
 
     cJSON* m = cJSON_GetObjectItemCaseSensitive(s, "mfilter_cfg");
     if (cJSON_IsObject(m))
     {
-        n += cj_num(m, "id", c.mfilter_cfg.id);
-        n += cj_num(m, "mask", c.mfilter_cfg.mask);
-
-        bool is_ext;
-        if (cj_bool(m, "is_ext", is_ext))
+        SettingsFields mf(m);
+        mf.num("id", 0, kU32Max, nullptr, c.mfilter_cfg.id);
+        mf.num("mask", 0, kU32Max, nullptr, c.mfilter_cfg.mask);
+        bool is_ext = c.mfilter_cfg.is_ext;
+        mf.flag("is_ext", is_ext);
+        c.mfilter_cfg.is_ext = is_ext;
+        f.n += mf.n;
+        if (f.err.empty())
         {
-            c.mfilter_cfg.is_ext = is_ext;
-            n++;
+            f.err = mf.err;
         }
     }
-    return n;
+    return f;
 }
 
-static size_t apply_system_settings(cJSON* s, SUPERVISOR::Config& c)
+static SettingsFields apply_system_settings(cJSON* s, SUPERVISOR::Config& c)
 {
-    size_t n = 0;
-    n += cj_str(s, "pid_def_path", c.pid_def_path);
-    n += cj_str(s, "dtc_desc_path", c.dtc_desc_path);
-    return n;
+    SettingsFields f(s);
+    f.str("pid_def_path", c.pid_def_path);
+    f.str("dtc_desc_path", c.dtc_desc_path);
+    return f;
+}
+
+// Rejects the request (400, nothing saved for this section) on a bad field or an invalid merged section.
+template <typename Cfg>
+static bool section_ok(const SettingsFields& f, const Cfg& cfg, const char* (*check)(const Cfg&), esp_err_t& overall_err, std::string& reason)
+{
+    const char* why = !f.err.empty() ? f.err.c_str() : (f.n != 0 ? check(cfg) : nullptr);
+    if (why == nullptr)
+    {
+        return true;
+    }
+    overall_err = ESP_ERR_INVALID_ARG;
+    reason      = why;
+    return false;
 }
 
 static void process_single_setting_item(cJSON* item, esp_err_t& overall_err, std::string& reason)
@@ -1847,7 +1886,12 @@ static void process_single_setting_item(cJSON* item, esp_err_t& overall_err, std
             reason      = esp_err_to_name(res);
             return;
         }
-        no_fields = (apply_wifi_settings(settings_node, wifi_cfg) == 0);
+        const SettingsFields f = apply_wifi_settings(settings_node, wifi_cfg);
+        if (!section_ok(f, wifi_cfg, Settings::checkWifiConfig, overall_err, reason))
+        {
+            return;
+        }
+        no_fields = (f.n == 0);
         if (!no_fields)
         {
             res = Settings::getInstance().setWifiConfig(wifi_cfg);
@@ -1863,13 +1907,12 @@ static void process_single_setting_item(cJSON* item, esp_err_t& overall_err, std
             reason      = esp_err_to_name(res);
             return;
         }
-        if (!can_queue_sizes_ok(settings_node))
+        const SettingsFields f = apply_can_settings(settings_node, can_cfg);
+        if (!section_ok(f, can_cfg, Settings::checkCanConfig, overall_err, reason))
         {
-            overall_err = ESP_ERR_INVALID_ARG;
-            reason      = "rx_queue_size must be 1..256 and tx_queue_depth 1..64";
             return;
         }
-        no_fields = (apply_can_settings(settings_node, can_cfg) == 0);
+        no_fields = (f.n == 0);
         if (!no_fields)
         {
             res = Settings::getInstance().setCanConfig(can_cfg);
@@ -1885,7 +1928,12 @@ static void process_single_setting_item(cJSON* item, esp_err_t& overall_err, std
             reason      = esp_err_to_name(res);
             return;
         }
-        no_fields = (apply_system_settings(settings_node, sup_cfg) == 0);
+        const SettingsFields f = apply_system_settings(settings_node, sup_cfg);
+        if (!section_ok(f, sup_cfg, Settings::checkSupervisorConfig, overall_err, reason))
+        {
+            return;
+        }
+        no_fields = (f.n == 0);
         if (!no_fields)
         {
             res = Settings::getInstance().setSupervisorConfig(sup_cfg);

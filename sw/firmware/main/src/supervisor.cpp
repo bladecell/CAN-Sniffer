@@ -442,24 +442,21 @@ esp_err_t SUPERVISOR::setup_webserver()
     return setup_web_server();
 }
 
-esp_err_t SUPERVISOR::setup_wifi()
+// Only a corrupt NVS key partition justifies wiping the settings. A missing section is first boot (save the defaults).
+// Any other read error (out of memory, bad handle, ...) runs this boot on the in-memory defaults and keeps the stored values.
+template <class Cfg, class Get, class SetDefault>
+static esp_err_t load_section(const char* name, Cfg& cfg, const Cfg& defaults, Get get, SetDefault setDefault)
 {
-    // Configure
-    WIFI::Config config;
-    esp_err_t    err = Settings::getInstance().getWifiConfig(config);
+    esp_err_t err = get(cfg);
 
     if (err == ESP_ERR_NVS_NOT_FOUND)
     {
-        ESP_LOGI(TAG, "First boot detected. Saving default WIFI config.");
-        Settings::getInstance().setDefaultWifiConfig();
-        err = Settings::getInstance().getWifiConfig(config);
-        if (err != ESP_OK)
-        {
-            ESP_LOGE(TAG, "Failed to retrieve default WIFI config: %s", esp_err_to_name(err));
-            return err;
-        }
+        ESP_LOGI(TAG, "First boot detected. Saving default %s config.", name);
+        setDefault();
+        cfg = defaults;
+        err = get(cfg);
     }
-    else if (err != ESP_OK)
+    else if (err == ESP_ERR_NVS_CORRUPT_KEY_PART)
     {
         ESP_LOGE(TAG, "NVS corruption detected! Factory resetting...");
         Settings::getInstance().factoryReset();
@@ -467,34 +464,42 @@ esp_err_t SUPERVISOR::setup_wifi()
         return ESP_FAIL;
     }
 
-    esp_err_t ret = WIFI::getInstance().init(config);
-    ret |= WIFI::getInstance().start();
-    return ret;
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Reading %s config failed (%s); using defaults for this boot", name, esp_err_to_name(err));
+        cfg = defaults;
+    }
+    return ESP_OK;
+}
+
+esp_err_t SUPERVISOR::setup_wifi()
+{
+    Settings&    settings = Settings::getInstance();
+    WIFI::Config config;
+    esp_err_t    err = load_section("WIFI", config, Settings::defaultWifiConfig(),
+                                    [&](WIFI::Config& c) { return settings.getWifiConfig(c); }, [&] { settings.setDefaultWifiConfig(); });
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+
+    err = WIFI::getInstance().init(config);
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+    return WIFI::getInstance().start();
 }
 
 esp_err_t SUPERVISOR::setup_can()
 {
+    Settings&         settings = Settings::getInstance();
     CanDriver::Config config;
-
-    esp_err_t err = Settings::getInstance().getCanConfig(config);
-
-    if (err == ESP_ERR_NVS_NOT_FOUND)
+    esp_err_t         err = load_section("CAN", config, Settings::defaultCanConfig(),
+                                         [&](CanDriver::Config& c) { return settings.getCanConfig(c); }, [&] { settings.setDefaultCanConfig(); });
+    if (err != ESP_OK)
     {
-        ESP_LOGI(TAG, "First boot detected. Saving default CAN config.");
-        Settings::getInstance().setDefaultCanConfig();
-        err = Settings::getInstance().getCanConfig(config);
-        if (err != ESP_OK)
-        {
-            ESP_LOGE(TAG, "Failed to retrieve default CAN config: %s", esp_err_to_name(err));
-            return err;
-        }
-    }
-    else if (err != ESP_OK)
-    {
-        ESP_LOGE(TAG, "NVS corruption detected! Factory resetting...");
-        Settings::getInstance().factoryReset();
-        SUPERVISOR::getInstance().restart_system();
-        return ESP_FAIL;
+        return err;
     }
 
     if (config.debug)
@@ -1042,28 +1047,9 @@ esp_err_t SUPERVISOR::copy_file(const char* src_path, const char* dest_path)
 
 esp_err_t SUPERVISOR::load_config_from_nvs()
 {
-    esp_err_t err = Settings::getInstance().getSupervisorConfig(_config);
-
-    if (err == ESP_ERR_NVS_NOT_FOUND)
-    {
-        ESP_LOGI(TAG, "NVS config not found. Saving default System config.");
-        Settings::getInstance().setDefaultSupervisorConfig();
-        err = Settings::getInstance().getSupervisorConfig(_config);
-        if (err != ESP_OK)
-        {
-            ESP_LOGE(TAG, "Failed to retrieve default System config: %s", esp_err_to_name(err));
-            return err;
-        }
-    }
-    else if (err != ESP_OK)
-    {
-        ESP_LOGE(TAG, "NVS corruption detected! Factory resetting...");
-        Settings::getInstance().factoryReset();
-        restart_system();
-        return ESP_FAIL;
-    }
-
-    return ESP_OK;
+    Settings& settings = Settings::getInstance();
+    return load_section("System", _config, Settings::defaultSupervisorConfig(),
+                        [&](Config& c) { return settings.getSupervisorConfig(c); }, [&] { settings.setDefaultSupervisorConfig(); });
 }
 
 const char* SUPERVISOR::setup_function_to_string(SetupFunction func) const
