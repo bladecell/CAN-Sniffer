@@ -73,6 +73,19 @@ void test_failed_write_keeps_previous_file(void)
   cleanup(d);
 }
 
+void test_failed_swap_keeps_previous_file(void)
+{
+  const std::string d = makeDir(), p = d + "/pid.json";
+  put(p, "precious");
+  // a non-empty directory named .bak: unlink(bak) fails and rename(path, bak) cannot replace it
+  TEST_ASSERT_EQUAL_INT(0, mkdir((p + ".bak").c_str(), 0700));
+  put(p + ".bak/x", "blocker");
+  TEST_ASSERT_EQUAL(af::Result::ReplaceFailed, af::write(p.c_str(), "new", 3));
+  TEST_ASSERT_EQUAL_STRING("precious", get(p).c_str());
+  TEST_ASSERT_FALSE(exists(p + ".tmp"));
+  cleanup(d);
+}
+
 void test_path_limits(void)
 {
   TEST_ASSERT_EQUAL(af::Result::PathTooLong, af::write(nullptr, "x", 1));
@@ -125,6 +138,7 @@ extern "C" void run_atomic_file_tests(void)
 {
   RUN_TEST(test_creates_and_replaces);
   RUN_TEST(test_failed_write_keeps_previous_file);
+  RUN_TEST(test_failed_swap_keeps_previous_file);
   RUN_TEST(test_path_limits);
   RUN_TEST(test_recover_finished_write_interrupted_before_final_rename);
   RUN_TEST(test_recover_old_file_when_only_bak_exists);

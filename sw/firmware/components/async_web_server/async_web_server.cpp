@@ -46,6 +46,7 @@ esp_err_t AsyncWebServer::start(Config config)
 {
     running_        = true;
     stoppedWorkers_ = 0;
+    poisonsQueued_  = 0;
 
     shutdown_sem_ = xSemaphoreCreateCounting(config.async_worker_task_num, 0);
     if (!shutdown_sem_)
@@ -88,13 +89,15 @@ esp_err_t AsyncWebServer::stop()
     // Drain workers FIRST, while the server is still alive, so their request
     // data stays valid. Each worker exits after the poison pill (or when the
     // current request finishes) and gives shutdown_sem_ exactly once.
-    const size_t remaining = worker_handles.size() - stoppedWorkers_;
+    // running_ stays false after a timed-out stop on purpose: the server is draining, new requests get 503 and the
+    // supervisor either retries stop() or restarts. One pill per worker over all attempts, so a retry queues none twice.
     if (request_queue)
     {
         AsyncRequest poison = {};
-        for (size_t i = 0; i < remaining; i++)
+        while (poisonsQueued_ < worker_handles.size() &&
+               xQueueSend(request_queue, &poison, pdMS_TO_TICKS(100)) == pdTRUE)
         {
-            xQueueSend(request_queue, &poison, pdMS_TO_TICKS(100));
+            poisonsQueued_++;
         }
     }
 
@@ -126,6 +129,7 @@ esp_err_t AsyncWebServer::stop()
 
     worker_handles.clear();
     stoppedWorkers_ = 0;
+    poisonsQueued_  = 0;
 
     if (shutdown_sem_)
     {

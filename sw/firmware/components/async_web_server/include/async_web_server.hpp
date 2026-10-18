@@ -85,6 +85,7 @@ private:
     static constexpr int64_t STOP_WAIT_US = 3LL * 1000 * 1000;
 
     volatile bool     running_      = false;
+    size_t            poisonsQueued_  = 0;  // poison pills queued since start(), at most one per worker
     size_t            stoppedWorkers_ = 0;  // workers that gave shutdown_sem_ since start()
     SemaphoreHandle_t shutdown_sem_ = NULL;
 
