@@ -123,15 +123,19 @@ esp_err_t CanDriver::flushRxQueue()
 
 void CanDriver::setRxCallback(RxCallback_t callback, void* arg)
 {
-    rxCallback    = callback;
-    rxCallbackArg = arg;
+    // Published as one {fn,arg} pair (CAN-1), like the TX-done hook: receive() never sees a torn pair.
+    if (!rxHook_.set(callback, arg, 200, 1, [](uint32_t ms) { vTaskDelay(pdMS_TO_TICKS(ms) > 0 ? pdMS_TO_TICKS(ms) : 1); }))
+    {
+        ESP_LOGW(TAG, "RX callback update raced with a running callback or another update");
+    }
 }
 
 void CanDriver::rxCb()
 {
-    if (rxCallback != nullptr)
+    HookCell<RxCallback_t>::Guard hook(rxHook_);
+    if (hook.fn != nullptr)
     {
-        rxCallback(rxCallbackArg);
+        hook.fn(hook.arg);
     }
 }
 

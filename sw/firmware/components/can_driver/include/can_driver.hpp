@@ -216,8 +216,7 @@ private:
 
     // RX Callback
     void         rxCb();
-    RxCallback_t rxCallback    = nullptr;
-    void*        rxCallbackArg = nullptr;
+    HookCell<RxCallback_t> rxHook_;
 
     // The TWAI driver queues only a pointer to the twai_frame_t and reports that same pointer in TX done, so a frame and its
     // data must stay untouched until then. At most tx_queue_depth frames wait in the driver plus one on the wire: a ring of
