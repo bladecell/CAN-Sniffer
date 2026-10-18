@@ -27,6 +27,7 @@
 #include "middleware.hpp"
 #include "obd2.hpp"
 #include "pid_json.hpp"
+#include "reset_reason.hpp"
 #include "obd2_simulator.hpp"
 #include "sd_card.hpp"
 #include "settings.hpp"
@@ -742,44 +743,13 @@ uint32_t SUPERVISOR::get_uptime_seconds() const
     return (uint32_t)(esp_timer_get_time() / 1000000ULL);
 }
 
+static_assert(ESP_RST_UNKNOWN == 0 && ESP_RST_EXT == 2 && ESP_RST_SW == 3 && ESP_RST_DEEPSLEEP == 8 &&
+                  ESP_RST_CPU_LOCKUP == 15,
+              "reset_reason.hpp text table is indexed by esp_reset_reason_t");
+
 std::string SUPERVISOR::get_restart_reason() const
 {
-    esp_reset_reason_t reason = esp_reset_reason();
-    switch (reason)
-    {
-        case ESP_RST_UNKNOWN:
-            return std::string("Unknown");
-        case ESP_RST_POWERON:
-            return std::string("Power on");
-        case ESP_RST_EXT:
-            return std::string("Software reset");
-        case ESP_RST_PANIC:
-            return std::string("Panic reset");
-        case ESP_RST_INT_WDT:
-            return std::string("Interrupt watchdog");
-        case ESP_RST_TASK_WDT:
-            return std::string("Task watchdog");
-        case ESP_RST_WDT:
-            return std::string("Watchdog reset");
-        case ESP_RST_DEEPSLEEP:
-            return std::string("Deep sleep");
-        case ESP_RST_BROWNOUT:
-            return std::string("Brownout reset");
-        case ESP_RST_SDIO:
-            return std::string("SDIO reset");
-        case ESP_RST_USB:
-            return std::string("USB reset");
-        case ESP_RST_JTAG:
-            return std::string("JTAG reset");
-        case ESP_RST_EFUSE:
-            return std::string("Efuse reset");
-        case ESP_RST_PWR_GLITCH:
-            return std::string("Power glitch");
-        case ESP_RST_CPU_LOCKUP:
-            return std::string("CPU lockup");
-        default:
-            return std::string("invalid reason");
-    }
+    return reset_reason::text(static_cast<int>(esp_reset_reason()));
 }
 
 std::string SUPERVISOR::get_MAC_address() const
