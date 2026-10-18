@@ -17,7 +17,6 @@
 
 #include "cJSON.h"
 #include "can_config_limits.hpp"
-#include "confirm_token.hpp"
 #include "esp_check.h"
 #include "esp_err.h"
 #include "esp_log.h"
@@ -1049,16 +1048,7 @@ MiddlewareJsonResult m_dtc_request(int mode)
     return json_result(root, status_for_error(first_error, 422, Fault::Bus));
 }
 
-static constexpr uint32_t kClearDtcTokenTtlMs = 10000;
-
-static ConfirmToken& clear_dtc_token()
-{
-    static ConfirmToken t([]() -> uint64_t { return static_cast<uint64_t>(esp_timer_get_time() / 1000); },
-                          []() -> uint32_t { return esp_random(); }, kClearDtcTokenTtlMs);
-    return t;
-}
-
-MiddlewareJsonResult m_clear_dtc_request(const char* token)
+MiddlewareJsonResult m_clear_dtc_request()
 {
     cJSON* root = cJSON_CreateObject();
     if (root == nullptr)
@@ -1066,18 +1056,7 @@ MiddlewareJsonResult m_clear_dtc_request(const char* token)
         return json_result(nullptr, 500);
     }
 
-    // Without a valid one-shot token nothing goes on the bus. A call with no token gets the pending
-    // token back; a wrong, expired or used token gets a fresh one.
-    if (!clear_dtc_token().consume(token))
-    {
-        char           fresh[ConfirmToken::kTokenSize];
-        const uint32_t expiresMs = clear_dtc_token().challenge(token, fresh);
-        cJSON_AddStringToObject(root, "status", "confirm_required");
-        cJSON_AddStringToObject(root, "token", fresh);
-        cJSON_AddNumberToObject(root, "expires_ms", expiresMs);
-        return json_result(root, 409);
-    }
-
+    // Authorisation is the caller's job: the route is gated by a Bearer session (api_routes.hpp). No second token.
     esp_err_t err = OBD2::getInstance().requestClearDTCs();
 
     if (err == ESP_OK)
