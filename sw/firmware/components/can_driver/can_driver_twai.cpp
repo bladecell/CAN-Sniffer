@@ -54,7 +54,7 @@ bool IRAM_ATTR CanDriver::twai_rx_cb(twai_node_handle_t handle, const twai_rx_do
         {
             if (xQueueSendFromISR(driver->rxQueue, &frame, &woken) != pdTRUE)
             {
-                ESP_EARLY_LOGW(TAG, "RX queue full, message dropped");
+                driver->rxDropped_.fetch_add(1, std::memory_order_relaxed);
             }
         }
     }

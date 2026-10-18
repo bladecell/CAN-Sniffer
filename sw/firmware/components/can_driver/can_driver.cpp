@@ -223,6 +223,10 @@ esp_err_t CanDriver::teardown()
     // keeps draining and a sender blocked on a full queue gets through) or time out before anything is freed.
     opGate_.close();
     const bool drained = opGate_.drain(TASK_STOP_TIMEOUT_MS, 10, [](uint32_t ms) { vTaskDelay(pdMS_TO_TICKS(ms)); });
+    if (const uint32_t dropped = rxDropped_.exchange(0); dropped != 0)
+    {
+        ESP_LOGW(TAG, "%u RX frames dropped (queue full) since init", static_cast<unsigned>(dropped));
+    }
     canState.store(STATE::NOT_INITIALIZED);  // from here init() sees a driver that is down, not "already up"
     if (!drained)
     {

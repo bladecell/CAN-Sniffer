@@ -114,6 +114,9 @@ public:
 
     twai_node_status_t getStatus();
 
+    // RX frames the ISR could not queue since init (the ISR counts instead of logging: CAN-3).
+    uint32_t getRxDropped() const { return rxDropped_.load(std::memory_order_relaxed); }
+
     esp_err_t transmit(CanDriver::CanFrame& tx_frame, int timeout_ms = 1000);
     // Puts the frame at the front of the TX queue and never waits (ISO-TP flow control must beat poll traffic).
     esp_err_t transmitUrgent(CanDriver::CanFrame& tx_frame);
@@ -203,6 +206,7 @@ private:
     // availableMessages, flushRxQueue, getStatus, quickCheckBus). Closed by teardown(), which then waits for the calls in
     // flight before freeing anything. A call is blocked at most MAX_CALL_TIMEOUT_MS (transmit/receive clamp their timeout), under the drain bound.
     OpGate                opGate_;
+    std::atomic<uint32_t> rxDropped_{0};
     std::atomic<bool>     stopRequested_{false};
     std::atomic<bool>     txRunning_{false};
     std::atomic<bool>     healthRunning_{false};
