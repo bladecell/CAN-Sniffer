@@ -167,7 +167,7 @@ esp_err_t OBD2::stopInternal(bool)
     {
         xSemaphoreGive(healthCheckSemaphore);
     }
-    if (event_queue) { bool dummy = false; xQueueSend(event_queue, &dummy, 0); }
+    if (event_queue) { bool dummy = false; xQueueOverwrite(event_queue, &dummy); }
     bool callbackInstalled = false;
     if (admissionMtx_ && xSemaphoreTake(admissionMtx_, portMAX_DELAY) == pdTRUE) {
         callbackInstalled = canCallbackInstalled_;
@@ -502,7 +502,9 @@ esp_err_t OBD2::init()
 
     if (!event_queue)
     {
-        event_queue = xQueueCreate(5, sizeof(bool));
+        // Depth 1 mailbox (OBD-1): the consumer can sit in blocking VIN/DTC requests for many seconds, so events are
+        // coalesced to the latest connection state with xQueueOverwrite instead of being dropped when the queue is full.
+        event_queue = xQueueCreate(1, sizeof(bool));
     }
     if (!event_queue)
     {
@@ -615,7 +617,11 @@ void OBD2::subscribe(PidUpdateCallback cb)
 
 void OBD2::runOBDIIConnectedCallbacks(bool connected)
 {
-    xQueueSend(event_queue, &connected, 0);
+    // Overwrite, never drop: the newest state wins, so a disconnect is not lost behind an unfinished connect callback.
+    if (event_queue)
+    {
+        xQueueOverwrite(event_queue, &connected);
+    }
 }
 
 void OBD2::callbackWorkerTaskWrapper(void* param)
