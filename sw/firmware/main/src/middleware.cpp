@@ -34,6 +34,7 @@
 #include "sd_path.hpp"
 #include "settings_patch.hpp"
 #include "settings_validation.hpp"
+#include "single_flight.hpp"
 #include "string"
 #include "supervisor.hpp"
 #include "utilities.h"
@@ -998,6 +999,16 @@ MiddlewareJsonResult m_dtc_request(int mode)
             cJSON_AddStringToObject(root, "reason", esp_err_to_name(err));
         }
         return json_result(root, err == ESP_OK ? 200 : status_for_error(err, 422, Fault::Bus));
+    }
+
+    // Three blocking ECU requests on one worker: one at a time, so a few concurrent refreshes cannot starve the REST workers (WEB-7).
+    static SingleFlight allModesFlight;
+    SingleFlight::Guard slot(allModesFlight);
+    if (!slot.held())
+    {
+        MiddlewareJsonResult busy = json_result(json_error_body("All-mode DTC request already running", http_error::kBusy), 503);
+        busy.retry_after_s        = 5;
+        return busy;
     }
 
     struct DtcRequestResult
