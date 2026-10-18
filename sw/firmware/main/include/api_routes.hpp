@@ -33,6 +33,7 @@
   X("/api/v1/vin",                  GET,    g_vin_index_handler,             0)                \
   X("/api/v1/req/vin",              POST,   p_vin_index_handler,             0)                \
   X("/api/v1/dtc",                  GET,    g_dtc_index_handler,             0)                \
+  X("/api/v1/dtc/descriptions",     GET,    g_dtc_descriptions_handler,      0)                \
   X("/api/v1/req/dtc",              POST,   p_dtc_index_handler,             0)                \
   X("/api/v1/req/clear_dtc",        POST,   p_clear_dtc_index_handler,       1)                \
   X("/api/v1/system",               GET,    g_system_index_handler,          0)                \

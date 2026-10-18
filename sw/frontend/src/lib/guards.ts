@@ -50,7 +50,7 @@ export function parseDtcGroups(raw: unknown): DtcGroupRaw[] {
   });
 }
 
-/** `GET /dtc?codes=...` as a code to description map. */
+/** `GET /dtc/descriptions?codes=...` as a code to description map. */
 export function parseDtcDescriptions(raw: unknown): Record<string, string> {
   const out: Record<string, string> = {};
   if (!isRec(raw) || raw.status !== "success" || !Array.isArray(raw.dtcs)) return out;

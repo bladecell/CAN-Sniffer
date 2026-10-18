@@ -22,7 +22,7 @@ There is no trip recording code, so no trips folder exists.
 No card, or a card that is unreadable, never stops the boot: the SD step succeeds even with an empty slot, and mounting is retried by the 1 s card-detect loop. Per feature:
 - PID database: nothing is loaded and the database stays empty. There is no default PID set. The `OBD` init step reports `ESP_ERR_INVALID_STATE` in `component_status`. OBD2 itself runs. A PID set that was loaded earlier stays in RAM if the card is removed later.
 - `POST /pid_def/save` and `/pid_def/load`: 503.
-- DTC descriptions (`GET /dtc?codes=`): 503. A mounted card without `dtcs.bin` gives 404. DTC codes themselves still work, they just have no text.
+- DTC descriptions (`GET /dtc/descriptions?codes=`): 503. A mounted card without `dtcs.bin` gives 404. DTC codes themselves still work, they just have no text.
 - SD REST routes (`/sd_card/…`, `/system/copy_file`): 503, except `GET /sd_card/info` and `GET /system` which report `is_mounted`, `is_present`, `sd_card_detected`.
 - All SD operations take one recursive mutex. A caller waits at most 250 ms to 5 s depending on the route, then gets 503 `SD card busy`.
 - A full card shows up as a write error: upload returns 500 `Disk write failed` and removes the partial file if it created it. `pid_def/save` returns 500.

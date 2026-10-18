@@ -502,7 +502,7 @@ export class CanStore {
                 const codesParam = codesArray.slice(i, i + CHUNK_SIZE).map(encodeURIComponent).join(",");
 
                 try {
-                    const descResponse = await fetch(`/api/v1/dtc?codes=${codesParam}`);
+                    const descResponse = await fetch(`/api/v1/dtc/descriptions?codes=${codesParam}`);
                     Object.assign(descriptions, parseDtcDescriptions(await parseJsonResponse<unknown>(descResponse)));
                 } catch (chunkErr) {
                     // If one chunk fails, log it but don't break the whole app

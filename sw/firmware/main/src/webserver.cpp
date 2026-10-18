@@ -785,26 +785,28 @@ esp_err_t p_vin_index_handler(httpd_req_t* req, void* arg)
 
 esp_err_t g_dtc_index_handler(httpd_req_t* req, void* arg)
 {
-    static const char* const keys[] = {"mode", "codes"};
+    static const char* const keys[] = {"mode"};
     unsigned                 present = 0;
-    // One query form per call: nothing, ?mode= or ?codes=. Extra or repeated keys and mode with codes are ambiguous.
-    if (check_query_keys(req, keys, 2, &present) != ESP_OK || present == 3)
+    // One query form per call: nothing or ?mode=. Extra or repeated keys are rejected.
+    if (check_query_keys(req, keys, 1, &present) != ESP_OK)
     {
         return AsyncWebServer::sendError(req, 400, "Invalid DTC query");
     }
-    if (present == 0)
+    int mode = -1;
+    if (present != 0 && get_dtc_mode_query(req, &mode) != ESP_OK)
     {
-        return send_json_response(req, m_dtc_get(-1));
+        return AsyncWebServer::sendError(req, 400, "Invalid DTC mode");
     }
+    return send_json_response(req, m_dtc_get(mode));
+}
 
-    if (present == 1)
+esp_err_t g_dtc_descriptions_handler(httpd_req_t* req, void* arg)
+{
+    static const char* const keys[] = {"codes"};
+    unsigned                 present = 0;
+    if (check_query_keys(req, keys, 1, &present) != ESP_OK || present != 1)
     {
-        int mode = -1;
-        if (get_dtc_mode_query(req, &mode) != ESP_OK)
-        {
-            return AsyncWebServer::sendError(req, 400, "Invalid DTC mode");
-        }
-        return send_json_response(req, m_dtc_get(mode));
+        return AsyncWebServer::sendError(req, 400, "Invalid DTC query");
     }
 
     char        scratch[(MAX_DTC_CODES_QUERY * 6) + 2];

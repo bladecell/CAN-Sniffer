@@ -84,7 +84,7 @@ void test_renamed_routes_are_removed(void)
 
 void test_route_count_matches_docs(void)
 {
-  TEST_ASSERT_EQUAL_UINT32(38, kCount);  // docs/api.md: GET / plus 37 under /api/v1
+  TEST_ASSERT_EQUAL_UINT32(39, kCount);  // docs/api.md: GET / plus 38 under /api/v1
 }
 // The access-control decision (docs/decisions.md 2026-10-18), spelled out. A route is gated if and only if it is listed;
 // adding a route forces a decision here.
@@ -139,6 +139,7 @@ void test_open_routes_stay_open(void)
                            {"GET", "/api/v1/obd2"},
                            {"GET", "/api/v1/vin"},
                            {"GET", "/api/v1/dtc"},
+                           {"GET", "/api/v1/dtc/descriptions"},
                            {"GET", "/api/v1/pid_def"},
                            {"GET", "/api/v1/pid_def/*"},
                            {"GET", "/api/v1/pid_data"},

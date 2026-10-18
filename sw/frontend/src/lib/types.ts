@@ -164,7 +164,7 @@ export interface DtcResponse {
   status: string;
 }
 
-/** `GET /dtc?codes=...` */
+/** `GET /dtc/descriptions?codes=...` */
 export interface DtcDescriptionResponse {
   status: string;
   dtc_count: number;
