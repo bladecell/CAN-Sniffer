@@ -83,8 +83,11 @@ bool fakeErase()
 
 int64_t fakeNow;
 int64_t fakeClock() { return fakeNow; }
+uint32_t rtcFailures;
+uint32_t fakeLoadFailures() { return rtcFailures; }
+void fakeStoreFailures(uint32_t n) { rtcFailures = n; }
 
-const Platform kPlat{fakeKdf, fakeRng, fakeSave, fakeErase, fakeLock, fakeUnlock, 10000, fakeClock};
+const Platform kPlat{fakeKdf, fakeRng, fakeSave, fakeErase, fakeLock, fakeUnlock, 10000, fakeClock, fakeLoadFailures, fakeStoreFailures};
 
 void reset()
 {
@@ -92,6 +95,7 @@ void reset()
   kdfSawLock = kdfFails = rngDead = saveFails = eraseFails = haveStored = false;
   rngCounter = 12345;
   fakeNow = 0;
+  rtcFailures = 0;
 }
 
 struct Fixture
@@ -600,6 +604,55 @@ void test_press_clears_backoff_for_change_pin_and_status(void)
   TEST_ASSERT_EQUAL(Result::Ok, f.core.changePin("123456", 6, "654321", 6, 202 * kSec, &r, 201 * kSec));
 }
 
+// ---- failure count survives a restart --------------------------------------------------------------------------
+void test_failure_count_is_kept_in_rtc_and_survives_a_restart(void)
+{
+  Fixture f = claimed();
+  for (int i = 0; i < 3; i++) f.login("000000", (200 + i * 10) * kSec);  // 3 failures: 4 s wait
+  TEST_ASSERT_EQUAL_UINT32(3, rtcFailures);
+  PinRecord rec;
+  TEST_ASSERT_TRUE(decodeRecord(stored, sizeof(stored), &rec));
+  // crash or sleep/wake: a new core is loaded from storage, the RTC count is still there
+  fakeNow = 300 * kSec;
+  AuthCore again(kPlat);
+  again.load(State::Claimed, &rec);
+  char tok[SessionTable::kTokenLen + 1];
+  uint32_t retry = 0;
+  TEST_ASSERT_EQUAL(Result::Backoff, again.login("123456", 6, 300 * kSec, tok, &retry));
+  TEST_ASSERT_EQUAL_UINT32(4, retry);
+  TEST_ASSERT_EQUAL(Result::Ok, again.login("123456", 6, 304 * kSec, tok, &retry));
+  TEST_ASSERT_EQUAL_UINT32(0, rtcFailures);
+}
+
+void test_rtc_count_is_cleared_by_success_press_recovery_and_pin_change(void)
+{
+  Fixture f = claimed();
+  f.login("000000", 200 * kSec);
+  TEST_ASSERT_EQUAL_UINT32(1, rtcFailures);
+  f.login("123456", 202 * kSec);
+  TEST_ASSERT_EQUAL_UINT32(0, rtcFailures);
+  f.login("000000", 210 * kSec);
+  f.core.status(205 * kSec, 211 * kSec);  // a press
+  TEST_ASSERT_EQUAL_UINT32(0, rtcFailures);
+  f.login("000000", 220 * kSec);
+  TEST_ASSERT_EQUAL(Result::Ok, f.core.recover());
+  TEST_ASSERT_EQUAL_UINT32(0, rtcFailures);
+}
+
+void test_a_huge_rtc_count_is_capped_not_trusted(void)
+{
+  reset();
+  rtcFailures = 0xFFFFFFFFu;  // garbage that passed the magic check
+  AuthCore core(kPlat);
+  PinRecord rec{};
+  rec.iterations = 10000;
+  core.load(State::Claimed, &rec);
+  char tok[SessionTable::kTokenLen + 1];
+  uint32_t retry = 0;
+  TEST_ASSERT_EQUAL(Result::Backoff, core.login("123456", 6, 0, tok, &retry));
+  TEST_ASSERT_EQUAL_UINT32(LoginBackoff::kCapS, retry);
+}
+
 // ---- change PIN ------------------------------------------------------------------------------------------------
 void test_change_pin_ends_all_sessions_and_switches_pin(void)
 {
@@ -798,6 +851,9 @@ extern "C" void run_auth_core_tests(void)
   RUN_TEST(test_new_boot_press_clears_the_backoff);
   RUN_TEST(test_the_same_press_does_not_clear_it_twice);
   RUN_TEST(test_press_clears_backoff_for_change_pin_and_status);
+  RUN_TEST(test_failure_count_is_kept_in_rtc_and_survives_a_restart);
+  RUN_TEST(test_rtc_count_is_cleared_by_success_press_recovery_and_pin_change);
+  RUN_TEST(test_a_huge_rtc_count_is_capped_not_trusted);
   RUN_TEST(test_change_pin_ends_all_sessions_and_switches_pin);
   RUN_TEST(test_change_pin_wrong_old_pin_counts_and_changes_nothing);
   RUN_TEST(test_change_pin_rejects_bad_new_pin_without_spending_an_attempt);

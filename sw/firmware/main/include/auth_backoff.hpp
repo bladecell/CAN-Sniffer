@@ -43,6 +43,13 @@ public:
     blockedUntilMs_ = nowMs + static_cast<uint64_t>(delayS(failures_)) * 1000;
   }
 
+  // After a restart: the failure count survived (RTC memory), the clock did not, so the wait starts again from now.
+  void restore(uint32_t failures, uint64_t nowMs)
+  {
+    failures_       = failures > 32 ? 32 : failures;
+    blockedUntilMs_ = failures_ == 0 ? 0 : nowMs + static_cast<uint64_t>(delayS(failures_)) * 1000;
+  }
+
   void onSuccess() { reset(); }
   void reset()
   {

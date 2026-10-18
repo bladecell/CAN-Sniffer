@@ -1,6 +1,7 @@
 #include "auth.hpp"
 
 #include "button.h"
+#include "esp_attr.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include "esp_timer.h"
@@ -20,8 +21,15 @@ constexpr const char* kNvsNamespace = "auth";
 constexpr const char* kNvsKey       = "pin";
 constexpr TickType_t  kOpWait       = pdMS_TO_TICKS(3000);
 
+// Failed-login count. RTC_NOINIT survives a crash and a sleep/wake but is undefined after a power loss, so it counts
+// only next to the magic word. A reboot cannot be used to shed the penalty.
+RTC_NOINIT_ATTR uint32_t s_rtcMagic;
+RTC_NOINIT_ATTR uint32_t s_rtcFailures;
+constexpr uint32_t       kRtcMagic = 0xA07F1A11u;
+
 portMUX_TYPE      s_spin = portMUX_INITIALIZER_UNLOCKED;
-SemaphoreHandle_t s_op   = nullptr;  // serialises claim, login, change PIN and recovery
+StaticSemaphore_t s_opBuf;           // static, never deleted: a late recovery on the button task can still take it
+SemaphoreHandle_t s_op = nullptr;    // serialises claim, login, change PIN and recovery
 bool              s_up   = false;
 bool              s_buttonOk = false;  // the hold hook is registered, so the button driver is running
 
@@ -102,8 +110,19 @@ int64_t nowUs()
   return esp_timer_get_time();
 }
 
+uint32_t loadFailures()
+{
+  return (s_rtcMagic == kRtcMagic && s_rtcFailures <= 32) ? s_rtcFailures : 0;
+}
+
+void storeFailures(uint32_t n)
+{
+  s_rtcMagic    = kRtcMagic;
+  s_rtcFailures = n;
+}
+
 const auth::Platform kPlatform{deriveKey, fillRandom, saveRecord, eraseRecord, lockFast, unlockFast,
-                               auth_service::kPbkdf2Iterations, nowUs};
+                               auth_service::kPbkdf2Iterations, nowUs, loadFailures, storeFailures};
 auth::AuthCore       s_core(kPlatform);
 
 // Reads the stored record. A missing namespace or key is a device nobody has claimed; anything unreadable or malformed
@@ -167,7 +186,12 @@ void onHold(void*)
   OpLock lock;
   if (!lock.ok)
   {
+    ESP_LOGW(TAG, "BOOT hold ignored: another auth operation is running, hold again");
     return;
+  }
+  if (!s_up)
+  {
+    return;  // the web server is stopping
   }
   if (s_core.recover() == auth::Result::Ok)
   {
@@ -184,7 +208,10 @@ esp_err_t start()
   {
     return ESP_OK;
   }
-  s_op = xSemaphoreCreateMutex();
+  if (s_op == nullptr)
+  {
+    s_op = xSemaphoreCreateMutexStatic(&s_opBuf);
+  }
   if (s_op == nullptr)
   {
     s_core.load(auth::State::Unavailable, nullptr);
@@ -211,12 +238,10 @@ void stop()
   {
     return;
   }
+  s_up = false;  // first: a recovery that is still waiting for the lock sees it and leaves
   (void)button_set_hold_hook(nullptr, nullptr);  // waits for a running recovery
-  s_up = false;
-  s_core.load(auth::State::Unavailable, nullptr);  // drops sessions
-  SemaphoreHandle_t op = s_op;
-  s_op                 = nullptr;
-  vSemaphoreDelete(op);
+  s_buttonOk = false;
+  s_core.load(auth::State::Unavailable, nullptr);  // drops sessions; the failure count stays in RTC memory
 }
 
 auth::Result requireAdmin(const char* bearer)

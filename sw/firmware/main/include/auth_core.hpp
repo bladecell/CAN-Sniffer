@@ -78,6 +78,8 @@ struct Platform
   void (*unlock)();
   uint32_t iterations;  // PBKDF2 cost for new PINs
   int64_t (*nowUs)();   // esp_timer microseconds; stamps a post after the key derivation, which takes 100+ ms
+  uint32_t (*loadFailures)();       // failed-login count kept across a crash or sleep (RTC memory); 0 when none
+  void (*storeFailures)(uint32_t);  // called with the new count whenever it changes
 };
 
 class AuthCore
@@ -95,7 +97,7 @@ public:
       rec_ = *rec;
     }
     sessions_.clear();
-    backoff_.reset();
+    backoff_.restore(p_.loadFailures(), ms(p_.nowUs()));
     clearClaims();
     seenPressUs_ = 0;
     p_.unlock();
@@ -239,7 +241,7 @@ public:
     p_.lock();
     if (good && sessions_.create(ms(nowUs), p_.rng, tokenOut))
     {
-      backoff_.onSuccess();
+      resetBackoff();
       r = Result::Ok;
     }
     else if (good)
@@ -249,6 +251,7 @@ public:
     else
     {
       backoff_.onFailure(ms(nowUs));
+      p_.storeFailures(backoff_.failures());
       *retryS = backoff_.retryAfterS(ms(nowUs));
       r       = Result::BadPin;
     }
@@ -275,6 +278,7 @@ public:
     {
       p_.lock();
       backoff_.onFailure(ms(nowUs));
+      p_.storeFailures(backoff_.failures());
       *retryS = backoff_.retryAfterS(ms(nowUs));
       p_.unlock();
       return Result::BadPin;
@@ -287,7 +291,7 @@ public:
     p_.lock();
     rec_ = next;
     sessions_.clear();
-    backoff_.onSuccess();
+    resetBackoff();
     p_.unlock();
     return Result::Ok;
   }
@@ -302,7 +306,7 @@ public:
     p_.lock();
     state_ = State::Unclaimed;
     sessions_.clear();
-    backoff_.reset();
+    resetBackoff();
     clearClaims();
     p_.unlock();
     return Result::Ok;
@@ -440,7 +444,7 @@ private:
       {
         rec_   = mine.rec;
         state_ = State::Claimed;
-        backoff_.reset();
+        resetBackoff();
         o             = remember(mine.id, ClaimStatus::Committed, nowUs);
         o->tokenReady = true;
         memcpy(o->token, tok, sizeof(tok));
@@ -459,13 +463,20 @@ private:
     p_.unlock();
   }
 
+  // Lock held.
+  void resetBackoff()
+  {
+    backoff_.reset();
+    p_.storeFailures(0);
+  }
+
   // Lock held. A BOOT press the core has not seen before ends the login wait: someone is at the device.
   void notePress(int64_t lastPressUs)
   {
     if (lastPressUs > 0 && lastPressUs != seenPressUs_)
     {
       seenPressUs_ = lastPressUs;
-      backoff_.reset();
+      resetBackoff();
     }
   }
 
