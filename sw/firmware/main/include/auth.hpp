@@ -29,12 +29,16 @@ struct StatusView
 {
   auth::State state;
   bool        authenticated;
-  uint32_t    claimWindowS;
   uint32_t    retryAfterS;
+  bool        pending;          // a claim waits for the BOOT press
+  uint32_t    pendingExpiresS;
 };
 StatusView status(const char* bearer);
 
-auth::Result claim(const char* pin, size_t len, char* tokenOut);
+// Two-step claim (see auth_core.hpp). Step 1 parks the PIN and returns the id (kClaimIdLen hex chars + NUL).
+auth::Result claimPost(const char* pin, size_t len, char* idOut);
+// Step 2: poll with that id. Commits the claim when the BOOT press has happened.
+auth::ClaimView claimStatus(const char* id);
 auth::Result login(const char* pin, size_t len, char* tokenOut, uint32_t* retryS);
 auth::Result logout(const char* bearer);
 auth::Result changePin(const char* oldPin, size_t oldLen, const char* newPin, size_t newLen, uint32_t* retryS);

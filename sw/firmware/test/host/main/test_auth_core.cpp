@@ -81,13 +81,17 @@ bool fakeErase()
   return true;
 }
 
-const Platform kPlat{fakeKdf, fakeRng, fakeSave, fakeErase, fakeLock, fakeUnlock, 10000};
+int64_t fakeNow;
+int64_t fakeClock() { return fakeNow; }
+
+const Platform kPlat{fakeKdf, fakeRng, fakeSave, fakeErase, fakeLock, fakeUnlock, 10000, fakeClock};
 
 void reset()
 {
   lockDepth = kdfCalls = saves = erases = 0;
   kdfSawLock = kdfFails = rngDead = saveFails = eraseFails = haveStored = false;
   rngCounter = 12345;
+  fakeNow = 0;
 }
 
 struct Fixture
@@ -96,7 +100,23 @@ struct Fixture
   uint32_t retry = 0;
   char     tok[SessionTable::kTokenLen + 1] = {};
   Fixture() { reset(); core.load(State::Unclaimed, nullptr); }
-  Result claim(const char* pin, int64_t press, int64_t now) { return core.claim(pin, strlen(pin), press, now, tok); }
+  char     id[kClaimIdLen + 1] = {};
+  Result post(const char* pin, int64_t now, int64_t press = 0)
+  {
+    fakeNow = now;
+    return core.claimPost(pin, strlen(pin), press, now, id);
+  }
+  ClaimView poll(int64_t now, int64_t press = 0) { return core.claimStatus(id, press, now); }
+  // Whole claim: post just before the press, poll after it. Ok when it committed (token in `tok`).
+  Result claim(const char* pin, int64_t press, int64_t now)
+  {
+    Result r = post(pin, press - 1);
+    if (r != Result::Ok) return r;
+    const ClaimView v = poll(now, press);
+    if (v.status != ClaimStatus::Committed || !v.hasToken) return Result::Internal;
+    memcpy(tok, v.token, sizeof(tok));
+    return Result::Ok;
+  }
   Result login(const char* pin, int64_t now) { return core.login(pin, strlen(pin), now, tok, &retry); }
 };
 
@@ -221,7 +241,7 @@ void test_session_lookup_rejects_malformed_tokens(void)
   TEST_ASSERT_FALSE(t.validate("00000000000000000000000000000000", 1));  // empty slots hold zeros, not a wildcard
 }
 
-// ---- claim -----------------------------------------------------------------------------------------------------
+// ---- claim (two steps) -----------------------------------------------------------------------------------------
 void test_unclaimed_device_refuses_everything_but_claim(void)
 {
   Fixture f;
@@ -232,73 +252,199 @@ void test_unclaimed_device_refuses_everything_but_claim(void)
   TEST_ASSERT_EQUAL(Result::NotClaimed, f.core.changePin("123456", 6, "654321", 6, 0, &r));
 }
 
-void test_claim_needs_a_recent_press(void)
+void test_post_parks_the_pin_and_changes_nothing_else(void)
 {
   Fixture f;
-  TEST_ASSERT_EQUAL(Result::ButtonRequired, f.claim("123456", 0, 5 * kSec));              // never pressed
-  TEST_ASSERT_EQUAL(Result::ButtonRequired, f.claim("123456", 10 * kSec, 71 * kSec));     // 61 s old
-  TEST_ASSERT_EQUAL(Result::ButtonRequired, f.claim("123456", 100 * kSec, 99 * kSec));    // press "in the future"
-  TEST_ASSERT_EQUAL(Result::ButtonRequired, f.claim("123456", -5, 5 * kSec));
+  TEST_ASSERT_EQUAL(Result::Ok, f.post("123456", 10 * kSec));
+  TEST_ASSERT_EQUAL_UINT32(kClaimIdLen, strlen(f.id));
+  TEST_ASSERT_EQUAL(1, kdfCalls);
   TEST_ASSERT_EQUAL(0, saves);
   TEST_ASSERT_EQUAL(State::Unclaimed, f.core.state());
-  TEST_ASSERT_EQUAL(Result::Ok, f.claim("123456", 10 * kSec, 70 * kSec));                 // exactly 60 s: still open
+  TEST_ASSERT_EQUAL(Result::NotClaimed, f.core.check("anything", 11 * kSec));
+  const ClaimView v = f.poll(25 * kSec);
+  TEST_ASSERT_EQUAL(ClaimStatus::Pending, v.status);
+  TEST_ASSERT_EQUAL_UINT32(45, v.expiresInS);
+  TEST_ASSERT_FALSE(v.hasToken);
+  const AuthCore::Status s = f.core.status(0, 25 * kSec);
+  TEST_ASSERT_TRUE(s.pending);
+  TEST_ASSERT_EQUAL_UINT32(45, s.pendingExpiresS);
 }
 
-void test_claim_success_logs_in_and_stores_one_record(void)
+void test_press_after_the_post_commits_and_hands_over_the_token_once(void)
 {
   Fixture f;
-  TEST_ASSERT_EQUAL(Result::Ok, f.claim("123456", 10 * kSec, 20 * kSec));
+  f.post("123456", 10 * kSec);
+  ClaimView v = f.poll(20 * kSec, 15 * kSec);
+  TEST_ASSERT_EQUAL(ClaimStatus::Committed, v.status);
+  TEST_ASSERT_TRUE(v.hasToken);
   TEST_ASSERT_EQUAL(State::Claimed, f.core.state());
   TEST_ASSERT_EQUAL(1, saves);
-  TEST_ASSERT_TRUE(haveStored);
-  TEST_ASSERT_EQUAL(Result::Ok, f.core.check(f.tok, 21 * kSec));
+  TEST_ASSERT_EQUAL(Result::Ok, f.core.check(v.token, 21 * kSec));
   PinRecord rec;
   TEST_ASSERT_TRUE(decodeRecord(stored, sizeof(stored), &rec));
-  TEST_ASSERT_EQUAL_UINT32(10000, rec.iterations);
-  // the PIN itself is never in the stored record
   TEST_ASSERT_NULL(memmem(stored, sizeof(stored), "123456", 6));
+  v = f.poll(22 * kSec, 15 * kSec);  // second poll: committed, no token again
+  TEST_ASSERT_EQUAL(ClaimStatus::Committed, v.status);
+  TEST_ASSERT_FALSE(v.hasToken);
+  TEST_ASSERT_EQUAL(Result::Ok, f.login("123456", 23 * kSec));
+  TEST_ASSERT_FALSE(f.core.status(0, 24 * kSec).pending);
 }
 
-void test_claim_twice_is_refused_even_with_a_fresh_press(void)
+void test_a_press_before_the_post_does_not_count(void)
+{
+  Fixture f;
+  f.post("123456", 100 * kSec);
+  TEST_ASSERT_EQUAL(ClaimStatus::Pending, f.poll(101 * kSec, 90 * kSec).status);
+  TEST_ASSERT_EQUAL(ClaimStatus::Pending, f.poll(102 * kSec, 100 * kSec).status);  // same instant is not "after"
+  TEST_ASSERT_EQUAL(State::Unclaimed, f.core.state());
+  TEST_ASSERT_EQUAL(0, saves);
+}
+
+void test_window_is_60_seconds_from_the_post(void)
+{
+  Fixture f;
+  f.post("123456", 100 * kSec);
+  TEST_ASSERT_EQUAL(ClaimStatus::Committed, f.poll(161 * kSec, 160 * kSec).status);  // press at exactly +60 s
+  Fixture g;
+  g.post("123456", 100 * kSec);
+  TEST_ASSERT_EQUAL(ClaimStatus::Expired, g.poll(170 * kSec, 161 * kSec).status);   // press at +61 s
+  TEST_ASSERT_EQUAL(State::Unclaimed, g.core.state());
+  Fixture h;
+  h.post("123456", 100 * kSec);
+  TEST_ASSERT_EQUAL(ClaimStatus::Pending, h.poll(160 * kSec).status);
+  TEST_ASSERT_EQUAL(ClaimStatus::Expired, h.poll(161 * kSec).status);               // never pressed
+  TEST_ASSERT_EQUAL(ClaimStatus::Expired, h.poll(200 * kSec).status);
+  TEST_ASSERT_FALSE(h.core.status(0, 162 * kSec).pending);
+}
+
+void test_second_post_cancels_both(void)
+{
+  Fixture f;
+  f.post("123456", 10 * kSec);
+  char firstId[kClaimIdLen + 1];
+  memcpy(firstId, f.id, sizeof(firstId));
+  TEST_ASSERT_EQUAL(Result::ClaimConflict, f.post("654321", 20 * kSec));
+  TEST_ASSERT_EQUAL(1, kdfCalls);  // the conflict path derives nothing
+  TEST_ASSERT_EQUAL(ClaimStatus::Conflict, f.core.claimStatus(firstId, 0, 21 * kSec).status);
+  TEST_ASSERT_FALSE(f.core.status(0, 21 * kSec).pending);
+  // the press that follows has nothing to commit
+  TEST_ASSERT_EQUAL(ClaimStatus::Conflict, f.core.claimStatus(firstId, 22 * kSec, 23 * kSec).status);
+  TEST_ASSERT_EQUAL(State::Unclaimed, f.core.state());
+  TEST_ASSERT_EQUAL(0, saves);
+  // both can start over
+  TEST_ASSERT_EQUAL(Result::Ok, f.post("123456", 30 * kSec));
+  TEST_ASSERT_EQUAL(ClaimStatus::Committed, f.poll(40 * kSec, 35 * kSec).status);
+}
+
+void test_bad_format_post_leaves_a_pending_claim_alone(void)
+{
+  Fixture f;
+  f.post("123456", 10 * kSec);
+  TEST_ASSERT_EQUAL(Result::BadFormat, f.post("12", 11 * kSec));
+  TEST_ASSERT_EQUAL(Result::BadFormat, f.post("abcdef", 12 * kSec));
+  Fixture g;
+  const char* bad[] = {"", "12345", "1234567", "12345a"};
+  for (const char* p : bad) TEST_ASSERT_EQUAL(Result::BadFormat, g.post(p, 5 * kSec));
+  TEST_ASSERT_EQUAL(0, kdfCalls);  // a bad PIN never reaches the key derivation
+  TEST_ASSERT_FALSE(g.core.status(0, 6 * kSec).pending);
+}
+
+void test_post_after_the_press_but_before_anyone_polled_loses_to_the_first(void)
+{
+  Fixture f;
+  f.post("123456", 10 * kSec);
+  char firstId[kClaimIdLen + 1];
+  memcpy(firstId, f.id, sizeof(firstId));
+  // press at 15 s, nobody polled; a second client posts at 20 s: the first claim commits, the second is refused
+  TEST_ASSERT_EQUAL(Result::AlreadyClaimed, f.post("654321", 20 * kSec, 15 * kSec));
+  TEST_ASSERT_EQUAL(ClaimStatus::Committed, f.core.claimStatus(firstId, 15 * kSec, 21 * kSec).status);
+  TEST_ASSERT_EQUAL(Result::Ok, f.login("123456", 22 * kSec));
+  TEST_ASSERT_EQUAL(Result::BadPin, f.login("654321", 100 * kSec));
+}
+
+void test_post_on_claimed_or_unavailable_device(void)
 {
   Fixture f = claimed();
-  TEST_ASSERT_EQUAL(Result::AlreadyClaimed, f.claim("654321", 95 * kSec, 100 * kSec));  // same press
-  TEST_ASSERT_EQUAL(Result::AlreadyClaimed, f.claim("654321", 200 * kSec, 201 * kSec)); // new press
-  TEST_ASSERT_EQUAL(1, saves);
-  TEST_ASSERT_EQUAL(Result::Ok, f.login("123456", 202 * kSec));  // original PIN unchanged
-}
-
-void test_bad_pin_format_does_not_spend_the_press(void)
-{
-  Fixture f;
-  const char* bad[] = {"", "12345", "1234567", "abcdef", "12345 "};
-  for (const char* p : bad) TEST_ASSERT_EQUAL(Result::BadFormat, f.claim(p, 10 * kSec, 11 * kSec));
-  TEST_ASSERT_EQUAL(0, saves);
+  const int before = kdfCalls;
+  TEST_ASSERT_EQUAL(Result::AlreadyClaimed, f.post("654321", 200 * kSec));
+  TEST_ASSERT_EQUAL(before, kdfCalls);
+  reset();
+  AuthCore core(kPlat);
+  core.load(State::Unavailable, nullptr);
+  char id[kClaimIdLen + 1];
+  TEST_ASSERT_EQUAL(Result::Unavailable, core.claimPost("123456", 6, 0, 0, id));
   TEST_ASSERT_EQUAL(0, kdfCalls);
-  TEST_ASSERT_EQUAL(Result::Ok, f.claim("123456", 10 * kSec, 12 * kSec));
 }
 
-void test_claim_storage_failure_changes_nothing(void)
+void test_commit_storage_failure_reports_failed_and_changes_nothing(void)
 {
   Fixture f;
+  f.post("123456", 10 * kSec);
   saveFails = true;
-  TEST_ASSERT_EQUAL(Result::Internal, f.claim("123456", 10 * kSec, 11 * kSec));
+  TEST_ASSERT_EQUAL(ClaimStatus::Failed, f.poll(20 * kSec, 15 * kSec).status);
   TEST_ASSERT_EQUAL(State::Unclaimed, f.core.state());
+  TEST_ASSERT_FALSE(f.core.status(0, 21 * kSec).pending);
   saveFails = false;
-  TEST_ASSERT_EQUAL(Result::Ok, f.claim("123456", 10 * kSec, 12 * kSec));  // same press still usable
+  TEST_ASSERT_EQUAL(Result::Ok, f.claim("123456", 40 * kSec, 41 * kSec));  // can try again
 }
 
-void test_claim_kdf_or_rng_failure_changes_nothing(void)
+void test_commit_with_a_dead_rng_rolls_the_record_back(void)
+{
+  Fixture f;
+  f.post("123456", 10 * kSec);
+  rngDead = true;  // the session token cannot be made
+  TEST_ASSERT_EQUAL(ClaimStatus::Failed, f.poll(20 * kSec, 15 * kSec).status);
+  TEST_ASSERT_EQUAL(State::Unclaimed, f.core.state());
+  TEST_ASSERT_FALSE(haveStored);
+}
+
+void test_kdf_or_rng_failure_at_post_parks_nothing(void)
 {
   Fixture f;
   kdfFails = true;
-  TEST_ASSERT_EQUAL(Result::Internal, f.claim("123456", 10 * kSec, 11 * kSec));
-  TEST_ASSERT_EQUAL(0, saves);
+  TEST_ASSERT_EQUAL(Result::Internal, f.post("123456", 10 * kSec));
   kdfFails = false;
-  rngDead = true;  // salt and token both come from the RNG; the token fails, the stored record is rolled back
-  TEST_ASSERT_EQUAL(Result::Internal, f.claim("123456", 10 * kSec, 12 * kSec));
-  TEST_ASSERT_EQUAL(State::Unclaimed, f.core.state());
-  TEST_ASSERT_FALSE(haveStored);
+  rngDead = true;
+  TEST_ASSERT_EQUAL(Result::Internal, f.post("123456", 11 * kSec));
+  rngDead = false;
+  TEST_ASSERT_FALSE(f.core.status(0, 12 * kSec).pending);
+  TEST_ASSERT_EQUAL(0, saves);
+}
+
+void test_claim_status_ids_are_not_guessable_handles(void)
+{
+  Fixture f;
+  f.post("123456", 10 * kSec);
+  TEST_ASSERT_EQUAL(ClaimStatus::Unknown, f.core.claimStatus(nullptr, 0, 11 * kSec).status);
+  TEST_ASSERT_EQUAL(ClaimStatus::Unknown, f.core.claimStatus("", 0, 11 * kSec).status);
+  TEST_ASSERT_EQUAL(ClaimStatus::Unknown, f.core.claimStatus("abc", 0, 11 * kSec).status);
+  TEST_ASSERT_EQUAL(ClaimStatus::Unknown, f.core.claimStatus("00000000000000000000000000000000", 0, 11 * kSec).status);
+  char other[kClaimIdLen + 1];
+  memcpy(other, f.id, sizeof(other));
+  other[0] = other[0] == 'a' ? 'b' : 'a';
+  TEST_ASSERT_EQUAL(ClaimStatus::Unknown, f.core.claimStatus(other, 0, 11 * kSec).status);
+  char longId[kClaimIdLen + 3];
+  memcpy(longId, f.id, kClaimIdLen);
+  longId[kClaimIdLen] = 'a';
+  longId[kClaimIdLen + 1] = '\0';
+  TEST_ASSERT_EQUAL(ClaimStatus::Unknown, f.core.claimStatus(longId, 0, 11 * kSec).status);
+  TEST_ASSERT_EQUAL(ClaimStatus::Pending, f.poll(11 * kSec).status);
+}
+
+void test_outcomes_are_forgotten_after_five_minutes_and_the_table_is_bounded(void)
+{
+  Fixture f;
+  f.post("123456", 10 * kSec);
+  f.post("654321", 11 * kSec);  // conflict: first id remembered
+  char firstId[kClaimIdLen + 1];
+  memcpy(firstId, f.id, sizeof(firstId));
+  TEST_ASSERT_EQUAL(ClaimStatus::Unknown, f.core.claimStatus(firstId, 0, 11 * kSec + 301 * kSec).status);
+  // 6 conflicts in a row never overflow the table
+  for (int i = 0; i < 6; i++)
+  {
+    TEST_ASSERT_EQUAL(Result::Ok, f.post("123456", (400 + 10 * i) * kSec));
+    TEST_ASSERT_EQUAL(Result::ClaimConflict, f.post("123456", (405 + 10 * i) * kSec));
+  }
 }
 
 // ---- login, replay, expiry, session limit ----------------------------------------------------------------------
@@ -509,6 +655,7 @@ void test_recovery_returns_to_unclaimed_and_allows_a_new_claim(void)
   TEST_ASSERT_EQUAL(Result::Ok, f.core.recover());
   TEST_ASSERT_EQUAL(State::Unclaimed, f.core.state());
   TEST_ASSERT_FALSE(haveStored);
+  TEST_ASSERT_FALSE(f.core.status(0, 590 * kSec).pending);
   TEST_ASSERT_EQUAL(Result::NotClaimed, f.core.check(f.tok, 600 * kSec));  // old token is dead
   TEST_ASSERT_EQUAL(Result::Ok, f.claim("246810", 590 * kSec, 600 * kSec));
   TEST_ASSERT_EQUAL(Result::Ok, f.login("246810", 601 * kSec));           // backoff from before was cleared
@@ -532,7 +679,8 @@ void test_unavailable_storage_fails_closed_until_recovery(void)
   char tok[SessionTable::kTokenLen + 1];
   uint32_t r;
   TEST_ASSERT_EQUAL(Result::Unavailable, core.check("x", 0));
-  TEST_ASSERT_EQUAL(Result::Unavailable, core.claim("123456", 6, 10 * kSec, 11 * kSec, tok));
+  char id[kClaimIdLen + 1];
+  TEST_ASSERT_EQUAL(Result::Unavailable, core.claimPost("123456", 6, 10 * kSec, 11 * kSec, id));
   TEST_ASSERT_EQUAL(Result::Unavailable, core.login("123456", 6, 0, tok, &r));
   TEST_ASSERT_EQUAL(0, kdfCalls);
   TEST_ASSERT_EQUAL(Result::Ok, core.recover());  // a corrupt record is cleared by the hold gesture
@@ -547,23 +695,29 @@ void test_claimed_without_a_record_is_unavailable(void)
   TEST_ASSERT_EQUAL(State::Unavailable, core.state());
 }
 
-void test_status_reports_window_and_backoff(void)
+void test_status_reports_pending_and_backoff(void)
 {
   Fixture f;
-  AuthCore::Status s = f.core.status(10 * kSec, 25 * kSec);
+  AuthCore::Status s = f.core.status(0, 25 * kSec);
   TEST_ASSERT_EQUAL(State::Unclaimed, s.state);
-  TEST_ASSERT_EQUAL_UINT32(45, s.claimWindowS);
-  s = f.core.status(10 * kSec, 71 * kSec);
-  TEST_ASSERT_EQUAL_UINT32(0, s.claimWindowS);
-  s = f.core.status(0, 25 * kSec);
-  TEST_ASSERT_EQUAL_UINT32(0, s.claimWindowS);
+  TEST_ASSERT_FALSE(s.pending);
   f.claim("123456", 10 * kSec, 25 * kSec);
   f.login("000000", 30 * kSec);
-  s = f.core.status(10 * kSec, 30 * kSec);
+  s = f.core.status(0, 30 * kSec);
   TEST_ASSERT_EQUAL(State::Claimed, s.state);
-  TEST_ASSERT_EQUAL_UINT32(0, s.claimWindowS);
+  TEST_ASSERT_FALSE(s.pending);
   TEST_ASSERT_EQUAL_UINT32(1, s.retryAfterS);
 }
+
+void test_recovery_during_a_pending_claim_cancels_it(void)
+{
+  Fixture f;
+  f.post("123456", 10 * kSec);
+  TEST_ASSERT_EQUAL(Result::Ok, f.core.recover());
+  TEST_ASSERT_EQUAL(ClaimStatus::Unknown, f.poll(11 * kSec, 12 * kSec).status);
+  TEST_ASSERT_EQUAL(State::Unclaimed, f.core.state());
+}
+
 // ---- HTTP mapping and Authorization parsing -------------------------------------------------------------------
 void test_http_mapping_covers_every_result(void)
 {
@@ -618,12 +772,20 @@ extern "C" void run_auth_core_tests(void)
   RUN_TEST(test_session_token_shape_and_rng_failure);
   RUN_TEST(test_session_lookup_rejects_malformed_tokens);
   RUN_TEST(test_unclaimed_device_refuses_everything_but_claim);
-  RUN_TEST(test_claim_needs_a_recent_press);
-  RUN_TEST(test_claim_success_logs_in_and_stores_one_record);
-  RUN_TEST(test_claim_twice_is_refused_even_with_a_fresh_press);
-  RUN_TEST(test_bad_pin_format_does_not_spend_the_press);
-  RUN_TEST(test_claim_storage_failure_changes_nothing);
-  RUN_TEST(test_claim_kdf_or_rng_failure_changes_nothing);
+  RUN_TEST(test_post_parks_the_pin_and_changes_nothing_else);
+  RUN_TEST(test_press_after_the_post_commits_and_hands_over_the_token_once);
+  RUN_TEST(test_a_press_before_the_post_does_not_count);
+  RUN_TEST(test_window_is_60_seconds_from_the_post);
+  RUN_TEST(test_second_post_cancels_both);
+  RUN_TEST(test_bad_format_post_leaves_a_pending_claim_alone);
+  RUN_TEST(test_post_after_the_press_but_before_anyone_polled_loses_to_the_first);
+  RUN_TEST(test_post_on_claimed_or_unavailable_device);
+  RUN_TEST(test_commit_storage_failure_reports_failed_and_changes_nothing);
+  RUN_TEST(test_commit_with_a_dead_rng_rolls_the_record_back);
+  RUN_TEST(test_kdf_or_rng_failure_at_post_parks_nothing);
+  RUN_TEST(test_claim_status_ids_are_not_guessable_handles);
+  RUN_TEST(test_outcomes_are_forgotten_after_five_minutes_and_the_table_is_bounded);
+  RUN_TEST(test_recovery_during_a_pending_claim_cancels_it);
   RUN_TEST(test_login_right_and_wrong_pin);
   RUN_TEST(test_logout_then_replay_is_refused);
   RUN_TEST(test_idle_expiry_30_minutes);
@@ -644,5 +806,5 @@ extern "C" void run_auth_core_tests(void)
   RUN_TEST(test_recovery_storage_failure_keeps_the_device_claimed);
   RUN_TEST(test_unavailable_storage_fails_closed_until_recovery);
   RUN_TEST(test_claimed_without_a_record_is_unavailable);
-  RUN_TEST(test_status_reports_window_and_backoff);
+  RUN_TEST(test_status_reports_pending_and_backoff);
 }

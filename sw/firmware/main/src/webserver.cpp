@@ -1015,15 +1015,20 @@ static bool json_string(const cJSON* root, const char* key, const char** value, 
     return true;
 }
 
+static void add_session_fields(cJSON* obj, const char* token)
+{
+    cJSON_AddStringToObject(obj, "token", token);
+    cJSON_AddNumberToObject(obj, "idle_timeout_s", static_cast<double>(auth::SessionTable::kIdleMs) / 1000.0);
+    cJSON_AddNumberToObject(obj, "max_age_s", static_cast<double>(auth::SessionTable::kMaxAgeMs) / 1000.0);
+}
+
 static esp_err_t send_session(httpd_req_t* req, int status, const char* token)
 {
     cJSON* root = cJSON_CreateObject();
     if (root != nullptr)
     {
         cJSON_AddStringToObject(root, "status", "ok");
-        cJSON_AddStringToObject(root, "token", token);
-        cJSON_AddNumberToObject(root, "idle_timeout_s", static_cast<double>(auth::SessionTable::kIdleMs) / 1000.0);
-        cJSON_AddNumberToObject(root, "max_age_s", static_cast<double>(auth::SessionTable::kMaxAgeMs) / 1000.0);
+        add_session_fields(root, token);
     }
     return send_json_response(req, {root, status});
 }
@@ -1031,17 +1036,39 @@ static esp_err_t send_session(httpd_req_t* req, int status, const char* token)
 esp_err_t g_auth_index_handler(httpd_req_t* req, void* arg)
 {
     char                           token[auth::kAuthHeaderMax];
-    const auth_service::StatusView v = auth_service::status(bearer_of(req, token));
+    const auth_service::StatusView v    = auth_service::status(bearer_of(req, token));
     cJSON*                         root = cJSON_CreateObject();
     if (root != nullptr)
     {
-        const char* state = v.state == auth::State::Claimed     ? "claimed"
-                            : v.state == auth::State::Unclaimed ? "unclaimed"
-                                                                : "unavailable";
+        const char* state = v.state == auth::State::Claimed ? "claimed"
+                            : v.state == auth::State::Unavailable ? "unavailable"
+                            : v.pending                           ? "pending"
+                                                                  : "unclaimed";
         cJSON_AddStringToObject(root, "state", state);
         cJSON_AddBoolToObject(root, "authenticated", v.authenticated);
-        cJSON_AddNumberToObject(root, "claim_window_s", v.claimWindowS);
         cJSON_AddNumberToObject(root, "retry_after_s", v.retryAfterS);
+        cJSON_AddNumberToObject(root, "claim_expires_in_s", v.pendingExpiresS);
+
+        // The client that posted a claim polls with its id and learns the outcome here.
+        char claimId[auth::kClaimIdLen + 8];
+        if (get_query_str(req, "claim_id", claimId, sizeof(claimId)))
+        {
+            const auth::ClaimView c = auth_service::claimStatus(claimId);
+            static const char* const names[] = {"pending", "committed", "expired", "conflict", "failed", "unknown"};
+            cJSON* claim = cJSON_AddObjectToObject(root, "claim");
+            if (claim != nullptr)
+            {
+                cJSON_AddStringToObject(claim, "result", names[static_cast<size_t>(c.status)]);
+                if (c.status == auth::ClaimStatus::Pending)
+                {
+                    cJSON_AddNumberToObject(claim, "expires_in_s", c.expiresInS);
+                }
+                if (c.hasToken)
+                {
+                    add_session_fields(claim, c.token);
+                }
+            }
+        }
     }
     return send_json_response(req, {root, 200});
 }
@@ -1055,11 +1082,22 @@ esp_err_t p_auth_claim_handler(httpd_req_t* req, void* arg)
     }
     const char* pin    = nullptr;
     size_t      pinLen = 0;
-    char        token[auth::SessionTable::kTokenLen + 1];
-    auth::Result r = json_string(body, "pin", &pin, &pinLen) ? auth_service::claim(pin, pinLen, token)
+    char        id[auth::kClaimIdLen + 1];
+    auth::Result r = json_string(body, "pin", &pin, &pinLen) ? auth_service::claimPost(pin, pinLen, id)
                                                              : auth::Result::BadFormat;
     cJSON_Delete(body);
-    return r == auth::Result::Ok ? send_session(req, 201, token) : send_auth_error(req, r);
+    if (r != auth::Result::Ok)
+    {
+        return send_auth_error(req, r);
+    }
+    cJSON* root = cJSON_CreateObject();
+    if (root != nullptr)
+    {
+        cJSON_AddStringToObject(root, "status", "pending");
+        cJSON_AddStringToObject(root, "claim_id", id);
+        cJSON_AddNumberToObject(root, "expires_in_s", static_cast<double>(auth::kClaimWindowUs) / 1e6);
+    }
+    return send_json_response(req, {root, 202});
 }
 
 esp_err_t p_auth_login_handler(httpd_req_t* req, void* arg)

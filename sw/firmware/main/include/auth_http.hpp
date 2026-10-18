@@ -25,7 +25,8 @@ inline Http httpFor(Result r)
     case Result::Unavailable: return {503, "AUTH_UNAVAILABLE", "Access control is not available"};
     case Result::NotClaimed: return {403, "NOT_CLAIMED", "Device has no PIN yet, claim it first"};
     case Result::AlreadyClaimed: return {409, "ALREADY_CLAIMED", "Device already has a PIN"};
-    case Result::ButtonRequired: return {403, "BUTTON_REQUIRED", "Press the BOOT button on the device, then retry within 60 s"};
+    case Result::ButtonRequired: return {403, "BUTTON_REQUIRED", "The BOOT button is not available, so a claim cannot be confirmed"};
+    case Result::ClaimConflict: return {409, "CLAIM_CONFLICT", "Another claim was pending, both were cancelled, try again"};
     case Result::BadFormat: return {422, "BAD_PIN_FORMAT", "PIN must be exactly 6 digits"};
     case Result::BadPin: return {401, "BAD_PIN", "Wrong PIN"};
     case Result::Backoff: return {429, "LOGIN_BACKOFF", "Too many wrong PINs, wait before retrying"};

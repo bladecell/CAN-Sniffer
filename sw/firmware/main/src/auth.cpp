@@ -23,6 +23,7 @@ constexpr TickType_t  kOpWait       = pdMS_TO_TICKS(3000);
 portMUX_TYPE      s_spin = portMUX_INITIALIZER_UNLOCKED;
 SemaphoreHandle_t s_op   = nullptr;  // serialises claim, login, change PIN and recovery
 bool              s_up   = false;
+bool              s_buttonOk = false;  // the hold hook is registered, so the button driver is running
 
 void lockFast()
 {
@@ -96,8 +97,13 @@ bool eraseRecord()
   return err == ESP_OK;
 }
 
+int64_t nowUs()
+{
+  return esp_timer_get_time();
+}
+
 const auth::Platform kPlatform{deriveKey, fillRandom, saveRecord, eraseRecord, lockFast, unlockFast,
-                               auth_service::kPbkdf2Iterations};
+                               auth_service::kPbkdf2Iterations, nowUs};
 auth::AuthCore       s_core(kPlatform);
 
 // Reads the stored record. A missing namespace or key is a device nobody has claimed; anything unreadable or malformed
@@ -155,11 +161,6 @@ struct OpLock
   OpLock& operator=(const OpLock&) = delete;
 };
 
-int64_t nowUs()
-{
-  return esp_timer_get_time();
-}
-
 // Runs on the button task after BOOT was held for button_hold_us().
 void onHold(void*)
 {
@@ -193,9 +194,10 @@ esp_err_t start()
   const auth::State st = loadRecord(&rec);
   s_core.load(st, &rec);
   const esp_err_t hook = button_set_hold_hook(onHold, nullptr);
-  if (hook != ESP_OK)
+  s_buttonOk = hook == ESP_OK;
+  if (!s_buttonOk)
   {
-    ESP_LOGW(TAG, "no BOOT hold recovery (%s)", esp_err_to_name(hook));
+    ESP_LOGW(TAG, "no BOOT button (%s): claim and hold recovery unavailable", esp_err_to_name(hook));
   }
   s_up = true;
   ESP_LOGI(TAG, "access control up: %s", st == auth::State::Claimed ? "claimed"
@@ -228,23 +230,53 @@ auth::Result requireAdmin(const char* bearer)
 
 StatusView status(const char* bearer)
 {
+  const bool authed = s_up && s_core.check(bearer, nowUs()) == auth::Result::Ok;
+  // An unclaimed device may have a claim waiting for its press: looking at it commits it, so serialise like a claim.
+  OpLock lock;
+  if (!lock.ok && s_core.state() == auth::State::Unclaimed)
+  {
+    return {auth::State::Unclaimed, authed, 0, false, 0};
+  }
   const auth::AuthCore::Status s = s_core.status(button_last_press_us(), nowUs());
-  return {s.state, s_up && s_core.check(bearer, nowUs()) == auth::Result::Ok, s.claimWindowS, s.retryAfterS};
+  return {s.state, authed, s.retryAfterS, s.pending, s.pendingExpiresS};
 }
 
-auth::Result claim(const char* pin, size_t len, char* tokenOut)
+auth::Result claimPost(const char* pin, size_t len, char* idOut)
 {
   OpLock lock;
   if (!lock.ok || !s_up)
   {
     return auth::Result::Unavailable;
   }
-  const auth::Result r = s_core.claim(pin, len, button_last_press_us(), nowUs(), tokenOut);
+  if (!s_buttonOk)
+  {
+    return auth::Result::ButtonRequired;
+  }
+  const auth::Result r = s_core.claimPost(pin, len, button_last_press_us(), nowUs(), idOut);
   if (r == auth::Result::Ok)
+  {
+    ESP_LOGI(TAG, "claim parked, waiting for a BOOT press");
+  }
+  else if (r == auth::Result::ClaimConflict)
+  {
+    ESP_LOGW(TAG, "two claims at once: both cancelled");
+  }
+  return r;
+}
+
+auth::ClaimView claimStatus(const char* id)
+{
+  OpLock lock;
+  if (!lock.ok || !s_up)
+  {
+    return {auth::ClaimStatus::Unknown, 0, false, {}};
+  }
+  const auth::ClaimView v = s_core.claimStatus(id, button_last_press_us(), nowUs());
+  if (v.status == auth::ClaimStatus::Committed && v.hasToken)
   {
     ESP_LOGI(TAG, "device claimed");
   }
-  return r;
+  return v;
 }
 
 auth::Result login(const char* pin, size_t len, char* tokenOut, uint32_t* retryS)

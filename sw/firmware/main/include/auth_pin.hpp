@@ -34,6 +34,18 @@ inline bool isValidPin(const char* pin, size_t len)
   return true;
 }
 
+// Lower-case hex of n bytes into out[2n + 1].
+inline void hexEncode(const uint8_t* in, size_t n, char* out)
+{
+  static const char hex[] = "0123456789abcdef";
+  for (size_t i = 0; i < n; i++)
+  {
+    out[2 * i]     = hex[in[i] >> 4];
+    out[2 * i + 1] = hex[in[i] & 0xF];
+  }
+  out[2 * n] = '\0';
+}
+
 // Compares n bytes without an early exit.
 inline bool constantTimeEq(const uint8_t* a, const uint8_t* b, size_t n)
 {
