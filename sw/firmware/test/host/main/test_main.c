@@ -28,6 +28,7 @@ void run_auth_core_tests(void);
 void run_wifi_scan_tests(void);
 void run_settings_patch_tests(void);
 void run_obd2_patch_tests(void);
+void run_json_budget_tests(void);
 
 /* The linux IDF port starts FreeRTOS and calls app_main(); exit with the failure count. */
 void app_main(void)
@@ -60,5 +61,6 @@ void app_main(void)
     run_wifi_scan_tests();
     run_settings_patch_tests();
     run_obd2_patch_tests();
+    run_json_budget_tests();
     exit(UNITY_END() == 0 ? 0 : 1);
 }

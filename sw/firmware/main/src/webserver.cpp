@@ -22,6 +22,7 @@
 #include "cJSON.h"
 #include "esp_check.h"
 #include "esp_err.h"
+#include "esp_heap_caps.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -33,6 +34,7 @@
 #include "http_parse.hpp"
 #include "http_parser.h"
 #include "input_limits.hpp"
+#include "json_budget.hpp"
 #include "middleware.hpp"
 #include "obd2_patch.hpp"
 #include "obd2.hpp"
@@ -567,6 +569,22 @@ cJSON* get_validated_json_payload(httpd_req_t* req, size_t max_size, int64_t dea
         return nullptr;
     }
     buf[total_len] = '\0';
+
+    // A byte cap does not bound cJSON's node allocations (HEAP-1): refuse before parsing.
+    const json_budget::Verdict budget = json_budget::check(buf, total_len, heap_caps_get_free_size(MALLOC_CAP_8BIT));
+    if (budget != json_budget::Verdict::Ok)
+    {
+        free(buf);
+        if (budget == json_budget::Verdict::NoMemory)
+        {
+            AsyncWebServer::sendError(req, 503, json_budget::reason(budget));
+        }
+        else
+        {
+            AsyncWebServer::sendError(req, 400, json_budget::reason(budget), http_error::kBadJson);
+        }
+        return nullptr;
+    }
 
     const char* parse_end = nullptr;
     cJSON*      root      = cJSON_ParseWithLengthOpts(buf, total_len, &parse_end, 0);

@@ -15,6 +15,7 @@
 #include "can_driver.hpp"
 #include "error_policy.hpp"
 #include "esp_attr.h"
+#include "esp_heap_caps.h"
 #include "esp_err.h"
 #include "esp_littlefs.h"
 #include "esp_log.h"
@@ -23,6 +24,7 @@
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "input_limits.hpp"
+#include "json_budget.hpp"
 #include "led_status.hpp"
 #include "middleware.hpp"
 #include "obd2.hpp"
@@ -987,6 +989,14 @@ esp_err_t SUPERVISOR::load_pid_def_from_json(const char* path)
     }
 
     buffer[bytes_read] = '\0';
+
+    const json_budget::Verdict budget = json_budget::check(buffer, bytes_read, heap_caps_get_free_size(MALLOC_CAP_8BIT));
+    if (budget != json_budget::Verdict::Ok)
+    {
+        ESP_LOGE(TAG, "PID file %s not parsed: %s", path, json_budget::reason(budget));
+        free(buffer);
+        return budget == json_budget::Verdict::NoMemory ? ESP_ERR_NO_MEM : ESP_ERR_INVALID_ARG;
+    }
 
     const char* parse_end = nullptr;
     cJSON* rootArray = cJSON_ParseWithLengthOpts(buffer, bytes_read, &parse_end, 0);
