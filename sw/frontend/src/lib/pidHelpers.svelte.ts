@@ -1,18 +1,19 @@
-import { canStore } from "$lib/canStore.svelte";
 import type { PidDataMetrics } from "$lib/types";
 import { safeHexColor } from "$lib/color";
+import { connectionStore } from "./connectionStore.svelte";
+import { vehicleStore } from "./vehicleStore.svelte";
 /**
  * Reactive selector that extracts both static configurations and runtime 
- * stream data for a given PID from the global canStore.
+ * stream data for a given PID from the global connectionStore.
  */
 export function usePidData(getPid: () => number): PidDataMetrics {
   // Invoke getPid() inside the derived macro so it registers as a dependency
   const definition = $derived(
-    canStore.pidDefinitions?.find((c) => c.pid === getPid())
+    vehicleStore.pidDefinitions?.find((c) => c.pid === getPid())
   );
 
   // Track the runtime stream dynamically using the evaluated PID
-  const runtime = $derived(canStore.pids.get(getPid()));
+  const runtime = $derived(connectionStore.pids.get(getPid()));
 
   return {
     get label() { return definition?.name ?? "Metric"; },

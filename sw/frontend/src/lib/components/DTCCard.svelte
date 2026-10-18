@@ -1,6 +1,7 @@
 <script lang="ts">
+import { vehicleStore } from "$lib/vehicleStore.svelte";
+
   import type { HTMLAttributes } from "svelte/elements";
-  import { canStore } from "$lib/canStore.svelte";
   import type { SpecialGridItem, DtcModeData } from "$lib/types";
   import Icon from "../Icon.svelte";
 
@@ -12,13 +13,13 @@
 
   // --- RELIABLE NESTED EXTRACTION RIG ---
   const confirmedCodes = $derived(
-    canStore?.dtc?.confirmed || {},
+    vehicleStore.dtc?.confirmed || {},
   ) as DtcModeData;
 
-  const pendingCodes = $derived(canStore?.dtc?.pending || {}) as DtcModeData;
+  const pendingCodes = $derived(vehicleStore.dtc?.pending || {}) as DtcModeData;
 
   const permanentCodes = $derived(
-    canStore?.dtc?.permanent || {},
+    vehicleStore.dtc?.permanent || {},
   ) as DtcModeData;
 
   // --- SEVERITY, ICONS & STATUS RUNES ---

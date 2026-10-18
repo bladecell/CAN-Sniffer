@@ -1,7 +1,7 @@
-// Car battery history, kept outside canStore. Samples canStore.wsCanStatus once per 0x03 frame (1 Hz)
+import { connectionStore } from "./connectionStore.svelte";
+// Car battery history, kept outside connectionStore. Samples connectionStore.wsCanStatus once per 0x03 frame (1 Hz)
 // into one bounded chartBuffer. The buffer is not a PID, so it has no PID id: it is a single shared buffer.
 import { untrack } from "svelte";
-import { canStore } from "./canStore.svelte";
 import { createChartBuffer, type ChartSnapshot } from "./chartBuffer";
 import { createPacer, CHART_REDRAW_MS } from "./chartPacer";
 import { chartSampleTime, sanitizeVoltage } from "./carBattery";
@@ -41,9 +41,9 @@ class CarBatteryFeed {
     // The status object is replaced by every 0x03 frame and mutated in place on disconnect. Only the
     // reference is tracked; the fields are read untracked, so an in-place change adds no sample.
     // The first run sees the object that was current at attach, which is not a new frame.
-    const initial = untrack(() => canStore.wsCanStatus);
+    const initial = untrack(() => connectionStore.wsCanStatus);
     $effect(() => {
-      const status = canStore.wsCanStatus;
+      const status = connectionStore.wsCanStatus;
       if (status === initial) return;
       untrack(() => {
         const now = Date.now();

@@ -1,5 +1,6 @@
+import { connectionStore } from "./connectionStore.svelte";
 // Car battery (12 V) status rules shared by every visualization mode. Pure, no DOM.
-// Source: ESP ADC battery_voltage in WS frame 0x03 (docs/api.md), read through canStore.wsCanStatus.
+// Source: ESP ADC battery_voltage in WS frame 0x03 (docs/api.md), read through connectionStore.wsCanStatus.
 
 /** Display scale for the glyph, bar, gauge and chart. */
 export const BATTERY_SCALE_MIN_V = 9.5;

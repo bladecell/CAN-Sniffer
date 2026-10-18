@@ -66,4 +66,16 @@ describe("chart history", () => {
     await wait(250);
     expect(calls).toBe(2);
   });
+
+  test("replacing a PID definition starts a fresh in-memory history", async () => {
+    const h = harness([def(6)]);
+    const sizes: number[] = [];
+    h.history.subscribe(6, (buffer) => sizes.push(buffer.size));
+    h.send(6, 1, 100);
+    await wait(220);
+    h.setDefinitions([{ ...def(6), name: "replacement" } as PidDefinition]);
+    h.send(6, 2, 200);
+    await wait(220);
+    expect(sizes).toEqual([0, 1, 1]);
+  });
 });

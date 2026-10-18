@@ -1,9 +1,11 @@
 <script lang="ts">
-  import { canStore } from "$lib/canStore.svelte";
+import { vehicleStore } from "$lib/vehicleStore.svelte";
+
+
   import { alertStore } from "$lib/alertStore.svelte";
   import { telemetryStore } from "$lib/telemetryStore.svelte";
-  import { parseJsonResponse, sdCardFileEndpoint } from "$lib/api";
-  import { auth } from "$lib/auth.svelte";
+  import { parseJsonResponse } from "$lib/api";
+  import { firmwareApi } from "$lib/firmwareApi.svelte";
   import FileTree from "./FileTree.svelte";
   import { dialogFocus } from "$lib/dialogFocus";
   import type { SdTreeNode } from "$lib/types";
@@ -20,7 +22,7 @@
   let fetchingFile = $state(false);
 
   $effect(() => {
-    if (isOpen && canStore.sdInfo?.is_mounted) {
+    if (isOpen && vehicleStore.sdInfo?.is_mounted) {
       loadTree();
     }
   });
@@ -28,7 +30,7 @@
   async function loadTree() {
     loadingTree = true;
     try {
-      const response = await auth.gatedFetch("/api/v1/sd_card/tree");
+      const response = await firmwareApi.sdTree();
       tree = await parseJsonResponse(response);
     } catch (e) {
       const reason = e instanceof Error ? `: ${e.message}` : "";
@@ -46,9 +48,7 @@
 
     fetchingFile = true;
     try {
-      const endpoint = sdCardFileEndpoint(path);
-      console.log("Fetching SD card file from:", endpoint);
-      const response = await auth.gatedFetch(endpoint);
+      const response = await firmwareApi.downloadSdFile(path);
       if (!response.ok) {
         console.error("HTTP error:", response.status, response.statusText);
         throw new Error("HTTP " + response.status);
@@ -101,7 +101,7 @@
         class="modal-form-body"
         style="max-height: 60vh; overflow-y: auto; padding: 24px;"
       >
-        {#if !canStore.sdInfo?.is_mounted}
+        {#if !vehicleStore.sdInfo?.is_mounted}
           <div class="alert-box warning">
             SD Card is not mounted or present.
           </div>

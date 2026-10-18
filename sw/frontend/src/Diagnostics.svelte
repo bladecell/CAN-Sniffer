@@ -1,18 +1,20 @@
 <script lang="ts">
+import { vehicleStore } from "$lib/vehicleStore.svelte";
+
+
   import type { DtcModeData, DTCFaultProps, singleDtc } from "$lib/types";
   import { onDestroy } from "svelte";
-  import { canStore } from "./lib/canStore.svelte";
   import DTCFault from "./lib/components/DTCFault.svelte";
   import Icon from "$lib/Icon.svelte";
 
   const confirmedCodes = $derived(
-    canStore?.dtc?.confirmed || {},
+    vehicleStore.dtc?.confirmed || {},
   ) as DtcModeData;
 
-  const pendingCodes = $derived(canStore?.dtc?.pending || {}) as DtcModeData;
+  const pendingCodes = $derived(vehicleStore.dtc?.pending || {}) as DtcModeData;
 
   const permanentCodes = $derived(
-    canStore?.dtc?.permanent || {},
+    vehicleStore.dtc?.permanent || {},
   ) as DtcModeData;
 
   const activeFaults = $derived.by((): DTCFaultProps[] => {
@@ -37,9 +39,9 @@
     return [...confirmed, ...pending, ...permanent];
   });
 
-  onDestroy(canStore.cancelClearDTCs);
+  onDestroy(vehicleStore.cancelClearDTCs);
 
-  const armed = $derived(canStore.clearState.kind === "armed");
+  const armed = $derived(vehicleStore.clearState.kind === "armed");
 
   const status = $derived.by((): "healthy" | "warn" | "malfunction" => {
     if (confirmedCodes.dtc_count > 0) return "malfunction";
@@ -80,7 +82,7 @@ is detected
     <button
       type="button"
       class="btn btn-scan"
-      onclick={() => canStore.requestDTC()}
+      onclick={() => vehicleStore.requestDTC()}
     >
       <Icon name="magnifying-glass" size={16} />
       Scan Vehicle
@@ -89,14 +91,14 @@ is detected
       type="button"
       class="btn btn-clear"
       class:armed
-      onclick={canStore.pressClearDTCs}
-      onblur={canStore.cancelClearDTCs}
+      onclick={vehicleStore.pressClearDTCs}
+      onblur={vehicleStore.cancelClearDTCs}
       onkeydown={(e) => {
-        if (e.key === "Escape") canStore.cancelClearDTCs();
+        if (e.key === "Escape") vehicleStore.cancelClearDTCs();
         // A held Enter would fire repeated clicks: swallow them.
         else if (e.repeat) e.preventDefault();
       }}
-      aria-disabled={canStore.isClearing}
+      aria-disabled={vehicleStore.isClearing}
     >
       <Icon name="trash" size={16} />
       {armed ? "Confirm" : "Clear Codes"}

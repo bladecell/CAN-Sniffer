@@ -1,6 +1,9 @@
 <script lang="ts">
+import { connectionStore } from "$lib/connectionStore.svelte";
+import { vehicleStore } from "$lib/vehicleStore.svelte";
+
+
   import type { HTMLAttributes } from "svelte/elements";
-  import { canStore } from "$lib/canStore.svelte";
   import { safeHexColor } from "$lib/color";
   import { usePidData } from "$lib/pidHelpers.svelte.ts";
   import type { OverviewGridItem, DtcModeData } from "$lib/types";
@@ -11,18 +14,18 @@
 
   let { item, ...rest }: Props = $props();
 
-  const vin = $derived(canStore.vin || "--- UNKNOWN ---");
+  const vin = $derived(vehicleStore.vin || "--- UNKNOWN ---");
   const battery = $derived(
-    canStore.wsCanStatus?.battery_voltage.toFixed(1) || "0.0",
+    connectionStore.wsCanStatus?.battery_voltage.toFixed(1) || "0.0",
   );
-  const isOnline = $derived(canStore.wsCanStatus?.state === "CAN Connected");
+  const isOnline = $derived(connectionStore.wsCanStatus?.state === "CAN Connected");
   const state = $derived(
-    canStore.connected
-      ? canStore.wsCanStatus?.state || "Disconnected"
+    connectionStore.connected
+      ? connectionStore.wsCanStatus?.state || "Disconnected"
       : "Device not connected",
   );
-  const utilization = $derived(canStore.wsCanStatus?.utilization ?? 0);
-  const dtcCount = $derived(canStore.totalDTCs ?? 0);
+  const utilization = $derived(connectionStore.wsCanStatus?.utilization ?? 0);
+  const dtcCount = $derived(vehicleStore.totalDTCs ?? 0);
 
   const statusColor = $derived(
     isOnline ? "var(--pico-ins-color)" : "var(--pico-del-color)",

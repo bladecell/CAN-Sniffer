@@ -1,4 +1,7 @@
 <script lang="ts">
+import { vehicleStore } from "$lib/vehicleStore.svelte";
+
+
   import { untrack } from "svelte";
   import { safeHexColor } from "$lib/color";
   import {
@@ -14,7 +17,6 @@
   import { scaleTime, scaleLinear } from "d3-scale";
   import { chartHistoryStore } from "$lib/chartHistoryStore";
   import { chartSyncStore } from "$lib/chartSyncStore.svelte";
-  import { canStore } from "$lib/canStore.svelte.ts";
   import Icon from "$lib/Icon.svelte";
 
   interface Props {
@@ -46,7 +48,7 @@
   });
 
   let defByPid = $derived(
-    new Map(canStore.pidDefinitions.map((d) => [d.pid, d])),
+    new Map(vehicleStore.pidDefinitions.map((d) => [d.pid, d])),
   );
 
   let flatChartData = $derived(pids.flatMap((pid) => chartDataMap[pid] ?? []));

@@ -1,4 +1,8 @@
 <script lang="ts">
+import { connectionStore } from "$lib/connectionStore.svelte";
+import { vehicleStore } from "$lib/vehicleStore.svelte";
+
+
   import { dndzone, SOURCES, TRIGGERS, type DndEvent } from "svelte-dnd-action";
   import { flip } from "svelte/animate";
   import { fade } from "svelte/transition";
@@ -8,7 +12,6 @@
 
   import { dashboardStore } from "$lib/dashboardStore.svelte.ts";
   import { createResizeHandler } from "$lib/resizeLogic.svelte";
-  import { canStore } from "$lib/canStore.svelte";
   import type { DashboardItem } from "$lib/types";
 
   const DESKTOP_COLS = 60;
@@ -137,7 +140,7 @@
   }
 
   // Ref-counted: the stream stays on while any view needs it.
-  $effect(() => canStore.acquireStream());
+  $effect(() => connectionStore.acquireStream());
 </script>
 
 <svelte:window
@@ -232,16 +235,16 @@
 {#if isBgMenuOpen}
   <div class="bg-context-menu" style="top: {bgMenu.y}px; left: {bgMenu.x}px;">
     <button
-      class={canStore.obd2Status?.auto_poll
+      class={vehicleStore.obd2Status?.auto_poll
         ? "stop-action"
         : "start-action"}
       onclick={() => {
-        const state = canStore.obd2Status?.auto_poll ?? false;
-        canStore.setAutoPoll(!state);
+        const state = vehicleStore.obd2Status?.auto_poll ?? false;
+        vehicleStore.setAutoPoll(!state);
         dashboardStore.activeMenuId = null;
       }}
     >
-      {canStore.obd2Status?.auto_poll
+      {vehicleStore.obd2Status?.auto_poll
         ? "Stop auto poll"
         : "Start auto poll"}
     </button>

@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { canStore } from "$lib/canStore.svelte";
+import { vehicleStore } from "$lib/vehicleStore.svelte";
+
+
   import TelemetryStepper from "./TelemetryStepper.svelte";
   import type {
     DashboardItem,
@@ -104,7 +106,7 @@
     // Resets the entire item structure when the classification changes
     if (localItem.cardType === "pid") {
       const pidItem = localItem as PidGridItem;
-      pidItem.pid = canStore.pidDefinitions[0]?.pid || 0;
+      pidItem.pid = vehicleStore.pidDefinitions[0]?.pid || 0;
       pidItem.displayMode = "card";
     } else if (localItem.cardType === "overview") {
       const overItem = localItem as OverviewGridItem;
@@ -229,7 +231,7 @@
               bind:value={pidItem.pid}
               class="orange-select-field"
             >
-              {#each canStore.pidDefinitions as definition}
+              {#each vehicleStore.pidDefinitions as definition}
                 <option value={definition.pid}>
                   0x{definition.pid.toString(16).toUpperCase()} — {definition.name}
                 </option>
@@ -319,7 +321,7 @@
                     bind:value={overItem.pids[idx]}
                     class="orange-select-field compact"
                   >
-                    {#each canStore.pidDefinitions as definition}
+                    {#each vehicleStore.pidDefinitions as definition}
                       <option value={definition.pid}>
                         {definition.name}
                       </option>

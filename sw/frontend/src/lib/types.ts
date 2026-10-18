@@ -103,6 +103,7 @@ export interface WsCanStatus {
 
 /** `GET /system`. `state` is the supervisor enum (docs/api.md). */
 export interface SystemStatus {
+  api_version: number;
   app_version: string;
   uptime_s: number;
   restart_reason: string;
@@ -114,6 +115,24 @@ export interface SystemStatus {
   heap_free: number;
   heap_min_free: number;
   tasks: TaskStack[];
+}
+
+/** Wire response of GET /pid_def; optional bounds are serialized as null when unset. */
+export interface PidDefinitionWire {
+  pid: number;
+  mode: number;
+  id: number;
+  length: number;
+  name: string;
+  unit: string;
+  description: string;
+  minValue: number | null;
+  maxValue: number | null;
+  priority: number;
+  update_interval_ms: number;
+  color: number;
+  icon: string;
+  formula: string;
 }
 
 export interface TaskStack {

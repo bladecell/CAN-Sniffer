@@ -1,10 +1,12 @@
 <script lang="ts">
+import { connectionStore } from "$lib/connectionStore.svelte";
+
+
   import type { HTMLAttributes } from "svelte/elements";
   import Icon from "$lib/Icon.svelte";
   import GaugeDial from "./GaugeDial.svelte";
   import ValueBar from "./ValueBar.svelte";
   import CarBatteryChart from "./CarBatteryChart.svelte";
-  import { canStore } from "$lib/canStore.svelte";
   import { carBatteryFeed } from "$lib/carBatteryFeed.svelte";
   import {
     batteryReading,
@@ -36,11 +38,11 @@
 
   const reading = $derived(
     batteryReading({
-      volts: canStore.wsCanStatus.battery_voltage,
+      volts: connectionStore.wsCanStatus.battery_voltage,
       frameAt: carBatteryFeed.frameAt,
       now,
-      wsConnected: canStore.connected,
-      busUp: canStore.wsCanStatus.state === "CAN Connected",
+      wsConnected: connectionStore.connected,
+      busUp: connectionStore.wsCanStatus.state === "CAN Connected",
     }),
   );
   const color = $derived(BATTERY_COLOR[reading.state]);

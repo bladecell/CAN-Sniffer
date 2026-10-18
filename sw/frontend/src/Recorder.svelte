@@ -1,10 +1,14 @@
 <script lang="ts">
-  import { canStore } from "$lib/canStore.svelte";
+import { connectionStore } from "$lib/connectionStore.svelte";
+import { vehicleStore } from "$lib/vehicleStore.svelte";
+import { recordingStore } from "$lib/recordingStore.svelte";
+
+
   import Icon from "$lib/Icon.svelte";
   import Switch from "$lib/components/Switch.svelte";
 
   let statusColor = "oklch(1 0 0)";
-  let isRecording = $derived(canStore.isRecording);
+  let isRecording = $derived(recordingStore.isRecording);
 </script>
 
 <div
@@ -20,7 +24,7 @@
     <button
       type="button"
       class="btn btn-record"
-      onclick={() => (canStore.isRecording = !canStore.isRecording)}
+      onclick={() => (recordingStore.isRecording = !recordingStore.isRecording)}
     >
       <Icon name={isRecording ? "square" : "circle-solid"} size={16} />
       {isRecording ? "Stop Recording" : "Record"}
@@ -39,7 +43,7 @@
       <Switch
         label="Auto Record"
         subLabel="Start recording when car is started"
-        disabled={canStore.wsCanStatus?.state != "CAN Connected"}
+        disabled={connectionStore.wsCanStatus?.state != "CAN Connected"}
       />
     </div>
 
@@ -47,11 +51,11 @@
       <Switch
         label="Auto poll"
         subLabel="Keep polling the car and resume after ignition off/on"
-        checked={canStore.obd2Status?.auto_poll}
+        checked={vehicleStore.obd2Status?.auto_poll}
         onchange={(newState: boolean) => {
-          canStore.setAutoPoll(newState);
+          vehicleStore.setAutoPoll(newState);
         }}
-        disabled={canStore.wsCanStatus?.state != "CAN Connected"}
+        disabled={connectionStore.wsCanStatus?.state != "CAN Connected"}
       />
     </div>
   </div>

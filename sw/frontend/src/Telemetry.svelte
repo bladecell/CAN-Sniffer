@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { canStore } from "$lib/canStore.svelte";
+import { connectionStore } from "$lib/connectionStore.svelte";
+import { vehicleStore } from "$lib/vehicleStore.svelte";
+
+
   import { safeHexColor } from "$lib/color";
   import SDCardImportModal from "$lib/components/SDCardImportModal.svelte";
   import { alertStore } from "$lib/alertStore.svelte";
@@ -65,12 +68,12 @@
   });
 
   // Ref-counted: the stream stays on while any view needs it.
-  $effect(() => canStore.acquireStream());
+  $effect(() => connectionStore.acquireStream());
 
   let showSdImportModal = $state(false);
 
   function handleExport() {
-    const definitions = canStore.pidDefinitions;
+    const definitions = vehicleStore.pidDefinitions;
     const blob = new Blob([JSON.stringify(definitions, null, 2)], {
       type: "application/json",
     });
@@ -85,8 +88,8 @@
   }
 
   async function handleImport() {
-    await canStore.requestSDInfo();
-    if (!canStore.sdInfo?.is_mounted) {
+    await vehicleStore.requestSDInfo();
+    if (!vehicleStore.sdInfo?.is_mounted) {
       alertStore.add("SD Card is not mounted or present.", "warning");
       return;
     }
@@ -246,13 +249,13 @@
             <div class="status-subtitle">
               <span class="label">Loaded PIDs:</span>
               <span class="value"
-                >{canStore.obd2Status?.pid_def_count ?? 0}</span
+                >{vehicleStore.obd2Status?.pid_def_count ?? 0}</span
               >
             </div>
             <div class="status-subtitle">
               <span class="label">Supported PIDs:</span>
               <span class="value"
-                >{canStore.obd2Status?.supported_pids.count ?? 0}</span
+                >{vehicleStore.obd2Status?.supported_pids.count ?? 0}</span
               >
             </div>
             <div class="status-subtitle">
@@ -272,7 +275,7 @@
                   (row) =>
                     row.loaded && !pidsToRemove.has(parseInt(row.pid, 16)),
                 );
-                await canStore.replacePids(desiredRows);
+                await vehicleStore.replacePids(desiredRows);
               }}
             >
               Remove {selectedCount > 0 ? selectedCount : ""} Selected
@@ -281,7 +284,7 @@
               class="btn btn-save"
               disabled={updateButtonDisabled}
               onclick={async () => {
-                await canStore.updatePids(telemetryStore.local_piddef);
+                await vehicleStore.updatePids(telemetryStore.local_piddef);
               }}
             >
               {updateButtonText}
@@ -289,7 +292,7 @@
             <button
               class="btn btn-save"
               onclick={async () => {
-                await canStore.savePids(telemetryStore.local_piddef);
+                await vehicleStore.savePids(telemetryStore.local_piddef);
               }}
               title="Save current PID map to ESP filesystem"
             >

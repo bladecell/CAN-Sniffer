@@ -4,8 +4,8 @@
   import Icon from "$lib/Icon.svelte";
   import type { SdTreeNode } from "$lib/types";
   import { nodeKey } from "$lib/sdTree";
-  import { parseJsonResponse, parseJsonResponseAllowEmpty, sdCardFileEndpoint } from "$lib/api";
-  import { auth } from "$lib/auth.svelte";
+import { parseJsonResponse, parseJsonResponseAllowEmpty } from "$lib/api";
+import { firmwareApi } from "$lib/firmwareApi.svelte";
 
   const errorMessage = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
@@ -50,8 +50,7 @@
     confirmDeletePath = null;
 
     try {
-      const endpoint = sdCardFileEndpoint(path, isFolder);
-      const response = await auth.gatedFetch(endpoint, { method: "DELETE" });
+      const response = await firmwareApi.deleteSdFile(path, isFolder);
       await parseJsonResponseAllowEmpty(response);
       
       alertStore.add(`Successfully deleted ${path}`, "success");
@@ -94,8 +93,7 @@
       if (!base.startsWith("/")) base = "/" + base;
       if (!base.endsWith("/")) base += "/";
       
-      const endpoint = sdCardFileEndpoint(base + name, true);
-      const response = await auth.gatedFetch(endpoint, { method: "PUT", body: "" });
+      const response = await firmwareApi.createSdDirectory(base + name);
       await parseJsonResponse(response);
       
       alertStore.add(`Folder created successfully`, "success");
@@ -136,15 +134,7 @@
     try {
       const folder = uploadTargetFolder.endsWith("/") ? uploadTargetFolder : uploadTargetFolder + "/";
       const fullPath = folder + file.name;
-      const endpoint = sdCardFileEndpoint(fullPath);
-      
-      const response = await auth.gatedFetch(endpoint, {
-        method: "PUT",
-        body: file,
-        headers: {
-          "Content-Type": "application/octet-stream"
-        }
-      });
+      const response = await firmwareApi.uploadSdFile(fullPath, file);
       
       await parseJsonResponse(response);
       

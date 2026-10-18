@@ -1,6 +1,9 @@
 <script lang="ts">
+import { connectionStore } from "$lib/connectionStore.svelte";
+import { vehicleStore } from "$lib/vehicleStore.svelte";
+
+
   import DashboardCardWrapper from "$lib/components/DashboardCardWrapper.svelte";
-  import { canStore } from "./lib/canStore.svelte";
   import { untrack, onMount } from "svelte";
   import ControlsCard from "$lib/components/ControlsCard.svelte";
   import type { Column, PidDefinition } from "$lib/types";
@@ -22,7 +25,7 @@
   }
 
   onMount(async () => {
-    await canStore.getDTC();
+    await vehicleStore.getDTC();
   });
 
   let item = $state();
@@ -33,7 +36,7 @@
   let displayMode = $state("card");
 
   $effect(() => {
-    const pids = canStore.pidDefinitions;
+    const pids = vehicleStore.pidDefinitions;
     if (pids?.length > 0) {
       untrack(() => {
         item = createCardFromPID(pids[0]);
@@ -52,9 +55,9 @@
   }
 
   // Ref-counted: the stream stays on while any view needs it.
-  $effect(() => canStore.acquireStream());
+  $effect(() => connectionStore.acquireStream());
 
-  const pidData1 = $derived(canStore.pids.get(4));
+  const pidData1 = $derived(connectionStore.pids.get(4));
   const currentValue1 = $derived(pidData1?.value ?? 0);
   const timestamp1 = $derived(pidData1?.lastUpdated ?? 0);
 

@@ -28,7 +28,14 @@ export function createChartHistory(source: ChartHistorySource, clock: PacerClock
     const defs = source.definitions();
     if (defs !== defsRef) {
       defsRef = defs;
-      defByPid = new Map(defs.map((d) => [d.pid, d]));
+      const next = new Map(defs.map((d) => [d.pid, d]));
+      for (const [oldPid, oldDef] of defByPid) {
+        if (next.get(oldPid) !== oldDef) buffers.delete(oldPid);
+      }
+      for (const oldPid of buffers.keys()) {
+        if (!next.has(oldPid)) buffers.delete(oldPid);
+      }
+      defByPid = next;
     }
     return defByPid.get(pid);
   }

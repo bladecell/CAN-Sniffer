@@ -1,5 +1,4 @@
 import type { Column, PidDefinition } from "$lib/types";
-import { canStore } from "$lib/canStore.svelte";
 import { getModeLabel } from "$lib/pidHelpers.svelte.ts";
 import {
   MAX_PID_FORMULA_LENGTH,
@@ -9,6 +8,8 @@ import {
   MIN_PID_PRIORITY,
 } from "$lib/pidValidation";
 import { isValidHex, isValidName, isValidDescription, isModeValidForPid, isLengthValidForPid, isIdValidForMode, isValidFormula } from "$lib/pidInputRules";
+import { connectionStore } from "./connectionStore.svelte";
+import { vehicleStore } from "./vehicleStore.svelte";
 
 /** A PID object from a file or the SD card: long or short key names, nothing guaranteed. */
 type RawPidDef = Partial<PidDefinition> & { desc?: string; len?: number; minV?: number; maxV?: number; interval?: number };
@@ -17,7 +18,7 @@ export class TelemetryStore {
   constructor() {
     $effect.root(() => {
       $effect(() => {
-        const piddef = canStore.pidDefinitions;
+        const piddef = vehicleStore.pidDefinitions;
         if (piddef && piddef !== this.lastPidDef) {
           this.lastPidDef = piddef;
 
@@ -208,12 +209,12 @@ export function createRowObject(def: PidDefinition, loaded: boolean, selected: b
 
     // Dynamic reactive getters
     get value() {
-      return canStore.pids.get(rawPid)?.value ?? "N/A";
+      return connectionStore.pids.get(rawPid)?.value ?? "N/A";
     },
     get isSupported() {
       return (
-        canStore.obd2Status?.supported_pids.groups.get(rawPid) ??
-        canStore.pids.get(rawPid)?.isSupported ??
+        vehicleStore.obd2Status?.supported_pids.groups.get(rawPid) ??
+        connectionStore.pids.get(rawPid)?.isSupported ??
         false
       );
     },
@@ -224,7 +225,7 @@ export function createRowObject(def: PidDefinition, loaded: boolean, selected: b
       return this.isSupported ? "var(--normal-color)" : "var(--error-color)";
     },
     get isValid() {
-      return canStore.pids.get(rawPid)?.isValid ?? false;
+      return connectionStore.pids.get(rawPid)?.isValid ?? false;
     },
     get validDisplay() {
       return this.isValid ? "Yes" : "No";
@@ -233,7 +234,7 @@ export function createRowObject(def: PidDefinition, loaded: boolean, selected: b
       return this.isValid ? "var(--normal-color)" : "var(--error-color)";
     },
     get isDirty() {
-      const original = canStore.pidDefinitions.find((d) => Number(d.pid) === rawPid);
+      const original = vehicleStore.pidDefinitions.find((d) => Number(d.pid) === rawPid);
       const originalLoaded = !!original;
 
       if (this.loaded !== originalLoaded) return true;

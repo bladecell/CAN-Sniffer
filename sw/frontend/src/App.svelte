@@ -1,4 +1,7 @@
 <script>
+import { connectionStore } from "$lib/connectionStore.svelte";
+
+
   import Navigation from "./Navigation.svelte";
   import Dashboard from "./Dashboard.svelte";
   import Recorder from "./Recorder.svelte";
@@ -6,7 +9,6 @@
   import Diagnostics from "./Diagnostics.svelte";
   import Telemetry from "./Telemetry.svelte";
   import CanLogging from "./CanLogging.svelte";
-  import { canStore } from "$lib/canStore.svelte.ts";
   import { onMount } from "svelte";
   import ToastContainer from "./lib/components/ToastContainer.svelte";
   import AuthDialog from "./lib/components/AuthDialog.svelte";
@@ -15,7 +17,7 @@
   import { auth } from "$lib/auth.svelte";
 
   onMount(() => {
-    canStore.connect();
+    connectionStore.connect();
     auth.refresh();
 
     // 3. Listen for manual URL changes (Back/Forward button)
@@ -26,7 +28,7 @@
     window.addEventListener("hashchange", handleHashChange);
 
     const cleanup = () => {
-      canStore.disconnect();
+      connectionStore.disconnect();
     };
 
     window.addEventListener("beforeunload", cleanup);

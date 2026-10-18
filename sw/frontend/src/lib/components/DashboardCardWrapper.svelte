@@ -1,4 +1,7 @@
 <script lang="ts">
+import { vehicleStore } from "$lib/vehicleStore.svelte";
+
+
   import { onDestroy } from "svelte";
   import { fade } from "svelte/transition";
 
@@ -18,7 +21,6 @@
     BatteryGridItem,
   } from "$lib/types";
   import { dashboardStore } from "$lib/dashboardStore.svelte.ts";
-  import { canStore } from "$lib/canStore.svelte";
 
   interface Props {
     item: DashboardItem;
@@ -176,16 +178,16 @@
         }}>Modify Component</button
       >
       <button
-        class={canStore.obd2Status?.auto_poll
+        class={vehicleStore.obd2Status?.auto_poll
           ? "stop-action"
           : "start-action"}
         onclick={() => {
-          const state = canStore.obd2Status?.auto_poll ?? false;
-          canStore.setAutoPoll(!state);
+          const state = vehicleStore.obd2Status?.auto_poll ?? false;
+          vehicleStore.setAutoPoll(!state);
           dashboardStore.activeMenuId = null;
         }}
       >
-        {canStore.obd2Status?.auto_poll
+        {vehicleStore.obd2Status?.auto_poll
           ? "Stop auto poll"
           : "Start auto poll"}
       </button>
