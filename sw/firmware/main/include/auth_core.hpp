@@ -267,9 +267,10 @@ private:
     {
       r = Result::NotClaimed;
     }
-    else if ((*retryS = backoff_.retryAfterS(ms(nowUs))) != 0)
+    else if (backoff_.retryAfterS(ms(nowUs)) != 0)
     {
-      r = Result::Backoff;  // refused without a key derivation and not counted
+      *retryS = backoff_.retryAfterS(ms(nowUs));
+      r       = Result::Backoff;  // refused without a key derivation and not counted
     }
     else
     {

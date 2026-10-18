@@ -82,7 +82,8 @@ Not deinitialized before sleep, and have no `deinit()`: Settings (NVS), power ma
 - It lives and dies with the web server: initialised at the end of `setup_web_server()`, released in `stop_web_server()`. Every wake that brings the web server back also re-initialises it, and "a press since boot" means a press since that init (`button_last_press_us()` is 0 after init).
 - While idle the button costs nothing: no timer, no polling; the task blocks on a notification and the pin interrupt (both edges) is the only wake-up. It does not hold a PM lock, and the supervisor's `ESP_PM_NO_LIGHT_SLEEP` lock is held while awake anyway.
 - GPIO0 is a strapping pin: holding it low at reset enters download mode. The driver only reads it (input, internal pull-up) and never drives it. A button that is already down when the driver starts (held through a reset or a wake) is ignored until it has been released once, so it can neither open the claim window nor start a recovery hold.
-- The hold gesture (10 s) is wired to PIN recovery by the auth code (`docs/api.md`, Authentication).
+- The hold gesture (10 s) is wired to PIN recovery by `auth_service` (`docs/api.md`, Authentication). `auth_service::stop()` runs in `stop_web_server()` just before `button_deinit()`: it clears the hook (waiting for a running recovery), forgets all sessions and the login backoff, and frees its mutex. The PIN record stays in NVS. So every sleep ends all sessions; after a wake the web server comes back and a login is needed again.
+- Cost: two `esp_timer`-free static objects, one 4 KiB task (blocked), one mutex. A PIN derivation runs only on claim, login and PIN change (about 5000 HMAC iterations, a few hundred ms of CPU at most, never while idle).
 
 ## Design intent (not built)
 Kept from the first draft of this doc. None of it exists in the code.

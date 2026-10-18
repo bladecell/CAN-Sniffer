@@ -10,9 +10,10 @@ struct Route
 {
   const char* uri;
   const char* method;
+  bool        gated;
 };
 
-#define ROUTE_ENTRY(uri, method, handler) {uri, #method},
+#define ROUTE_ENTRY(uri, method, handler, gated) {uri, #method, (gated) != 0},
 const Route kRoutes[] = {API_ROUTES(ROUTE_ENTRY)};
 #undef ROUTE_ENTRY
 constexpr size_t kCount = sizeof(kRoutes) / sizeof(kRoutes[0]);
@@ -70,12 +71,92 @@ void test_commands_and_dtc_are_exact(void)
 
 void test_route_count_matches_docs(void)
 {
-  TEST_ASSERT_EQUAL_UINT32(31, kCount);  // docs/api.md: GET / plus 30 under /api/v1
+  TEST_ASSERT_EQUAL_UINT32(36, kCount);  // docs/api.md: GET / plus 35 under /api/v1
+}
+// The access-control decision (docs/decisions.md 2026-10-18), spelled out. A route is gated if and only if it is listed;
+// adding a route forces a decision here.
+struct GatedRoute
+{
+  const char* method;
+  const char* uri;
+};
+const GatedRoute kGated[] = {
+    {"GET", "/api/v1/settings"},          {"POST", "/api/v1/settings"},
+    {"GET", "/api/v1/sd_card/tree"},      {"GET", "/api/v1/sd_card/tree/*"},
+    {"GET", "/api/v1/sd_card/file/*"},    {"POST", "/api/v1/sd_card/file/*"},
+    {"DELETE", "/api/v1/sd_card/file/*"}, {"POST", "/api/v1/sd_card/format"},
+    {"POST", "/api/v1/system/copy_file"}, {"POST", "/api/v1/system/reboot"},
+    {"POST", "/api/v1/pid_def"},          {"PUT", "/api/v1/pid_def"},
+    {"DELETE", "/api/v1/pid_def/*"},      {"POST", "/api/v1/pid_def/save"},
+    {"POST", "/api/v1/pid_def/load"},     {"POST", "/api/v1/req/clear_dtc"},
+    {"POST", "/api/v1/auth/logout"},      {"PUT", "/api/v1/auth/pin"},
+};
+constexpr size_t kGatedCount = sizeof(kGated) / sizeof(kGated[0]);
+
+bool listedAsGated(const Route& r)
+{
+  for (const GatedRoute& g : kGated)
+  {
+    if (strcmp(g.uri, r.uri) == 0 && strcmp(g.method, r.method) == 0)
+    {
+      return true;
+    }
+  }
+  return false;
+}
+
+void test_gated_set_is_exactly_the_decision(void)
+{
+  size_t gated = 0;
+  for (size_t i = 0; i < kCount; i++)
+  {
+    TEST_ASSERT_EQUAL_MESSAGE(listedAsGated(kRoutes[i]), kRoutes[i].gated, kRoutes[i].uri);
+    gated += kRoutes[i].gated ? 1 : 0;
+  }
+  TEST_ASSERT_EQUAL_UINT32(kGatedCount, gated);  // every listed route exists in the table
+}
+
+void test_open_routes_stay_open(void)
+{
+  // dashboard reads, /req/*, VIN, pid_def/pid_data GET, sd_card/info, auth entry points
+  const char* open[][2] = {{"GET", "/"},
+                           {"GET", "/api/v1/system"},
+                           {"GET", "/api/v1/can_bus"},
+                           {"GET", "/api/v1/obd2"},
+                           {"GET", "/api/v1/vin"},
+                           {"GET", "/api/v1/dtc"},
+                           {"GET", "/api/v1/pid_def"},
+                           {"GET", "/api/v1/pid_def/*"},
+                           {"GET", "/api/v1/pid_data"},
+                           {"GET", "/api/v1/pid_data/*"},
+                           {"GET", "/api/v1/sd_card/info"},
+                           {"POST", "/api/v1/req/vin"},
+                           {"POST", "/api/v1/req/dtc"},
+                           {"POST", "/api/v1/req/auto_poll"},
+                           {"POST", "/api/v1/req/static_pid"},
+                           {"GET", "/api/v1/auth"},
+                           {"POST", "/api/v1/auth/claim"},
+                           {"POST", "/api/v1/auth/login"}};
+  for (const auto& o : open)
+  {
+    bool found = false;
+    for (size_t i = 0; i < kCount; i++)
+    {
+      if (strcmp(kRoutes[i].uri, o[1]) == 0 && strcmp(kRoutes[i].method, o[0]) == 0)
+      {
+        found = true;
+        TEST_ASSERT_FALSE_MESSAGE(kRoutes[i].gated, o[1]);
+      }
+    }
+    TEST_ASSERT_TRUE_MESSAGE(found, o[1]);
+  }
 }
 }  // namespace
 
 extern "C" void run_api_routes_tests(void)
 {
+  RUN_TEST(test_gated_set_is_exactly_the_decision);
+  RUN_TEST(test_open_routes_stay_open);
   RUN_TEST(test_wildcards_only_on_path_parameter_routes);
   RUN_TEST(test_no_duplicate_uri_method_pairs);
   RUN_TEST(test_commands_and_dtc_are_exact);

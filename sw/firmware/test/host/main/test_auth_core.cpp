@@ -4,6 +4,7 @@
 #include <initializer_list>
 
 #include "../../../main/include/auth_core.hpp"
+#include "../../../main/include/auth_http.hpp"
 #include "unity.h"
 
 namespace
@@ -532,10 +533,53 @@ void test_status_reports_window_and_backoff(void)
   TEST_ASSERT_EQUAL_UINT32(0, s.claimWindowS);
   TEST_ASSERT_EQUAL_UINT32(1, s.retryAfterS);
 }
+// ---- HTTP mapping and Authorization parsing -------------------------------------------------------------------
+void test_http_mapping_covers_every_result(void)
+{
+  const Result all[] = {Result::Ok,           Result::Unavailable, Result::NotClaimed, Result::AlreadyClaimed,
+                        Result::ButtonRequired, Result::BadFormat, Result::BadPin,     Result::Backoff,
+                        Result::Unauthorized, Result::Internal};
+  for (Result r : all)
+  {
+    const Http h = httpFor(r);
+    TEST_ASSERT_TRUE(h.status >= 200 && h.status < 600);
+    TEST_ASSERT_TRUE(h.code != nullptr && strlen(h.code) > 0 && strlen(h.code) < 40);
+    TEST_ASSERT_TRUE(h.reason != nullptr && strlen(h.reason) > 0 && strlen(h.reason) < 100);
+    // a reason or code must never carry a PIN or token; they are fixed strings
+    TEST_ASSERT_NULL(strstr(h.reason, "%"));
+  }
+  TEST_ASSERT_EQUAL_INT(401, httpFor(Result::BadPin).status);
+  TEST_ASSERT_EQUAL_INT(401, httpFor(Result::Unauthorized).status);
+  TEST_ASSERT_EQUAL_INT(429, httpFor(Result::Backoff).status);
+  TEST_ASSERT_EQUAL_INT(503, httpFor(Result::Unavailable).status);
+  TEST_ASSERT_EQUAL_INT(403, httpFor(Result::ButtonRequired).status);
+  TEST_ASSERT_EQUAL_INT(409, httpFor(Result::AlreadyClaimed).status);
+  TEST_ASSERT_EQUAL_INT(422, httpFor(Result::BadFormat).status);
+}
+
+void test_bearer_parsing(void)
+{
+  char out[kAuthHeaderMax];
+  TEST_ASSERT_TRUE(bearerToken("Bearer abc123", out, sizeof(out)));
+  TEST_ASSERT_EQUAL_STRING("abc123", out);
+  TEST_ASSERT_TRUE(bearerToken("bearer abc", out, sizeof(out)));
+  TEST_ASSERT_TRUE(bearerToken("BEARER abc", out, sizeof(out)));
+  const char* bad[] = {"", "Bearer", "Bearer ", "Bearer  abc", "Bearer abc def", "Basic abc", "Bearerabc", "Bearer a\tb",
+                       "Bearer a\x7f", "Bearer \xc3\xa9", " Bearer abc", "Token abc"};
+  for (const char* h : bad) TEST_ASSERT_FALSE_MESSAGE(bearerToken(h, out, sizeof(out)), h);
+  TEST_ASSERT_FALSE(bearerToken(nullptr, out, sizeof(out)));
+  TEST_ASSERT_FALSE(bearerToken("Bearer abc", nullptr, 8));
+  TEST_ASSERT_FALSE(bearerToken("Bearer abc", out, 0));
+  char tiny[4];
+  TEST_ASSERT_FALSE(bearerToken("Bearer abcd", tiny, sizeof(tiny)));  // no room for the NUL
+  TEST_ASSERT_TRUE(bearerToken("Bearer abc", tiny, sizeof(tiny)));
+}
 }  // namespace
 
 extern "C" void run_auth_core_tests(void)
 {
+  RUN_TEST(test_http_mapping_covers_every_result);
+  RUN_TEST(test_bearer_parsing);
   RUN_TEST(test_pin_policy);
   RUN_TEST(test_constant_time_eq);
   RUN_TEST(test_record_round_trip_and_corruption);

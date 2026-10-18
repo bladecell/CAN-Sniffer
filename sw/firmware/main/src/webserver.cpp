@@ -14,6 +14,8 @@
 #include <string>
 
 #include "api_routes.hpp"
+#include "auth.hpp"
+#include "auth_http.hpp"
 #include "async_web_server.hpp"
 #include "body_reader.hpp"
 #include "button.h"
@@ -41,6 +43,7 @@ struct RouteDef
     const char*                  uri;
     httpd_method_t               method;
     AsyncWebServer::AsyncHandler handler;
+    bool                         gated;  // needs a valid Bearer session (P2.10c)
 };
 
 #define WS_DAT_STREAM_TASK_STACK_SIZE 4096
@@ -176,10 +179,58 @@ static bool pass_content_type(httpd_req_t* req, const RouteDef* route)
     return false;
 }
 
-// AsyncWebServer::Config::request_filter: guard, then (P2.10c) auth.
+// Gated routes need a valid Bearer session. Same answer for a missing, malformed, unknown or expired token.
+static bool pass_auth(httpd_req_t* req, const RouteDef* route)
+{
+    if (route == nullptr || !route->gated)
+    {
+        return true;
+    }
+    char       header[auth::kAuthHeaderMax];
+    char       token[auth::kAuthHeaderMax];
+    bool       present = false;
+    const bool fits    = read_header(req, "Authorization", header, sizeof(header), &present);
+    const bool have    = present && fits && auth::bearerToken(header, token, sizeof(token));
+    const auth::Result r = auth_service::requireAdmin(have ? token : nullptr);
+    if (r == auth::Result::Ok)
+    {
+        return true;
+    }
+    const auth::Http h = auth::httpFor(r);
+    (void)AsyncWebServer::sendError(req, h.status, h.reason, h.code);
+    return false;
+}
+
+// Order of checks (docs/decisions.md): Host/Origin guard, Content-Type, auth; the global rate limit and the handler
+// come after, in AsyncWebServer.
+static bool check_request(httpd_req_t* req, const RouteDef* route)
+{
+    return pass_host_origin(req) && pass_content_type(req, route) && pass_auth(req, route);
+}
+
+// Bodies larger than this are judged in the worker: httpd reads and discards an unread body after the handler returns,
+// and that must not happen in the HTTP task for a hostile 4 MiB upload.
+static constexpr size_t INLINE_REJECT_MAX_BODY = 1024;
+
+// AsyncWebServer::Config::request_filter, in the httpd task.
 static bool request_filter(httpd_req_t* req, void* routeArg)
 {
-    return pass_host_origin(req) && pass_content_type(req, static_cast<const RouteDef*>(routeArg));
+    if (req->content_len > INLINE_REJECT_MAX_BODY)
+    {
+        return true;
+    }
+    return check_request(req, static_cast<const RouteDef*>(routeArg));
+}
+
+// What every REST route is registered with: re-checks the requests the filter let through unjudged, then the handler.
+static esp_err_t route_shim(httpd_req_t* req, void* arg)
+{
+    const RouteDef* route = static_cast<const RouteDef*>(arg);
+    if (req->content_len > INLINE_REJECT_MAX_BODY && !check_request(req, route))
+    {
+        return ESP_OK;
+    }
+    return route->handler(req, nullptr);
 }
 
 // Error bodies built by the middleware (or make_upload_result) get the stable `code` here, so no call site has to
@@ -934,6 +985,138 @@ esp_err_t p_static_pid_index_handler(httpd_req_t* req, void* arg)
     return send_json_response(req, {m_static_pid_request(), 200});
 }
 
+// ============================================================================
+// Access control routes (P2.10c). The rules are in auth_core.hpp; auth.cpp is the device side.
+// ============================================================================
+
+// The token of the Authorization header, or nullptr. `out` must hold auth::kAuthHeaderMax bytes.
+static const char* bearer_of(httpd_req_t* req, char* out)
+{
+    char       header[auth::kAuthHeaderMax];
+    bool       present = false;
+    const bool fits    = read_header(req, "Authorization", header, sizeof(header), &present);
+    return (present && fits && auth::bearerToken(header, out, auth::kAuthHeaderMax)) ? out : nullptr;
+}
+
+static esp_err_t send_auth_error(httpd_req_t* req, auth::Result r, uint32_t retryS = 0)
+{
+    const auth::Http h = auth::httpFor(r);
+    return AsyncWebServer::sendError(req, h.status, h.reason, h.code, retryS);
+}
+
+// Reads a string member. False when it is missing or not a string.
+static bool json_string(const cJSON* root, const char* key, const char** value, size_t* len)
+{
+    const cJSON* item = cJSON_GetObjectItemCaseSensitive(root, key);
+    if (!cJSON_IsString(item) || item->valuestring == nullptr)
+    {
+        return false;
+    }
+    *value = item->valuestring;
+    *len   = strlen(item->valuestring);
+    return true;
+}
+
+static esp_err_t send_session(httpd_req_t* req, int status, const char* token)
+{
+    cJSON* root = cJSON_CreateObject();
+    if (root != nullptr)
+    {
+        cJSON_AddStringToObject(root, "status", "ok");
+        cJSON_AddStringToObject(root, "token", token);
+        cJSON_AddNumberToObject(root, "idle_timeout_s", static_cast<double>(auth::SessionTable::kIdleMs) / 1000.0);
+        cJSON_AddNumberToObject(root, "max_age_s", static_cast<double>(auth::SessionTable::kMaxAgeMs) / 1000.0);
+    }
+    return send_json_response(req, {root, status});
+}
+
+esp_err_t g_auth_index_handler(httpd_req_t* req, void* arg)
+{
+    char                           token[auth::kAuthHeaderMax];
+    const auth_service::StatusView v = auth_service::status(bearer_of(req, token));
+    cJSON*                         root = cJSON_CreateObject();
+    if (root != nullptr)
+    {
+        const char* state = v.state == auth::State::Claimed     ? "claimed"
+                            : v.state == auth::State::Unclaimed ? "unclaimed"
+                                                                : "unavailable";
+        cJSON_AddStringToObject(root, "state", state);
+        cJSON_AddBoolToObject(root, "authenticated", v.authenticated);
+        cJSON_AddNumberToObject(root, "claim_window_s", v.claimWindowS);
+        cJSON_AddNumberToObject(root, "retry_after_s", v.retryAfterS);
+    }
+    return send_json_response(req, {root, 200});
+}
+
+esp_err_t p_auth_claim_handler(httpd_req_t* req, void* arg)
+{
+    cJSON* body = get_validated_json_payload(req, 256);
+    if (body == nullptr)
+    {
+        return ESP_OK;
+    }
+    const char* pin    = nullptr;
+    size_t      pinLen = 0;
+    char        token[auth::SessionTable::kTokenLen + 1];
+    auth::Result r = json_string(body, "pin", &pin, &pinLen) ? auth_service::claim(pin, pinLen, token)
+                                                             : auth::Result::BadFormat;
+    cJSON_Delete(body);
+    return r == auth::Result::Ok ? send_session(req, 201, token) : send_auth_error(req, r);
+}
+
+esp_err_t p_auth_login_handler(httpd_req_t* req, void* arg)
+{
+    cJSON* body = get_validated_json_payload(req, 256);
+    if (body == nullptr)
+    {
+        return ESP_OK;
+    }
+    const char* pin    = nullptr;
+    size_t      pinLen = 0;
+    char        token[auth::SessionTable::kTokenLen + 1];
+    uint32_t    retryS = 0;
+    auth::Result r = json_string(body, "pin", &pin, &pinLen) ? auth_service::login(pin, pinLen, token, &retryS)
+                                                             : auth::Result::BadFormat;
+    cJSON_Delete(body);
+    return r == auth::Result::Ok ? send_session(req, 200, token) : send_auth_error(req, r, retryS);
+}
+
+esp_err_t p_auth_logout_handler(httpd_req_t* req, void* arg)
+{
+    char               token[auth::kAuthHeaderMax];
+    const auth::Result r = auth_service::logout(bearer_of(req, token));
+    if (r != auth::Result::Ok)
+    {
+        return send_auth_error(req, r);
+    }
+    httpd_resp_set_status(req, "204 No Content");
+    return httpd_resp_send(req, nullptr, 0);
+}
+
+esp_err_t put_auth_pin_handler(httpd_req_t* req, void* arg)
+{
+    cJSON* body = get_validated_json_payload(req, 256);
+    if (body == nullptr)
+    {
+        return ESP_OK;
+    }
+    const char* oldPin = nullptr;
+    const char* newPin = nullptr;
+    size_t      oldLen = 0;
+    size_t      newLen = 0;
+    uint32_t    retryS = 0;
+    auth::Result r = (json_string(body, "old_pin", &oldPin, &oldLen) && json_string(body, "new_pin", &newPin, &newLen))
+                         ? auth_service::changePin(oldPin, oldLen, newPin, newLen, &retryS)
+                         : auth::Result::BadFormat;
+    cJSON_Delete(body);
+    if (r != auth::Result::Ok)
+    {
+        return send_auth_error(req, r, retryS);
+    }
+    httpd_resp_set_status(req, "204 No Content");
+    return httpd_resp_send(req, nullptr, 0);
+}
+
 esp_err_t g_settings_index_handler(httpd_req_t* req, void* arg)
 {
     return send_json_response(req, m_settings_get());
@@ -1560,7 +1743,7 @@ static void WSDataStreamTask(void* pvParameters)
 // 4. ROUTE TABLE & REGISTRATION
 // ============================================================================
 
-#define ROUTE_ENTRY(uri, method, handler) {uri, HTTP_##method, handler},
+#define ROUTE_ENTRY(uri, method, handler, gated) {uri, HTTP_##method, handler, (gated) != 0},
 const RouteDef api_routes[] = {API_ROUTES(ROUTE_ENTRY)};
 #undef ROUTE_ENTRY
 
@@ -1571,7 +1754,7 @@ static esp_err_t register_routes()
 
     for (size_t i = 0; i < num_routes; i++)
     {
-        ESP_RETURN_ON_ERROR(server.registerRoute(api_routes[i].uri, api_routes[i].method, api_routes[i].handler,
+        ESP_RETURN_ON_ERROR(server.registerRoute(api_routes[i].uri, api_routes[i].method, route_shim,
                                                   const_cast<RouteDef*>(&api_routes[i])),
                             TAG, "route %s", api_routes[i].uri);
     }
@@ -1584,8 +1767,34 @@ static esp_err_t register_routes()
 // 5. PUBLIC BOOTSTRAPPER (Sits at the bottom looking up at the namespace)
 // ============================================================================
 
+// The BOOT button and the PIN state only matter while the API is up. Both come up before the first request can arrive.
+// A failure here never stops the device: without the button nobody can claim or recover, without a readable PIN record
+// the gated routes answer 503, and everything open keeps working.
+static void start_access_control()
+{
+    const esp_err_t buttonErr = button_init();
+    if (buttonErr != ESP_OK)
+    {
+        ESP_LOGW(TAG, "BOOT button unavailable (%s); PIN claim and recovery disabled", esp_err_to_name(buttonErr));
+    }
+    const esp_err_t authErr = auth_service::start();
+    if (authErr != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Access control failed to start (%s); gated routes closed", esp_err_to_name(authErr));
+    }
+}
+
+// Hook first, button second. ESP_ERR_TIMEOUT: the button task is still busy, call again.
+static esp_err_t stop_access_control()
+{
+    auth_service::stop();
+    return button_deinit();
+}
+
 esp_err_t setup_web_server()
 {
+    start_access_control();
+
     AsyncWebServer::Config server_config;  // TODO: Load from nvs storage
     server_config.async_worker_task_num         = 6;
     server_config.max_open_sockets              = 7;
@@ -1604,6 +1813,7 @@ esp_err_t setup_web_server()
     if (ret != ESP_OK)
     {
         ESP_LOGE(TAG, "Failed to start web server");
+        (void)stop_access_control();
         return ret;
     }
 
@@ -1612,6 +1822,7 @@ esp_err_t setup_web_server()
     {
         ESP_LOGE(TAG, "Route registration failed (%s); web server disabled", esp_err_to_name(ret));
         AsyncWebServer::getInstance().stop();
+        (void)stop_access_control();
         return ret;
     }
 
@@ -1622,6 +1833,7 @@ esp_err_t setup_web_server()
     {
         ESP_LOGE(TAG, "Failed to create the WS stream semaphore");
         AsyncWebServer::getInstance().stop();
+        (void)stop_access_control();
         return ESP_ERR_NO_MEM;
     }
 
@@ -1636,16 +1848,10 @@ esp_err_t setup_web_server()
         ESP_LOGE(TAG, "Failed to create WSDataStreamTask!");
         wsTaskRunning.store(false);
         AsyncWebServer::getInstance().stop();
+        (void)stop_access_control();
         vSemaphoreDelete(WSDataStreamSemaphore);
         WSDataStreamSemaphore = nullptr;
         return ESP_FAIL;
-    }
-
-    // The BOOT button only matters while the API is up (claim and recovery). Without it the device keeps running.
-    const esp_err_t buttonErr = button_init();
-    if (buttonErr != ESP_OK)
-    {
-        ESP_LOGW(TAG, "BOOT button unavailable (%s); PIN claim and recovery disabled", esp_err_to_name(buttonErr));
     }
 
     return ESP_OK;
@@ -1683,7 +1889,7 @@ esp_err_t stop_web_server()
         return err;
     }
 
-    if (button_deinit() != ESP_OK)
+    if (stop_access_control() != ESP_OK)
     {
         ESP_LOGW(TAG, "BOOT button task did not exit; the next stop retries");
         return ESP_ERR_TIMEOUT;
