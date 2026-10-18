@@ -1632,6 +1632,12 @@ static esp_err_t ws_post_handshake(httpd_req_t* req)
     {
         xSemaphoreGive(WSDataStreamSemaphore);
     }
+    return ESP_OK;
+}
+
+esp_err_t ws_socket_handler(httpd_req_t* req)
+{
+    int sockfd = httpd_req_to_sockfd(req);
 
     httpd_ws_frame_t ws_pkt;
     memset(&ws_pkt, 0, sizeof(httpd_ws_frame_t));
@@ -1651,12 +1657,6 @@ static esp_err_t ws_post_handshake(httpd_req_t* req)
             wsStreamingEnabled.store(false);
         }
         return httpd_ws_send_frame(req, &ws_pkt);
-    return ESP_OK;
-}
-
-esp_err_t ws_socket_handler(httpd_req_t* req)
-{
-    int sockfd = httpd_req_to_sockfd(req);
     }
 
     if (!input_limits::wsFrameLenOk(ws_pkt.len))
@@ -1854,6 +1854,11 @@ esp_err_t setup_web_server()
     // Keep receive waits below the upload no-progress deadline so an upload
     // worker can enforce it rather than remaining blocked in httpd_req_recv.
     server_config.httpd_config.recv_wait_timeout = 1;
+    // A peer that vanished without FIN or RST (phone left the Wi-Fi) is dropped after about 10 + 3 * 5 s.
+    server_config.httpd_config.keep_alive_enable   = true;
+    server_config.httpd_config.keep_alive_idle     = 10;
+    server_config.httpd_config.keep_alive_interval = 5;
+    server_config.httpd_config.keep_alive_count    = 3;
     server_config.on_socket_closed               = ws_socket_closed;
     server_config.request_filter                 = request_filter;
 
@@ -1873,11 +1878,6 @@ esp_err_t setup_web_server()
         (void)stop_access_control();
         return ret;
     }
-    // A peer that vanished without FIN or RST (phone left the Wi-Fi) is dropped after about 10 + 3 * 5 s.
-    server_config.httpd_config.keep_alive_enable   = true;
-    server_config.httpd_config.keep_alive_idle     = 10;
-    server_config.httpd_config.keep_alive_interval = 5;
-    server_config.httpd_config.keep_alive_count    = 3;
 
     OBD2::getInstance().subscribe(pid_stream_callback);
 
