@@ -1,16 +1,16 @@
-#include "can_driver_internal.hpp"
 #include "can_config_limits.hpp"
+#include "can_driver_internal.hpp"
 
 SemaphoreHandle_t canConnectedSemaphore = nullptr;
 
 CanDriver::CanDriver()
 {
     canState.store(STATE::NOT_INITIALIZED);
-    healthCheckTaskHandle = nullptr;
-    rxQueue               = nullptr;
-    nodeHdl               = NULL;
-    txTaskHandle          = nullptr;
-    txQueue               = nullptr;
+    healthCheckTaskHandle         = nullptr;
+    rxQueue                       = nullptr;
+    nodeHdl                       = NULL;
+    txTaskHandle                  = nullptr;
+    txQueue                       = nullptr;
     connectionChangeCallbackFence = xSemaphoreCreateMutex();
     lifecycleMutex_               = xSemaphoreCreateMutex();
 }
@@ -71,7 +71,8 @@ esp_err_t CanDriver::init(const Config& config)
 
 esp_err_t CanDriver::bringUp(const Config& config)
 {
-    if (!can_limits::canConfigValid(static_cast<double>(config.rx_queue_size), static_cast<double>(config.tx_queue_depth)))
+    if (!can_limits::canConfigValid(static_cast<double>(config.rx_queue_size),
+                                    static_cast<double>(config.tx_queue_depth)))
     {
         ESP_LOGE(TAG, "Invalid queue sizes: rx %u (1..256), tx %u (1..64)", static_cast<unsigned>(config.rx_queue_size),
                  static_cast<unsigned>(config.tx_queue_depth));
@@ -214,8 +215,8 @@ esp_err_t CanDriver::bringUp(const Config& config)
     return ESP_OK;
 }
 
-// Releases whatever exists, in dependency order; every step is skipped when its resource is absent, so it is safe after a
-// partial init, after a failed earlier teardown and when called twice. Caller holds lifecycleMutex_.
+// Releases whatever exists, in dependency order; every step is skipped when its resource is absent, so it is safe after
+// a partial init, after a failed earlier teardown and when called twice. Caller holds lifecycleMutex_.
 esp_err_t CanDriver::teardown()
 {
     // New calls are rejected from here; the ones inside finish (state and stopRequested_ are untouched, so the TX task
