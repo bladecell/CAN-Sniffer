@@ -127,6 +127,10 @@ void test_path(void)
   TEST_ASSERT_FALSE(sv::sdPathValid("/sdcard/"));
   TEST_ASSERT_FALSE(sv::sdPathValid("/etc/passwd"));
   TEST_ASSERT_FALSE(sv::sdPathValid("/sdcard/../x"));
+  TEST_ASSERT_FALSE(sv::sdPathValid("/sdcard/a/.."));
+  TEST_ASSERT_FALSE(sv::sdPathValid("/sdcard/a/../b"));
+  TEST_ASSERT_TRUE(sv::sdPathValid("/sdcard/a..b/c.."));
+  TEST_ASSERT_TRUE(sv::sdPathValid("/sdcard/..hidden"));
   TEST_ASSERT_FALSE(sv::sdPathValid("/sdcard/a\nb"));
 }
 

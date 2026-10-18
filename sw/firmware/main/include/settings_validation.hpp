@@ -152,6 +152,21 @@ inline bool sdPathValid(std::string_view p)
       return false;
     }
   }
-  return p.find("..") == std::string_view::npos;
+  // Only a ".." path component climbs out; "a..b" is a legal name.
+  size_t start = 0;
+  while (start <= p.size())
+  {
+    size_t end = p.find('/', start);
+    if (end == std::string_view::npos)
+    {
+      end = p.size();
+    }
+    if (p.substr(start, end - start) == "..")
+    {
+      return false;
+    }
+    start = end + 1;
+  }
+  return true;
 }
 }  // namespace settings_validation
