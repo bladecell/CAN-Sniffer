@@ -1076,74 +1076,37 @@ esp_err_t SUPERVISOR::copy_file(const char* src_path, const char* dest_path)
         return ESP_ERR_INVALID_ARG;
     }
 
-    const size_t chunk_size = 2048;
-    char*        buffer     = (char*)malloc(chunk_size);
-    if (buffer == nullptr)
-    {
-        ESP_LOGE("FileOps", "Failed to allocate memory for file copy buffer");
-        return ESP_ERR_NO_MEM;
-    }
-
+    esp_err_t ret = ESP_FAIL;
     {
         auto operation = SDCard::getInstance().acquire_operation(SD_OPERATION_TIMEOUT_TICKS, true);
         if (!operation)
         {
-            free(buffer);
             return operation.status();
         }
 
-        FILE* f_src = fopen(src_path, "rb");
-        if (f_src == nullptr)
+        // Temp file in the destination directory, then rename over it: a failed copy, a full card or a destination that is
+        // the same file as the source under a FAT 8.3 alias leaves the old destination intact (identity cannot be tested
+        // on FAT: st_ino is not unique there).
+        switch (atomic_file::copy(src_path, dest_path))
         {
-            ESP_LOGE("FileOps", "Failed to open source file: %s", src_path);
-            free(buffer);
-            return ESP_FAIL;
-        }
-
-        FILE* f_dest = fopen(dest_path, "wb");
-        if (f_dest == nullptr)
-        {
-            ESP_LOGE("FileOps", "Failed to open destination file: %s", dest_path);
-            (void)fclose(f_src);
-            free(buffer);
-            return ESP_FAIL;
-        }
-
-        size_t    bytes_read = 0;
-        esp_err_t ret        = ESP_OK;
-
-        while ((bytes_read = fread(buffer, 1, chunk_size, f_src)) > 0)
-        {
-            const size_t bytes_written = fwrite(buffer, 1, bytes_read, f_dest);
-            if (bytes_written != bytes_read)
-            {
-                ESP_LOGE("FileOps", "Write error to %s (Disk full?)", dest_path);
+            case atomic_file::Result::Ok:
+                ret = ESP_OK;
+                break;
+            case atomic_file::Result::PathTooLong:
+                ret = ESP_ERR_INVALID_ARG;
+                break;
+            case atomic_file::Result::NoMem:
+                ret = ESP_ERR_NO_MEM;
+                break;
+            default:
                 ret = ESP_FAIL;
                 break;
-            }
         }
-
-        if (ferror(f_src) != 0)
-        {
-            ret = ESP_FAIL;
-        }
-        if (fflush(f_dest) != 0)
-        {
-            ret = ESP_FAIL;
-        }
-
-        free(buffer);
-        const int src_close  = fclose(f_src);
-        const int dest_close = fclose(f_dest);
-        if (src_close != 0 || dest_close != 0)
-        {
-            ret = ESP_FAIL;
-        }
-
-        if (ret != ESP_OK)
-        {
-            return ret;
-        }
+    }
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE("FileOps", "Copy %s -> %s failed: %s", src_path, dest_path, esp_err_to_name(ret));
+        return ret;
     }
 
     ESP_LOGI("FileOps", "Successfully copied %s to %s", src_path, dest_path);

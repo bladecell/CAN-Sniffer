@@ -132,10 +132,75 @@ void test_recover_leaves_existing_file_alone(void)
   TEST_ASSERT_EQUAL_STRING("live", get(p).c_str());
   cleanup(d);
 }
+
+void test_copy_creates_and_overwrites(void)
+{
+  const std::string d = makeDir(), a = d + "/a.txt", b = d + "/b.txt";
+  put(a, "payload");
+  TEST_ASSERT_EQUAL(af::Result::Ok, af::copy(a.c_str(), b.c_str()));
+  TEST_ASSERT_EQUAL_STRING("payload", get(b).c_str());
+  put(a, "newer");
+  TEST_ASSERT_EQUAL(af::Result::Ok, af::copy(a.c_str(), b.c_str()));
+  TEST_ASSERT_EQUAL_STRING("newer", get(b).c_str());
+  TEST_ASSERT_FALSE(exists(b + ".tmp"));
+  TEST_ASSERT_FALSE(exists(b + ".bak"));
+  cleanup(d);
+}
+
+void test_copy_with_missing_source_keeps_destination(void)
+{
+  const std::string d = makeDir(), b = d + "/b.txt";
+  put(b, "keep me");
+  TEST_ASSERT_EQUAL(af::Result::WriteFailed, af::copy((d + "/nope").c_str(), b.c_str()));
+  TEST_ASSERT_EQUAL_STRING("keep me", get(b).c_str());
+  TEST_ASSERT_FALSE(exists(b + ".tmp"));
+  cleanup(d);
+}
+
+void test_copy_onto_itself_keeps_the_content(void)
+{
+  const std::string d = makeDir(), a = d + "/a.txt";
+  put(a, "same file");
+  TEST_ASSERT_EQUAL(af::Result::Ok, af::copy(a.c_str(), a.c_str()));
+  TEST_ASSERT_EQUAL_STRING("same file", get(a).c_str());
+  cleanup(d);
+}
+
+void test_copy_never_replaces_a_directory(void)
+{
+  const std::string d = makeDir(), a = d + "/a.txt", sub = d + "/sub";
+  put(a, "x");
+  TEST_ASSERT_EQUAL_INT(0, mkdir(sub.c_str(), 0700));
+  TEST_ASSERT_EQUAL(af::Result::WriteFailed, af::copy(a.c_str(), sub.c_str()));
+  struct stat st;
+  TEST_ASSERT_EQUAL_INT(0, stat(sub.c_str(), &st));
+  TEST_ASSERT_TRUE(S_ISDIR(st.st_mode));
+  cleanup(d);
+}
+
+void test_copy_larger_than_one_chunk(void)
+{
+  const std::string d = makeDir(), a = d + "/big", b = d + "/big2";
+  std::string       big(5000, 'z');
+  FILE*             f = fopen(a.c_str(), "w");
+  TEST_ASSERT_NOT_NULL(f);
+  fwrite(big.data(), 1, big.size(), f);
+  fclose(f);
+  TEST_ASSERT_EQUAL(af::Result::Ok, af::copy(a.c_str(), b.c_str()));
+  struct stat st;
+  TEST_ASSERT_EQUAL_INT(0, stat(b.c_str(), &st));
+  TEST_ASSERT_EQUAL_INT(5000, st.st_size);
+  cleanup(d);
+}
 }  // namespace
 
 extern "C" void run_atomic_file_tests(void)
 {
+  RUN_TEST(test_copy_creates_and_overwrites);
+  RUN_TEST(test_copy_with_missing_source_keeps_destination);
+  RUN_TEST(test_copy_onto_itself_keeps_the_content);
+  RUN_TEST(test_copy_never_replaces_a_directory);
+  RUN_TEST(test_copy_larger_than_one_chunk);
   RUN_TEST(test_creates_and_replaces);
   RUN_TEST(test_failed_write_keeps_previous_file);
   RUN_TEST(test_failed_swap_keeps_previous_file);

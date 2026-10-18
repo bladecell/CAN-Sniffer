@@ -15,7 +15,7 @@
 
 namespace atomic_file
 {
-constexpr size_t kPathMax = 255;  // plus ".tmp"/".bak" and NUL must fit the working buffers below
+constexpr size_t kPathMax = 263;  // "/sdcard/" plus a 255 character relative path; plus ".tmp"/".bak" and NUL must fit the working buffers below
 
 enum class Result
 {
@@ -65,7 +65,9 @@ struct Names
 };
 }  // namespace detail
 
-inline Result write(const char* path, const char* data, size_t len)
+// Fills the new file: `fill(FILE*)` returns false on any read or write error. The old file is untouched until it succeeds.
+template <class Fill>
+inline Result writeWith(const char* path, Fill fill)
 {
   if (path == nullptr || strlen(path) == 0 || strlen(path) > kPathMax)
   {
@@ -82,7 +84,7 @@ inline Result write(const char* path, const char* data, size_t len)
   {
     return Result::WriteFailed;
   }
-  const bool ok = fwrite(data, 1, len, f) == len;
+  const bool ok = fill(f);
   const bool flushed = fflush(f) == 0;
   const bool synced  = fsync(fileno(f)) == 0;
   const bool closed  = fclose(f) == 0;
@@ -114,6 +116,50 @@ inline Result write(const char* path, const char* data, size_t len)
   }
   return Result::Ok;
 }
+
+inline Result write(const char* path, const char* data, size_t len)
+{
+  return writeWith(path, [&](FILE* f) { return fwrite(data, 1, len, f) == len; });
+}
+
+// Copies `src` over `dest` the same way. `dest` only changes at the final rename, so a read or write error, a full card or a
+// `src` that is the same file as `dest` under another name (FAT 8.3 alias) never truncates anything.
+inline Result copy(const char* src, const char* dest)
+{
+  struct stat st;
+  if (dest != nullptr && stat(dest, &st) == 0 && !S_ISREG(st.st_mode))
+  {
+    return Result::WriteFailed;  // a directory (or device) is never replaced
+  }
+  constexpr size_t kChunk = 2048;
+  char*            chunk  = static_cast<char*>(malloc(kChunk));
+  if (chunk == nullptr)
+  {
+    return Result::NoMem;
+  }
+  const Result r = writeWith(dest, [&](FILE* out) {
+    FILE* in = fopen(src, "rb");
+    if (in == nullptr)
+    {
+      return false;
+    }
+    bool   ok = true;
+    size_t got;
+    while ((got = fread(chunk, 1, kChunk, in)) > 0)
+    {
+      if (fwrite(chunk, 1, got, out) != got)
+      {
+        ok = false;
+        break;
+      }
+    }
+    ok = ok && ferror(in) == 0;
+    return fclose(in) == 0 && ok;
+  });
+  free(chunk);
+  return r;
+}
+
 
 // Call before reading `path`. If a save was interrupted between the two renames, `path` is missing while a complete
 // "<path>.tmp" (only trusted when "<path>.bak" exists, i.e. the write had finished) or the old "<path>.bak" is there.
