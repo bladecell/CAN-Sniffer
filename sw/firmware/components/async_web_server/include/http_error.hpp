@@ -22,6 +22,10 @@ constexpr const char* kBadPath      = "BAD_PATH";
 constexpr const char* kShuttingDown = "SHUTTING_DOWN";
 constexpr const char* kRateLimited  = "RATE_LIMITED";
 constexpr const char* kBusy         = "BUSY";
+// P2.10 access control
+constexpr const char* kBadHost        = "BAD_HOST";
+constexpr const char* kBadOrigin      = "BAD_ORIGIN";
+constexpr const char* kBadContentType = "BAD_CONTENT_TYPE";
 
 // Largest body buildBody() can produce for the reason lengths we send; the reason is cut to fit.
 constexpr size_t kBodyMax = 320;
@@ -43,6 +47,7 @@ inline const char* statusLine(int status)
     case 408: return "408 Request Timeout";
     case 409: return "409 Conflict";
     case 413: return "413 Content Too Large";
+    case 415: return "415 Unsupported Media Type";
     case 422: return "422 Unprocessable Entity";
     case 429: return "429 Too Many Requests";
     case 500: return "500 Internal Server Error";
@@ -71,6 +76,7 @@ inline const char* defaultReason(int status)
     case 408: return "Request timeout";
     case 409: return "Conflict";
     case 413: return "Content too large";
+    case 415: return "Unsupported media type";
     case 422: return "Unprocessable entity";
     case 429: return "Too many requests";
     case 502: return "Bad gateway";
@@ -93,6 +99,7 @@ inline const char* defaultCode(int status)
     case 408: return "REQUEST_TIMEOUT";
     case 409: return "CONFLICT";
     case 413: return "TOO_LARGE";
+    case 415: return "UNSUPPORTED_MEDIA_TYPE";
     case 422: return "UNPROCESSABLE";
     case 429: return kRateLimited;
     case 502: return "BAD_GATEWAY";

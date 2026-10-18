@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 
 #include "api_routes.hpp"
 #include "async_web_server.hpp"
@@ -25,6 +26,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "host_guard.hpp"
 #include "http_error.hpp"
 #include "http_parse.hpp"
 #include "http_parser.h"
@@ -32,6 +34,7 @@
 #include "middleware.hpp"
 #include "obd2.hpp"
 #include "sd_card.hpp"
+#include "wifi.hpp"
 
 struct RouteDef
 {
@@ -99,6 +102,84 @@ static esp_err_t get_sd_rest_path(httpd_req_t* req, const char* api_route, char*
 static esp_err_t send_json_error_response(httpd_req_t* req, int status)
 {
     return AsyncWebServer::sendError(req, status);
+}
+
+// ============================================================================
+// Host/Origin guard and Content-Type policy (P2.10b). Runs in the httpd task, before the rate limit and the queue.
+// ============================================================================
+
+// Reads one request header into buf. present=false when it is absent or empty. False when it does not fit (hostile).
+static bool read_header(httpd_req_t* req, const char* name, char* buf, size_t cap, bool* present)
+{
+    buf[0]        = '\0';
+    *present      = false;
+    const size_t len = httpd_req_get_hdr_value_len(req, name);
+    if (len == 0)
+    {
+        return true;
+    }
+    *present = true;
+    return len < cap && httpd_req_get_hdr_value_str(req, name, buf, cap) == ESP_OK;
+}
+
+// True when Host (and Origin, if sent) name this device. Otherwise the request was answered with 403.
+static bool pass_host_origin(httpd_req_t* req)
+{
+    char host[host_guard::kHostMax];
+    char origin[host_guard::kOriginMax];
+    bool hostPresent   = false;
+    bool originPresent = false;
+    const bool hostFits   = read_header(req, "Host", host, sizeof(host), &hostPresent);
+    const bool originFits = read_header(req, "Origin", origin, sizeof(origin), &originPresent);
+
+    const std::string ap  = WIFI::getInstance().getApIP();
+    const std::string sta = WIFI::getInstance().getStaIP();
+    const host_guard::Ips ips{ap.c_str(), sta.c_str()};
+
+    host_guard::Verdict verdict = host_guard::check(hostPresent && hostFits ? host : nullptr,
+                                                    originPresent && originFits ? origin : nullptr, ips);
+    if (verdict == host_guard::Verdict::Ok && originPresent && !originFits)
+    {
+        verdict = host_guard::Verdict::BadOrigin;
+    }
+    if (verdict == host_guard::Verdict::BadHost)
+    {
+        (void)AsyncWebServer::sendError(req, 403, "Host not allowed", http_error::kBadHost);
+        return false;
+    }
+    if (verdict == host_guard::Verdict::BadOrigin)
+    {
+        (void)AsyncWebServer::sendError(req, 403, "Origin not allowed", http_error::kBadOrigin);
+        return false;
+    }
+    return true;
+}
+
+// A request that carries a body must say it is JSON, or an octet stream on the upload route.
+static bool pass_content_type(httpd_req_t* req, const RouteDef* route)
+{
+    if ((req->method != HTTP_POST && req->method != HTTP_PUT) || req->content_len == 0)
+    {
+        return true;
+    }
+    const bool upload = route != nullptr && strcmp(route->uri, "/api/v1/sd_card/file/*") == 0;
+    char       ct[host_guard::kContentTypeMax];
+    bool       present = false;
+    const bool fits    = read_header(req, "Content-Type", ct, sizeof(ct), &present);
+    if (present && fits && host_guard::contentTypeOk(ct, upload ? host_guard::Body::Octet : host_guard::Body::Json))
+    {
+        return true;
+    }
+    (void)AsyncWebServer::sendError(req, 415, upload ? "Content-Type must be application/octet-stream"
+                                                      : "Content-Type must be application/json",
+                                    http_error::kBadContentType);
+    return false;
+}
+
+// AsyncWebServer::Config::request_filter: guard, then (P2.10c) auth.
+static bool request_filter(httpd_req_t* req, void* routeArg)
+{
+    return pass_host_origin(req) && pass_content_type(req, static_cast<const RouteDef*>(routeArg));
 }
 
 // Error bodies built by the middleware (or make_upload_result) get the stable `code` here, so no call site has to
@@ -1313,6 +1394,11 @@ esp_err_t ws_socket_handler(httpd_req_t* req)
 
     if (req->method == HTTP_GET)
     {
+        // The upgrade request is the only chance to look at Origin: browsers allow cross-site WebSockets.
+        if (!pass_host_origin(req))
+        {
+            return ESP_OK;
+        }
         ESP_LOGI(TAG, "WS Connect: Client #%d", sockfd);
         wsStreamingEnabled.store(true);
         if (WSDataStreamSemaphore != nullptr)
@@ -1485,7 +1571,8 @@ static esp_err_t register_routes()
 
     for (size_t i = 0; i < num_routes; i++)
     {
-        ESP_RETURN_ON_ERROR(server.registerRoute(api_routes[i].uri, api_routes[i].method, api_routes[i].handler, NULL),
+        ESP_RETURN_ON_ERROR(server.registerRoute(api_routes[i].uri, api_routes[i].method, api_routes[i].handler,
+                                                  const_cast<RouteDef*>(&api_routes[i])),
                             TAG, "route %s", api_routes[i].uri);
     }
     return server.registerSocketRoute("/ws", ws_socket_handler, NULL);
@@ -1511,6 +1598,7 @@ esp_err_t setup_web_server()
     // worker can enforce it rather than remaining blocked in httpd_req_recv.
     server_config.httpd_config.recv_wait_timeout = 1;
     server_config.on_socket_closed               = ws_socket_closed;
+    server_config.request_filter                 = request_filter;
 
     esp_err_t ret = AsyncWebServer::getInstance().start(server_config);
     if (ret != ESP_OK)

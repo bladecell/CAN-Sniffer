@@ -24,6 +24,7 @@ void run_api_routes_tests(void);
 void run_http_error_tests(void);
 void run_tree_limits_tests(void);
 void run_button_logic_tests(void);
+void run_host_guard_tests(void);
 
 /* The linux IDF port starts FreeRTOS and calls app_main(); exit with the failure count. */
 void app_main(void)
@@ -52,5 +53,6 @@ void app_main(void)
     run_http_error_tests();
     run_tree_limits_tests();
     run_button_logic_tests();
+    run_host_guard_tests();
     exit(UNITY_END() == 0 ? 0 : 1);
 }

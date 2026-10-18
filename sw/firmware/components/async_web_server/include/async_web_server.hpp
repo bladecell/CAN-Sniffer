@@ -30,6 +30,10 @@ public:
         // Called from the httpd task for every socket that closes, clean or not (peer reset, timeout, LRU purge), after
         // the socket is closed. Lets callers drop per-connection state. Must not block.
         void (*on_socket_closed)(int fd) = nullptr;
+        // Runs in the httpd task for every REST request, before the rate limit and before the request is queued.
+        // `routeArg` is the arg given to registerRoute(). Return false after answering the request itself (sendError);
+        // the request is then dropped. Must not block: it delays every socket.
+        bool (*request_filter)(httpd_req_t* req, void* routeArg) = nullptr;
     };
 
     static AsyncWebServer& getInstance()
@@ -110,6 +114,7 @@ private:
     static void worker_task_wrapper(void* arg);
 
     void (*socketClosedHook_)(int fd) = nullptr;
+    bool (*requestFilter_)(httpd_req_t* req, void* routeArg) = nullptr;
     static void closeSocket(httpd_handle_t hd, int sockfd);
 
     uint32_t max_requests_per_sec_  = 50;

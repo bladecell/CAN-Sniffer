@@ -241,10 +241,24 @@ void test_every_mapped_status_has_a_status_line(void)
     }
   }
 }
+void test_access_control_statuses_and_codes(void)
+{
+  TEST_ASSERT_EQUAL_STRING("415 Unsupported Media Type", he::statusLine(415));
+  TEST_ASSERT_EQUAL_INT(415, he::errorStatus(415));
+  char b[he::kBodyMax];
+  he::buildBody(b, sizeof(b), 403, "Host not allowed", he::kBadHost);
+  TEST_ASSERT_EQUAL_STRING("{\"status\":\"error\",\"reason\":\"Host not allowed\",\"code\":\"BAD_HOST\"}", b);
+  he::buildBody(b, sizeof(b), 403, nullptr, he::kBadOrigin);
+  TEST_ASSERT_NOT_NULL(strstr(b, "\"code\":\"BAD_ORIGIN\""));
+  he::buildBody(b, sizeof(b), 415, nullptr, he::kBadContentType);
+  TEST_ASSERT_NOT_NULL(strstr(b, "\"code\":\"BAD_CONTENT_TYPE\""));
+  TEST_ASSERT_EQUAL_STRING("UNSUPPORTED_MEDIA_TYPE", he::defaultCode(415));
+}
 }  // namespace
 
 extern "C" void run_http_error_tests(void)
 {
+  RUN_TEST(test_access_control_statuses_and_codes);
   RUN_TEST(test_status_lines_are_valid_reason_phrases);
   RUN_TEST(test_unknown_or_non_error_status_is_sent_as_500);
   RUN_TEST(test_every_error_status_has_a_reason_and_code);

@@ -109,6 +109,7 @@ esp_err_t AsyncWebServer::start(Config config)
 
     max_requests_per_sec_ = config.max_requests_per_sec;
     socketClosedHook_     = config.on_socket_closed;
+    requestFilter_        = config.request_filter;
     config.httpd_config.close_fn = &AsyncWebServer::closeSocket;
 
     server_ = NULL;
@@ -260,8 +261,14 @@ esp_err_t AsyncWebServer::async_handler(httpd_req_t* req)
 {
     ESP_LOGD(TAG, "%s uri: %s", get_method_str(req->method), req->uri);
 
+    AsyncWebServer& self = AsyncWebServer::getInstance();
+    if (self.requestFilter_ != nullptr && !self.requestFilter_(req, static_cast<RouteContext*>(req->user_ctx)->arg))
+    {
+        return ESP_OK;  // the filter answered
+    }
+
     // add to the async request queue
-    if (AsyncWebServer::getInstance().queue_request(req) == ESP_OK)
+    if (self.queue_request(req) == ESP_OK)
     {
         return ESP_OK;
     }
