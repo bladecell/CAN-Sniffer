@@ -48,6 +48,8 @@ static constexpr int64_t PID_DEF_PUT_RECEIVE_DEADLINE_US = 20LL * 1000 * 1000;
 static constexpr size_t  MAX_UPLOAD_CONTENT_LENGTH        = input_limits::UPLOAD_MAX;
 static constexpr int64_t UPLOAD_NO_PROGRESS_DEADLINE_US   = 5LL * 1000 * 1000;
 static constexpr int64_t UPLOAD_ABSOLUTE_DEADLINE_US      = 60LL * 1000 * 1000;
+// The download keeps the SD lease until the last byte is sent (SD-2), so it needs an end as well.
+static constexpr int64_t DOWNLOAD_ABSOLUTE_DEADLINE_US    = 5LL * 60 * 1000 * 1000;
 static constexpr TickType_t UPLOAD_OPERATION_TIMEOUT       = pdMS_TO_TICKS(250);
 static constexpr TickType_t SD_FILE_READ_OPERATION_TIMEOUT = pdMS_TO_TICKS(250);
 
@@ -1169,8 +1171,16 @@ esp_err_t g_sd_card_file_read_handler(httpd_req_t* req, void* arg)
     bool response_headers_set = false;
     bool bytes_sent           = false;
     char chunk[1024];
+    const int64_t download_deadline = esp_timer_get_time() + DOWNLOAD_ABSOLUTE_DEADLINE_US;
     while (true)
     {
+        if (esp_timer_get_time() >= download_deadline)
+        {
+            ESP_LOGW(TAG, "SD download exceeded %d s, aborting to release the SD lease",
+                     static_cast<int>(DOWNLOAD_ABSOLUTE_DEADLINE_US / 1000000));
+            SDCard::getInstance().close_file(fd);
+            return bytes_sent ? ESP_FAIL : send_json_error_response(req, 504);
+        }
         const size_t read_bytes = SDCard::getInstance().file_read_chunk(fd, chunk, sizeof(chunk));
         if (ferror(fd) != 0)
         {

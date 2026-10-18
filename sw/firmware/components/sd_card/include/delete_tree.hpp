@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 
 namespace sd_tree
@@ -22,11 +23,20 @@ enum class Result
   TooDeep,
   PathTooLong,
   IoError,
+  TimedOut,
+};
+
+// Optional wall-clock limit (P2.9g): the SD lease is held for the whole delete, so it must end. nowUs() is checked once
+// per directory entry.
+struct Deadline
+{
+  int64_t (*nowUs)();
+  int64_t untilUs;
 };
 
 // Deletes the directory named by the NUL-terminated `path` (length `len`, buffer capacity `cap`) and everything in it.
-// `path` is restored before each return. On TooDeep, entries visited before the over-deep directory are already gone.
-inline Result deleteTree(char* path, size_t cap, size_t len, int depth = 0)
+// `path` is restored before each return. On TooDeep or TimedOut, entries visited before that point are already gone.
+inline Result deleteTree(char* path, size_t cap, size_t len, int depth = 0, const Deadline* deadline = nullptr)
 {
   if (depth > kMaxDepth)
   {
@@ -41,6 +51,11 @@ inline Result deleteTree(char* path, size_t cap, size_t len, int depth = 0)
   Result result = Result::Ok;
   while (result == Result::Ok)
   {
+    if (deadline != nullptr && deadline->nowUs() >= deadline->untilUs)
+    {
+      result = Result::TimedOut;
+      break;
+    }
     const dirent* entry = readdir(dir);
     if (entry == nullptr)
     {
@@ -68,7 +83,7 @@ inline Result deleteTree(char* path, size_t cap, size_t len, int depth = 0)
     }
     else
     {
-      result = S_ISDIR(st.st_mode) ? deleteTree(path, cap, childLen, depth + 1)
+      result = S_ISDIR(st.st_mode) ? deleteTree(path, cap, childLen, depth + 1, deadline)
                                    : (unlink(path) == 0 ? Result::Ok : Result::IoError);
     }
     path[len] = '\0';

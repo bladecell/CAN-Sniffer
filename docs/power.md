@@ -23,7 +23,7 @@ SLEEPING ─ CAN init fails after wake ─→ ERROR (same back-off and restart)
 SLEEPING ─ OBD / Wi-Fi / web server start fails after wake ─→ STOPPING (retry the shutdown)
 STOPPING ─ web server, OBD2 or CAN deinit fails ─→ stays STOPPING, retried every second
 ```
-The supervisor loop runs once per second (`vTaskDelay(1000)`), and each pass also calls `SDCard::update_card_status()`.
+The supervisor loop runs once per second (`vTaskDelay(1000)`), and each pass also calls `SDCard::update_card_status()`, which waits at most 250 ms for the SD lease and skips the round when a download, upload or delete holds it (those end by deadline: download 5 min, upload 60 s, delete 30 s). `card_present()` and `is_mounted()` take no lease.
 
 - `NOT_CONNECTED` → `RUNNING` when `CanDriver::isBusConnected()` is true. The driver declares the bus connected after 3 successful pings, sent every 2 s (`can_health_check`), with no ACK or stuff errors.
 - `RUNNING` → `NOT_CONNECTED` when the bus is no longer connected. The OBD2 "disconnected" callback does the same, but only from RUNNING (an atomic compare-and-set), so it cannot overwrite ERROR, STOPPING or SLEEPING. `eState` is a `std::atomic`.

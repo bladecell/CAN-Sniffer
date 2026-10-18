@@ -2,7 +2,7 @@ idf_component_register(
     SRCS "sd_card.cpp"
     INCLUDE_DIRS "include"
     REQUIRES espressif__cjson esp_driver_gpio esp_driver_sdmmc fatfs sdmmc soc freertos
-    PRIV_REQUIRES log
+    PRIV_REQUIRES log esp_timer
 )
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -Wall -Wextra -Werror)

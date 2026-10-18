@@ -96,6 +96,34 @@ void test_missing_directory(void)
   TEST_ASSERT_EQUAL(sd_tree::Result::IoError, run("/tmp/deltree-does-not-exist"));
 }
 
+int64_t g_fakeNow = 0;
+int64_t fakeNow()
+{
+  return g_fakeNow += 10;  // every entry costs 10 us
+}
+
+void test_deadline_ends_a_long_delete(void)
+{
+  const std::string root = makeRoot();
+  const std::string top  = nest(root, 3);
+  for (int i = 0; i < 20; i++)
+  {
+    touch(top + "/extra" + std::to_string(i));
+  }
+  std::string buf(1024, '\0');
+  memcpy(buf.data(), top.c_str(), top.size() + 1);
+  g_fakeNow                  = 0;
+  const sd_tree::Deadline dl = {fakeNow, 50};  // allows a handful of entries
+  TEST_ASSERT_EQUAL(sd_tree::Result::TimedOut, sd_tree::deleteTree(buf.data(), buf.size(), top.size(), 0, &dl));
+  TEST_ASSERT_TRUE(exists(top));  // the directory itself is only removed after everything in it
+  TEST_ASSERT_EQUAL_STRING(top.c_str(), buf.c_str());
+  g_fakeNow = 0;
+  const sd_tree::Deadline roomy = {fakeNow, 1000000};
+  TEST_ASSERT_EQUAL(sd_tree::Result::Ok, sd_tree::deleteTree(buf.data(), buf.size(), top.size(), 0, &roomy));
+  TEST_ASSERT_FALSE(exists(top));
+  rmdir(root.c_str());
+}
+
 void test_path_buffer_restored(void)
 {
   const std::string root = makeRoot();
@@ -114,5 +142,6 @@ extern "C" void run_delete_tree_tests(void)
   RUN_TEST(test_depth_cap_stops_instead_of_recursing);
   RUN_TEST(test_path_too_long_is_an_error_not_an_overflow);
   RUN_TEST(test_missing_directory);
+  RUN_TEST(test_deadline_ends_a_long_delete);
   RUN_TEST(test_path_buffer_restored);
 }

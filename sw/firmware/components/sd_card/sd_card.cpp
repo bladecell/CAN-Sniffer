@@ -14,6 +14,7 @@
 #include "esp_check.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "delete_tree.hpp"
 #include "esp_vfs_fat.h"
 
@@ -21,6 +22,11 @@ static const char* TAG = "SD_CARD";
 
 namespace
 {
+
+// SD-2: the supervisor polls the card detect pin every second; it must not queue behind a long transfer.
+constexpr TickType_t STATUS_LEASE_TIMEOUT = pdMS_TO_TICKS(250);
+// Recursive delete holds the lease the whole time.
+constexpr int64_t DELETE_DEADLINE_US = 30LL * 1000 * 1000;
 
 esp_err_t directory_errno_to_error(int error)
 {
@@ -325,18 +331,14 @@ esp_err_t SDCard::init(const SDCard::Config& config)
 
 bool SDCard::card_present()
 {
-    Operation operation = acquire_operation(portMAX_DELAY);
-    if (!operation)
-    {
-        return false;
-    }
-
+    // A GPIO read needs no lease; taking it made the supervisor wait behind every file transfer (SD-2).
     return (gpio_get_level(cd_pin) == 0);
 }
 
 void SDCard::update_card_status()
 {
-    Operation operation = acquire_operation(portMAX_DELAY);
+    // Bounded: while a download, upload or delete holds the lease a card is in use, so skip this round.
+    Operation operation = acquire_operation(STATUS_LEASE_TIMEOUT);
     if (!operation)
     {
         return;
@@ -454,12 +456,7 @@ esp_err_t SDCard::format_sdcard()
 
 bool SDCard::is_mounted()
 {
-    Operation operation = acquire_operation(portMAX_DELAY);
-    if (!operation)
-    {
-        return false;
-    }
-
+    // One pointer read, no lease: callers that need the mount to stay put hold their own lease.
     return card != nullptr;
 }
 
@@ -780,10 +777,14 @@ esp_err_t SDCard::delete_directory(const char* relative_path)
         filepath[--len] = '\0';
     }
 
-    switch (sd_tree::deleteTree(filepath.get(), buffer_size, len))
+    const sd_tree::Deadline deadline = {esp_timer_get_time, esp_timer_get_time() + DELETE_DEADLINE_US};
+    switch (sd_tree::deleteTree(filepath.get(), buffer_size, len, 0, &deadline))
     {
         case sd_tree::Result::Ok:
             return ESP_OK;
+        case sd_tree::Result::TimedOut:
+            ESP_LOGE(TAG, "Deleting %s took longer than %d s, stopped", relative_path, static_cast<int>(DELETE_DEADLINE_US / 1000000));
+            return ESP_ERR_TIMEOUT;
         case sd_tree::Result::TooDeep:
             ESP_LOGE(TAG, "Directory %s nests deeper than %d levels", relative_path, sd_tree::kMaxDepth);
             return ESP_ERR_INVALID_SIZE;
