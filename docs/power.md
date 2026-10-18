@@ -14,19 +14,20 @@ The supervisor keeps the device from draining the car battery when the car is of
 UNINITIALIZED(0) → STARTING(1) ─ all critical steps ok → NOT_CONNECTED(2) ⇄ RUNNING(3)
                         │ critical step failed
                         ▼
-                     ERROR(6)  (LED blinks, nothing else happens; no reboot, no sleep)
+                     ERROR(6)  (LED blinks 30 s, then sleeps with the PM lock released and restarts; see below)
 
 NOT_CONNECTED ─ bus down, V ≤ 13.2, 60 s ─→ STOPPING(4) ─ deinit ok ─→ SLEEPING(5)
 SLEEPING ─ wake, CAN init ok, bus alive ─→ restart OBD, Wi-Fi, web server ─→ NOT_CONNECTED
 SLEEPING ─ wake, bus dead ─→ stay SLEEPING (CAN deinit, transceiver standby, sleep again)
-SLEEPING ─ CAN init fails after wake ─→ ERROR
+SLEEPING ─ CAN init fails after wake ─→ ERROR (same back-off and restart)
 SLEEPING ─ OBD / Wi-Fi / web server start fails after wake ─→ STOPPING (retry the shutdown)
 STOPPING ─ web server, OBD2 or CAN deinit fails ─→ stays STOPPING, retried every second
 ```
 The supervisor loop runs once per second (`vTaskDelay(1000)`), and each pass also calls `SDCard::update_card_status()`.
 
 - `NOT_CONNECTED` → `RUNNING` when `CanDriver::isBusConnected()` is true. The driver declares the bus connected after 3 successful pings, sent every 2 s (`can_health_check`), with no ACK or stuff errors.
-- `RUNNING` → `NOT_CONNECTED` when the bus is no longer connected. The OBD2 "disconnected" callback also sets NOT_CONNECTED directly.
+- `RUNNING` → `NOT_CONNECTED` when the bus is no longer connected. The OBD2 "disconnected" callback does the same, but only from RUNNING (an atomic compare-and-set), so it cannot overwrite ERROR, STOPPING or SLEEPING. `eState` is a `std::atomic`.
+- `ERROR` (`main/include/error_policy.hpp`): the LED blinks for 30 s, then the supervisor releases the PM lock, light-sleeps for a back-off and calls `esp_restart()`. The back-off is 60 s doubled for every consecutive ERROR restart, capped at 3600 s, so a permanent fault costs one short boot per hour rather than a reboot loop or an awake device. The count is kept in RTC memory (valid only with a magic value, so power-on garbage reads as 0) and cleared when a start completes. A critical setup step that fails at boot (settings, power management, flash file system, Wi-Fi, web server) takes this path.
 - There is no path from `RUNNING` to sleep. Sleep always goes through `NOT_CONNECTED`.
 
 ### Sleep decision
@@ -69,7 +70,7 @@ After wake: CAN, then (bus alive) OBD (which re-subscribes the connected-callbac
 Not deinitialized before sleep, and have no `deinit()`: Settings (NVS), power management, the `www` LittleFS mount, the SD card (stays mounted, still polled for hot-plug every second), the battery ADC unit, the LED worker task. `CLAUDE.md` requires every component to support `deinit()`; these do not.
 
 ### Where it differs from a battery-safe design
-- ERROR state never sleeps or reboots: the device stays awake with the PM lock held and a blinking LED. A failed critical step at boot therefore keeps drawing current.
+- ERROR state: fixed by P2.9e, see States.
 - While the bus is up (RUNNING) the device never sleeps. While the bus is down and the voltage stays above 13.2 V it never sleeps either.
 - `main()` keeps polling the supervisor state every 250 ms until it is RUNNING, including while the device sleeps.
 

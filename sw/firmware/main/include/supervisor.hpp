@@ -1,5 +1,6 @@
 #pragma once
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <string>
 
@@ -91,7 +92,7 @@ public:
     void              restart_system();
     SUPERVISOR::State get_state() const
     {
-        return eState;
+        return eState.load();
     }
 
     std::string get_pid_def_path() const
@@ -124,7 +125,8 @@ private:
     static void taskWrapper(void* param);
 
     TaskHandle_t         xTaskHandle = nullptr;
-    SUPERVISOR::State    eState      = State::UNINITIALIZED;
+    // Written by the supervisor task, the OBD callback task and start()/stop(); read by httpd tasks.
+    std::atomic<State>   eState      = State::UNINITIALIZED;
     esp_pm_lock_handle_t pm_lock_    = nullptr;
     Config               _config     = {};
 

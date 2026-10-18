@@ -11,6 +11,8 @@
 #include "async_web_server.hpp"
 #include "battery.hpp"
 #include "can_driver.hpp"
+#include "error_policy.hpp"
+#include "esp_attr.h"
 #include "esp_err.h"
 #include "esp_littlefs.h"
 #include "esp_log.h"
@@ -28,6 +30,10 @@
 #include "settings.hpp"
 #include "utilities.h"
 #include "webserver.hpp"
+
+// Consecutive restarts caused by the ERROR state. RTC_NOINIT survives a software restart; the magic guards power-on garbage.
+static RTC_NOINIT_ATTR uint32_t s_errorMagic;
+static RTC_NOINIT_ATTR uint32_t s_errorRestarts;
 #include "wifi.hpp"
 
 static const char* TAG = "SUPERVISOR";
@@ -95,13 +101,12 @@ SUPERVISOR::~SUPERVISOR()
 
 void SUPERVISOR::start()
 {
-    if (eState != State::UNINITIALIZED)
+    State expected = State::UNINITIALIZED;
+    if (!eState.compare_exchange_strong(expected, State::STARTING))
     {
-        ESP_LOGW(TAG, "Cannot start supervisor from state %d", eState);
+        ESP_LOGW(TAG, "Cannot start supervisor from state %d", static_cast<int>(expected));
         return;
     }
-
-    eState = State::STARTING;
 
     BaseType_t result = xTaskCreatePinnedToCore(taskWrapper, "SupervisorTask", SUPERVISOR_TASK_STACK_SIZE, this,
                                                 tskIDLE_PRIORITY + 1, &xTaskHandle, SUPERVISOR_TASK_CORE_ID);
@@ -115,13 +120,12 @@ void SUPERVISOR::start()
 
 void SUPERVISOR::stop()
 {
-    if (eState != State::RUNNING)
+    State expected = State::RUNNING;
+    if (!eState.compare_exchange_strong(expected, State::STOPPING))
     {
-        ESP_LOGW(TAG, "Cannot stop supervisor from state %d", eState);
+        ESP_LOGW(TAG, "Cannot stop supervisor from state %d", static_cast<int>(expected));
         return;
     }
-
-    eState = State::STOPPING;
 
     if (xTaskHandle != nullptr)
     {
@@ -139,6 +143,7 @@ void SUPERVISOR::taskWrapper(void* param)
 void SUPERVISOR::task()
 {
     uint32_t inactive_timer = 0;
+    uint32_t error_timer    = 0;
     while (1)
     {
         switch (eState)
@@ -180,6 +185,7 @@ void SUPERVISOR::task()
                     break;
                 }
 
+                s_errorRestarts = 0;  // a clean start ends the consecutive-ERROR count
                 eState = State::NOT_CONNECTED;
                 ESP_LOGI(TAG, "System INITIALIZED");
 
@@ -371,10 +377,33 @@ void SUPERVISOR::task()
                 break;
             }
             case State::ERROR:
-                LedStatus::getInstance().blink(0xFFFFFFFF, 100, 100);
+            {
+                // Blink for a while so the fault is visible, then sleep with the PM lock released and restart.
+                // Terminal state: nothing else sets eState while it is ERROR.
+                if (error_timer < error_policy::kBlinkS)
+                {
+                    error_timer++;
+                    LedStatus::getInstance().blink(0xFFFFFFFF, 100, 100);
+                    break;
+                }
+
+                const uint32_t attempt = error_policy::validCount(s_errorMagic, s_errorRestarts);
+                const uint32_t backoff = error_policy::backoffS(attempt);
+                s_errorMagic           = error_policy::kMagic;
+                s_errorRestarts        = attempt + 1;
+                ESP_LOGE(TAG, "ERROR state: sleeping %us, then restarting (consecutive error restart %u)",
+                         static_cast<unsigned>(backoff), static_cast<unsigned>(attempt + 1));
+                if (pm_lock_)
+                {
+                    esp_pm_lock_release(pm_lock_);
+                }
+                esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(backoff) * 1000000ULL);
+                vTaskDelay(pdMS_TO_TICKS(static_cast<uint32_t>(backoff) * 1000U));
+                restart_system();
                 break;
+            }
             default:
-                ESP_LOGE(TAG, "Unknown state %d", eState);
+                ESP_LOGE(TAG, "Unknown state %d", static_cast<int>(eState.load()));
                 break;
         }
         SDCard::getInstance().update_card_status();
@@ -578,7 +607,9 @@ esp_err_t SUPERVISOR::setup_obd()
             if (!connected)
             {
                 ESP_LOGI("SUPERVISOR", "OBD disconnected.");
-                SUPERVISOR::getInstance().eState = State::NOT_CONNECTED;
+                // Only RUNNING falls back; this must not overwrite ERROR, STOPPING or SLEEPING.
+                State expected = State::RUNNING;
+                SUPERVISOR::getInstance().eState.compare_exchange_strong(expected, State::NOT_CONNECTED);
             }
         });
 
