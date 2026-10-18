@@ -100,6 +100,12 @@ public:
 
     std::string getApIP() const;
     std::string getStaIP() const;
+    // True when this device is serving an access point with no password (mode AP or AP+STA, auth OPEN). Read from the
+    // applied config, so the AP fallback after a failed STA connect counts as well.
+    bool isApOpen() const
+    {
+        return (m_config.mode == WIFI_MODE_AP || m_config.mode == WIFI_MODE_APSTA) && m_config.auth_mode == WIFI_AUTH_OPEN;
+    }
     std::string getSSID() const
     {
         return m_config.ssid;
