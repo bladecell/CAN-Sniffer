@@ -21,6 +21,7 @@ import type { PidRow } from "./telemetryStore.svelte";
 import { parseWsFrame, type WsFrame } from "./wsFrames";
 import { dispatchToListeners } from "./dispatch";
 import { reconnectDelay } from "./backoff";
+import { createHeartbeat, CONNECT_TIMEOUT_MS } from "./heartbeat";
 import { createStreamRefCount } from "./streamRefCount";
 import { createThrottle } from "./throttle";
 import { createLatest } from "./latest";
@@ -74,9 +75,25 @@ export class CanStore {
         () => { this.sendByte(COMMANDS.STOP_LOG); this.isStreaming = false; },
     );
 
-    // Heartbeat timers
-    pingInterval: ReturnType<typeof setInterval> | null = null;
-    pongTimeout: ReturnType<typeof setTimeout> | null = null;
+    connectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    private heartbeat = createHeartbeat({
+        ping: () => {
+            if (this.socket?.readyState !== WebSocket.OPEN) return false;
+            this.socket.send(new Uint8Array([COMMANDS.PING_REQUEST]));
+            return true;
+        },
+        onTimeout: () => {
+            console.warn("Heartbeat missed! ESP32 appears offline.");
+            if (this.socket) this.socket.onclose = null;
+            this.socket?.close();
+            this.handleConnectionDrop();
+        },
+        // Reset the backoff only once the link has answered, so a socket that opens and dies keeps backing off.
+        onPong: () => {
+            this.reconnectAttempts = 0;
+        },
+    });
 
     connect() {
         if (this.socket) return;
@@ -108,17 +125,28 @@ export class CanStore {
         }
         this.socket.binaryType = "arraybuffer";
 
+        const socket = this.socket;
+        this.clearConnectTimer();
+        this.connectTimer = setTimeout(() => {
+            this.connectTimer = null;
+            if (socket.readyState === WebSocket.OPEN) return;
+            console.warn("WebSocket connect timed out");
+            socket.onclose = null;
+            socket.close();
+            this.handleConnectionDrop();
+        }, CONNECT_TIMEOUT_MS);
+
         this.socket.onopen = () => {
             console.log("WebSocket Connected");
             alertStore.add("WebSocket Connected", "success");
+            this.clearConnectTimer();
             this.connected = true;
-            this.reconnectAttempts = 0;
             this.outageAlerted = false;
             // A new connection may find the server flag off (it resets when clients leave).
             if (this.streamRefs.count() > 0) this.sendByte(COMMANDS.START_LOG);
             this.isStreaming = this.streamRefs.count() > 0;
 
-            this.startHeartbeat();
+            this.heartbeat.start();
 
             this.loadDefinitions();
             this.getObd2Status();
@@ -160,37 +188,19 @@ export class CanStore {
         }
     }
 
-    // --- HEARTBEAT LOGIC ---
-
-    startHeartbeat() {
-        this.pingInterval = setInterval(() => {
-            if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-                const pingCommand = new Uint8Array([COMMANDS.PING_REQUEST]);
-                this.socket.send(pingCommand);
-
-                this.pongTimeout = setTimeout(() => {
-                    console.warn("Heartbeat missed! ESP32 appears offline.");
-                    // alertStore.add("Connection lost to device", "warning");
-
-                    if (this.socket) {
-                        this.socket.onclose = null;
-
-                        this.socket.close();
-                    }
-
-                    this.handleConnectionDrop();
-                }, 1000);
-            }
-        }, 2000);
+    clearConnectTimer() {
+        if (this.connectTimer) clearTimeout(this.connectTimer);
+        this.connectTimer = null;
     }
 
     handleConnectionDrop(silent = false) {
+        this.clearConnectTimer();
         this.connected = false;
         this.isStreaming = false;
         this.socket = null;
         this.wsCanStatus.state = "Not Connected";
 
-        this.stopHeartbeat();
+        this.heartbeat.stop();
 
         if (!this.intentionalDisconnect) {
             if (!this.outageAlerted && !silent) {
@@ -206,20 +216,6 @@ export class CanStore {
         }
     }
 
-    handlePong() {
-        if (this.pongTimeout) {
-            clearTimeout(this.pongTimeout);
-            this.pongTimeout = null;
-        }
-    }
-
-    stopHeartbeat() {
-        if (this.pingInterval) clearInterval(this.pingInterval);
-        if (this.pongTimeout) clearTimeout(this.pongTimeout);
-        this.pingInterval = null;
-        this.pongTimeout = null;
-    }
-
     disconnect() {
         console.log("WebSocket disconnecting manually.");
 
@@ -230,7 +226,8 @@ export class CanStore {
             this.reconnectTimeout = null;
         }
 
-        this.stopHeartbeat();
+        this.clearConnectTimer();
+        this.heartbeat.stop();
 
         if (this.socket) {
             this.socket.close(1000, "User disconnected");
@@ -272,7 +269,7 @@ export class CanStore {
                 this.applyCanStatusFrame(frame);
                 break;
             case "pong":
-                this.handlePong();
+                this.heartbeat.pong();
                 break;
         }
     }
