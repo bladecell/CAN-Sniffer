@@ -10,7 +10,7 @@ namespace json_budget
 constexpr size_t NODE_BYTES   = 64;          // one cJSON node plus allocator overhead
 constexpr size_t MAX_NODES    = 8192;        // a 256-item PID set is about 5000 nodes
 constexpr size_t MAX_DEPTH    = 32;          // same as CONFIG_CJSON_NESTING_LIMIT
-constexpr size_t HEAP_RESERVE = 32 * 1024;   // left free for the rest of the firmware after the parse
+constexpr size_t HEAP_RESERVE = size_t{32} * 1024;  // left free for the rest of the firmware after the parse
 
 enum class Verdict : uint8_t
 {
