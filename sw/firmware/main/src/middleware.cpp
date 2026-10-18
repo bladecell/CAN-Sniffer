@@ -272,17 +272,10 @@ MiddlewareJsonResult m_pid_def_get(int filter_id)
     {
         esp_err_t item_error = ESP_OK;
         cJSON*    item       = single_pid_def_get((uint16_t)filter_id, &item_error);
-        if (item != nullptr)
-        {
-            cJSON_AddItemToArray(data_array, item);
-            count++;
-        }
-        else
-        {
-            cJSON_Delete(data_array);
-            cJSON_Delete(root);
-            return json_result(nullptr, status_for_error(item_error, 404));
-        }
+        cJSON_Delete(data_array);
+        cJSON_Delete(root);
+        // One PID: the bare object, no list wrapper.
+        return item != nullptr ? json_result(item) : json_result(nullptr, status_for_error(item_error, 404));
     }
     else
     {
@@ -353,17 +346,10 @@ MiddlewareJsonResult m_pid_data_get(int filter_id)
     {
         esp_err_t item_error = ESP_OK;
         cJSON*    item       = single_pid_data_get((uint16_t)filter_id, &item_error);
-        if (item != nullptr)
-        {
-            cJSON_AddItemToArray(data_array, item);
-            count++;
-        }
-        else
-        {
-            cJSON_Delete(data_array);
-            cJSON_Delete(root);
-            return json_result(nullptr, status_for_error(item_error, 404));
-        }
+        cJSON_Delete(data_array);
+        cJSON_Delete(root);
+        // One PID: the bare object, no list wrapper.
+        return item != nullptr ? json_result(item) : json_result(nullptr, status_for_error(item_error, 404));
     }
     else
     {
