@@ -14,4 +14,21 @@ menu "CAN Sniffer"
             bool "HW v2 (LTE modem, GNSS, ignition sense; pin map not defined yet)"
     endchoice
 
+    config SNIFFER_RELEASE_BUILD
+        bool "Release build (forbids development-only options)"
+        default n
+        help
+            Set this for every image that leaves the bench. The build fails if it is combined with
+            SNIFFER_AUTH_DEV_BYPASS.
+
+    config SNIFFER_AUTH_DEV_BYPASS
+        bool "DEVELOPMENT ONLY: gated routes need no login"
+        default n
+        help
+            Every gated route passes without a Bearer token. The Host/Origin and Content-Type guards, the
+            claim/login/PIN routes and the open routes behave as usual. GET /auth reports dev_bypass and
+            authenticated, and the device logs a warning at boot and at most once a minute while it is on.
+            Never enable this on a device that is in a car or on a network you do not control. Not in
+            sdkconfig.defaults; see docs/decisions.md (P2.10f).
+
 endmenu

@@ -4,6 +4,7 @@
 #include <initializer_list>
 
 #include "../../../main/include/auth_core.hpp"
+#include "../../../main/include/auth_dev.hpp"
 #include "../../../main/include/auth_http.hpp"
 #include "unity.h"
 
@@ -771,6 +772,20 @@ void test_recovery_during_a_pending_claim_cancels_it(void)
   TEST_ASSERT_EQUAL(State::Unclaimed, f.core.state());
 }
 
+// ---- development bypass is compiled out by default -------------------------------------------------------------
+static_assert(!auth_dev::kBypass, "the default configuration must have no login bypass");
+
+void test_default_build_has_no_dev_bypass(void)
+{
+  TEST_ASSERT_FALSE(auth_dev::kBypass);
+  // the core itself has no bypass: an unclaimed device and a missing token are refused whatever the build says
+  Fixture f;
+  TEST_ASSERT_EQUAL(Result::NotClaimed, f.core.check(nullptr, 0));
+  Fixture g = claimed();
+  TEST_ASSERT_EQUAL(Result::Unauthorized, g.core.check(nullptr, 101 * kSec));
+  TEST_ASSERT_EQUAL(Result::Unauthorized, g.core.check("", 101 * kSec));
+}
+
 // ---- HTTP mapping and Authorization parsing -------------------------------------------------------------------
 void test_http_mapping_covers_every_result(void)
 {
@@ -816,6 +831,7 @@ void test_bearer_parsing(void)
 
 extern "C" void run_auth_core_tests(void)
 {
+  RUN_TEST(test_default_build_has_no_dev_bypass);
   RUN_TEST(test_http_mapping_covers_every_result);
   RUN_TEST(test_bearer_parsing);
   RUN_TEST(test_pin_policy);

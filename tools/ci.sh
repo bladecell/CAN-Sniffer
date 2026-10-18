@@ -58,6 +58,12 @@ else
   echo "No frontend at sw/frontend, skipping"
 fi
 
+# --- The development login bypass must never be in a committed or gated build (P2.10f) ---
+if grep -qs '^CONFIG_SNIFFER_AUTH_DEV_BYPASS=y' "$FW"/sdkconfig "$FW"/sdkconfig.defaults*; then
+  echo "CONFIG_SNIFFER_AUTH_DEV_BYPASS=y found in sdkconfig or sdkconfig.defaults*: the login bypass is development only."
+  echo "Build it with sdkconfig.dev in build-dev/ (CLAUDE.md), not in the committed config."; exit 1
+fi
+
 # --- Firmware build (components use -Werror) ---
 step "Firmware build (esp32s3)"
 idf.py -C "$FW" build

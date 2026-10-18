@@ -15,3 +15,5 @@ sw/firmware/asd.json
 plan/
 .claude/
 __pycache__/
+sw/firmware/sdkconfig.dev
+sw/firmware/build-dev/

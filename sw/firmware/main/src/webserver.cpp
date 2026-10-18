@@ -1049,6 +1049,10 @@ esp_err_t g_auth_index_handler(httpd_req_t* req, void* arg)
         cJSON_AddNumberToObject(root, "retry_after_s", v.retryAfterS);
         cJSON_AddNumberToObject(root, "claim_expires_in_s", v.pendingExpiresS);
         cJSON_AddBoolToObject(root, "ap_open", WIFI::getInstance().isApOpen());
+        if (auth_dev::kBypass)
+        {
+            cJSON_AddBoolToObject(root, "dev_bypass", true);  // absent in every normal build
+        }
 
         // The client that posted a claim polls with its id and learns the outcome here.
         char claimId[auth::kClaimIdLen + 8];

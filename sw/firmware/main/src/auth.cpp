@@ -1,5 +1,7 @@
 #include "auth.hpp"
 
+#include "auth_dev.hpp"
+
 #include "button.h"
 #include "esp_attr.h"
 #include "esp_log.h"
@@ -227,6 +229,9 @@ esp_err_t start()
     ESP_LOGW(TAG, "no BOOT button (%s): claim and hold recovery unavailable", esp_err_to_name(hook));
   }
   s_up = true;
+#if defined(CONFIG_SNIFFER_AUTH_DEV_BYPASS)
+  ESP_LOGW(TAG, "DEV BYPASS ACTIVE: gated routes need NO login. Development build only, never ship it");
+#endif
   ESP_LOGI(TAG, "access control up: %s", st == auth::State::Claimed ? "claimed"
                                          : st == auth::State::Unclaimed ? "unclaimed" : "UNAVAILABLE");
   return ESP_OK;
@@ -246,6 +251,17 @@ void stop()
 
 auth::Result requireAdmin(const char* bearer)
 {
+#if defined(CONFIG_SNIFFER_AUTH_DEV_BYPASS)
+    // Rate limited to one line a minute: the dashboard polls, so a line per request would bury the log.
+    static int64_t s_lastWarnUs = -60LL * 1000000;
+    if (esp_timer_get_time() - s_lastWarnUs >= 60LL * 1000000)
+    {
+        s_lastWarnUs = esp_timer_get_time();
+        ESP_LOGW(TAG, "DEV BYPASS ACTIVE: gated routes need NO login. Development build only, never ship it");
+    }
+    (void)bearer;
+    return auth::Result::Ok;
+#endif
   if (!s_up)
   {
     return auth::Result::Unavailable;
@@ -255,7 +271,7 @@ auth::Result requireAdmin(const char* bearer)
 
 StatusView status(const char* bearer)
 {
-  const bool authed = s_up && s_core.check(bearer, nowUs()) == auth::Result::Ok;
+  const bool authed = auth_dev::kBypass || (s_up && s_core.check(bearer, nowUs()) == auth::Result::Ok);
   // An unclaimed device may have a claim waiting for its press: looking at it commits it, so serialise like a claim.
   OpLock lock;
   if (!lock.ok && s_core.state() == auth::State::Unclaimed)

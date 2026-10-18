@@ -7,6 +7,7 @@
 #include <cstdint>
 
 #include "auth_core.hpp"
+#include "auth_dev.hpp"
 #include "esp_err.h"
 
 namespace auth_service
