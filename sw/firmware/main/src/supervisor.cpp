@@ -397,8 +397,9 @@ void SUPERVISOR::task()
             }
             case State::ERROR:
             {
-                // Blink for a while so the fault is visible, then sleep with the PM lock released and restart.
-                // Terminal state: nothing else sets eState while it is ERROR.
+                // Blink for a while so the fault is visible, then shut every module down like STOPPING does and
+                // deep-sleep on a timer. Deep sleep powers Wi-Fi, the web server and the CAN node off; the wake is a
+                // reboot. Terminal state: nothing else sets eState while it is ERROR.
                 if (error_timer < error_policy::kBlinkS)
                 {
                     error_timer++;
@@ -410,14 +411,28 @@ void SUPERVISOR::task()
                 const uint32_t backoff = error_policy::backoffS(attempt);
                 s_errorMagic           = error_policy::kMagic;
                 s_errorRestarts        = attempt + 1;
-                ESP_LOGE(TAG, "ERROR state: sleeping %us, then restarting (consecutive error restart %u)",
+                ESP_LOGE(TAG, "ERROR state: deep sleep for %us, then reboot (consecutive error %u)",
                          static_cast<unsigned>(backoff), static_cast<unsigned>(attempt + 1));
-                if (pm_lock_)
+
+                // Best effort, one pass: deep sleep clears whatever a failed step leaves behind.
+                esp_err_t stopErr = stop_web_server();
+                if (stopErr == ESP_OK)
                 {
-                    esp_pm_lock_release(pm_lock_);
+                    stopErr = OBD2::getInstance().deinit();
                 }
+                if (stopErr != ESP_OK)
+                {
+                    ESP_LOGW(TAG, "Shutdown before error sleep incomplete: %s", esp_err_to_name(stopErr));
+                }
+                WIFI::getInstance().deinit();
+                if (CanDriver::getInstance().deinit() == ESP_OK)
+                {
+                    gpio_set_level(CAN_RS_GPIO, 1);  // transceiver standby
+                }
+                LedStatus::getInstance().deinit();
+
                 esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(backoff) * 1000000ULL);
-                vTaskDelay(pdMS_TO_TICKS(static_cast<uint32_t>(backoff) * 1000U));
+                esp_deep_sleep_start();  // does not return
                 restart_system();
                 break;
             }

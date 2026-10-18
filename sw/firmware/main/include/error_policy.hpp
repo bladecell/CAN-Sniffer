@@ -1,7 +1,7 @@
 #pragma once
 
 // Supervisor ERROR-state policy (P2.9e, SUP-1). No ESP-IDF includes, so host tests include it directly.
-// ERROR blinks the LED for kBlinkS, then sleeps for backoffS(n) with the PM lock released and restarts. n is the number of
+// ERROR blinks the LED for kBlinkS, shuts the modules down, then deep-sleeps backoffS(n) and reboots. n is the number of
 // consecutive ERROR restarts, kept in RTC memory; it grows the sleep so a permanent fault is retried at most once per
 // kMaxBackoffS instead of looping and draining the car battery.
 

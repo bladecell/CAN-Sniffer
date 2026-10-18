@@ -14,12 +14,12 @@ The supervisor keeps the device from draining the car battery when the car is of
 UNINITIALIZED(0) → STARTING(1) ─ all critical steps ok → NOT_CONNECTED(2) ⇄ RUNNING(3)
                         │ critical step failed
                         ▼
-                     ERROR(6)  (LED blinks 30 s, then sleeps with the PM lock released and restarts; see below)
+                     ERROR(6)  (LED blinks 30 s, modules shut down, deep sleep on a timer, reboot on wake; see below)
 
 NOT_CONNECTED ─ bus down, V ≤ 13.2, 60 s ─→ STOPPING(4) ─ deinit ok ─→ SLEEPING(5)
 SLEEPING ─ wake, CAN init ok, bus alive ─→ restart OBD, Wi-Fi, web server ─→ NOT_CONNECTED
 SLEEPING ─ wake, bus dead ─→ stay SLEEPING (CAN deinit, transceiver standby, sleep again)
-SLEEPING ─ CAN init fails after wake ─→ ERROR (same back-off and restart)
+SLEEPING ─ CAN init fails after wake ─→ ERROR (same back-off and deep sleep)
 SLEEPING ─ OBD / Wi-Fi / web server start fails after wake ─→ STOPPING (retry the shutdown)
 STOPPING ─ web server, OBD2 or CAN deinit fails ─→ stays STOPPING, retried every second
 ```
@@ -27,7 +27,7 @@ The supervisor loop runs once per second (`vTaskDelay(1000)`), and each pass als
 
 - `NOT_CONNECTED` → `RUNNING` when `CanDriver::isBusConnected()` is true. The driver declares the bus connected after 3 successful pings, sent every 2 s (`can_health_check`), with no ACK or stuff errors.
 - `RUNNING` → `NOT_CONNECTED` when the bus is no longer connected. The OBD2 "disconnected" callback does the same, but only from RUNNING (an atomic compare-and-set), so it cannot overwrite ERROR, STOPPING or SLEEPING. `eState` is a `std::atomic`.
-- `ERROR` (`main/include/error_policy.hpp`): the LED blinks for 30 s, then the supervisor releases the PM lock, light-sleeps for a back-off and calls `esp_restart()`. The back-off is 60 s doubled for every consecutive ERROR restart, capped at 3600 s, so a permanent fault costs one short boot per hour rather than a reboot loop or an awake device. The count is kept in RTC memory (valid only with a magic value, so power-on garbage reads as 0) and cleared when a start completes. A critical setup step that fails at boot (settings, power management, flash file system, Wi-Fi, web server) takes this path.
+- `ERROR` (`main/include/error_policy.hpp`): the LED blinks for 30 s, then the supervisor runs one best-effort pass of the STOPPING deinit (web server, OBD2, Wi-Fi, CAN, LED) and calls `esp_deep_sleep_start()` with a timer wake; the wake is a normal reboot (`restart_system()` only runs if deep sleep somehow returns). The back-off is 60 s doubled for every consecutive ERROR, capped at 3600 s, so a permanent fault costs one short boot per hour. The count lives in `RTC_NOINIT_ATTR` variables: RTC memory stays powered in deep sleep and `RTC_NOINIT` is not cleared by any reset or wake, but its content is undefined after a power loss, so the count is trusted only when a magic word next to it matches and is capped at 16. A start that completes clears it. A critical setup step that fails at boot (settings, power management, flash file system, Wi-Fi, web server) takes this path.
 - There is no path from `RUNNING` to sleep. Sleep always goes through `NOT_CONNECTED`.
 
 ### Sleep decision
