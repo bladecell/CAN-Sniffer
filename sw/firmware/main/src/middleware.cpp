@@ -979,6 +979,17 @@ MiddlewareJsonResult m_dtc_request(int mode)
         return json_result(root, 422);
     }
 
+    // A DTC request blocks its worker for up to ~11 s (all modes) or 500 ms+ per mode: one request at a time over all modes, so
+    // concurrent refreshes cannot starve the REST workers (WEB-7). Invalid modes above do not take the slot.
+    static SingleFlight dtcFlight;
+    SingleFlight::Guard slot(dtcFlight);
+    if (!slot.held())
+    {
+        MiddlewareJsonResult busy = json_result(json_error_body("Another DTC request is already running", http_error::kBusy), 503);
+        busy.retry_after_s        = 5;
+        return busy;
+    }
+
     if (mode != -1)
     {
         const esp_err_t err = OBD2::getInstance().requestDTC(mode);
@@ -999,16 +1010,6 @@ MiddlewareJsonResult m_dtc_request(int mode)
             cJSON_AddStringToObject(root, "reason", esp_err_to_name(err));
         }
         return json_result(root, err == ESP_OK ? 200 : status_for_error(err, 422, Fault::Bus));
-    }
-
-    // Three blocking ECU requests on one worker: one at a time, so a few concurrent refreshes cannot starve the REST workers (WEB-7).
-    static SingleFlight allModesFlight;
-    SingleFlight::Guard slot(allModesFlight);
-    if (!slot.held())
-    {
-        MiddlewareJsonResult busy = json_result(json_error_body("All-mode DTC request already running", http_error::kBusy), 503);
-        busy.retry_after_s        = 5;
-        return busy;
     }
 
     struct DtcRequestResult
