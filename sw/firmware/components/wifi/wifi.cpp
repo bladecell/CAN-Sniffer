@@ -66,13 +66,9 @@ WIFI::WIFI()
         return;
     }
 
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
-    {
-        ERROR_CHECK(nvs_flash_erase(), "Failed to erase NVS flash", setState(State::ERROR));
-        ret = nvs_flash_init();
-    }
-    ERROR_CHECK(ret, "Failed to initialize NVS", setState(State::ERROR));
+    // Settings owns NVS and its recovery (erase on a bad partition). This call only covers a WIFI built before Settings
+    // ran: it is a no-op when NVS is up, and it must never erase settings, credentials or the auth PIN (WIFI-4).
+    ERROR_CHECK(nvs_flash_init(), "Failed to initialize NVS", setState(State::ERROR));
 }
 
 WIFI::~WIFI()
