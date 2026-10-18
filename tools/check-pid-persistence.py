@@ -85,13 +85,13 @@ def main():
         check(TEST_PID in reloaded and reloaded[TEST_PID]["name"] == "ZZ_PERSIST_TEST_EDIT", "edit survived the reload")
         # remove, save
         status, _ = call("DELETE", f"/pid_def/{TEST_PID}")
-        check(status == 200, "remove via DELETE /pid_def/<pid>")
+        check(status == 204, "remove via DELETE /pid_def/<pid>")
         status, _ = call("POST", "/pid_def/save")
         status, saved = call("GET", f"/sd_card/file/{rel}?download=true")
         check(all(d["pid"] != TEST_PID for d in json.loads(saved)), "saved file no longer contains the test PID")
     finally:
         # restore the user's file byte for byte, then reload it
-        status, _ = call("POST", f"/sd_card/file/{rel}", original_file, raw=True, ctype="application/octet-stream")
+        status, _ = call("PUT", f"/sd_card/file/{rel}", original_file, raw=True, ctype="application/octet-stream")
         print(f"restore upload -> {status}")
         call("POST", "/pid_def/load")
     status, after_file = call("GET", f"/sd_card/file/{rel}?download=true")

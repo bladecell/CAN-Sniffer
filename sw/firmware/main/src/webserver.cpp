@@ -257,6 +257,12 @@ static void ensure_error_fields(cJSON* root, int http_status)
 static esp_err_t send_json_response(httpd_req_t* req, MiddlewareJsonResult result)
 {
     cJSON* root = result.body;
+    if (root == nullptr && result.http_status == 204)
+    {
+        httpd_resp_set_status(req, http_error::statusLine(204));
+        httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+        return httpd_resp_send(req, nullptr, 0);
+    }
     if (root == nullptr)
     {
         ESP_LOGE(TAG, "Failed to allocate JSON response");
@@ -1384,7 +1390,7 @@ esp_err_t g_sd_card_file_read_handler(httpd_req_t* req, void* arg)
     return (send_err == ESP_OK && close_err == ESP_OK) ? ESP_OK : ESP_FAIL;
 }
 
-esp_err_t p_file_upload_handler(httpd_req_t* req, void* arg)
+esp_err_t put_file_upload_handler(httpd_req_t* req, void* arg)
 {
     size_t content_length = 0;
     if (!get_validated_upload_content_length(req, &content_length))
@@ -1417,6 +1423,7 @@ esp_err_t p_file_upload_handler(httpd_req_t* req, void* arg)
 
         int         response_status = 200;
         const char* response_reason = nullptr;
+        bool        created         = false;
         {
             SDCard::Operation operation = SDCard::getInstance().acquire_operation(UPLOAD_OPERATION_TIMEOUT, true);
             if (!operation)
@@ -1424,11 +1431,16 @@ esp_err_t p_file_upload_handler(httpd_req_t* req, void* arg)
                 response_status = 503;
                 response_reason = operation.status() == ESP_ERR_TIMEOUT ? "SD card busy" : "SD Card not mounted";
             }
-            else if (SDCard::getInstance().create_directory(relative_path) != ESP_OK)
+            else
             {
-                ESP_LOGE(TAG, "Failed to create directory: %s", relative_path);
-                response_status = 500;
-                response_reason = "Failed to create directory";
+                struct stat dir_stat;
+                created = SDCard::getInstance().get_file_stat(relative_path, &dir_stat) != ESP_OK || !S_ISDIR(dir_stat.st_mode);
+                if (SDCard::getInstance().create_directory(relative_path) != ESP_OK)
+                {
+                    ESP_LOGE(TAG, "Failed to create directory: %s", relative_path);
+                    response_status = 500;
+                    response_reason = "Failed to create directory";
+                }
             }
         }
 
@@ -1436,13 +1448,14 @@ esp_err_t p_file_upload_handler(httpd_req_t* req, void* arg)
         {
             return send_json_response(req, make_upload_result("error", response_reason, response_status));
         }
-        return send_json_response(req, make_upload_result("success", nullptr, 200));
+        return send_json_response(req, make_upload_result("success", nullptr, created ? 201 : 200));
     }
 
     const int64_t upload_started_at = esp_timer_get_time();
     int           response_status   = 200;
     const char*   response_reason   = nullptr;
     bool          send_response     = true;
+    bool          created           = false;
 
     {
         // Keep this lease for the entire transaction. The file APIs take the
@@ -1459,6 +1472,7 @@ esp_err_t p_file_upload_handler(httpd_req_t* req, void* arg)
             struct stat file_stat;
             const esp_err_t stat_err = SDCard::getInstance().get_file_stat(relative_path, &file_stat);
             const bool      target_existed = stat_err == ESP_OK;
+            created                        = !target_existed;
             FILE*           fd             = nullptr;
 
             if (stat_err != ESP_OK && stat_err != ESP_ERR_NOT_FOUND)
@@ -1492,7 +1506,7 @@ esp_err_t p_file_upload_handler(httpd_req_t* req, void* arg)
                         }
                     }
                     response_status = open_err == ESP_ERR_INVALID_STATE ? 503 : 500;
-                    response_reason = "Storage error or file already exists";
+                    response_reason = "Storage error";
                 }
                 else
                 {
@@ -1600,7 +1614,7 @@ esp_err_t p_file_upload_handler(httpd_req_t* req, void* arg)
     {
         return send_json_response(req, make_upload_result("error", response_reason, response_status));
     }
-    return send_json_response(req, make_upload_result("success", nullptr, 200));
+    return send_json_response(req, make_upload_result("success", nullptr, created ? 201 : 200));
 }
 
 esp_err_t d_file_delete_handler(httpd_req_t* req, void* arg)

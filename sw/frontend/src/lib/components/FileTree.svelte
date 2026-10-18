@@ -4,7 +4,7 @@
   import Icon from "$lib/Icon.svelte";
   import type { SdTreeNode } from "$lib/types";
   import { nodeKey } from "$lib/sdTree";
-  import { parseJsonResponse, sdCardFileEndpoint } from "$lib/api";
+  import { parseJsonResponse, parseJsonResponseAllowEmpty, sdCardFileEndpoint } from "$lib/api";
   import { auth } from "$lib/auth.svelte";
 
   const errorMessage = (err: unknown) => (err instanceof Error ? err.message : String(err));
@@ -52,7 +52,7 @@
     try {
       const endpoint = sdCardFileEndpoint(path, isFolder);
       const response = await auth.gatedFetch(endpoint, { method: "DELETE" });
-      await parseJsonResponse(response);
+      await parseJsonResponseAllowEmpty(response);
       
       alertStore.add(`Successfully deleted ${path}`, "success");
       if (onUploadSuccess) onUploadSuccess();
@@ -95,7 +95,7 @@
       if (!base.endsWith("/")) base += "/";
       
       const endpoint = sdCardFileEndpoint(base + name, true);
-      const response = await auth.gatedFetch(endpoint, { method: "POST", body: "" });
+      const response = await auth.gatedFetch(endpoint, { method: "PUT", body: "" });
       await parseJsonResponse(response);
       
       alertStore.add(`Folder created successfully`, "success");
@@ -139,7 +139,7 @@
       const endpoint = sdCardFileEndpoint(fullPath);
       
       const response = await auth.gatedFetch(endpoint, {
-        method: "POST",
+        method: "PUT",
         body: file,
         headers: {
           "Content-Type": "application/octet-stream"

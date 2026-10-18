@@ -43,7 +43,7 @@
   X("/api/v1/sd_card/format",       POST,   p_sd_card_format_handler,        1)                \
   X("/api/v1/sd_card/tree",         GET,    g_sd_card_file_tree_handler,     1)                \
   X("/api/v1/sd_card/tree/*",       GET,    g_sd_card_file_tree_handler,     1)                \
-  X("/api/v1/sd_card/file/*",       POST,   p_file_upload_handler,           1)                \
+  X("/api/v1/sd_card/file/*",       PUT,    put_file_upload_handler,         1)                \
   X("/api/v1/sd_card/file/*",       DELETE, d_file_delete_handler,           1)                \
   X("/api/v1/sd_card/file/*",       GET,    g_sd_card_file_read_handler,     1)                \
   X("/api/v1/auth",                 GET,    g_auth_index_handler,            0)                \

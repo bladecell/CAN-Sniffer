@@ -596,7 +596,7 @@ MiddlewareJsonResult m_system_reboot()
         return json_result(root, 500);
     }
 
-    return json_result(root);
+    return json_result(root, 202);
 }
 
 MiddlewareJsonResult m_sdcard_info_get()
@@ -710,27 +710,23 @@ MiddlewareJsonResult m_sdcard_file_delete_delete(const char* path)
 
     const size_t    path_len = strlen(path);
     const esp_err_t err = path_len > 0 && path[path_len - 1] == '/' ? sd.delete_directory(path) : sd.delete_file(path);
+    if (err == ESP_OK)
+    {
+        return json_result(nullptr, 204);
+    }
 
     cJSON* root = cJSON_CreateObject();
     if (root == nullptr)
     {
         return json_result(nullptr, 500);
     }
-
-    if (err == ESP_OK)
-    {
-        cJSON_AddStringToObject(root, "status", "success");
-    }
-    else
-    {
-        cJSON_AddStringToObject(root, "status", "error");
-        cJSON_AddStringToObject(root, "reason", esp_err_to_name(err));
-    }
+    cJSON_AddStringToObject(root, "status", "error");
+    cJSON_AddStringToObject(root, "reason", esp_err_to_name(err));
 
     // ESP_ERR_INVALID_SIZE: directory nests deeper than sd_tree::kMaxDepth (or its paths are too long). Not "busy".
     // ESP_ERR_INVALID_SIZE: directory nests deeper than sd_tree::kMaxDepth (or its paths are too long).
     // ESP_ERR_TIMEOUT (503 via status_for_error): the 30 s delete deadline ended; part of the content is already gone.
-    const int status = err == ESP_OK ? 200 : err == ESP_ERR_INVALID_SIZE ? 422 : status_for_error(err, 400);
+    const int status = err == ESP_ERR_INVALID_SIZE ? 422 : status_for_error(err, 400);
     return json_result(root, status);
 }
 
@@ -1239,24 +1235,20 @@ esp_err_t can_status_packet_get(uint8_t* out_packet)
 
 MiddlewareJsonResult m_pid_def_delete(int filter_id)
 {
-    cJSON*    root = cJSON_CreateObject();
-    esp_err_t err  = OBD2::getInstance().removePID(filter_id);
+    const esp_err_t err = OBD2::getInstance().removePID(filter_id);
+    if (err == ESP_OK)
+    {
+        return json_result(nullptr, 204);
+    }
+
+    cJSON* root = cJSON_CreateObject();
     if (root == nullptr)
     {
         return json_result(nullptr, 500);
     }
-
-    if (err == ESP_OK)
-    {
-        cJSON_AddStringToObject(root, "status", "success");
-    }
-    else
-    {
-        cJSON_AddStringToObject(root, "status", "error");
-        cJSON_AddStringToObject(root, "reason", esp_err_to_name(err));
-    }
-
-    return json_result(root, err == ESP_OK ? 200 : status_for_error(err, 404));
+    cJSON_AddStringToObject(root, "status", "error");
+    cJSON_AddStringToObject(root, "reason", esp_err_to_name(err));
+    return json_result(root, status_for_error(err, 404));
 }
 
 static cJSON* pid_put_error(const char* reason)
