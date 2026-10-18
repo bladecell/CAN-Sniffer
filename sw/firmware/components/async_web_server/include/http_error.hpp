@@ -12,6 +12,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "esp_err.h"  // constants only, so the host tests include this header too
+
 namespace http_error
 {
 // Stable codes that are not just the status default. Middleware also uses esp_err_to_name() strings as codes.
@@ -97,6 +99,32 @@ inline const char* defaultCode(int status)
     case 503: return kBusy;
     case 504: return "GATEWAY_TIMEOUT";
     default: return "INTERNAL";
+  }
+}
+
+// Which kind of wait or failure produced an esp_err_t, because ESP_ERR_TIMEOUT means two different things.
+enum class Fault
+{
+  Bus,    // a CAN/ECU answer did not arrive in time
+  Local,  // a mutex, queue or SD operation on this device did not become free in time
+};
+
+// The one esp_err_t -> HTTP status table (docs/api.md, Status mapping). `invalidArgStatus` is the route's own choice for
+// a rejected argument (400 for a parameter, 422 for a body that parsed but is invalid, 404 for a missing resource).
+//   504 only when a bus wait expired; a busy local resource or a stopped component is 503 (with Retry-After);
+//   502 when an ECU answered but the answer cannot be used; 500 for out-of-memory and anything unexpected.
+inline int statusForError(esp_err_t err, int invalidArgStatus = 400, Fault fault = Fault::Bus)
+{
+  switch (err)
+  {
+    case ESP_OK: return 200;
+    case ESP_ERR_INVALID_ARG: return invalidArgStatus;
+    case ESP_ERR_NOT_FOUND: return 404;
+    case ESP_ERR_TIMEOUT: return fault == Fault::Bus ? 504 : 503;
+    case ESP_ERR_INVALID_STATE:
+    case ESP_ERR_INVALID_SIZE: return 503;
+    case ESP_ERR_INVALID_RESPONSE: return 502;
+    default: return 500;  // includes ESP_ERR_NO_MEM
   }
 }
 

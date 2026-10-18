@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <initializer_list>
 
 #include "../../../components/async_web_server/include/http_error.hpp"
 #include "unity.h"
@@ -185,6 +186,61 @@ void test_tiny_or_null_buffer_is_refused(void)
   char c[95];
   TEST_ASSERT_EQUAL_UINT32(0, he::buildBody(c, sizeof(c), 400, "x", nullptr));
 }
+
+// P2.11 NB3 (H4): the status table.
+void test_timeout_is_504_only_for_bus_waits(void)
+{
+  TEST_ASSERT_EQUAL_INT(504, he::statusForError(ESP_ERR_TIMEOUT));
+  TEST_ASSERT_EQUAL_INT(504, he::statusForError(ESP_ERR_TIMEOUT, 400, he::Fault::Bus));
+  TEST_ASSERT_EQUAL_INT(503, he::statusForError(ESP_ERR_TIMEOUT, 400, he::Fault::Local));  // PID map lock, SD lock
+}
+
+void test_not_running_and_capacity_are_503_on_every_route(void)
+{
+  // PUT /pid_def used to answer 500 for "OBD2 not running" while DELETE and auto_poll answered 503.
+  for (int arg : {400, 404, 422})
+  {
+    TEST_ASSERT_EQUAL_INT(503, he::statusForError(ESP_ERR_INVALID_STATE, arg));
+    TEST_ASSERT_EQUAL_INT(503, he::statusForError(ESP_ERR_INVALID_STATE, arg, he::Fault::Local));
+    TEST_ASSERT_EQUAL_INT(503, he::statusForError(ESP_ERR_INVALID_SIZE, arg));
+  }
+}
+
+void test_invalid_arg_uses_the_route_status(void)
+{
+  TEST_ASSERT_EQUAL_INT(400, he::statusForError(ESP_ERR_INVALID_ARG));
+  TEST_ASSERT_EQUAL_INT(422, he::statusForError(ESP_ERR_INVALID_ARG, 422));
+  TEST_ASSERT_EQUAL_INT(404, he::statusForError(ESP_ERR_INVALID_ARG, 404));
+}
+
+void test_unusable_ecu_answer_is_502(void)
+{
+  TEST_ASSERT_EQUAL_INT(502, he::statusForError(ESP_ERR_INVALID_RESPONSE));
+  TEST_ASSERT_EQUAL_INT(502, he::statusForError(ESP_ERR_INVALID_RESPONSE, 503, he::Fault::Local));
+}
+
+void test_not_found_oom_and_unknown(void)
+{
+  TEST_ASSERT_EQUAL_INT(404, he::statusForError(ESP_ERR_NOT_FOUND, 422));
+  TEST_ASSERT_EQUAL_INT(500, he::statusForError(ESP_ERR_NO_MEM));
+  TEST_ASSERT_EQUAL_INT(500, he::statusForError(ESP_FAIL));
+  TEST_ASSERT_EQUAL_INT(500, he::statusForError(static_cast<esp_err_t>(0x7fff)));
+  TEST_ASSERT_EQUAL_INT(200, he::statusForError(ESP_OK));
+}
+
+void test_every_mapped_status_has_a_status_line(void)
+{
+  const esp_err_t errs[] = {ESP_OK, ESP_FAIL, ESP_ERR_NO_MEM, ESP_ERR_INVALID_ARG, ESP_ERR_NOT_FOUND, ESP_ERR_TIMEOUT,
+                            ESP_ERR_INVALID_STATE, ESP_ERR_INVALID_SIZE, ESP_ERR_INVALID_RESPONSE};
+  for (esp_err_t e : errs)
+  {
+    for (he::Fault f : {he::Fault::Bus, he::Fault::Local})
+    {
+      TEST_ASSERT_NOT_NULL(he::statusLine(he::statusForError(e, 400, f)));
+      TEST_ASSERT_NOT_NULL(he::statusLine(he::statusForError(e, 422, f)));
+    }
+  }
+}
 }  // namespace
 
 extern "C" void run_http_error_tests(void)
@@ -201,4 +257,10 @@ extern "C" void run_http_error_tests(void)
   RUN_TEST(test_long_reason_of_escapes_never_overflows);
   RUN_TEST(test_cut_never_splits_an_escape);
   RUN_TEST(test_tiny_or_null_buffer_is_refused);
+  RUN_TEST(test_timeout_is_504_only_for_bus_waits);
+  RUN_TEST(test_not_running_and_capacity_are_503_on_every_route);
+  RUN_TEST(test_invalid_arg_uses_the_route_status);
+  RUN_TEST(test_unusable_ecu_answer_is_502);
+  RUN_TEST(test_not_found_oom_and_unknown);
+  RUN_TEST(test_every_mapped_status_has_a_status_line);
 }

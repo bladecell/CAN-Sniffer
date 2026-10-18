@@ -27,6 +27,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "http_error.hpp"
 #include "obd2.hpp"
 #include "pid_json.hpp"
 #include "sd_card.hpp"
@@ -66,29 +67,11 @@ static cJSON* json_error_body(const char* reason, const char* code = nullptr)
     return root;
 }
 
-static int status_for_error(esp_err_t err, int invalid_arg_status = 400)
+using http_error::Fault;
+
+static int status_for_error(esp_err_t err, int invalid_arg_status = 400, Fault fault = Fault::Local)
 {
-    if (err == ESP_ERR_INVALID_ARG)
-    {
-        return invalid_arg_status;
-    }
-    if (err == ESP_ERR_NOT_FOUND)
-    {
-        return 404;
-    }
-    if (err == ESP_ERR_TIMEOUT)
-    {
-        return 504;
-    }
-    if (err == ESP_ERR_INVALID_STATE || err == ESP_ERR_INVALID_SIZE)
-    {
-        return 503;
-    }
-    if (err == ESP_ERR_NO_MEM)
-    {
-        return 500;
-    }
-    return 500;
+    return http_error::statusForError(err, invalid_arg_status, fault);
 }
 
 static MiddlewareJsonResult sd_operation_error(esp_err_t err)
@@ -680,7 +663,7 @@ MiddlewareJsonResult m_sdcard_file_delete_delete(const char* path)
 
     // ESP_ERR_INVALID_SIZE: directory nests deeper than sd_tree::kMaxDepth (or its paths are too long). Not "busy".
     // ESP_ERR_INVALID_SIZE: directory nests deeper than sd_tree::kMaxDepth (or its paths are too long).
-    // ESP_ERR_TIMEOUT (504 via status_for_error): the 30 s delete deadline ended; part of the content is already gone.
+    // ESP_ERR_TIMEOUT (503 via status_for_error): the 30 s delete deadline ended; part of the content is already gone.
     const int status = err == ESP_OK ? 200 : err == ESP_ERR_INVALID_SIZE ? 422 : status_for_error(err, 400);
     return json_result(root, status);
 }
@@ -939,7 +922,7 @@ MiddlewareJsonResult m_vin_request()
         cJSON_AddStringToObject(root, "reason", esp_err_to_name(err));
     }
 
-    return json_result(root, err == ESP_OK ? 200 : status_for_error(err, 503));
+    return json_result(root, err == ESP_OK ? 200 : status_for_error(err, 503, Fault::Bus));
 }
 
 MiddlewareJsonResult m_dtc_request(int mode)
@@ -977,7 +960,7 @@ MiddlewareJsonResult m_dtc_request(int mode)
             cJSON_AddStringToObject(root, "status", "error");
             cJSON_AddStringToObject(root, "reason", esp_err_to_name(err));
         }
-        return json_result(root, err == ESP_OK ? 200 : status_for_error(err, 422));
+        return json_result(root, err == ESP_OK ? 200 : status_for_error(err, 422, Fault::Bus));
     }
 
     struct DtcRequestResult
@@ -1062,7 +1045,7 @@ MiddlewareJsonResult m_dtc_request(int mode)
 
     cJSON_AddStringToObject(root, "status", "error");
     cJSON_AddStringToObject(root, "reason", failure_reason.c_str());
-    return json_result(root, status_for_error(first_error, 422));
+    return json_result(root, status_for_error(first_error, 422, Fault::Bus));
 }
 
 static constexpr uint32_t kClearDtcTokenTtlMs = 10000;
@@ -1106,7 +1089,7 @@ MiddlewareJsonResult m_clear_dtc_request(const char* token)
         cJSON_AddStringToObject(root, "reason", esp_err_to_name(err));
     }
 
-    return json_result(root, err == ESP_OK ? 200 : status_for_error(err, 503));
+    return json_result(root, err == ESP_OK ? 200 : status_for_error(err, 503, Fault::Bus));
 }
 
 cJSON* m_static_pid_request()
@@ -1262,9 +1245,7 @@ cJSON* m_pid_def_put(cJSON* data, int* http_status)
     esp_err_t result = OBD2::getInstance().replacePIDDefinitions(definitions);
     if (result != ESP_OK)
     {
-        const int status = result == ESP_ERR_INVALID_ARG                                 ? 422
-                           : result == ESP_ERR_INVALID_SIZE || result == ESP_ERR_TIMEOUT ? 503
-                                                                                         : 500;
+        const int status = status_for_error(result, 422);
         if (http_status != nullptr)
         {
             *http_status = status;
