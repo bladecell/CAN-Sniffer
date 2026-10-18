@@ -40,10 +40,15 @@ public:
             ESP_LOGW("LED_STATUS", "LED already initialized");
             return ESP_OK;
         }
-        sem_ = xSemaphoreCreateBinary();
+        // Created once and never deleted: blink() from another task may still hold the handle while deinit() runs, and
+        // a deleted semaphore would be a use-after-free. One binary semaphore is not worth a lock.
         if (sem_ == nullptr)
         {
-            return ESP_ERR_NO_MEM;
+            sem_ = xSemaphoreCreateBinary();
+            if (sem_ == nullptr)
+            {
+                return ESP_ERR_NO_MEM;
+            }
         }
         pin_        = pin;
         active_low_ = active_low;
@@ -52,8 +57,6 @@ public:
         if (xTaskCreate(runWrapper, "led_worker", 1536, this, 2, &task_handle_) != pdPASS)
         {
             task_handle_ = nullptr;
-            vSemaphoreDelete(sem_);
-            sem_ = nullptr;
             return ESP_ERR_NO_MEM;
         }
         gpio_reset_pin(pin_);
@@ -63,7 +66,7 @@ public:
         return ESP_OK;
     }
 
-    // LED off, worker task stopped (it leaves on its own, never vTaskDelete from outside), pin released. Safe to call
+    // LED off, worker task stopped (it leaves on its own, never vTaskDelete from outside), pin released; the semaphore stays. Safe to call
     // when not initialised; init() works again afterwards. ESP_ERR_TIMEOUT: the worker did not leave, nothing freed.
     esp_err_t deinit()
     {
@@ -88,8 +91,7 @@ public:
         state_.store(State::NOT_INITIALIZED);  // the worker may have stored ON/OFF while it was finishing a blink
         gpio_set_level(pin_, active_low_ ? 1 : 0);
         gpio_reset_pin(pin_);
-        vSemaphoreDelete(sem_);
-        sem_ = nullptr;
+        (void)xSemaphoreTake(sem_, 0);  // drop a token left by the stop request so the next worker starts clean
         ledState_.store(0);
         return ESP_OK;
     }

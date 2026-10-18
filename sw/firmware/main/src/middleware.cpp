@@ -673,11 +673,9 @@ MiddlewareJsonResult m_sdcard_file_delete_delete(const char* path)
     }
 
     // ESP_ERR_INVALID_SIZE: directory nests deeper than sd_tree::kMaxDepth (or its paths are too long). Not "busy".
-    // ESP_ERR_TIMEOUT: the 30 s delete deadline ended the walk (the lease was already ours), so it is "busy", not an ECU timeout.
-    const int status = err == ESP_OK                ? 200
-                       : err == ESP_ERR_INVALID_SIZE ? 422
-                       : err == ESP_ERR_TIMEOUT      ? 503
-                                                     : status_for_error(err, 400);
+    // ESP_ERR_INVALID_SIZE: directory nests deeper than sd_tree::kMaxDepth (or its paths are too long).
+    // ESP_ERR_TIMEOUT (504 via status_for_error): the 30 s delete deadline ended; part of the content is already gone.
+    const int status = err == ESP_OK ? 200 : err == ESP_ERR_INVALID_SIZE ? 422 : status_for_error(err, 400);
     return json_result(root, status);
 }
 

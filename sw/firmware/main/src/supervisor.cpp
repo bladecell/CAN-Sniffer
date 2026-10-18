@@ -33,13 +33,14 @@
 #include "settings.hpp"
 #include "utilities.h"
 #include "webserver.hpp"
-
-// Consecutive restarts caused by the ERROR state. RTC_NOINIT survives a software restart; the magic guards power-on garbage.
-static RTC_NOINIT_ATTR uint32_t s_errorMagic;
-static RTC_NOINIT_ATTR uint32_t s_errorRestarts;
 #include "wifi.hpp"
 
 static const char* TAG = "SUPERVISOR";
+
+// Consecutive ERROR sleeps and NVS factory resets. RTC_NOINIT keeps its content across deep sleep and every reset but is
+// undefined after a power loss, so it is trusted only together with the magic word (error_policy::validCount).
+static RTC_NOINIT_ATTR uint32_t s_errorMagic;
+static RTC_NOINIT_ATTR uint32_t s_errorRestarts;
 
 #define MOUNT_POINT "/sdcard"
 
