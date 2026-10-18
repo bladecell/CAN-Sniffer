@@ -23,6 +23,18 @@ const gzipIndex = () => ({
 	}
 });
 
+const DEVICE_HOST = process.env.CAN_SNIFFER_TARGET ?? 'can-sniffer.local';
+const DEVICE_HTTP = `http://${DEVICE_HOST}`;
+const DEVICE_WS = `ws://${DEVICE_HOST}`;
+// The firmware's own name, even when CAN_SNIFFER_TARGET points elsewhere.
+const DEVICE_ORIGIN = 'http://can-sniffer.local';
+
+// Runs before the request is forwarded (http-proxy's proxyReq event is too late: headers are already sent).
+// Requests without an Origin (curl, the bundled tools) pass the device check unchanged.
+const rewriteOrigin = (req) => {
+	if (req.headers.origin) req.headers.origin = DEVICE_ORIGIN;
+};
+
 export default defineConfig({
 	plugins: [
 		svelte(),
@@ -42,14 +54,21 @@ export default defineConfig({
 	server: {
 		host: true,
 
+		// The firmware accepts only its own Host and Origin (docs/api.md, Host, Origin and Content-Type guard).
+		// changeOrigin sets Host to the target; the Origin of the dev page is replaced with the device's.
+		// CAN_SNIFFER_TARGET overrides the device address (used to test the proxy against a mock).
 		proxy: {
 			'/api': {
-				target: 'http://can-sniffer.local',
+				target: DEVICE_HTTP,
+				changeOrigin: true,
+				bypass: rewriteOrigin,
 			},
 			'/ws': {
-				target: 'ws://can-sniffer.local',
+				target: DEVICE_WS,
 				ws: true,
 				secure: false,
+				changeOrigin: true,
+				bypass: rewriteOrigin,
 			}
 		}
 	}
