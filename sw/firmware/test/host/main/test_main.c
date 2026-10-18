@@ -16,6 +16,7 @@ void run_settings_validation_tests(void);
 void run_delete_tree_tests(void);
 void run_body_reader_tests(void);
 void run_error_policy_tests(void);
+void run_atomic_file_tests(void);
 
 /* The linux IDF port starts FreeRTOS and calls app_main(); exit with the failure count. */
 void app_main(void)
@@ -36,5 +37,6 @@ void app_main(void)
     run_delete_tree_tests();
     run_body_reader_tests();
     run_error_policy_tests();
+    run_atomic_file_tests();
     exit(UNITY_END() == 0 ? 0 : 1);
 }

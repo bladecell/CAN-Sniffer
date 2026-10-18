@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 
 #include "async_web_server.hpp"
+#include "atomic_file.hpp"
 #include "battery.hpp"
 #include "can_driver.hpp"
 #include "error_policy.hpp"
@@ -800,23 +801,21 @@ SUPERVISOR::PidDefinitionSaveResult SUPERVISOR::save_pid_def_to_json(const char*
             return {operation.status(), operation.status() == ESP_ERR_TIMEOUT};
         }
 
-        FILE* f = fopen(path, "w");
-        if (f == nullptr)
+        // Temp file, fsync, rename: a failed or interrupted save keeps the previous PID file (SUP-2).
+        switch (atomic_file::write(path, jsonString, len))
         {
-            ESP_LOGE(TAG, "Failed to open file for writing: %s", path);
-            ret = ESP_FAIL;
-        }
-        else
-        {
-            const size_t written = fwrite(jsonString, 1, len, f);
-            const int    flush   = fflush(f);
-            const int    close   = fclose(f);
-
-            if (written != len || flush != 0 || close != 0)
-            {
-                ESP_LOGE(TAG, "Failed to write complete JSON to %s", path);
+            case atomic_file::Result::Ok:
+                break;
+            case atomic_file::Result::PathTooLong:
+                ret = ESP_ERR_INVALID_ARG;
+                break;
+            case atomic_file::Result::NoMem:
+                ret = ESP_ERR_NO_MEM;
+                break;
+            default:
+                ESP_LOGE(TAG, "Failed to save PID definitions to %s; previous file kept", path);
                 ret = ESP_FAIL;
-            }
+                break;
         }
     }
 
@@ -848,6 +847,8 @@ esp_err_t SUPERVISOR::load_pid_def_from_json(const char* path)
         {
             return operation.status();
         }
+
+        atomic_file::recover(path);  // finish a save that power loss interrupted
 
         struct stat st;
         if (stat(path, &st) != 0)

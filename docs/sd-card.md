@@ -46,7 +46,7 @@ No card, or a card that is unreadable, never stops the boot: the SD step succeed
 - The file is read per request with a lock held for the whole lookup, so a lookup of 30 codes holds the SD mutex for the full time.
 
 ## PID config file
-JSON array, written as one line without whitespace by `save_pid_def_to_json`, with keys `id, mode, pid, length, name, unit, desc, formula, minV, maxV, priority, interval, color, icon`. Format and validation are in `pid-config.md`. The write opens the target with `fopen(path, "w")`, so the file is truncated first and rewritten in place. A power loss during the write loses the saved definitions. There is no temporary file and no backup.
+JSON array, written as one line without whitespace by `save_pid_def_to_json`, with keys `id, mode, pid, length, name, unit, desc, formula, minV, maxV, priority, interval, color, icon`. Format and validation are in `pid-config.md`. The write is crash-safe (`atomic_file.hpp`): the data goes to `<path>.tmp`, is flushed and fsynced, then `<path>` is renamed to `<path>.bak`, the tmp file to `<path>`, and the bak file deleted. A failed write or rename keeps the previous file. After a power cut between the two renames `<path>` is missing for a moment: the next load (`atomic_file::recover`) restores it from `.tmp` (when `.bak` exists, which proves the tmp write had finished) or from `.bak`. A leftover `.tmp` or `.bak` next to the PID file is therefore normal after a power cut and can be deleted. Paths longer than 255 bytes are refused.
 
 ## Trip CSV (planned, REC-1)
 Not implemented.
