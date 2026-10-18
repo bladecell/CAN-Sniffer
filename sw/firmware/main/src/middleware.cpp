@@ -2002,7 +2002,7 @@ MiddlewareJsonResult m_settings_set(cJSON* payload)
     {
         const cJSON* first = cJSON_GetArrayItem(errors, 0);
         const cJSON* why   = first != nullptr ? cJSON_GetObjectItemCaseSensitive(first, "reason") : nullptr;
-        cJSON_AddStringToObject(root, "reason", cJSON_IsString(why) ? why->valuestring : "settings not saved");
+        cJSON_AddStringToObject(root, "reason", settings_patch::topReason(cJSON_IsString(why) ? why->valuestring : nullptr));
     }
     cJSON_AddBoolToObject(root, "restart_required", settings_patch::restartRequired(outcomes, n));
     if (status != 200)

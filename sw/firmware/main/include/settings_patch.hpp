@@ -53,6 +53,12 @@ inline int httpStatus(const Outcome* o, size_t n)
   return invalid ? 400 : (unknown ? 422 : 200);
 }
 
+// Top-level `reason` of a failed PATCH: the first error entry's reason.
+inline const char* topReason(const char* firstErrorReason)
+{
+  return (firstErrorReason != nullptr && firstErrorReason[0] != '\0') ? firstErrorReason : "settings not saved";
+}
+
 // Saved values reach the drivers only after a reboot.
 inline bool restartRequired(const Outcome* o, size_t n)
 {

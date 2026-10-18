@@ -34,6 +34,7 @@
 #include "http_parse.hpp"
 #include "http_parser.h"
 #include "input_limits.hpp"
+#include "response_rules.hpp"
 #include "json_budget.hpp"
 #include "middleware.hpp"
 #include "obd2_patch.hpp"
@@ -259,13 +260,14 @@ static void ensure_error_fields(cJSON* root, int http_status)
 static esp_err_t send_json_response(httpd_req_t* req, MiddlewareJsonResult result)
 {
     cJSON* root = result.body;
-    if (root == nullptr && result.http_status == 204)
+    const response_rules::Kind kind = response_rules::kindFor(root != nullptr, result.http_status);
+    if (kind == response_rules::Kind::NoContent)
     {
         httpd_resp_set_status(req, http_error::statusLine(204));
         httpd_resp_set_hdr(req, "Cache-Control", "no-store");
         return httpd_resp_send(req, nullptr, 0);
     }
-    if (root == nullptr)
+    if (kind == response_rules::Kind::Error)
     {
         ESP_LOGE(TAG, "Failed to allocate JSON response");
         // A null body can accompany a meaningful middleware status. Preserve
@@ -282,7 +284,7 @@ static esp_err_t send_json_response(httpd_req_t* req, MiddlewareJsonResult resul
         return send_json_error_response(req, 500);
     }
 
-    if (result.http_status != 200)
+    if (response_rules::needsStatusLine(result.http_status))
     {
         const char* status_text = http_error::statusLine(result.http_status);
         httpd_resp_set_status(req, status_text != nullptr ? status_text : http_error::statusLine(500));
@@ -290,10 +292,9 @@ static esp_err_t send_json_response(httpd_req_t* req, MiddlewareJsonResult resul
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
     char retry_after[12];
-    if (result.http_status >= 400 && http_error::retryAfterS(result.http_status) != 0)
+    if (const uint32_t retry_s = response_rules::retryAfter(result.http_status, result.retry_after_s); retry_s != 0)
     {
-        (void)snprintf(retry_after, sizeof(retry_after), "%u",
-                 result.retry_after_s ? result.retry_after_s : static_cast<unsigned>(http_error::retryAfterS(result.http_status)));
+        (void)snprintf(retry_after, sizeof(retry_after), "%u", static_cast<unsigned>(retry_s));
         httpd_resp_set_hdr(req, "Retry-After", retry_after);  // lives until the send below
     }
     esp_err_t ret = httpd_resp_send(req, json_str, HTTPD_RESP_USE_STRLEN);
@@ -1466,7 +1467,7 @@ esp_err_t put_file_upload_handler(httpd_req_t* req, void* arg)
         {
             return send_json_response(req, make_upload_result("error", response_reason, response_status));
         }
-        return send_json_response(req, make_upload_result("success", nullptr, created ? 201 : 200));
+        return send_json_response(req, make_upload_result("success", nullptr, response_rules::putStatus(created)));
     }
 
     const int64_t upload_started_at = esp_timer_get_time();
@@ -1632,7 +1633,7 @@ esp_err_t put_file_upload_handler(httpd_req_t* req, void* arg)
     {
         return send_json_response(req, make_upload_result("error", response_reason, response_status));
     }
-    return send_json_response(req, make_upload_result("success", nullptr, created ? 201 : 200));
+    return send_json_response(req, make_upload_result("success", nullptr, response_rules::putStatus(created)));
 }
 
 esp_err_t d_file_delete_handler(httpd_req_t* req, void* arg)
