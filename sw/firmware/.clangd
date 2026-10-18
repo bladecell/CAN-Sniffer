@@ -4,6 +4,7 @@ CompileFlags:
   Remove: [-f*, -m*, -W*] 
   Add: [
     "-ferror-limit=0",
+    "-fno-exceptions",
     "-D__GLIBC_USE(x)=0" # Fallback for the specific macro error
   ]
 
