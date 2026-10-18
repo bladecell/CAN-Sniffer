@@ -31,14 +31,12 @@ import {
     tick as clearTick,
     cancel as clearCancel,
     type ClearState,
-    type ClearResult,
 } from "./clearFlow";
 import {
     parseObd2Status,
     parseCanBusStatus,
     parseDtcGroups,
     parseDtcDescriptions,
-    parseConfirmRequired,
     buildDtcData,
     emptyDtcData,
 } from "./guards";
@@ -545,7 +543,7 @@ export class CanStore {
         }
     }
 
-    /** Two-press clear (clearFlow.ts): press 1 gets a token, press 2 sends it. */
+    /** Two-press clear (clearFlow.ts): press 1 arms, press 2 sends one POST. */
     clearState = $state<ClearState>(clearIdle);
     private clearTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -553,23 +551,17 @@ export class CanStore {
         return this.clearState.kind === "sending";
     }
 
-    // POST clear_dtc. Without a token the firmware answers 409 and sends nothing to the car.
-    private async postClear(token?: string): Promise<ClearResult> {
-        const url = token ? `/api/v1/req/clear_dtc?token=${encodeURIComponent(token)}` : "/api/v1/req/clear_dtc";
+    /** POST clear_dtc with the session token. Returns true when the ECU acknowledged. */
+    private async postClear(): Promise<boolean> {
         try {
-            const response = await auth.gatedFetch(url, { method: "POST" });
-            if (response.status === 409) {
-                const c = parseConfirmRequired(409, await response.json().catch(() => null));
-                if (!c) throw new Error("Unexpected clear confirmation response");
-                return { kind: "confirm", ...c };
-            }
+            const response = await auth.gatedFetch("/api/v1/req/clear_dtc", { method: "POST" });
             await parseJsonResponse(response);
-            return { kind: "done" };
+            return true;
         } catch (e) {
             console.error("Failed to clear DTCs:", e);
             const reason = e instanceof Error ? `: ${e.message}` : "";
             alertStore.add(`Failed to clear DTCs.${reason}`, "error");
-            return { kind: "error" };
+            return false;
         }
     }
 
@@ -585,15 +577,12 @@ export class CanStore {
 
     /** The Clear Codes button. Press 1 arms it, press 2 (while armed) clears. */
     pressClearDTCs = async () => {
-        const sentAt = performance.now();
-        const p = clearPress(this.clearState, sentAt);
-        if (!p.send) return;
+        const p = clearPress(this.clearState, performance.now());
         this.setClearState(p.state);
-        const result = await this.postClear(p.send.token);
-        const settled = clearSettle(this.clearState, result, performance.now(), sentAt);
-        this.setClearState(settled.state);
-        if (settled.notice === "expired") alertStore.add("Clear confirmation expired. Press Clear Codes again.", "warning");
-        if (result.kind === "done") await this.requestDTC();
+        if (!p.send) return;
+        const ok = await this.postClear();
+        this.setClearState(clearSettle());
+        if (ok) await this.requestDTC();
     };
 
     /** Blur or Escape: disarm without sending anything. */

@@ -83,15 +83,3 @@ export function buildDtcData(groups: DtcGroupRaw[], descriptions: Record<string,
   }
   return data;
 }
-
-export interface ConfirmRequired {
-  token: string;
-  expiresMs: number;
-}
-
-/** 409 body of `POST /req/clear_dtc` without a valid token. Never infers a token from anything else. */
-export function parseConfirmRequired(status: number, raw: unknown): ConfirmRequired | null {
-  if (status !== 409 || !isRec(raw) || raw.status !== "confirm_required") return null;
-  if (typeof raw.token !== "string" || !/^[0-9a-fA-F]{16}$/.test(raw.token)) return null;
-  return { token: raw.token, expiresMs: isNum(raw.expires_ms) ? raw.expires_ms : 10000 };
-}

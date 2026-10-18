@@ -55,26 +55,7 @@ describe("buildDtcData", () => {
   });
 });
 
-import { parseConfirmRequired } from "./guards";
 import { serializePidDefinition, normalizePidDefinition } from "./pidDefinition";
-
-describe("parseConfirmRequired", () => {
-  const ok = { status: "confirm_required", token: "0123456789abcdef", expires_ms: 10000 };
-  test("accepts a 409 confirm body", () => {
-    expect(parseConfirmRequired(409, ok)).toEqual({ token: "0123456789abcdef", expiresMs: 10000 });
-  });
-  test("anything else is not a confirm request", () => {
-    expect(parseConfirmRequired(200, ok)).toBeNull();
-    expect(parseConfirmRequired(409, { ...ok, token: "xyz" })).toBeNull();
-    expect(parseConfirmRequired(409, { ...ok, token: 5 })).toBeNull();
-    expect(parseConfirmRequired(409, { ...ok, status: "error" })).toBeNull();
-    expect(parseConfirmRequired(409, null)).toBeNull();
-    expect(parseConfirmRequired(409, "x")).toBeNull();
-  });
-  test("bad expires_ms falls back to 10000", () => {
-    expect(parseConfirmRequired(409, { ...ok, expires_ms: "a" })?.expiresMs).toBe(10000);
-  });
-});
 
 describe("serializePidDefinition", () => {
   const base = { id: 0x7df, mode: 1, pid: 12, length: 2, name: "RPM", formula: "A", update_interval_ms: 256 };
