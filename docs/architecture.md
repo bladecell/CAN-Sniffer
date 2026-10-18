@@ -51,7 +51,7 @@ Priorities are absolute FreeRTOS numbers (`tskIDLE_PRIORITY` is 0). "Core" is th
 
 Not listed: ESP-IDF system tasks (IDLE, `esp_timer`, event loop, lwIP, Wi-Fi, mDNS).
 
-Workers and CAN tasks that the supervisor stops are deleted: OBD2 tasks exit on their own, `can_tx`, `can_health_check` and `WSDataStreamTask` are deleted with `vTaskDelete` from another task.
+Workers and CAN tasks that the supervisor stops are deleted: OBD2 tasks exit on their own, `can_tx`, `can_health_check` and `WSDataStreamTask` exit on their own when asked (flag plus notify or semaphore).
 
 Task watchdog: enabled, 5 s timeout, panic on timeout is off, idle tasks of both cores are checked (`sdkconfig`).
 

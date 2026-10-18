@@ -1,3 +1,5 @@
+#include <unistd.h>
+
 #include <new>
 #include "async_web_server.hpp"
 
@@ -60,10 +62,23 @@ esp_err_t AsyncWebServer::start(Config config)
     config.httpd_config.stack_size       = 8192;
 
     max_requests_per_sec_ = config.max_requests_per_sec;
+    socketClosedHook_     = config.on_socket_closed;
+    config.httpd_config.close_fn = &AsyncWebServer::closeSocket;
 
     ESP_RETURN_ON_ERROR(httpd_start(&server_, &config.httpd_config), TAG, "Failed to start server");
     ESP_LOGI(TAG, "Server started successfully.");
     return ESP_OK;
+}
+
+// httpd close_fn replaces the default close(), so it must close the socket itself.
+void AsyncWebServer::closeSocket(httpd_handle_t, int sockfd)
+{
+    close(sockfd);
+    AsyncWebServer& self = getInstance();
+    if (self.socketClosedHook_ != nullptr)
+    {
+        self.socketClosedHook_(sockfd);
+    }
 }
 
 esp_err_t AsyncWebServer::stop()
@@ -405,7 +420,7 @@ void AsyncWebServer::wsBroadcast(httpd_ws_frame_t* ws_pkt)
     }
 }
 
-uint32_t AsyncWebServer::getActiveWSClientCount()
+uint32_t AsyncWebServer::getActiveWSClientCount(int excludeFd)
 {
     static const size_t MAX_CLIENTS = 20;
     int                 client_fds[MAX_CLIENTS];
@@ -423,6 +438,10 @@ uint32_t AsyncWebServer::getActiveWSClientCount()
     for (int i = 0; i < fds; i++)
     {
         int fd = client_fds[i];
+        if (fd == excludeFd)
+        {
+            continue;
+        }
 
         httpd_ws_client_info_t info = httpd_ws_get_fd_info(server_, fd);
 

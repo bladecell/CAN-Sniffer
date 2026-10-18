@@ -54,6 +54,8 @@ static constexpr TickType_t SD_FILE_READ_OPERATION_TIMEOUT = pdMS_TO_TICKS(250);
 static TaskHandle_t      xWSDataStreamTaskHandle = nullptr;
 static SemaphoreHandle_t WSDataStreamSemaphore   = nullptr;
 static std::atomic<bool> wsStreamingEnabled{false};
+static std::atomic<bool> wsTaskStopRequested{false};  // WSDataStreamTask leaves its loop on its own
+static std::atomic<bool> wsTaskRunning{false};
 static std::atomic<bool> b_pid_stream_enabled{false};
 
 namespace
@@ -1477,7 +1479,10 @@ esp_err_t ws_socket_handler(httpd_req_t* req)
     {
         ESP_LOGI(TAG, "WS Connect: Client #%d", sockfd);
         wsStreamingEnabled.store(true);
-        xSemaphoreGive(WSDataStreamSemaphore);
+        if (WSDataStreamSemaphore != nullptr)
+        {
+            xSemaphoreGive(WSDataStreamSemaphore);
+        }
         return ESP_OK;
     }
 
@@ -1590,29 +1595,43 @@ void ws_send_can_status()
     }
 }
 
+// Any socket that closes (close frame or not) may have been the last stream client. Runs in the httpd task.
+static void ws_socket_closed(int fd)
+{
+    if (AsyncWebServer::getInstance().getActiveWSClientCount(fd) == 0)
+    {
+        b_pid_stream_enabled.store(false);
+        wsStreamingEnabled.store(false);
+    }
+}
+
 static void WSDataStreamTask(void* pvParameters)
 {
-    if (WSDataStreamSemaphore == nullptr)
+    if (WSDataStreamSemaphore != nullptr)
     {
-        vTaskDelete(xWSDataStreamTaskHandle);
-        return;
+        TickType_t       xLastWakeTime = xTaskGetTickCount();
+        const TickType_t xPeriod       = pdMS_TO_TICKS(WS_DAT_STREAM_PERIOD);
+
+        while (!wsTaskStopRequested.load())
+        {
+            vTaskDelayUntil(&xLastWakeTime, xPeriod);
+            if (wsTaskStopRequested.load())
+            {
+                break;
+            }
+            if (wsStreamingEnabled.load())
+            {
+                ws_send_can_status();
+            }
+            else
+            {
+                xSemaphoreTake(WSDataStreamSemaphore, portMAX_DELAY);
+            }
+        }
     }
 
-    TickType_t       xLastWakeTime = xTaskGetTickCount();
-    const TickType_t xPeriod       = pdMS_TO_TICKS(WS_DAT_STREAM_PERIOD);
-
-    while (1)
-    {
-        vTaskDelayUntil(&xLastWakeTime, xPeriod);
-        if (wsStreamingEnabled.load())
-        {
-            ws_send_can_status();
-        }
-        else
-        {
-            xSemaphoreTake(WSDataStreamSemaphore, portMAX_DELAY);
-        }
-    }
+    wsTaskRunning.store(false);
+    vTaskDelete(NULL);
 }
 
 // ============================================================================
@@ -1689,6 +1708,7 @@ esp_err_t setup_web_server()
     // Keep receive waits below the upload no-progress deadline so an upload
     // worker can enforce it rather than remaining blocked in httpd_req_recv.
     server_config.httpd_config.recv_wait_timeout = 1;
+    server_config.on_socket_closed               = ws_socket_closed;
 
     esp_err_t ret = AsyncWebServer::getInstance().start(server_config);
     if (ret != ESP_OK)
@@ -1702,7 +1722,15 @@ esp_err_t setup_web_server()
     OBD2::getInstance().subscribe(pid_stream_callback);
 
     WSDataStreamSemaphore = xSemaphoreCreateBinary();
+    if (WSDataStreamSemaphore == nullptr)
+    {
+        ESP_LOGE(TAG, "Failed to create the WS stream semaphore");
+        AsyncWebServer::getInstance().stop();
+        return ESP_ERR_NO_MEM;
+    }
 
+    wsTaskStopRequested.store(false);
+    wsTaskRunning.store(true);
     BaseType_t result =
         xTaskCreatePinnedToCore(WSDataStreamTask, "WSDataStreamTask", WS_DAT_STREAM_TASK_STACK_SIZE, NULL,
                                 WS_DAT_STREAM_TASK_PRIORITY, &xWSDataStreamTaskHandle, WS_DAT_STREAM_TASK_CORE_ID);
@@ -1710,25 +1738,56 @@ esp_err_t setup_web_server()
     if (result != pdPASS)
     {
         ESP_LOGE(TAG, "Failed to create WSDataStreamTask!");
+        wsTaskRunning.store(false);
+        AsyncWebServer::getInstance().stop();
+        vSemaphoreDelete(WSDataStreamSemaphore);
+        WSDataStreamSemaphore = nullptr;
         return ESP_FAIL;
     }
 
     return ESP_OK;
 }
 
+// Order matters (WEB-1): the stream task leaves on its own first (no vTaskDelete inside a broadcast), then httpd stops
+// (no handler can touch the semaphore any more), and only then is the semaphore deleted. A timeout anywhere leaves
+// everything that is still needed alive, so the caller can retry.
 esp_err_t stop_web_server()
 {
-    if (xWSDataStreamTaskHandle)
+    constexpr int kTaskExitPolls = 100;  // 10 ms each
+
+    if (wsTaskRunning.load())
     {
-        vTaskDelete(xWSDataStreamTaskHandle);
-        xWSDataStreamTaskHandle = nullptr;
+        wsTaskStopRequested.store(true);
+        if (WSDataStreamSemaphore != nullptr)
+        {
+            xSemaphoreGive(WSDataStreamSemaphore);  // wakes the task if it sleeps on the semaphore
+        }
+        for (int i = 0; i < kTaskExitPolls && wsTaskRunning.load(); i++)
+        {
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+        if (wsTaskRunning.load())
+        {
+            ESP_LOGE(TAG, "WSDataStreamTask did not exit");
+            return ESP_ERR_TIMEOUT;
+        }
     }
-    if (WSDataStreamSemaphore)
+    xWSDataStreamTaskHandle = nullptr;
+
+    const esp_err_t err = AsyncWebServer::getInstance().stop();
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+
+    if (WSDataStreamSemaphore != nullptr)
     {
         vSemaphoreDelete(WSDataStreamSemaphore);
         WSDataStreamSemaphore = nullptr;
     }
-    return AsyncWebServer::getInstance().stop();
+    b_pid_stream_enabled.store(false);
+    wsStreamingEnabled.store(false);
+    return ESP_OK;
 }
 
 // TODO add nrc endpoint and maybe callback with ws frame

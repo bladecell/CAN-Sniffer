@@ -58,7 +58,7 @@ The cycle is about `sleep time + 1 s` (supervisor loop delay) plus the wake work
 
 ### Deinit and init order
 Before sleep (STOPPING):
-1. `stop_web_server()`: deletes `WSDataStreamTask`, its semaphore, and stops `AsyncWebServer` (workers, httpd). Waits at most 3 s for the workers; if one is still inside a handler it returns `ESP_ERR_TIMEOUT`, nothing further is stopped and the sequence retries on the next pass.
+1. `stop_web_server()`: asks `WSDataStreamTask` to leave its loop and waits up to 1 s for it to exit by itself, stops `AsyncWebServer` (workers, httpd), and only then deletes the task's semaphore, so the WebSocket handshake handler never sees a deleted semaphore. Waits at most 3 s for the workers; if one is still inside a handler it returns `ESP_ERR_TIMEOUT`, nothing further is stopped and the sequence retries on the next pass.
 2. `OBD2::deinit()`: stops its three tasks, clears PID values, VIN, DTCs and all subscriber lists, deletes its queues and semaphores. PID definitions stay. If it times out (5 s), the sequence stops here and retries on the next pass.
 3. `WIFI::deinit()` (returns void, so nothing is checked).
 4. `CanDriver::deinit()`: stops the simulator, disables the node, then asks the TX and health tasks to exit (flag and notify, bounded 3 s wait, each task deletes itself) before deleting the TWAI node, queues, semaphore and TX ring. Safe to call twice. A task that does not leave in time returns `ESP_ERR_TIMEOUT` with nothing freed; an error stops the sequence and retries.

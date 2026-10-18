@@ -26,6 +26,9 @@ public:
         uint32_t       async_worker_stack_size    = 8192;
         int            worker_core_id             = tskNO_AFFINITY;
         uint32_t       max_requests_per_sec       = 50;
+        // Called from the httpd task for every socket that closes, clean or not (peer reset, timeout, LRU purge), after
+        // the socket is closed. Lets callers drop per-connection state. Must not block.
+        void (*on_socket_closed)(int fd) = nullptr;
     };
 
     static AsyncWebServer& getInstance()
@@ -65,7 +68,8 @@ public:
 
     void wsBroadcast(httpd_ws_frame_t* ws_pkt);
 
-    uint32_t getActiveWSClientCount();
+    // WebSocket clients currently connected, not counting `excludeFd` (the socket being closed, still listed by httpd).
+    uint32_t getActiveWSClientCount(int excludeFd = -1);
 
     struct WorkerHandle
     {
@@ -94,6 +98,9 @@ private:
     esp_err_t   start_workers(uint8_t num_workers, uint32_t stack_size, uint8_t priority, int core_id);
     void        worker_task();
     static void worker_task_wrapper(void* arg);
+
+    void (*socketClosedHook_)(int fd) = nullptr;
+    static void closeSocket(httpd_handle_t hd, int sockfd);
 
     uint32_t max_requests_per_sec_  = 50;
     uint32_t req_count_this_window_ = 0;

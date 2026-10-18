@@ -92,6 +92,6 @@ The request and file format uses different names for the same fields: `desc`, `m
 
 Other behaviour:
 - A frame longer than 125 bytes makes the server close the socket (no allocation). Text frames are logged and ignored. Unknown command bytes are logged and ignored.
-- A close frame is echoed. When at most one WebSocket client remains, both streams are turned off. A client that drops without a close frame leaves the flags on.
+- A close frame is echoed. Whenever a socket closes, for any reason (close frame, reset, timeout), and no other WebSocket client remains, both streams are turned off.
 - `0x01` (`MSG_TYPE_LOG`) is defined in `middleware.hpp` but nothing sends it.
 - Up to 20 WebSocket clients are considered by a broadcast. The server allows 7 open sockets in total.
