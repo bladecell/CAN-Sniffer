@@ -8,11 +8,13 @@
 
 #include <cstddef>
 #include <memory>
+#include <new>
 #include <utility>
 
 #include "esp_check.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "delete_tree.hpp"
 #include "esp_vfs_fat.h"
 
 static const char* TAG = "SD_CARD";
@@ -738,8 +740,13 @@ esp_err_t SDCard::delete_directory(const char* relative_path)
         return ESP_ERR_INVALID_ARG;
     }
 
+    // One heap path buffer shared by every level of the walk (sd_tree::deleteTree keeps no per-level path on the stack).
     const size_t buffer_size = PATH_MAX;
-    auto         filepath    = std::make_unique<char[]>(buffer_size);
+    std::unique_ptr<char[]> filepath(new (std::nothrow) char[buffer_size]);
+    if (!filepath)
+    {
+        return ESP_ERR_NO_MEM;
+    }
 
     esp_err_t err = get_absolute_path(relative_path, filepath.get(), buffer_size);
 
@@ -767,72 +774,26 @@ esp_err_t SDCard::delete_directory(const char* relative_path)
         return ESP_ERR_NOT_FOUND;
     }
 
-    DIR* dir = opendir(filepath.get());
-    if (!dir)
+    size_t len = strlen(filepath.get());
+    while (len > 1 && filepath[len - 1] == '/')
     {
-        return ESP_FAIL;
+        filepath[--len] = '\0';
     }
 
-    const char* base_rel = relative_path;
-
-    struct dirent* entry;
-    while ((entry = readdir(dir)) != NULL)
+    switch (sd_tree::deleteTree(filepath.get(), buffer_size, len))
     {
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
-        {
-            continue;
-        }
-
-        char child_abs[PATH_MAX];
-        int child_abs_len = snprintf(child_abs, sizeof(child_abs), "%s/%s", filepath.get(), entry->d_name);
-        if (child_abs_len < 0 || (size_t)child_abs_len >= sizeof(child_abs))
-        {
-            closedir(dir);
-            return ESP_ERR_NO_MEM;
-        }
-        
-        char child_rel[PATH_MAX];
-        const size_t base_len = strlen(base_rel);
-        int child_rel_len = snprintf(child_rel, sizeof(child_rel), "%s%s%s", base_rel,
-                                     (base_len > 0 && base_rel[base_len - 1] == '/') ? "" : "/",
-                                     entry->d_name);
-        if (child_rel_len < 0 || (size_t)child_rel_len >= sizeof(child_rel))
-        {
-            closedir(dir);
-            return ESP_ERR_NO_MEM;
-        }
-
-        struct stat child_st;
-        if (stat(child_abs, &child_st) == 0)
-        {
-            if (S_ISDIR(child_st.st_mode))
-            {
-                if (delete_directory(child_rel) != ESP_OK)
-                {
-                    closedir(dir);
-                    return ESP_FAIL;
-                }
-            }
-            else
-            {
-                if (unlink(child_abs) != 0)
-                {
-                    ESP_LOGE(TAG, "Failed to delete file %s: %s", child_abs, strerror(errno));
-                    closedir(dir);
-                    return ESP_FAIL;
-                }
-            }
-        }
+        case sd_tree::Result::Ok:
+            return ESP_OK;
+        case sd_tree::Result::TooDeep:
+            ESP_LOGE(TAG, "Directory %s nests deeper than %d levels", relative_path, sd_tree::kMaxDepth);
+            return ESP_ERR_INVALID_SIZE;
+        case sd_tree::Result::PathTooLong:
+            ESP_LOGE(TAG, "Path under %s is too long to delete", relative_path);
+            return ESP_ERR_INVALID_SIZE;
+        default:
+            ESP_LOGE(TAG, "Failed to delete directory %s", relative_path);
+            return ESP_FAIL;
     }
-    closedir(dir);
-
-    if (rmdir(filepath.get()) != 0)
-    {
-        ESP_LOGE(TAG, "Failed to delete directory %s: %s", filepath.get(), strerror(errno));
-        return ESP_FAIL;
-    }
-    
-    return ESP_OK;
 }
 
 esp_err_t SDCard::write_file(const char* relative_path, const void* data, size_t size, bool append)
