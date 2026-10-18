@@ -693,10 +693,16 @@ void WIFI::removeClient(const uint8_t* mac)
 
 std::string WIFI::getApIP() const
 {
-    if (m_netif_ap)
+    // One read of the pointer: deinit() clears it. It destroys the netif only after the web server (the only caller) has
+    // stopped (docs/power.md deinit order), so the handle is never used after destroy.
+    esp_netif_t* const netif = m_netif_ap;
+    if (netif)
     {
-        esp_netif_ip_info_t ip_info;
-        esp_netif_get_ip_info(m_netif_ap, &ip_info);
+        esp_netif_ip_info_t ip_info = {};
+        if (esp_netif_get_ip_info(netif, &ip_info) != ESP_OK)
+        {
+            return "";
+        }
         char ip_str[16];
         (void)snprintf(ip_str, sizeof(ip_str), IPSTR, IP2STR(&ip_info.ip));
         return std::string(ip_str);
@@ -706,10 +712,16 @@ std::string WIFI::getApIP() const
 
 std::string WIFI::getStaIP() const
 {
-    if (m_netif_sta)
+    // One read of the pointer: deinit() clears it. It destroys the netif only after the web server (the only caller) has
+    // stopped (docs/power.md deinit order), so the handle is never used after destroy.
+    esp_netif_t* const netif = m_netif_sta;
+    if (netif)
     {
-        esp_netif_ip_info_t ip_info;
-        esp_netif_get_ip_info(m_netif_sta, &ip_info);
+        esp_netif_ip_info_t ip_info = {};
+        if (esp_netif_get_ip_info(netif, &ip_info) != ESP_OK)
+        {
+            return "";
+        }
         char ip_str[16];
         (void)snprintf(ip_str, sizeof(ip_str), IPSTR, IP2STR(&ip_info.ip));
         return std::string(ip_str);
