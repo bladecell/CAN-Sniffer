@@ -21,6 +21,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "http_parse.hpp"
 #include "http_parser.h"
 #include "input_limits.hpp"
 #include "middleware.hpp"
@@ -67,76 +68,26 @@ namespace
 // 1. HTTP & PARSING UTILITIES
 // ============================================================================
 
-// Extracts, percent-decodes and validates an SD-card route suffix. Separators
-// must be literal slashes so an encoded delimiter cannot change path structure.
+static esp_err_t to_esp_err(http_parse::Result r)
+{
+    switch (r)
+    {
+        case http_parse::Result::Ok: return ESP_OK;
+        case http_parse::Result::NoMem: return ESP_ERR_NO_MEM;
+        case http_parse::Result::InvalidSize: return ESP_ERR_INVALID_SIZE;
+        default: return ESP_ERR_INVALID_ARG;
+    }
+}
+
+// Extracts, percent-decodes and validates an SD-card route suffix (http_parse::sdRestPath).
 static esp_err_t get_sd_rest_path(httpd_req_t* req, const char* api_route, char* out, size_t out_size,
                                   bool allow_root)
 {
-    if (req == nullptr || api_route == nullptr || out == nullptr || out_size == 0)
+    if (req == nullptr)
     {
         return ESP_ERR_INVALID_ARG;
     }
-
-    const size_t route_len = strlen(api_route);
-    if (strncmp(req->uri, api_route, route_len) != 0)
-    {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    const char* read = req->uri + route_len;
-    if (*read != '\0' && *read != '/' && *read != '?')
-    {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    char*       write = out;
-    char*       end   = out + out_size - 1;
-
-    while (*read != '\0' && *read != '?')
-    {
-        unsigned char decoded;
-        if (*read == '%')
-        {
-            if (read[1] == '\0' || read[2] == '\0' || !std::isxdigit((unsigned char)read[1]) ||
-                !std::isxdigit((unsigned char)read[2]))
-            {
-                return ESP_ERR_INVALID_ARG;
-            }
-
-            char hex[3] = {read[1], read[2], '\0'};
-            decoded     = (unsigned char)std::strtol(hex, NULL, 16);
-            read += 3;
-
-            if (decoded == '/' || decoded == '\\' || decoded == '?' || decoded == '#')
-            {
-                return ESP_ERR_INVALID_ARG;
-            }
-        }
-        else
-        {
-            decoded = (unsigned char)*read++;
-        }
-
-        if (decoded == 0 || decoded < 0x20 || decoded == 0x7f || decoded == '\\' || decoded == '#')
-        {
-            return ESP_ERR_INVALID_ARG;
-        }
-        if (write == end)
-        {
-            return ESP_ERR_NO_MEM;
-        }
-        *write++ = (char)decoded;
-    }
-
-    // URI fragments are not valid in HTTP requests. Reject them even after a
-    // legitimate query delimiter rather than allowing parser disagreement.
-    if (strchr(read, '#') != nullptr)
-    {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    *write = '\0';
-    return SDCard::validate_relative_path(out, allow_root);
+    return to_esp_err(http_parse::sdRestPath(req->uri, api_route, out, out_size, allow_root));
 }
 
 static const char* http_status_text(int status)
@@ -357,80 +308,9 @@ static esp_err_t get_query_int(httpd_req_t* req, const char* key, int* value)
     char val[32];
     if (get_query_str(req, key, val, sizeof(val)))
     {
-        char* end = nullptr;
-        errno     = 0;
-        long parsed = std::strtol(val, &end, 10);
-        if (end == val || *end != '\0' || errno == ERANGE || parsed < INT_MIN || parsed > INT_MAX)
-        {
-            return ESP_ERR_INVALID_ARG;
-        }
-        *value = static_cast<int>(parsed);
-        return ESP_OK;
+        return to_esp_err(http_parse::strictInt(val, value));
     }
     return ESP_ERR_NOT_FOUND;
-}
-
-static int hex_nibble(char value)
-{
-    if (value >= '0' && value <= '9')
-    {
-        return value - '0';
-    }
-    if (value >= 'A' && value <= 'F')
-    {
-        return value - 'A' + 10;
-    }
-    if (value >= 'a' && value <= 'f')
-    {
-        return value - 'a' + 10;
-    }
-    return -1;
-}
-
-static bool percent_decode_dtc_codes(const char* encoded, char* decoded, size_t decoded_size)
-{
-    if (encoded == nullptr || decoded == nullptr || decoded_size == 0)
-    {
-        return false;
-    }
-
-    char*       write = decoded;
-    const char* read  = encoded;
-    char* const end   = decoded + decoded_size - 1;
-    while (*read != '\0')
-    {
-        unsigned char value;
-        if (*read == '%')
-        {
-            if (read[1] == '\0' || read[2] == '\0')
-            {
-                return false;
-            }
-
-            const int high_nibble = hex_nibble(read[1]);
-            const int low_nibble  = hex_nibble(read[2]);
-            if (high_nibble < 0 || low_nibble < 0)
-            {
-                return false;
-            }
-
-            value = (unsigned char)((high_nibble << 4) | low_nibble);
-            read += 3;
-        }
-        else
-        {
-            value = (unsigned char)*read++;
-        }
-
-        if (value == '\0' || write == end)
-        {
-            return false;
-        }
-        *write++ = (char)value;
-    }
-
-    *write = '\0';
-    return true;
 }
 
 static esp_err_t get_dtc_code_list(httpd_req_t* req, char* scratch_buf, size_t scratch_len,
@@ -443,63 +323,12 @@ static esp_err_t get_dtc_code_list(httpd_req_t* req, char* scratch_buf, size_t s
     {
         return ESP_ERR_NOT_FOUND;
     }
-    if (!percent_decode_dtc_codes(encoded_codes, scratch_buf, scratch_len))
-    {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    char* token = scratch_buf;
-    while (true)
-    {
-        if (*token == '\0')
-        {
-            return ESP_ERR_INVALID_ARG;
-        }
-        if (*out_count == max_ptrs)
-        {
-            return ESP_ERR_INVALID_SIZE;
-        }
-
-        out_ptrs[*out_count] = token;
-        (*out_count)++;
-
-        char* separator = strchr(token, ',');
-        if (separator == nullptr)
-        {
-            return ESP_OK;
-        }
-
-        *separator = '\0';
-        token      = separator + 1;
-    }
+    return to_esp_err(http_parse::dtcCodeList(encoded_codes, scratch_buf, scratch_len, out_ptrs, max_ptrs, out_count));
 }
 
 static bool is_valid_dtc_code(const char* code)
 {
-    if (strlen(code) != 5)
-    {
-        return false;
-    }
-
-    const char system = code[0];
-    if (system != 'P' && system != 'B' && system != 'C' && system != 'U')
-    {
-        return false;
-    }
-    if (code[1] < '0' || code[1] > '3')
-    {
-        return false;
-    }
-
-    for (size_t i = 2; i < 5; ++i)
-    {
-        if (!((code[i] >= '0' && code[i] <= '9') || (code[i] >= 'A' && code[i] <= 'F')))
-        {
-            return false;
-        }
-    }
-
-    return true;
+    return http_parse::isValidDtcCode(code);
 }
 
 static esp_err_t get_path_pid(httpd_req_t* req, const char* route, int* value)
@@ -509,23 +338,7 @@ static esp_err_t get_path_pid(httpd_req_t* req, const char* route, int* value)
     {
         return ESP_ERR_NOT_FOUND;
     }
-
-    const char* suffix = req->uri + route_len;
-    if (*suffix == '\0' || *suffix == '?')
-    {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    char* end = nullptr;
-    errno     = 0;
-    long parsed = std::strtol(suffix, &end, 10);
-    if (end == suffix || (*end != '\0' && *end != '?') || errno == ERANGE || parsed < INT_MIN || parsed > INT_MAX)
-    {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    *value = static_cast<int>(parsed);
-    return ESP_OK;
+    return to_esp_err(http_parse::pathInt(req->uri, route, value));
 }
 
 static esp_err_t get_query_bool(httpd_req_t* req, const char* key, bool* value)
@@ -533,7 +346,7 @@ static esp_err_t get_query_bool(httpd_req_t* req, const char* key, bool* value)
     char val[16];
     if (get_query_str(req, key, val, sizeof(val)))
     {
-        *value = (strcasecmp(val, "true") == 0 || strcmp(val, "1") == 0);
+        *value = http_parse::queryBool(val);
         return ESP_OK;
     }
     return ESP_ERR_NOT_FOUND;

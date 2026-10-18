@@ -16,6 +16,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "delete_tree.hpp"
+#include "sd_path.hpp"
 #include "esp_vfs_fat.h"
 
 static const char* TAG = "SD_CARD";
@@ -51,54 +52,7 @@ esp_err_t directory_errno_to_error(int error)
 
 esp_err_t SDCard::validate_relative_path(const char* path, bool allow_root)
 {
-    if (path == nullptr)
-    {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    const char* p = path;
-    if (*p == '/')
-    {
-        p++;
-    }
-
-    if (*p == '\0')
-    {
-        return allow_root ? ESP_OK : ESP_ERR_INVALID_ARG;
-    }
-
-    while (*p != '\0')
-    {
-        const char* start = p;
-        while (*p != '\0' && *p != '/')
-        {
-            const unsigned char c = (unsigned char)*p;
-            if (c < 0x20 || c == 0x7f || c == '\\' || c == '?' || c == '#' || c == '"')
-            {
-                return ESP_ERR_INVALID_ARG;
-            }
-            p++;
-        }
-
-        size_t len = (size_t)(p - start);
-        if (len == 0 || (len == 1 && start[0] == '.') || (len == 2 && start[0] == '.' && start[1] == '.'))
-        {
-            return ESP_ERR_INVALID_ARG;
-        }
-
-        if (*p == '/')
-        {
-            p++;
-            // A single trailing slash is meaningful to the REST API. Empty
-            // components in the middle (or repeated trailing slashes) are not.
-            if (*p == '/')
-            {
-                return ESP_ERR_INVALID_ARG;
-            }
-        }
-    }
-
-    return ESP_OK;
+    return sd_path::validRelative(path, allow_root) ? ESP_OK : ESP_ERR_INVALID_ARG;
 }
 
 SDCard::SDCard() : card(nullptr), mount_path(nullptr)
@@ -1171,24 +1125,7 @@ esp_err_t SDCard::get_absolute_path(const char* relative_path, char* out_buf, si
 
 bool SDCard::is_path_under(const char* path, const char* root)
 {
-    if (path == nullptr || root == nullptr)
-    {
-        return false;
-    }
-
-    if (validate_relative_path(path, true) != ESP_OK)
-    {
-        return false;
-    }
-
-    size_t root_len = strlen(root);
-
-    if (strncmp(path, root, root_len) != 0)
-    {
-        return false;
-    }
-
-    return (path[root_len] == '\0' || path[root_len] == '/');
+    return sd_path::isUnder(path, root);
 }
 
 esp_err_t SDCard::open_file(const char* relative_path, const char* mode, FILE*& fd)

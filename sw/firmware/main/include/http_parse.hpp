@@ -1,0 +1,281 @@
+#pragma once
+
+// Pure parsers for URI-derived input (P2.13a, TEST-1). No ESP-IDF includes, so host tests can feed them hostile
+// strings. webserver.cpp keeps only the httpd glue (reading req->uri and the query string).
+
+#include <cctype>
+#include <cerrno>
+#include <climits>
+#include <cstddef>
+#include <cstdlib>
+#include <cstring>
+#include <strings.h>
+
+#include "sd_path.hpp"
+
+namespace http_parse
+{
+
+enum class Result
+{
+  Ok,
+  InvalidArg,
+  NoMem,        // output buffer too small
+  InvalidSize,  // too many items
+};
+
+// uri = apiRoute + [ "/" suffix ] [ "?" query ]. Percent-decodes the suffix into out and validates it as a relative
+// SD path. Encoded delimiters ('/', '\\', '?', '#'), NUL and control bytes are rejected so an encoded delimiter can
+// never change the path structure.
+inline Result sdRestPath(const char* uri, const char* apiRoute, char* out, size_t outSize, bool allowRoot)
+{
+  if (uri == nullptr || apiRoute == nullptr || out == nullptr || outSize == 0)
+  {
+    return Result::InvalidArg;
+  }
+
+  const size_t routeLen = strlen(apiRoute);
+  if (strncmp(uri, apiRoute, routeLen) != 0)
+  {
+    return Result::InvalidArg;
+  }
+
+  const char* read = uri + routeLen;
+  if (*read != '\0' && *read != '/' && *read != '?')
+  {
+    return Result::InvalidArg;
+  }
+
+  char* write = out;
+  char* end   = out + outSize - 1;
+
+  while (*read != '\0' && *read != '?')
+  {
+    unsigned char decoded;
+    if (*read == '%')
+    {
+      if (read[1] == '\0' || read[2] == '\0' || !std::isxdigit(static_cast<unsigned char>(read[1])) ||
+          !std::isxdigit(static_cast<unsigned char>(read[2])))
+      {
+        return Result::InvalidArg;
+      }
+
+      const char hex[3] = {read[1], read[2], '\0'};
+      decoded           = static_cast<unsigned char>(std::strtol(hex, nullptr, 16));
+      read += 3;
+
+      if (decoded == '/' || decoded == '\\' || decoded == '?' || decoded == '#')
+      {
+        return Result::InvalidArg;
+      }
+    }
+    else
+    {
+      decoded = static_cast<unsigned char>(*read++);
+    }
+
+    if (decoded == 0 || decoded < 0x20 || decoded == 0x7f || decoded == '\\' || decoded == '#')
+    {
+      return Result::InvalidArg;
+    }
+    if (write == end)
+    {
+      return Result::NoMem;
+    }
+    *write++ = static_cast<char>(decoded);
+  }
+
+  // URI fragments are not valid in HTTP requests. Reject them even after a query delimiter rather than allowing
+  // parser disagreement.
+  if (strchr(read, '#') != nullptr)
+  {
+    return Result::InvalidArg;
+  }
+
+  *write = '\0';
+  return sd_path::validRelative(out, allowRoot) ? Result::Ok : Result::InvalidArg;
+}
+
+// Whole string must be a base-10 int in range. Result::InvalidArg otherwise.
+inline Result strictInt(const char* text, int* value)
+{
+  if (text == nullptr || value == nullptr)
+  {
+    return Result::InvalidArg;
+  }
+  char* end = nullptr;
+  errno     = 0;
+  const long parsed = std::strtol(text, &end, 10);
+  if (end == text || *end != '\0' || errno == ERANGE || parsed < INT_MIN || parsed > INT_MAX)
+  {
+    return Result::InvalidArg;
+  }
+  *value = static_cast<int>(parsed);
+  return Result::Ok;
+}
+
+// Integer path segment: digits then end of string or '?'.
+inline Result pathInt(const char* uri, const char* route, int* value)
+{
+  if (uri == nullptr || route == nullptr || value == nullptr)
+  {
+    return Result::InvalidArg;
+  }
+  const size_t routeLen = strlen(route);
+  if (strncmp(uri, route, routeLen) != 0)
+  {
+    return Result::InvalidArg;
+  }
+
+  const char* suffix = uri + routeLen;
+  if (*suffix == '\0' || *suffix == '?')
+  {
+    return Result::InvalidArg;
+  }
+
+  char* end = nullptr;
+  errno     = 0;
+  const long parsed = std::strtol(suffix, &end, 10);
+  if (end == suffix || (*end != '\0' && *end != '?') || errno == ERANGE || parsed < INT_MIN || parsed > INT_MAX)
+  {
+    return Result::InvalidArg;
+  }
+
+  *value = static_cast<int>(parsed);
+  return Result::Ok;
+}
+
+inline bool queryBool(const char* text)
+{
+  return text != nullptr && (strcasecmp(text, "true") == 0 || strcmp(text, "1") == 0);
+}
+
+inline int hexNibble(char value)
+{
+  if (value >= '0' && value <= '9')
+  {
+    return value - '0';
+  }
+  if (value >= 'A' && value <= 'F')
+  {
+    return value - 'A' + 10;
+  }
+  if (value >= 'a' && value <= 'f')
+  {
+    return value - 'a' + 10;
+  }
+  return -1;
+}
+
+inline bool percentDecodeDtcCodes(const char* encoded, char* decoded, size_t decodedSize)
+{
+  if (encoded == nullptr || decoded == nullptr || decodedSize == 0)
+  {
+    return false;
+  }
+
+  char*       write = decoded;
+  const char* read  = encoded;
+  char* const end   = decoded + decodedSize - 1;
+  while (*read != '\0')
+  {
+    unsigned char value;
+    if (*read == '%')
+    {
+      if (read[1] == '\0' || read[2] == '\0')
+      {
+        return false;
+      }
+
+      const int high = hexNibble(read[1]);
+      const int low  = hexNibble(read[2]);
+      if (high < 0 || low < 0)
+      {
+        return false;
+      }
+
+      value = static_cast<unsigned char>((high << 4) | low);
+      read += 3;
+    }
+    else
+    {
+      value = static_cast<unsigned char>(*read++);
+    }
+
+    if (value == '\0' || write == end)
+    {
+      return false;
+    }
+    *write++ = static_cast<char>(value);
+  }
+
+  *write = '\0';
+  return true;
+}
+
+// Decodes `encoded` (the raw "codes" query value) into scratch and splits it on ',' in place. outPtrs point into
+// scratch. Empty tokens are InvalidArg, more than maxPtrs tokens is InvalidSize.
+inline Result dtcCodeList(const char* encoded, char* scratch, size_t scratchLen, const char* outPtrs[],
+                          size_t maxPtrs, size_t* outCount)
+{
+  *outCount = 0;
+  if (!percentDecodeDtcCodes(encoded, scratch, scratchLen))
+  {
+    return Result::InvalidArg;
+  }
+
+  char* token = scratch;
+  while (true)
+  {
+    if (*token == '\0')
+    {
+      return Result::InvalidArg;
+    }
+    if (*outCount == maxPtrs)
+    {
+      return Result::InvalidSize;
+    }
+
+    outPtrs[*outCount] = token;
+    (*outCount)++;
+
+    char* separator = strchr(token, ',');
+    if (separator == nullptr)
+    {
+      return Result::Ok;
+    }
+
+    *separator = '\0';
+    token      = separator + 1;
+  }
+}
+
+inline bool isValidDtcCode(const char* code)
+{
+  if (code == nullptr || strlen(code) != 5)
+  {
+    return false;
+  }
+
+  const char system = code[0];
+  if (system != 'P' && system != 'B' && system != 'C' && system != 'U')
+  {
+    return false;
+  }
+  if (code[1] < '0' || code[1] > '3')
+  {
+    return false;
+  }
+
+  for (size_t i = 2; i < 5; ++i)
+  {
+    if (!((code[i] >= '0' && code[i] <= '9') || (code[i] >= 'A' && code[i] <= 'F')))
+    {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+}  // namespace http_parse
