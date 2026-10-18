@@ -7,6 +7,9 @@
 #define APP_VERSION_MINOR 2
 #define APP_VERSION_PATCH 4
 
+// REST/WebSocket contract version (docs/api.md, Versioning). Bump on any breaking change, never for additive ones.
+#define API_VERSION 1
+
 #define STR_(x) #x
 #define STR(x) STR_(x)
 

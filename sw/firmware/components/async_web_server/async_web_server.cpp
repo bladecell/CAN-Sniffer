@@ -50,6 +50,10 @@ esp_err_t AsyncWebServer::sendError(httpd_req_t* req, int status, const char* re
     {
         err = httpd_resp_set_type(req, "application/json");
     }
+    if (err == ESP_OK)
+    {
+        err = httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    }
     char retryBuf[12];
     if (retryAfterS == 0)
     {

@@ -453,6 +453,7 @@ MiddlewareJsonResult m_system_get()
         return json_result(nullptr, 500);
     }
 
+    cJSON_AddNumberToObject(root, "api_version", API_VERSION);
     cJSON_AddStringToObject(root, "app_version", APP_VERSION_STRING);
     cJSON_AddNumberToObject(root, "uptime_s", SUPERVISOR::getInstance().get_uptime_seconds());
     cJSON_AddStringToObject(root, "restart_reason", SUPERVISOR::getInstance().get_restart_reason().c_str());

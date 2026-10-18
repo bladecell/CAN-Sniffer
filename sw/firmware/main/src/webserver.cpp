@@ -145,6 +145,7 @@ static esp_err_t send_json_response(httpd_req_t* req, MiddlewareJsonResult resul
         httpd_resp_set_status(req, status_text != nullptr ? status_text : http_error::statusLine(500));
     }
     httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
     char retry_after[12];
     if (result.http_status >= 400 && http_error::retryAfterS(result.http_status) != 0)
     {
