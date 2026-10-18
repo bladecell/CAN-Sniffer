@@ -48,8 +48,25 @@ static void test_section_count_is_capped(void)
   TEST_ASSERT_FALSE(sectionCountOk(kMaxSections + 1));
 }
 
+static void test_duplicate_section_names_are_found(void)
+{
+  using namespace settings_patch;
+  const std::string_view ok[]  = {"wifi", "can", "system"};
+  TEST_ASSERT_EQUAL(3, firstDuplicate(ok, 3));
+  const std::string_view dup[] = {"wifi", "can", "wifi"};
+  TEST_ASSERT_EQUAL(2, firstDuplicate(dup, 3));
+  const std::string_view unk[] = {"x", "x"};
+  TEST_ASSERT_EQUAL(1, firstDuplicate(unk, 2));
+  const std::string_view one[] = {"can"};
+  TEST_ASSERT_EQUAL(1, firstDuplicate(one, 1));
+  TEST_ASSERT_EQUAL(0, firstDuplicate(one, 0));
+  const std::string_view cased[] = {"wifi", "WIFI"};
+  TEST_ASSERT_EQUAL(2, firstDuplicate(cased, 2));  // names are case sensitive, so these are different (and the second is unknown)
+}
+
 extern "C" void run_settings_patch_tests(void)
 {
+  RUN_TEST(test_duplicate_section_names_are_found);
   RUN_TEST(test_section_names);
   RUN_TEST(test_status_all_saved_needs_restart);
   RUN_TEST(test_status_error_precedence);

@@ -1940,6 +1940,35 @@ MiddlewareJsonResult m_settings_set(cJSON* payload)
         return json_result(json_error_body(n == 0 ? "No settings sections" : "Too many settings sections"), 400);
     }
 
+    std::string_view names[settings_patch::kMaxSections];
+    const char*      rawNames[settings_patch::kMaxSections] = {};
+    size_t           k                                      = 0;
+    for (cJSON* c = payload->child; c != nullptr && k < settings_patch::kMaxSections; c = c->next)
+    {
+        rawNames[k] = c->string != nullptr ? c->string : "";
+        names[k]    = rawNames[k];
+        k++;
+    }
+    if (const size_t dup = settings_patch::firstDuplicate(names, k); dup < k)
+    {
+        cJSON* body = json_error_body("Duplicate settings section");
+        cJSON* errs = cJSON_CreateArray();
+        cJSON* e    = cJSON_CreateObject();
+        if (body == nullptr || errs == nullptr || e == nullptr)
+        {
+            cJSON_Delete(body);
+            cJSON_Delete(errs);
+            cJSON_Delete(e);
+            return json_result(nullptr, 500);
+        }
+        cJSON_AddStringToObject(e, "field", rawNames[dup]);
+        cJSON_AddStringToObject(e, "reason", "duplicate settings section");
+        cJSON_AddItemToArray(errs, e);
+        cJSON_AddBoolToObject(body, "restart_required", false);
+        cJSON_AddItemToObject(body, "errors", errs);
+        return json_result(body, 400);
+    }
+
     settings_patch::Outcome outcomes[settings_patch::kMaxSections] = {};
     cJSON*                  errors = cJSON_CreateArray();
     cJSON*                  root   = cJSON_CreateObject();

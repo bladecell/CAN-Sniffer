@@ -25,6 +25,20 @@ inline Section sectionOf(std::string_view name)
 // A body with no section or with more keys than there are sections cannot be valid.
 inline bool sectionCountOk(size_t n) { return n >= 1 && n <= kMaxSections; }
 
+// Index of the first name that repeats an earlier one, or n when all are distinct. cJSON keeps duplicate keys as separate
+// children, so without this a body could apply the same section twice.
+inline size_t firstDuplicate(const std::string_view* names, size_t n)
+{
+  for (size_t i = 1; i < n; i++)
+  {
+    for (size_t j = 0; j < i; j++)
+    {
+      if (names[i] == names[j]) { return i; }
+    }
+  }
+  return n;
+}
+
 // Failed (NVS error) 500 > Invalid 400 > Unknown section 422; nothing to apply is a 400.
 inline int httpStatus(const Outcome* o, size_t n)
 {
