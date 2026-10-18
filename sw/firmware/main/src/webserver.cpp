@@ -1653,7 +1653,7 @@ esp_err_t d_file_delete_handler(httpd_req_t* req, void* arg)
 
 void ws_send_byte(uint8_t byte)
 {
-    static uint8_t packet[1];
+    uint8_t packet[1];
     packet[0] = byte;
 
     httpd_ws_frame_t ws_frame = {
@@ -1765,7 +1765,7 @@ void pid_stream_callback(uint16_t pid)
         return;
     }
 
-    static uint8_t packet[PID_STREAM_PACKET_SIZE];
+    uint8_t        packet[PID_STREAM_PACKET_SIZE];
     esp_err_t      err = pid_stream_packet_get(pid, packet);
 
     if (err == ESP_OK)
@@ -1783,7 +1783,7 @@ void pid_stream_callback(uint16_t pid)
 
 void ws_send_can_status()
 {
-    static uint8_t packet[CAN_STATUS_PACKET_SIZE];
+    uint8_t        packet[CAN_STATUS_PACKET_SIZE];
     esp_err_t      err = can_status_packet_get(packet);
 
     if (err == ESP_OK)
