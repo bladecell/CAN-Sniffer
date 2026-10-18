@@ -28,6 +28,8 @@ export type AuthNotice = "session_ended" | "pin_changed";
 export interface AuthView {
   state: AuthState;
   apOpen: boolean;
+  /** Development firmware only: the device accepts every gated request without a token. */
+  devBypass: boolean;
   loggedIn: boolean;
   dialog: AuthDialog;
   error: AuthError | null;
@@ -63,6 +65,7 @@ export function initialAuthView(): AuthView {
   return {
     state: "unknown",
     apOpen: false,
+    devBypass: false,
     loggedIn: false,
     dialog: "none",
     error: null,
@@ -194,7 +197,7 @@ export function createAuth(deps: AuthDeps) {
 
   /** Resolves true once logged in (also at once if already logged in), false when the dialog is closed. */
   function ensureLogin(): Promise<boolean> {
-    if (liveToken()) return Promise.resolve(true);
+    if (view.devBypass || liveToken()) return Promise.resolve(true);
     return new Promise((resolve) => {
       waiters.push(resolve);
       if (view.dialog === "none") set({ dialog: dialogFor(view.state), error: null });
@@ -256,7 +259,7 @@ export function createAuth(deps: AuthDeps) {
     if (state === "unclaimed" && dialog === "login") dialog = "claim";
     if (pending && dialog === "login") dialog = "claim";
 
-    const patch: Partial<AuthView> = { state, apOpen: body.ap_open === true, claimPhase: phase, dialog };
+    const patch: Partial<AuthView> = { state, apOpen: body.ap_open === true, devBypass: body.dev_bypass === true, claimPhase: phase, dialog };
     if (phase === "other" && prevPhase !== "other") patch.claimExpiresAt = deps.now() + num(body.claim_expires_in_s, 0) * 1000;
     const retry = num(body.retry_after_s, 0);
     if (retry > 0) patch.loginWaitUntil = deps.now() + retry * 1000;
@@ -394,6 +397,7 @@ export function createAuth(deps: AuthDeps) {
   async function gatedFetch(url: string, init?: RequestInit): Promise<Response> {
     if (!(await ensureLogin())) return refusedResponse();
     let res = await send(url, init, liveToken());
+    if (view.devBypass) return res;
     if (res.status !== 401 && res.status !== 403) {
       touch();
       return res;

@@ -11,6 +11,7 @@
   import ToastContainer from "./lib/components/ToastContainer.svelte";
   import AuthDialog from "./lib/components/AuthDialog.svelte";
   import ApOpenBanner from "./lib/components/ApOpenBanner.svelte";
+  import DevBypassBanner from "./lib/components/DevBypassBanner.svelte";
   import { auth } from "$lib/auth.svelte";
 
   onMount(() => {
@@ -48,6 +49,7 @@
 <Navigation bind:activeTab />
 
 <main class="main-content">
+  <DevBypassBanner />
   <ApOpenBanner />
   {#if activeTab === "dashboard"}
     <Dashboard />

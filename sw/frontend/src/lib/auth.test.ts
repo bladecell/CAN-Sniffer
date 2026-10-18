@@ -390,3 +390,25 @@ describe("PIN pattern (HTML attribute)", () => {
     expect(re.test("6")).toBe(false);
   });
 });
+
+describe("development build (dev_bypass)", () => {
+  test("with dev_bypass the gated call goes out without a token and opens no prompt", async () => {
+    const h = harness((url) =>
+      url === "/api/v1/auth"
+        ? json(200, { state: "claimed", authenticated: true, retry_after_s: 0, claim_expires_in_s: 0, ap_open: false, dev_bypass: true })
+        : empty(204),
+    );
+    await h.auth.refresh();
+    expect(h.auth.view.devBypass).toBe(true);
+    const res = await h.auth.gatedFetch("/api/v1/req/clear_dtc", { method: "POST" });
+    expect(res.status).toBe(204);
+    expect(h.auth.view.dialog).toBe("none");
+    expect(h.calls.find((c) => c.url === "/api/v1/req/clear_dtc")?.auth).toBeNull();
+  });
+
+  test("without dev_bypass the flag stays false", async () => {
+    const h = harness(() => json(200, { state: "claimed", authenticated: false, ap_open: false }));
+    await h.auth.refresh();
+    expect(h.auth.view.devBypass).toBe(false);
+  });
+});
