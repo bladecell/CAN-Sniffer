@@ -1,5 +1,6 @@
 // P2.13a: TEST-1. Hostile-input parsers behind the SD REST routes and the DTC query string.
 #include <cstring>
+#include <initializer_list>
 #include <string>
 
 #include "../../../components/sd_card/include/sd_path.hpp"
@@ -160,15 +161,59 @@ void test_path_int(void)
   TEST_ASSERT_EQUAL(Result::InvalidArg, http_parse::pathInt("/api/v2/pid_def/1", "/api/v1/pid_def/", &v));
 }
 
-void test_query_bool(void)
+void test_strict_bool(void)
 {
-  TEST_ASSERT_TRUE(http_parse::queryBool("true"));
-  TEST_ASSERT_TRUE(http_parse::queryBool("TRUE"));
-  TEST_ASSERT_TRUE(http_parse::queryBool("1"));
-  TEST_ASSERT_FALSE(http_parse::queryBool("0"));
-  TEST_ASSERT_FALSE(http_parse::queryBool("yes"));
-  TEST_ASSERT_FALSE(http_parse::queryBool(""));
-  TEST_ASSERT_FALSE(http_parse::queryBool(nullptr));
+  bool v = false;
+  for (const char* t : {"true", "TRUE", "True", "1"})
+  {
+    v = false;
+    TEST_ASSERT_EQUAL_INT_MESSAGE(static_cast<int>(http_parse::Result::Ok), static_cast<int>(http_parse::strictBool(t, &v)), t);
+    TEST_ASSERT_TRUE_MESSAGE(v, t);
+  }
+  for (const char* t : {"false", "FALSE", "0"})
+  {
+    v = true;
+    TEST_ASSERT_EQUAL_INT_MESSAGE(static_cast<int>(http_parse::Result::Ok), static_cast<int>(http_parse::strictBool(t, &v)), t);
+    TEST_ASSERT_FALSE_MESSAGE(v, t);
+  }
+  // Garbage used to read as false and stop polling.
+  for (const char* t : {"banana", "yes", "no", "", "2", "-1", "10", " 1", "1 ", "truee", "on", "t"})
+  {
+    v = true;
+    TEST_ASSERT_EQUAL_INT_MESSAGE(static_cast<int>(http_parse::Result::InvalidArg), static_cast<int>(http_parse::strictBool(t, &v)), t);
+    TEST_ASSERT_TRUE_MESSAGE(v, t);  // untouched on error
+  }
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(http_parse::Result::InvalidArg), static_cast<int>(http_parse::strictBool(nullptr, &v)));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(http_parse::Result::InvalidArg), static_cast<int>(http_parse::strictBool("1", nullptr)));
+}
+
+void test_query_keys(void)
+{
+  const char* const keys[] = {"mode", "codes"};
+  unsigned          p      = 99;
+  using R                  = http_parse::Result;
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(R::Ok), static_cast<int>(http_parse::queryKeys("/api/v1/dtc", keys, 2, &p)));
+  TEST_ASSERT_EQUAL_UINT(0, p);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(R::Ok), static_cast<int>(http_parse::queryKeys("/api/v1/dtc?", keys, 2, &p)));
+  TEST_ASSERT_EQUAL_UINT(0, p);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(R::Ok), static_cast<int>(http_parse::queryKeys("/x?mode=3", keys, 2, &p)));
+  TEST_ASSERT_EQUAL_UINT(1, p);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(R::Ok), static_cast<int>(http_parse::queryKeys("/x?codes=P0301,P0420", keys, 2, &p)));
+  TEST_ASSERT_EQUAL_UINT(2, p);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(R::Ok), static_cast<int>(http_parse::queryKeys("/x?codes=P0301&mode=3", keys, 2, &p)));
+  TEST_ASSERT_EQUAL_UINT(3, p);  // both present: the caller decides that is ambiguous
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(R::Ok), static_cast<int>(http_parse::queryKeys("/x?mode", keys, 2, &p)));
+  TEST_ASSERT_EQUAL_UINT(1, p);
+
+  // docs/api.md used to say any other key gives 400; the code ignored them.
+  const char* const bad[] = {"/x?codes=P0301&foo=1", "/x?foo=1", "/x?mode=3&mode=7", "/x?=3", "/x?&", "/x?mode=3&",
+                             "/x?mod=3", "/x?modes=3", "/x?MODE=3", "/x?mode=3&&codes=P0301", "/x?%6dode=3"};
+  for (const char* u : bad)
+  {
+    TEST_ASSERT_EQUAL_INT_MESSAGE(static_cast<int>(R::InvalidArg), static_cast<int>(http_parse::queryKeys(u, keys, 2, &p)), u);
+  }
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(R::InvalidArg), static_cast<int>(http_parse::queryKeys(nullptr, keys, 2, &p)));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(R::InvalidArg), static_cast<int>(http_parse::queryKeys("/x", keys, 9, &p)));
 }
 
 void test_dtc_percent_decode(void)
@@ -241,7 +286,8 @@ extern "C" void run_http_parse_tests(void)
   RUN_TEST(test_rest_path_buffer_bounds);
   RUN_TEST(test_strict_int);
   RUN_TEST(test_path_int);
-  RUN_TEST(test_query_bool);
+  RUN_TEST(test_strict_bool);
+  RUN_TEST(test_query_keys);
   RUN_TEST(test_dtc_percent_decode);
   RUN_TEST(test_dtc_code_list);
   RUN_TEST(test_dtc_code_validity);

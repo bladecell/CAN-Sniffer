@@ -317,15 +317,37 @@ static esp_err_t get_path_pid(httpd_req_t* req, const char* route, int* value)
     return to_esp_err(http_parse::pathInt(req->uri, route, value));
 }
 
+// ESP_ERR_NOT_FOUND: no such key. ESP_ERR_INVALID_ARG: present but not exactly true, false, 1 or 0.
 static esp_err_t get_query_bool(httpd_req_t* req, const char* key, bool* value)
 {
     char val[16];
     if (get_query_str(req, key, val, sizeof(val)))
     {
-        *value = http_parse::queryBool(val);
-        return ESP_OK;
+        return to_esp_err(http_parse::strictBool(val, value));
     }
     return ESP_ERR_NOT_FOUND;
+}
+
+// Checks the request's query keys against a whitelist (http_parse::queryKeys). `present` has bit i set when allowed[i]
+// occurs. ESP_ERR_INVALID_ARG for an unknown or repeated key.
+static esp_err_t check_query_keys(httpd_req_t* req, const char* const* allowed, size_t n, unsigned* present)
+{
+    return to_esp_err(http_parse::queryKeys(req->uri, allowed, n, present));
+}
+
+// Optional `mode` query of the DTC routes: -1 (absent) means all modes. A present value must be a non-negative
+// integer; a negative one used to be accepted and meant "all" by accident.
+static esp_err_t get_dtc_mode_query(httpd_req_t* req, int* mode)
+{
+    *mode = -1;
+    int       parsed = 0;
+    esp_err_t err    = get_query_int(req, "mode", &parsed);
+    if (err != ESP_OK || parsed < 0)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *mode = parsed;
+    return ESP_OK;
 }
 
 static esp_err_t get_download_query(httpd_req_t* req, bool* download)
@@ -621,21 +643,26 @@ esp_err_t p_vin_index_handler(httpd_req_t* req, void* arg)
 
 esp_err_t g_dtc_index_handler(httpd_req_t* req, void* arg)
 {
-    int mode = -1;
-    if (httpd_req_get_url_query_len(req) == 0)
+    static const char* const keys[] = {"mode", "codes"};
+    unsigned                 present = 0;
+    // One query form per call: nothing, ?mode= or ?codes=. Extra or repeated keys and mode with codes are ambiguous.
+    if (check_query_keys(req, keys, 2, &present) != ESP_OK || present == 3)
     {
-        return send_json_response(req, m_dtc_get(mode));
+        return AsyncWebServer::sendError(req, 400, "Invalid DTC query");
+    }
+    if (present == 0)
+    {
+        return send_json_response(req, m_dtc_get(-1));
     }
 
-    char mode_text[32];
-    if (get_query_str(req, "mode", mode_text, sizeof(mode_text)))
+    if (present == 1)
     {
-        if (get_query_int(req, "mode", &mode) != ESP_OK)
+        int mode = -1;
+        if (get_dtc_mode_query(req, &mode) != ESP_OK)
         {
             return AsyncWebServer::sendError(req, 400, "Invalid DTC mode");
         }
-        MiddlewareJsonResult data = m_dtc_get(mode);
-        return send_json_response(req, data);
+        return send_json_response(req, m_dtc_get(mode));
     }
 
     char        scratch[(MAX_DTC_CODES_QUERY * 6) + 2];
@@ -660,8 +687,11 @@ esp_err_t g_dtc_index_handler(httpd_req_t* req, void* arg)
 
 esp_err_t p_dtc_index_handler(httpd_req_t* req, void* arg)
 {
-    int mode = -1;
-    if (get_query_int(req, "mode", &mode) != ESP_OK && (httpd_req_get_url_query_len(req) > 0))
+    static const char* const keys[] = {"mode"};
+    unsigned                 present = 0;
+    int                      mode    = -1;
+    if (check_query_keys(req, keys, 1, &present) != ESP_OK ||
+        (present != 0 && get_dtc_mode_query(req, &mode) != ESP_OK))
     {
         return AsyncWebServer::sendError(req, 400, "Invalid DTC mode");
     }
@@ -811,7 +841,7 @@ esp_err_t p_auto_poll_index_handler(httpd_req_t* req, void* arg)
     bool on = false;
     if (get_query_bool(req, "auto_poll", &on) != ESP_OK)
     {
-        return AsyncWebServer::sendError(req, 400, "Invalid query parameter");
+        return AsyncWebServer::sendError(req, 400, "auto_poll must be true, false, 1 or 0");
     }
 
     return send_json_response(req, m_auto_poll_set(on));

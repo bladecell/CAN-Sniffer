@@ -145,9 +145,77 @@ inline Result pathInt(const char* uri, const char* route, int* value)
   return Result::Ok;
 }
 
-inline bool queryBool(const char* text)
+// P2.11 NB5: a boolean query value is exactly true, false, 1 or 0 (true/false in any case). Anything else, including an
+// empty value, is InvalidArg, so a typo cannot silently turn a switch off.
+inline Result strictBool(const char* text, bool* out)
 {
-  return text != nullptr && (strcasecmp(text, "true") == 0 || strcmp(text, "1") == 0);
+  if (text == nullptr || out == nullptr)
+  {
+    return Result::InvalidArg;
+  }
+  if (strcasecmp(text, "true") == 0 || strcmp(text, "1") == 0)
+  {
+    *out = true;
+    return Result::Ok;
+  }
+  if (strcasecmp(text, "false") == 0 || strcmp(text, "0") == 0)
+  {
+    *out = false;
+    return Result::Ok;
+  }
+  return Result::InvalidArg;
+}
+
+// Checks the query of `uri` (after the first '?') against a key whitelist. Every pair must have a non-empty key from
+// `allowed` and no key may repeat; values are not looked at. `present` gets bit i set when allowed[i] occurs (n <= 8).
+// No query at all is Ok with present == 0. Anything unknown is InvalidArg: callers use this to reject extra keys such as
+// GET /dtc?codes=P0301&foo=1 instead of silently ignoring them.
+inline Result queryKeys(const char* uri, const char* const* allowed, size_t n, unsigned* present)
+{
+  if (uri == nullptr || allowed == nullptr || present == nullptr || n > 8)
+  {
+    return Result::InvalidArg;
+  }
+  *present            = 0;
+  const char* query   = strchr(uri, '?');
+  if (query == nullptr)
+  {
+    return Result::Ok;
+  }
+  query++;
+  while (*query != '\0')
+  {
+    const char* end = query;
+    while (*end != '\0' && *end != '&' && *end != '=')
+    {
+      end++;
+    }
+    const size_t keyLen = static_cast<size_t>(end - query);
+    int          found  = -1;
+    for (size_t i = 0; i < n && keyLen > 0; i++)
+    {
+      if (strlen(allowed[i]) == keyLen && strncmp(allowed[i], query, keyLen) == 0)
+      {
+        found = static_cast<int>(i);
+        break;
+      }
+    }
+    if (found < 0 || (*present & (1u << found)) != 0)
+    {
+      return Result::InvalidArg;
+    }
+    *present |= 1u << found;
+    while (*end != '\0' && *end != '&')
+    {
+      end++;
+    }
+    query = (*end == '&') ? end + 1 : end;
+    if (*end == '&' && *query == '\0')
+    {
+      return Result::InvalidArg;  // trailing '&'
+    }
+  }
+  return Result::Ok;
 }
 
 inline int hexNibble(char value)
