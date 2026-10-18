@@ -49,6 +49,8 @@ export interface AuthDeps {
 
 const API = "/api/v1/auth";
 const PIN = /^[0-9]{6}$/;
+/** Same rule as isPin, for the HTML pattern attribute. Svelte attributes read `{...}` as an expression, so the pattern must come from here. */
+export const PIN_PATTERN = "[0-9]{6}";
 const CLAIM_POLL_MS = 1000;
 /** Past the claim window, a claim with no final answer is given up after this grace. */
 const CLAIM_GRACE_MS = 10_000;

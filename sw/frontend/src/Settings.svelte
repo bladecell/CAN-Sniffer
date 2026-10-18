@@ -1,6 +1,6 @@
 <script lang="ts">
   import { auth } from "$lib/auth.svelte";
-  import { errorText, isPin, type AuthError } from "$lib/auth";
+  import { errorText, isPin, PIN_PATTERN, type AuthError } from "$lib/auth";
 
   let oldPin = $state("");
   let newPin = $state("");
@@ -51,11 +51,11 @@
     <p class="hint">Changing the PIN logs out every session, including this one.</p>
     <form onsubmit={submitPinChange}>
       <label for="old-pin">Current PIN</label>
-      <input id="old-pin" type="password" inputmode="numeric" autocomplete="current-password" maxlength="6" pattern="[0-9]{6}" bind:value={oldPin} required />
+      <input id="old-pin" type="password" inputmode="numeric" autocomplete="current-password" maxlength="6" pattern={PIN_PATTERN} bind:value={oldPin} required />
       <label for="new-pin">New PIN (6 digits)</label>
-      <input id="new-pin" type="password" inputmode="numeric" autocomplete="new-password" maxlength="6" pattern="[0-9]{6}" bind:value={newPin} required />
+      <input id="new-pin" type="password" inputmode="numeric" autocomplete="new-password" maxlength="6" pattern={PIN_PATTERN} bind:value={newPin} required />
       <label for="repeat-pin">Repeat the new PIN</label>
-      <input id="repeat-pin" type="password" inputmode="numeric" autocomplete="new-password" maxlength="6" pattern="[0-9]{6}" bind:value={repeatPin} aria-describedby="pin-msg" required />
+      <input id="repeat-pin" type="password" inputmode="numeric" autocomplete="new-password" maxlength="6" pattern={PIN_PATTERN} bind:value={repeatPin} aria-describedby="pin-msg" required />
       <p id="pin-msg" class="pin-error" role="alert">{pinMessage}</p>
       <button type="submit" disabled={!canChange}>Change PIN</button>
     </form>

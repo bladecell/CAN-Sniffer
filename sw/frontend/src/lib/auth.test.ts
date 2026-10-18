@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createAuth, errorText, isPin, type AuthView } from "./auth";
+import { createAuth, errorText, isPin, PIN_PATTERN, type AuthView } from "./auth";
 
 type Route = (url: string, init?: RequestInit) => Response | Promise<Response>;
 
@@ -287,6 +287,22 @@ describe("claim (two-step)", () => {
     expect(polls).toBe(2);
   });
 
+  test("a network failure on the claim POST shows NETWORK and leaves the form usable", async () => {
+    const h = harness(() => {
+      throw new Error("offline");
+    });
+    await h.auth.startClaim(PIN);
+    expect(h.auth.view.error).toBe("NETWORK");
+    expect(h.auth.view.claimPhase).toBe("idle");
+  });
+
+  test("a 403 with no known code (for example the Host guard) shows UNKNOWN and leaves the form usable", async () => {
+    const h = harness(() => json(403, { status: "error", reason: "bad host", code: "BAD_HOST" }));
+    await h.auth.startClaim(PIN);
+    expect(h.auth.view.error).toBe("UNKNOWN");
+    expect(h.auth.view.claimPhase).toBe("idle");
+  });
+
   test("409 CLAIM_CONFLICT is final with outcome conflict", async () => {
     const h = harness(() => json(409, { code: "CLAIM_CONFLICT" }));
     await h.auth.startClaim(PIN);
@@ -360,4 +376,17 @@ describe("change PIN", () => {
 test("every error code has a message", () => {
   expect(errorText("NETWORK").length).toBeGreaterThan(0);
   expect(errorText("UNKNOWN").length).toBeGreaterThan(0);
+});
+
+describe("PIN pattern (HTML attribute)", () => {
+  // Regression: a literal pattern="[0-9]{6}" in a Svelte attribute became "[0-9]6" (the braces are an expression),
+  // so the browser refused every PIN and the claim submit never fired.
+  test("accepts exactly six digits and nothing else", () => {
+    const re = new RegExp(`^(?:${PIN_PATTERN})$`);
+    expect(re.test("123456")).toBe(true);
+    expect(re.test("12345")).toBe(false);
+    expect(re.test("1234567")).toBe(false);
+    expect(re.test("12345a")).toBe(false);
+    expect(re.test("6")).toBe(false);
+  });
 });

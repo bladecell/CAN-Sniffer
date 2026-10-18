@@ -1,6 +1,6 @@
 <script lang="ts">
   import { auth } from "$lib/auth.svelte";
-  import { errorText, isPin, type ClaimOutcome } from "$lib/auth";
+  import { errorText, isPin, PIN_PATTERN, type ClaimOutcome } from "$lib/auth";
   import { dialogFocus } from "$lib/dialogFocus";
 
   // Local form state lives inside the {#if} blocks below, so it resets when the dialog closes.
@@ -89,7 +89,7 @@
             inputmode="numeric"
             autocomplete="off"
             maxlength="6"
-            pattern="[0-9]{6}"
+            pattern={PIN_PATTERN}
             bind:value={loginPin}
             disabled={waitLeft > 0 || auth.view.state === "unavailable"}
             aria-describedby="auth-login-msg"
@@ -133,7 +133,7 @@
         <form onsubmit={submitClaim}>
           <p>This device has no PIN yet. Choose 6 digits. The PIN is set after you press BOOT on the device.</p>
           <label for="auth-new-pin">New PIN (6 digits)</label>
-          <input id="auth-new-pin" type="password" inputmode="numeric" autocomplete="new-password" maxlength="6" pattern="[0-9]{6}" bind:value={newPin} required />
+          <input id="auth-new-pin" type="password" inputmode="numeric" autocomplete="new-password" maxlength="6" pattern={PIN_PATTERN} bind:value={newPin} required />
           <label for="auth-confirm-pin">Repeat the PIN</label>
           <input
             id="auth-confirm-pin"
@@ -141,7 +141,7 @@
             inputmode="numeric"
             autocomplete="new-password"
             maxlength="6"
-            pattern="[0-9]{6}"
+            pattern={PIN_PATTERN}
             bind:value={confirmPin}
             aria-describedby="auth-claim-msg"
             required
