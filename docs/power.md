@@ -42,10 +42,10 @@ The old doc guessed "engine off ≈ below 13.0 V"; the code uses 13.2 V.
 
 ### Sleep cycle (SLEEPING state)
 1. Read the voltage. Sleep time is 10 s, or 60 s below 11.4 V.
-2. Release the PM lock, `esp_sleep_enable_timer_wakeup`, `vTaskDelay`. Re-acquire the lock after the delay.
+2. Release the PM lock, `esp_sleep_enable_timer_wakeup`, `battery_deinit()` (the ADC unit is released for the sleep), `vTaskDelay`. After the delay `battery_init()` again (a failure leaves the voltage "unknown", the device still sleeps normally) and re-acquire the lock.
 3. Set the CAN transceiver RS pin low (high speed), run `setup_can()` (re-reads the CAN config from NVS).
 4. `quickCheckBus()`: sends one OBD request (`0x7DF`, mode 0x01 PID 0x00), waits 50 ms and returns true only if no ACK or stuff errors were counted.
-5. Bus alive: `setup_obd()`, `setup_wifi()`, `setup_webserver()`, state NOT_CONNECTED. Bus dead: stop the web server, deinit the CAN driver, RS pin high (standby) and sleep again.
+5. Bus alive: `setup_sd_card()` (the card was unmounted for the sleep; a failure only disables SD features), `setup_obd()`, `setup_wifi()`, `setup_webserver()`, state NOT_CONNECTED. Bus dead: stop the web server, deinit the CAN driver, RS pin high (standby) and sleep again.
 
 The cycle is about `sleep time + 1 s` (supervisor loop delay) plus the wake work. Each wake transmits one CAN frame on the real bus, a standard OBD request. Sleep current and wake duration have not been measured (`plan/STATUS.md` → Metrics).
 
@@ -63,11 +63,14 @@ Before sleep (STOPPING):
 2. `OBD2::deinit()`: stops its three tasks, clears PID values, VIN, DTCs and all subscriber lists, deletes its queues and semaphores. PID definitions stay. If it times out (5 s), the sequence stops here and retries on the next pass.
 3. `WIFI::deinit()` (returns void, so nothing is checked). It also frees mDNS (`mdns_free`) and clears the flag, so the next `start()` binds mDNS to the new netifs.
 4. `CanDriver::deinit()`: stops the simulator, disables the node, then asks the TX and health tasks to exit (flag and notify, bounded 3 s wait, each task deletes itself) before deleting the TWAI node, queues, semaphore and TX ring. Safe to call twice. A task that does not leave in time returns `ESP_ERR_TIMEOUT` with nothing freed; an error stops the sequence and retries.
-5. RS pin high (transceiver standby), `LedStatus::deinit()` (LED off, worker task and semaphore released), state SLEEPING.
+5. `SDCard::deinit()`: unmounts the card (flushes the FAT) and releases the card-detect pin. Runs only after the web server and OBD2 are down. A transfer holding the lease makes it time out after 5 s; the sequence stops and retries on the next pass. After it, the per-second `update_card_status()` poll does nothing.
+6. RS pin high (transceiver standby), `LedStatus::deinit()` (LED off, worker task and semaphore released), state SLEEPING.
 
-After wake: `LedStatus::init()`, CAN, then (bus alive) OBD (which re-subscribes the connected-callbacks and reloads the PID JSON from the SD card), Wi-Fi, web server (which re-subscribes the PID stream callback).
+The ERROR state's best-effort shutdown also unmounts the card before deep sleep.
 
-Not deinitialized before sleep, and have no `deinit()`: Settings (NVS), power management, the `www` LittleFS mount, the SD card (stays mounted, still polled for hot-plug every second) and the battery ADC unit (read while asleep to pick the sleep time). `SDCard::deinit()` and `battery_deinit()` exist (unmount and release the card-detect pin; delete the ADC unit) but are deliberately not called in the sleep sequence: both are used while asleep, so wiring them needs a wake-path re-init (open item).
+After wake: `LedStatus::init()`, CAN, then (bus alive) `SDCard::init()`, OBD (which re-subscribes the connected-callbacks and reloads the PID JSON from the SD card), Wi-Fi, web server (which re-subscribes the PID stream callback).
+
+Not deinitialized before sleep, and have no `deinit()`: Settings (NVS), power management and the `www` LittleFS mount (see `decisions.md`, 2026-10-18 deinit exceptions). `battery_deinit()` runs around the light sleep (step 2 of the sleep cycle), not in STOPPING, because the SLEEPING state reads the voltage on every pass, including the dead-bus passes that skip STOPPING.
 
 ### Where it differs from a battery-safe design
 - ERROR state: fixed by P2.9e, see States.

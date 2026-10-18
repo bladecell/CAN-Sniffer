@@ -270,6 +270,15 @@ void SUPERVISOR::task()
                     break;
                 }
 
+                // Nothing reads the card any more (web server and OBD2 are down). Unmounting also flushes the FAT.
+                // A transfer holding the lease makes this time out; the retry above covers it.
+                obdStop = SDCard::getInstance().deinit();
+                if (obdStop != ESP_OK)
+                {
+                    ESP_LOGE(TAG, "SD card shutdown failed: %s", esp_err_to_name(obdStop));
+                    break;
+                }
+
                 // 4. Put CAN transceiver into Standby Mode
                 gpio_set_level(CAN_RS_GPIO, 1);
 
@@ -310,8 +319,16 @@ void SUPERVISOR::task()
                 // 1. Configure wakeup timer
                 esp_sleep_enable_timer_wakeup(sleep_time_us);
 
+                // The voltage above was the last read before the sleep; release the ADC unit for the sleep.
+                battery_deinit();
+
                 // 2. Just delay the task! FreeRTOS will seamlessly enter Light Sleep
                 vTaskDelay(pdMS_TO_TICKS(sleep_time_us / 1000));
+
+                if (battery_init() != ESP_OK)
+                {
+                    ESP_LOGW(TAG, "Battery ADC init after wake failed; voltage unknown");
+                }
 
 #ifdef CONFIG_PM_ENABLE
                 // Re-acquire the lock to prevent sleep during operation
@@ -342,6 +359,13 @@ void SUPERVISOR::task()
                 if (CanDriver::getInstance().quickCheckBus())
                 {
                     ESP_LOGI(TAG, "Bus is ALIVE! Starting full system...");
+
+                    // The card was unmounted for the sleep (STOPPING). Without it the PID file and SD routes are
+                    // unavailable; the rest keeps running.
+                    if (setup_sd_card() != ESP_OK)
+                    {
+                        ESP_LOGW(TAG, "SD card init after wake failed; SD features disabled");
+                    }
 
                     startupErr = setup_obd();
                     if (startupErr != ESP_OK)
@@ -430,6 +454,10 @@ void SUPERVISOR::task()
                 if (CanDriver::getInstance().deinit() == ESP_OK)
                 {
                     gpio_set_level(CAN_RS_GPIO, 1);  // transceiver standby
+                }
+                if (SDCard::getInstance().deinit() != ESP_OK)
+                {
+                    ESP_LOGW(TAG, "SD card not unmounted before error sleep");
                 }
                 LedStatus::getInstance().deinit();
 
