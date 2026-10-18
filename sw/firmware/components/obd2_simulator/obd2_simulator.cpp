@@ -205,7 +205,7 @@ static void sendConsecutiveFrames(CanDriver& canDriver, uint32_t id, SimTransfer
 void dataSimTask(CanDriver& canDriver)
 {
     static const char     vin[] = "1HGBH41JXMN109186";
-    std::vector<uint16_t> dtcs  = {0x0143, 0x8260, 0x4234, 0x0300, 0x0408, 0x0506, 0x0101, 0x0113, 0x0335, 0x0401};
+    static const uint16_t dtcs[] = {0x0143, 0x8260, 0x4234, 0x0300, 0x0408, 0x0506, 0x0101, 0x0113, 0x0335, 0x0401};
     // ECU 1 (0x7E9) only answers DTC and VIN requests. 0x0300 and 0x0408 are also reported by ECU 0, to exercise the merge.
     static const uint16_t dtcsEcu1[] = {0x0300, 0x0408, 0x1A10, 0x2345};
     SimTransfer           transfer[SIM_ECU_COUNT];
