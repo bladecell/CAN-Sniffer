@@ -140,4 +140,4 @@ Other behaviour:
 - A frame longer than 125 bytes makes the server close the socket (no allocation). Text frames are logged and ignored. Unknown command bytes are logged and ignored.
 - A close frame is echoed. Whenever a socket closes, for any reason (close frame, reset, timeout), and no other WebSocket client remains, both streams are turned off.
 - `0x01` (`MSG_TYPE_LOG`) is defined in `middleware.hpp` but nothing sends it.
-- Up to 20 WebSocket clients are considered by a broadcast. The server allows 7 open sockets in total.
+- Up to 20 WebSocket clients are considered by a broadcast. The server allows 7 open sockets in total. When the table is full the least recently used socket is closed to make room (a socket serving an async request is never chosen), and a peer that vanishes without closing is dropped by TCP keep-alive after about 25 s, so a stale browser tab cannot lock the device out. A client must reconnect if its socket is purged.

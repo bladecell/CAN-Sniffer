@@ -1873,6 +1873,11 @@ esp_err_t setup_web_server()
         (void)stop_access_control();
         return ret;
     }
+    // A peer that vanished without FIN or RST (phone left the Wi-Fi) is dropped after about 10 + 3 * 5 s.
+    server_config.httpd_config.keep_alive_enable   = true;
+    server_config.httpd_config.keep_alive_idle     = 10;
+    server_config.httpd_config.keep_alive_interval = 5;
+    server_config.httpd_config.keep_alive_count    = 3;
 
     OBD2::getInstance().subscribe(pid_stream_callback);
 

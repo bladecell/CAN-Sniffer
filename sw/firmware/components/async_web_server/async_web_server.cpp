@@ -104,7 +104,9 @@ esp_err_t AsyncWebServer::start(Config config)
     }
 
     config.httpd_config.max_open_sockets = config.max_open_sockets;
-    config.httpd_config.lru_purge_enable = false;
+    // Full table: close the least recently used socket (never one held by an async request) instead of refusing the
+    // newcomer. Idle or half-dead clients otherwise keep their slot forever.
+    config.httpd_config.lru_purge_enable = true;
     config.httpd_config.stack_size       = 8192;
 
     max_requests_per_sec_ = config.max_requests_per_sec;
