@@ -78,9 +78,9 @@ Task watchdog: enabled, 5 s timeout, panic on timeout is off, idle tasks of both
 | 3 | FLASH_FILESYSTEM | Mounts the `www` partition read-only as LittleFS at `/www` (no format on failure) | yes |
 | 4 | SD_CARD | `SDCard::init` (SDMMC slot 1, 1-bit, card-detect GPIO). Returns OK even when no card is inserted. If a card is present it mounts it, and the mount callback creates `/config` and `/logs`. `format_if_mount_failed` is false (formatting is explicit only) | no |
 | 5 | BATTERY | ADC1 channel 1 oneshot | no |
-| 6 | CAN | Reads the CAN config from NVS (defaults on first boot), installs the simulator hooks if `debug`, `CanDriver::init` | no |
+| 6 | CAN | Reads the CAN config from NVS (defaults on first boot; a missing key takes its default and the other stored keys are kept), installs the simulator hooks if `debug`, `CanDriver::init` | no |
 | 7 | OBD | Registers the connected-callbacks, `OBD2::init()` (needs the CAN driver initialized), waits 1 s, then loads the PID JSON from the SD card. No card mounted: warns and returns OK with no PIDs. Card mounted but the file is missing or fails to parse: returns an error | no |
-| 8 | WIFI | Reads the Wi-Fi config from NVS (defaults on first boot), `WIFI::init` + `start` | yes |
+| 8 | WIFI | Reads the Wi-Fi config from NVS (defaults on first boot; a missing key takes its default and the other stored keys are kept), `WIFI::init` + `start` | yes |
 | 9 | WEBSERVER | `setup_web_server()`: starts `AsyncWebServer`, registers routes, subscribes `pid_stream_callback` to PID updates, creates `WSDataStreamTask`, with access control brought up first: `button_init()` (a failure only disables PIN claim and recovery) and `auth_service::start()` (loads the PIN record; a storage failure only closes the gated routes) | yes |
 
 Failure handling:

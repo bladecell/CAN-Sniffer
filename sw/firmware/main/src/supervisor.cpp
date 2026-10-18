@@ -25,6 +25,7 @@
 #include "esp_timer.h"
 #include "input_limits.hpp"
 #include "json_budget.hpp"
+#include "settings_merge.hpp"
 #include "led_status.hpp"
 #include "middleware.hpp"
 #include "obd2.hpp"
@@ -557,19 +558,17 @@ esp_err_t SUPERVISOR::setup_webserver()
     return setup_web_server();
 }
 
-// Only a corrupt NVS key partition justifies wiping the settings. A missing section is first boot (save the defaults).
+// Only a corrupt NVS key partition justifies wiping the settings. A missing key keeps the other stored keys (SET-3); a section with no keys is first boot (defaults saved).
 // Any other read error (out of memory, bad handle, ...) runs this boot on the in-memory defaults and keeps the stored values.
-template <class Cfg, class Get, class SetDefault>
-static esp_err_t load_section(const char* name, Cfg& cfg, const Cfg& defaults, Get get, SetDefault setDefault)
+template <class Cfg, class Get, class Store, class SetDefault>
+static esp_err_t load_section(const char* name, Cfg& cfg, const Cfg& defaults, Get get, Store store, SetDefault setDefault)
 {
     esp_err_t err = get(cfg);
 
     if (err == ESP_ERR_NVS_NOT_FOUND)
     {
-        ESP_LOGI(TAG, "First boot detected. Saving default %s config.", name);
-        setDefault();
-        cfg = defaults;
-        err = get(cfg);
+        ESP_LOGI(TAG, "%s config incomplete or first boot. Keeping valid stored keys, defaulting the rest.", name);
+        err = settings_merge::recoverMissing(cfg, defaults, ESP_ERR_NVS_NOT_FOUND, get, store, setDefault);
     }
     else if (err == ESP_ERR_NVS_CORRUPT_KEY_PART)
     {
@@ -602,7 +601,8 @@ esp_err_t SUPERVISOR::setup_wifi()
     Settings&    settings = Settings::getInstance();
     WIFI::Config config;
     esp_err_t    err = load_section("WIFI", config, Settings::defaultWifiConfig(),
-                                    [&](WIFI::Config& c) { return settings.getWifiConfig(c); }, [&] { settings.setDefaultWifiConfig(); });
+                                    [&](WIFI::Config& c) { return settings.getWifiConfig(c); },
+                                    [&](const WIFI::Config& c) { return settings.setWifiConfig(c); }, [&] { settings.setDefaultWifiConfig(); });
     if (err != ESP_OK)
     {
         return err;
@@ -621,7 +621,8 @@ esp_err_t SUPERVISOR::setup_can()
     Settings&         settings = Settings::getInstance();
     CanDriver::Config config;
     esp_err_t         err = load_section("CAN", config, Settings::defaultCanConfig(),
-                                         [&](CanDriver::Config& c) { return settings.getCanConfig(c); }, [&] { settings.setDefaultCanConfig(); });
+                                         [&](CanDriver::Config& c) { return settings.getCanConfig(c); },
+                                         [&](const CanDriver::Config& c) { return settings.setCanConfig(c); }, [&] { settings.setDefaultCanConfig(); });
     if (err != ESP_OK)
     {
         return err;
@@ -1153,7 +1154,8 @@ esp_err_t SUPERVISOR::load_config_from_nvs()
 {
     Settings& settings = Settings::getInstance();
     return load_section("System", _config, Settings::defaultSupervisorConfig(),
-                        [&](Config& c) { return settings.getSupervisorConfig(c); }, [&] { settings.setDefaultSupervisorConfig(); });
+                        [&](Config& c) { return settings.getSupervisorConfig(c); },
+                        [&](const Config& c) { return settings.setSupervisorConfig(c); }, [&] { settings.setDefaultSupervisorConfig(); });
 }
 
 const char* SUPERVISOR::setup_function_to_string(SetupFunction func) const
