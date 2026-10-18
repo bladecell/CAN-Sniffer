@@ -200,7 +200,11 @@ export function createAuth(deps: AuthDeps) {
     if (view.devBypass || liveToken()) return Promise.resolve(true);
     return new Promise((resolve) => {
       waiters.push(resolve);
-      if (view.dialog === "none") set({ dialog: dialogFor(view.state), error: null });
+      if (view.dialog !== "none") return;
+      // Re-read the state first: the PIN may have been cleared or set since this page last asked (BOOT-hold recovery).
+      void refresh().then(() => {
+        if (view.dialog === "none" && waiters.length > 0) set({ dialog: dialogFor(view.state), error: null });
+      });
     });
   }
 

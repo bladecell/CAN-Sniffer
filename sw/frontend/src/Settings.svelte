@@ -1,6 +1,9 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { auth } from "$lib/auth.svelte";
   import { errorText, isPin, PIN_PATTERN, type AuthError } from "$lib/auth";
+
+  onMount(() => void auth.refresh());
 
   let oldPin = $state("");
   let newPin = $state("");

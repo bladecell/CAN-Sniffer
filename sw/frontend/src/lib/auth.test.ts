@@ -44,6 +44,19 @@ async function until(cond: () => boolean) {
   expect(cond()).toBe(true);
 }
 
+describe("stale state", () => {
+  test("opening the login prompt re-reads the state: a PIN cleared by BOOT hold opens the claim dialog", async () => {
+    let state = "claimed";
+    const h = harness(() => json(200, { state }));
+    await h.auth.refresh();
+    expect(h.auth.view.state).toBe("claimed");
+    state = "unclaimed";
+    void h.auth.ensureLogin();
+    await until(() => h.auth.view.dialog === "claim");
+    expect(h.auth.view.state).toBe("unclaimed");
+  });
+});
+
 describe("state read", () => {
   test("refresh reads state and ap_open without opening a dialog", async () => {
     const h = harness(() => json(200, { state: "claimed", authenticated: false, ap_open: true, retry_after_s: 0, claim_expires_in_s: 0 }));
@@ -73,7 +86,7 @@ describe("login and 401 retry", () => {
     });
     await h.auth.refresh();
     const pending = h.auth.gatedFetch("/api/v1/system/reboot", { method: "POST" });
-    expect(h.auth.view.dialog).toBe("login");
+    await until(() => h.auth.view.dialog === "login");
     expect(h.calls.filter((c) => c.url === "/api/v1/system/reboot")).toHaveLength(0);
     await h.auth.login(PIN);
     const res = await pending;
@@ -186,7 +199,7 @@ describe("session expiry", () => {
     h.advance(1800 * 1000);
     const pending = h.auth.gatedFetch("/api/v1/sd_card/format", { method: "POST" });
     expect(h.auth.view.loggedIn).toBe(false);
-    expect(h.auth.view.dialog).toBe("login");
+    await until(() => h.auth.view.dialog === "login");
     expect(h.calls.some((c) => c.auth === `Bearer ${TOKEN}` && c.url !== "/api/v1/auth/login")).toBe(false);
     h.auth.closeDialog();
     await pending;
@@ -239,7 +252,7 @@ describe("claim (two-step)", () => {
     });
     await h.auth.refresh();
     const dialog = h.auth.ensureLogin();
-    expect(h.auth.view.dialog).toBe("claim");
+    await until(() => h.auth.view.dialog === "claim");
     await h.auth.startClaim(PIN);
     expect(h.calls.find((c) => c.url === "/api/v1/auth/claim")?.method).toBe("POST");
     expect(h.auth.view.claimPhase === "waiting" || h.auth.view.loggedIn).toBe(true);
@@ -355,7 +368,7 @@ describe("change PIN", () => {
     expect(await h.auth.changePin(PIN, "654321")).toBeNull();
     expect(h.auth.view.loggedIn).toBe(false);
     expect(h.auth.view.notice).toBe("pin_changed");
-    expect(h.auth.view.dialog).toBe("login");
+    await until(() => h.auth.view.dialog === "login");
     h.auth.closeDialog();
   });
 
