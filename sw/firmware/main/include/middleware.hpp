@@ -43,6 +43,9 @@ MiddlewareJsonResult m_obdii_get();
 MiddlewareJsonResult m_obdii_set(cJSON* payload);
 MiddlewareJsonResult m_system_get();
 MiddlewareJsonResult m_system_reboot();
+// Fixed-capacity admission; finish must run after the response attempt, including a failed send.
+uint32_t m_system_sleep_reserve();
+void m_system_sleep_finish(uint32_t token, bool responseSent);
 MiddlewareJsonResult m_sd_card_copy(cJSON* payload);
 MiddlewareJsonResult m_sdcard_info_get();
 MiddlewareJsonResult m_sdcard_format_post();

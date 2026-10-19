@@ -4,6 +4,13 @@ idf_component_register(
 )
 target_sources(${COMPONENT_LIB} PRIVATE "test_wifi_scan.cpp")
 target_sources(${COMPONENT_LIB} PRIVATE "test_http_body_policy.cpp")
+target_sources(${COMPONENT_LIB} PRIVATE "test_supervisor_core.cpp")
+target_sources(${COMPONENT_LIB} PRIVATE "test_power_settings.cpp")
+target_sources(${COMPONENT_LIB} PRIVATE "test_manual_sleep_http.cpp")
+target_include_directories(${COMPONENT_LIB} PRIVATE "$ENV{IDF_PATH}/components/nvs_flash/include")
+target_sources(${COMPONENT_LIB} PRIVATE "../../../main/src/supervisor_core.cpp")
+target_sources(${COMPONENT_LIB} PRIVATE "../../../main/src/supervisor_registry.cpp")
+target_include_directories(${COMPONENT_LIB} PRIVATE "../../../main/include")
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -Wall -Wextra -Werror)
 target_link_libraries(${COMPONENT_LIB} PUBLIC m)

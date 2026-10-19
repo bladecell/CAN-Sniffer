@@ -85,7 +85,7 @@ void test_renamed_routes_are_removed(void)
 
 void test_route_count_matches_docs(void)
 {
-  TEST_ASSERT_EQUAL_UINT32(39, kCount);  // docs/api.md: GET / plus 38 under /api/v1
+  TEST_ASSERT_EQUAL_UINT32(40, kCount);  // docs/api.md: GET / plus 39 under /api/v1
 }
 // The access-control decision (docs/decisions.md 2026-10-18), spelled out. A route is gated if and only if it is listed;
 // adding a route forces a decision here.
@@ -101,6 +101,7 @@ const GatedRoute kGated[] = {
     {"GET", "/api/v1/sd_card/file/*"},    {"PUT", "/api/v1/sd_card/file/*"},
     {"DELETE", "/api/v1/sd_card/file/*"}, {"POST", "/api/v1/sd_card/format"},
     {"POST", "/api/v1/sd_card/copy"}, {"POST", "/api/v1/system/reboot"},
+    {"POST", "/api/v1/system/sleep"},
     {"POST", "/api/v1/pid_def"},          {"PUT", "/api/v1/pid_def"},
     {"DELETE", "/api/v1/pid_def/*"},      {"POST", "/api/v1/pid_def/save"},
     {"POST", "/api/v1/pid_def/load"},     {"POST", "/api/v1/req/clear_dtc"},
@@ -118,6 +119,21 @@ bool listedAsGated(const Route& r)
     }
   }
   return false;
+}
+
+void test_manual_sleep_is_an_exact_authenticated_post()
+{
+  unsigned found = 0;
+  for (const auto& r : kRoutes)
+  {
+    if (strcmp(r.uri, "/api/v1/system/sleep") == 0)
+    {
+      ++found;
+      TEST_ASSERT_EQUAL_STRING("POST", r.method);
+      TEST_ASSERT_TRUE(r.gated);
+    }
+  }
+  TEST_ASSERT_EQUAL_UINT32(1, found);
 }
 
 void test_gated_set_is_exactly_the_decision(void)
@@ -172,6 +188,7 @@ void test_open_routes_stay_open(void)
 extern "C" void run_api_routes_tests(void)
 {
   RUN_TEST(test_gated_set_is_exactly_the_decision);
+  RUN_TEST(test_manual_sleep_is_an_exact_authenticated_post);
   RUN_TEST(test_open_routes_stay_open);
   RUN_TEST(test_wildcards_only_on_path_parameter_routes);
   RUN_TEST(test_renamed_routes_are_removed);

@@ -5,16 +5,16 @@
 #include <string>
 
 #include "esp_err.h"
-#include "esp_pm.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "supervisor_core.hpp"
 
 #define SUPERVISOR_TASK_STACK_SIZE 4096
 #define SUPERVISOR_TASK_CORE_ID 1
 #define PID_DEF_DB_PATH "/sdcard/config/pid_def.json"
 #define DTC_DESC_DB_PATH "/sdcard/config/dtcs.bin"
-#define SLEEP_TRANSITION_TIMER_S 60
-#define LONG_SLEEP_VOLTAGE_LIMIT 11.4f  // TODO: save this to nvs
+#define SLEEP_TRANSITION_TIMER_S supervisor::kInactiveTicks
+#define LONG_SLEEP_VOLTAGE_LIMIT supervisor::kLongSleepVoltage
 
 class SUPERVISOR
 {
@@ -28,46 +28,14 @@ public:
 
     struct Config
     {
-        std::string pid_def_path  = PID_DEF_DB_PATH;
-        std::string dtc_desc_path = DTC_DESC_DB_PATH;
+        std::string            pid_def_path  = PID_DEF_DB_PATH;
+        std::string            dtc_desc_path = DTC_DESC_DB_PATH;
+        power_settings::Config power{};
     };
 
-    enum class State
-    {
-        UNINITIALIZED,
-        STARTING,
-        NOT_CONNECTED,
-        RUNNING,
-        STOPPING,
-        SLEEPING,
-        ERROR,
-    };
-
-    enum class SetupFunction : size_t
-    {
-        SETTINGS = 0,
-        POWER_MANAGEMENT,
-        FLASH_FILESYSTEM,
-        SD_CARD,
-        BATTERY,
-        CAN,
-        OBD,
-        WIFI,
-        WEBSERVER,
-        COUNT
-    };
-
-    struct SetupStep
-    {
-        SetupFunction id;
-        const char*   name;
-        esp_err_t (*init_fn)();
-        esp_err_t result      = ESP_FAIL;
-        bool      is_critical = false;
-    };
-
-    SUPERVISOR();
-    ~SUPERVISOR();
+    using State         = supervisor::State;
+    using SetupFunction = supervisor::Id;
+    using SetupStep     = supervisor::SetupStep;
 
     static SUPERVISOR& getInstance()
     {
@@ -79,11 +47,18 @@ public:
     esp_err_t   get_setup_result(SetupFunction func) const;
     const auto& get_setup_steps() const
     {
-        return _setup_steps;
+        return core_.legacySetupSteps();
     }
 
-    void start();
-    void stop();
+    esp_err_t registerComponent(const supervisor::Descriptor& descriptor)
+    {
+        return core_.registerComponent(descriptor);
+    }
+    esp_err_t init(const supervisor::SettingsBootstrap& bootstrap);
+    // Request the usual ordered sleep cycle, without blocking a teardown dependency.
+    void     stop();
+    uint32_t reserve_sleep_request();
+    void     finish_sleep_request(uint32_t token, bool responseSent);
 
     uint32_t          get_uptime_seconds() const;
     std::string       get_restart_reason() const;
@@ -92,7 +67,12 @@ public:
     void              restart_system();
     SUPERVISOR::State get_state() const
     {
-        return eState.load();
+        return core_.state();
+    }
+
+    supervisor::Lifecycle get_lifecycle_status(SetupFunction id) const
+    {
+        return core_.status(id);
     }
 
     std::string get_pid_def_path() const
@@ -112,43 +92,31 @@ public:
         _config.dtc_desc_path = path;
     }
 
-    esp_err_t load_config_from_nvs();
+    esp_err_t               load_config_from_nvs();
     PidDefinitionSaveResult save_pid_def_to_json(const char* path);
-    esp_err_t load_pid_def_from_json(const char* path);
-    esp_err_t copy_file(const char* src_path, const char* dest_path);
+    esp_err_t               load_pid_def_from_json(const char* path);
+    esp_err_t               copy_file(const char* src_path, const char* dest_path);
+
+    // Application event only: the core guards RUNNING -> NOT_CONNECTED.
+    void notify_disconnected() { core_.disconnected(); }
+    // Settings-loading task path only. Applies the existing bounded factory-reset
+    // policy, then restarts; no caller can read or mutate raw RTC recovery state.
+    esp_err_t recover_corrupt_settings(const char* section);
 
 private:
+    // Tasks and callbacks retain this address for the lifetime of the firmware.
+    SUPERVISOR();
+    ~SUPERVISOR()                            = default;
     SUPERVISOR(const SUPERVISOR&)            = delete;
     SUPERVISOR& operator=(const SUPERVISOR&) = delete;
 
-    void        task();
-    static void taskWrapper(void* param);
+    void                          task();
+    static void                   taskWrapper(void* param);
+    static supervisor::Operations operations(SUPERVISOR* self);
 
-    TaskHandle_t         xTaskHandle = nullptr;
-    // Written by the supervisor task, the OBD callback task and start()/stop(); read by httpd tasks.
-    std::atomic<State>   eState      = State::UNINITIALIZED;
-    esp_pm_lock_handle_t pm_lock_    = nullptr;
-    Config               _config     = {};
+    TaskHandle_t         xTaskHandle   = nullptr;
+    portMUX_TYPE         lifecycleMux_ = portMUX_INITIALIZER_UNLOCKED;
+    Config               _config       = {};
 
-    static esp_err_t setup_settings();
-    static esp_err_t setup_power_management();
-    static esp_err_t setup_flash_filesystem();
-    static esp_err_t setup_wifi();
-    static esp_err_t setup_can();
-    static esp_err_t setup_obd();
-    static esp_err_t setup_battery();
-    static esp_err_t setup_sd_card();
-    static esp_err_t setup_webserver();
-
-    std::array<SetupStep, static_cast<size_t>(SetupFunction::COUNT)> _setup_steps = {{
-        {SetupFunction::SETTINGS, "SETTINGS", &SUPERVISOR::setup_settings, ESP_FAIL, true},
-        {SetupFunction::POWER_MANAGEMENT, "POWER_MANAGEMENT", &SUPERVISOR::setup_power_management, ESP_FAIL, true},
-        {SetupFunction::FLASH_FILESYSTEM, "FLASH_FILESYSTEM", &SUPERVISOR::setup_flash_filesystem, ESP_FAIL, true},
-        {SetupFunction::SD_CARD, "SD_CARD", &SUPERVISOR::setup_sd_card, ESP_FAIL, false},
-        {SetupFunction::BATTERY, "BATTERY", &SUPERVISOR::setup_battery, ESP_FAIL, false},
-        {SetupFunction::CAN, "CAN", &SUPERVISOR::setup_can, ESP_FAIL, false},
-        {SetupFunction::OBD, "OBD", &SUPERVISOR::setup_obd, ESP_FAIL, false},
-        {SetupFunction::WIFI, "WIFI", &SUPERVISOR::setup_wifi, ESP_FAIL, true},
-        {SetupFunction::WEBSERVER, "WEBSERVER", &SUPERVISOR::setup_webserver, ESP_FAIL, true},
-    }};
+    supervisor::Core core_;
 };

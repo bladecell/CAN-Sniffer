@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "cJSON.h"
+#include "power_settings_json.hpp"
 #include "can_config_limits.hpp"
 #include "esp_check.h"
 #include "esp_err.h"
@@ -550,6 +551,16 @@ static void reboot_delayed_task(void* arg)
 {
     vTaskDelay(pdMS_TO_TICKS(500));
     SUPERVISOR::getInstance().restart_system();
+}
+
+uint32_t m_system_sleep_reserve()
+{
+    return SUPERVISOR::getInstance().reserve_sleep_request();
+}
+
+void m_system_sleep_finish(uint32_t token, bool responseSent)
+{
+    SUPERVISOR::getInstance().finish_sleep_request(token, responseSent);
 }
 
 MiddlewareJsonResult m_system_reboot()
@@ -1708,8 +1719,15 @@ MiddlewareJsonResult m_settings_get()
         cJSON* sup_settings = cJSON_CreateObject();
         cJSON_AddStringToObject(sup_settings, "pid_def_path", supervisor_cfg.pid_def_path.c_str());
         cJSON_AddStringToObject(sup_settings, "dtc_desc_path", supervisor_cfg.dtc_desc_path.c_str());
-
-        cJSON_AddItemToObject(root, "system", sup_settings);
+        if (power_settings::append(sup_settings, supervisor_cfg.power))
+        {
+            cJSON_AddItemToObject(root, "system", sup_settings);
+        }
+        else
+        {
+            cJSON_Delete(sup_settings);
+            read_error = ESP_ERR_NO_MEM;
+        }
     }
     else if (read_error == ESP_OK)
     {
@@ -1844,6 +1862,12 @@ static SettingsFields apply_system_settings(cJSON* s, SUPERVISOR::Config& c)
     SettingsFields f(s);
     f.str("pid_def_path", c.pid_def_path);
     f.str("dtc_desc_path", c.dtc_desc_path);
+    const auto power = power_settings::patch(s, c.power);
+    f.n += power.count;
+    if (power.error != nullptr)
+    {
+        f.err = power.error;
+    }
     return f;
 }
 

@@ -10,6 +10,7 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "settings_validation.hpp"
+#include "power_settings_storage.hpp"
 #include "utilities.h"
 #include "wifi.hpp"
 
@@ -195,7 +196,7 @@ const char* Settings::checkSupervisorConfig(const SUPERVISOR::Config& c)
     {
         return "dtc_desc_path must be an /sdcard/ path of at most 255 bytes";
     }
-    return nullptr;
+    return power_settings::check(c.power);
 }
 
 WIFI::Config Settings::defaultWifiConfig()
@@ -434,6 +435,9 @@ esp_err_t Settings::setSupervisorConfig(const SUPERVISOR::Config& config)
 
     ESP_GOTO_ON_ERROR(nvs_set_str(handle, "pid_def_path", config.pid_def_path.c_str()), out, TAG, "pid_def_path");
     ESP_GOTO_ON_ERROR(nvs_set_str(handle, "dtc_desc_path", config.dtc_desc_path.c_str()), out, TAG, "dtc_desc_path");
+    ESP_GOTO_ON_ERROR(power_settings::write(config.power,
+        [&](const char* key, uint32_t value) { return nvs_set_u32(handle, key, value); },
+        [&](const char* key, uint8_t value) { return nvs_set_u8(handle, key, value); }), out, TAG, "power settings");
     ESP_GOTO_ON_ERROR(nvs_commit(handle), out, TAG, "commit");
     ESP_LOGI(TAG, "Supervisor Config Saved");
 
@@ -454,6 +458,13 @@ esp_err_t Settings::getSupervisorConfig(SUPERVISOR::Config& config)
     const SUPERVISOR::Config def = defaultSupervisorConfig();
     readStr<sv::kPathBuf>(r, "pid_def_path", config.pid_def_path, def.pid_def_path, sv::sdPathValid);
     readStr<sv::kPathBuf>(r, "dtc_desc_path", config.dtc_desc_path, def.dtc_desc_path, sv::sdPathValid);
+    const esp_err_t powerError = power_settings::read(config.power,
+        [&](const char* key, uint32_t& value) { return nvs_get_u32(r.h, key, &value); },
+        [&](const char* key, uint8_t& value) { return nvs_get_u8(r.h, key, &value); });
+    if (powerError != ESP_OK)
+    {
+        r.fatal = powerError;
+    }
 
     nvs_close(r.h);
     return finish(r);

@@ -2,8 +2,9 @@
 
 // Supervisor ERROR-state policy (P2.9e, SUP-1). No ESP-IDF includes, so host tests include it directly.
 // ERROR blinks the LED for kBlinkS, shuts the modules down, then deep-sleeps backoffS(n) and reboots. n is the number of
-// consecutive ERROR restarts, kept in RTC memory; it grows the sleep so a permanent fault is retried at most once per
+// recovery episodes, kept in RTC memory; it grows the sleep so a permanent fault is retried at most once per
 // kMaxBackoffS instead of looping and draining the car battery.
+// Startup does not clear history; only successful orderly teardown before normal sleep does.
 
 #include <cstdint>
 
@@ -15,6 +16,11 @@ constexpr uint32_t kMaxBackoffS  = 3600;
 constexpr uint32_t kMaxCount     = 16;
 constexpr uint32_t kMagic        = 0xE220B007u;
 constexpr uint32_t kMaxNvsResets = 3;  // factory resets in a row before the supervisor goes to ERROR instead
+
+constexpr uint32_t nextCount(uint32_t count)
+{
+  return count < kMaxCount ? count + 1 : kMaxCount;
+}
 
 // Factory reset + reboot on a corrupt NVS key partition shares the consecutive-failure count with the ERROR restarts, so
 // a reset that does not cure the corruption cannot loop forever.

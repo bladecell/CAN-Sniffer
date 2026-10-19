@@ -14,6 +14,7 @@
 #include <string>
 
 #include "api_routes.hpp"
+#include "manual_sleep_http.hpp"
 #include "auth.hpp"
 #include "auth_http.hpp"
 #include "async_web_server.hpp"
@@ -717,6 +718,38 @@ esp_err_t p_wifi_scan_handler(httpd_req_t* req, void* arg)
 esp_err_t p_system_reboot_index_handler(httpd_req_t* req, void* arg)
 {
     return send_json_response(req, m_system_reboot());
+}
+
+esp_err_t p_system_sleep_index_handler(httpd_req_t* req, void* arg)
+{
+    return manual_sleep_http::dispatch(req->uri, req->content_len,
+        httpd_req_get_hdr_value_len(req, "Transfer-Encoding") != 0,
+        []() { return m_system_sleep_reserve(); },
+        [&](int status) -> esp_err_t
+        {
+            if (status != 202)
+            {
+                return AsyncWebServer::sendError(req, status,
+                    status == 400 ? "Sleep accepts no body or query" : "Sleep request busy or supervisor unavailable");
+            }
+            esp_err_t error = httpd_resp_set_status(req, http_error::statusLine(202));
+            if (error != ESP_OK)
+            {
+                return error;
+            }
+            error = httpd_resp_set_type(req, "application/json");
+            if (error != ESP_OK)
+            {
+                return error;
+            }
+            error = httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+            if (error != ESP_OK)
+            {
+                return error;
+            }
+            return httpd_resp_send(req, "{\"status\":\"success\"}", HTTPD_RESP_USE_STRLEN);
+        },
+        [](uint32_t token, bool sent) { m_system_sleep_finish(token, sent); });
 }
 
 esp_err_t p_sd_card_copy_handler(httpd_req_t* req, void* arg)
