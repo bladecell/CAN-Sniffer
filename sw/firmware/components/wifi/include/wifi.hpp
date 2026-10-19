@@ -48,6 +48,11 @@ public:
         // Mode Selection
         wifi_mode_t mode          = WIFI_MODE_AP;  // WIFI_MODE_AP, WIFI_MODE_STA, or WIFI_MODE_APSTA
         uint8_t     sta_max_retry = 5;
+
+        // mDNS (empty hostname or instance keeps the compile-time default)
+        std::string mdns_hostname;
+        std::string mdns_instance;
+        uint16_t    mdns_http_port = 80;
     };
 
     enum class State

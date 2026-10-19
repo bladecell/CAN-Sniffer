@@ -256,9 +256,9 @@ esp_err_t WIFI::start_mdns_service()
         return err;
     }
 
-    mdns_hostname_set(HOSTNAME);
-    mdns_instance_name_set(MDNS_INSTANCE);
-    mdns_service_add(NULL, "_http", "_tcp", 80, NULL, 0);
+    mdns_hostname_set(m_config.mdns_hostname.empty() ? HOSTNAME : m_config.mdns_hostname.c_str());
+    mdns_instance_name_set(m_config.mdns_instance.empty() ? MDNS_INSTANCE : m_config.mdns_instance.c_str());
+    mdns_service_add(NULL, "_http", "_tcp", m_config.mdns_http_port, NULL, 0);
 
     m_mdns_up = true;
     return ESP_OK;
