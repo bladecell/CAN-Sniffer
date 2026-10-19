@@ -14,6 +14,7 @@ void run_hook_cell_tests(void);
 void run_settings_validation_tests(void);
 void run_delete_tree_tests(void);
 void run_body_reader_tests(void);
+void run_http_body_policy_tests(void);
 void run_error_policy_tests(void);
 void run_atomic_file_tests(void);
 void run_battery_calc_tests(void);
@@ -51,6 +52,7 @@ void app_main(void)
     run_settings_validation_tests();
     run_delete_tree_tests();
     run_body_reader_tests();
+    run_http_body_policy_tests();
     run_error_policy_tests();
     run_atomic_file_tests();
     run_battery_calc_tests();

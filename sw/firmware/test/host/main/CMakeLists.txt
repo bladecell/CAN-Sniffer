@@ -3,6 +3,7 @@ idf_component_register(
     PRIV_REQUIRES unity tinyexpr obd2_core
 )
 target_sources(${COMPONENT_LIB} PRIVATE "test_wifi_scan.cpp")
+target_sources(${COMPONENT_LIB} PRIVATE "test_http_body_policy.cpp")
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -Wall -Wextra -Werror)
 target_link_libraries(${COMPONENT_LIB} PUBLIC m)

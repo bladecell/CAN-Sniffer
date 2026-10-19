@@ -30,6 +30,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "host_guard.hpp"
+#include "http_body_policy.hpp"
 #include "http_error.hpp"
 #include "http_parse.hpp"
 #include "http_parser.h"
@@ -341,66 +342,8 @@ static bool get_validated_upload_content_length(httpd_req_t* req, size_t* conten
         return false;
     }
 
-    bool   saw_digit          = false;
-    bool   trailing_whitespace = false;
-    bool   exceeds_size_limit  = false;
-    size_t parsed_length       = 0;
-    for (const char* value = header_value; *value != '\0'; ++value)
-    {
-        if (*value >= '0' && *value <= '9')
-        {
-            if (trailing_whitespace)
-            {
-                return false;
-            }
-
-            saw_digit = true;
-            const size_t digit = (size_t)(*value - '0');
-            if (!exceeds_size_limit)
-            {
-                if (parsed_length > (MAX_UPLOAD_CONTENT_LENGTH - digit) / 10)
-                {
-                    exceeds_size_limit = true;
-                }
-                else
-                {
-                    parsed_length = (parsed_length * 10) + digit;
-                }
-            }
-        }
-        else if (*value == ' ' || *value == '\t')
-        {
-            if (saw_digit)
-            {
-                trailing_whitespace = true;
-            }
-        }
-        else
-        {
-            return false;
-        }
-    }
-
-    if (!saw_digit)
-    {
-        return false;
-    }
-
-    if (exceeds_size_limit)
-    {
-        *content_length = MAX_UPLOAD_CONTENT_LENGTH + 1;
-        return true;
-    }
-
-    // In addition to syntactic validation, require the parsed header to agree
-    // with the HTTP server's framing value before trusting it for the upload.
-    if (parsed_length != req->content_len)
-    {
-        return false;
-    }
-
-    *content_length = parsed_length;
-    return true;
+    return http_body_policy::uploadContentLength(header_value, req->content_len, MAX_UPLOAD_CONTENT_LENGTH,
+                                                 content_length);
 }
 
 static bool get_query_str(httpd_req_t* req, const char* key, char* out_val, size_t val_len)
@@ -540,14 +483,15 @@ static esp_err_t get_download_query(httpd_req_t* req, bool* download)
 cJSON* get_validated_json_payload(httpd_req_t* req, size_t max_size, int64_t deadline_us = JSON_PAYLOAD_RECEIVE_DEADLINE_US)
 {
     size_t total_len = req->content_len;
+    const auto length_result = http_body_policy::jsonContentLength(total_len, max_size);
 
-    if (total_len <= 0)
+    if (length_result == http_body_policy::JsonLengthResult::Required)
     {
         AsyncWebServer::sendError(req, 400, "Content-Length required");
         return nullptr;
     }
 
-    if (total_len > max_size)
+    if (length_result == http_body_policy::JsonLengthResult::TooLarge)
     {
         AsyncWebServer::sendError(req, 413, "JSON too large");
         return nullptr;
@@ -1530,62 +1474,33 @@ esp_err_t put_file_upload_handler(httpd_req_t* req, void* arg)
                 else
                 {
                     bool   upload_failed = false;
-                    size_t remaining     = content_length;
                     char   chunk[1024];
-                    int64_t no_progress_deadline = esp_timer_get_time() + UPLOAD_NO_PROGRESS_DEADLINE_US;
                     const int64_t absolute_deadline = upload_started_at + UPLOAD_ABSOLUTE_DEADLINE_US;
-
-                    if (esp_timer_get_time() >= absolute_deadline)
+                    const auto received = http_body_policy::receiveUpload(
+                        [req](char* dst, size_t len) { return httpd_req_recv(req, dst, len); },
+                        [fd](const char* data, size_t len) {
+                            return SDCard::getInstance().file_write_chunk(fd, data, len) == ESP_OK;
+                        },
+                        esp_timer_get_time, chunk, sizeof(chunk), content_length, HTTPD_SOCK_ERR_TIMEOUT,
+                        UPLOAD_NO_PROGRESS_DEADLINE_US, absolute_deadline);
+                    if (received == http_body_policy::UploadResult::Timeout)
                     {
                         upload_failed  = true;
                         response_status = 408;
                         response_reason = "Upload timed out";
                     }
-
-                    while (!upload_failed && remaining > 0)
+                    else if (received == http_body_policy::UploadResult::Disconnected)
                     {
-                        const int64_t now = esp_timer_get_time();
-                        if (now >= no_progress_deadline || now >= absolute_deadline)
-                        {
-                            upload_failed  = true;
-                            response_status = 408;
-                            response_reason = "Upload timed out";
-                            break;
-                        }
-
-                        const int received = httpd_req_recv(req, chunk, MIN(remaining, sizeof(chunk)));
-                        if (received == HTTPD_SOCK_ERR_TIMEOUT)
-                        {
-                            continue;
-                        }
-
-                        if (received <= 0 || (size_t)received > remaining)
-                        {
-                            // The peer has disconnected. Cleanup is still
-                            // required, but attempting another response is not.
-                            upload_failed = true;
-                            send_response = false;
-                            break;
-                        }
-
-                        if (SDCard::getInstance().file_write_chunk(fd, chunk, (size_t)received) != ESP_OK)
-                        {
-                            ESP_LOGE(TAG, "Disk write failed");
-                            upload_failed  = true;
-                            response_status = 500;
-                            response_reason = "Disk write failed";
-                            break;
-                        }
-
-                        remaining -= (size_t)received;
-                        no_progress_deadline = esp_timer_get_time() + UPLOAD_NO_PROGRESS_DEADLINE_US;
+                        // Cleanup still runs, but do not respond to a disconnected peer.
+                        upload_failed = true;
+                        send_response = false;
                     }
-
-                    if (!upload_failed && esp_timer_get_time() >= absolute_deadline)
+                    else if (received == http_body_policy::UploadResult::WriteError)
                     {
+                        ESP_LOGE(TAG, "Disk write failed");
                         upload_failed  = true;
-                        response_status = 408;
-                        response_reason = "Upload timed out";
+                        response_status = 500;
+                        response_reason = "Disk write failed";
                     }
 
                     if (!upload_failed && (fflush(fd) != 0 || ferror(fd) != 0))
