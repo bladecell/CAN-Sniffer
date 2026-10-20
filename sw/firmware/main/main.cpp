@@ -5,7 +5,10 @@
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "error_policy.hpp"
+#include "esp_sleep.h"
 #include "led_status.hpp"
+#include "production_components.hpp"
 #include "supervisor.hpp"
 #include "utilities.h"
 
@@ -13,48 +16,7 @@ static const char* TAG = "APP_MAIN";
 
 static esp_err_t registerComponents(SUPERVISOR& supervisor)
 {
-    using namespace supervisor;
-    const Descriptor components[] = {
-        {Id::POWER_MANAGEMENT, "POWER_MANAGEMENT", application_components::setupPowerManagement, nullptr, nullptr, true,
-         Participation::RETAINED, Role::POWER_MANAGEMENT, 1},
-        {Id::FLASH_FILESYSTEM, "FLASH_FILESYSTEM", application_components::setupFlashFilesystem, nullptr, nullptr, true,
-         Participation::RETAINED, Role::FLASH_FILESYSTEM, 2},
-        {Id::SD_CARD, "SD_CARD", application_components::setupSdCard, application_components::stopSdCard, nullptr,
-         false, Participation::NORMAL, Role::SD_CARD, 3, 4},
-        {Id::BATTERY, "BATTERY", application_components::setupBattery, application_components::stopBattery, nullptr,
-         false, Participation::BATTERY, Role::BATTERY, 4},
-        {Id::CAN, "CAN", application_components::setupCan, application_components::stopCan, nullptr, false,
-         Participation::PROBE, Role::CAN, 5, 3},
-        {Id::OBD,
-         "OBD",
-         application_components::setupObd,
-         application_components::stopObd,
-         nullptr,
-         false,
-         Participation::NORMAL,
-         Role::OBD,
-         6,
-         1,
-         {{{Id::CAN}, {Id::SD_CARD}}},
-         2,
-         true},
-        {Id::WIFI, "WIFI", application_components::setupWifi, application_components::stopWifi, nullptr, true,
-         Participation::NORMAL, Role::WIFI, 7, 2, {}, 0, true},
-        {Id::WEBSERVER,
-         "WEBSERVER",
-         application_components::setupWebserver,
-         application_components::stopWebserver,
-         nullptr,
-         true,
-         Participation::NORMAL,
-         Role::WEBSERVER,
-         8,
-         0,
-         {{{Id::OBD}, {Id::WIFI}, {Id::FLASH_FILESYSTEM}, {Id::SD_CARD}}},
-         4,
-         true},
-    };
-    for (const auto& component : components)
+    for (const auto& component : production_components::descriptors())
     {
         const esp_err_t error = supervisor.registerComponent(component);
         if (error != ESP_OK)
@@ -129,9 +91,18 @@ extern "C" void app_main(void)
     if (error != ESP_OK)
     {
         ESP_LOGE(TAG, "Startup rejected: %s", esp_err_to_name(error));
-        // No callbacks retain main's storage. Do not enter the RUNNING wait on
-        // a configuration rejection; task-creation failure already ran recovery.
-        return;
+        // No supervisor task exists to manage power, so nothing else would ever sleep. Rejection is deterministic:
+        // deep sleep at the longest backoff and retry on timer wake. Task-creation failure already ran recovery.
+        (void)led.deinit();
+        if (esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(error_policy::kMaxBackoffS) * 1000000ULL) == ESP_OK)
+        {
+            esp_deep_sleep_start();
+        }
+        ESP_LOGE(TAG, "Deep sleep unavailable; idling");
+        while (1)
+        {
+            vTaskDelay(portMAX_DELAY);
+        }
     }
 
     while (SUPERVISOR::getInstance().get_state() != SUPERVISOR::State::RUNNING)

@@ -201,6 +201,13 @@ esp_err_t Core::standby(bool enabled)
     return error;
 }
 
+bool Core::ledStop()
+{
+    const bool ok = ops_.ledDeinit(ops_.context) == ESP_OK;
+    ledOff_       = ledOff_ || ok;
+    return ok;
+}
+
 bool Core::shutdown(bool recovery)
 {
     bool clean = true;
@@ -219,7 +226,7 @@ bool Core::shutdown(bool recovery)
     {
         clean = standby(true) == ESP_OK && clean;
     }
-    return clean && ops_.ledDeinit(ops_.context) == ESP_OK;
+    return clean && ledStop();
 }
 
 void Core::disconnected()
@@ -262,6 +269,12 @@ void Core::recover()
     if (recoveryIssued_)
     {
         return;
+    }
+    if (ledOff_)
+    {
+        // Sleep-cycle failures arrive with the LED already stopped; bring it back once so the blink is visible.
+        ledOff_ = false;
+        (void)ops_.ledInit(ops_.context);
     }
     if (errorTicks_ < error_policy::kBlinkS)
     {
@@ -325,6 +338,7 @@ void Core::sleepCycle()
         enterError();
         return;
     }
+    ledOff_ = false;
     (void)ops_.ledInit(ops_.context);
     if (initialize(registry_.role(Role::CAN)) != ESP_OK)
     {
@@ -356,7 +370,7 @@ void Core::sleepCycle()
             state_.store(State::STOPPING);
             return;
         }
-        if (standby(true) != ESP_OK || ops_.ledDeinit(ops_.context) != ESP_OK)
+        if (standby(true) != ESP_OK || !ledStop())
         {
             state_.store(State::STOPPING);
         }
@@ -397,6 +411,8 @@ void Core::step()
                     return;
                 }
             }
+            // Completed startup proves the last episode recovered, including any NVS factory-reset budget.
+            ops_.writeFailures(ops_.context, 0);
             state_.store(State::NOT_CONNECTED);
             break;
         case State::NOT_CONNECTED:

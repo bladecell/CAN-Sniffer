@@ -85,6 +85,7 @@ public:
 private:
   esp_err_t initialize(Id id, bool boot = false);
   esp_err_t deinit(Id id);
+  bool ledStop();
   bool shutdown(bool recovery = false);
   esp_err_t standby(bool enabled);
   void sleepCycle();
@@ -103,6 +104,7 @@ private:
   uint32_t errorTicks_ = 0;
   uint8_t stopAttempts_ = 0;
   bool recoveryIssued_ = false;
+  bool ledOff_ = false;
   uint32_t sleepReservation_ = 0;
   uint32_t nextSleepReservation_ = 0;
   bool admitting_ = false;

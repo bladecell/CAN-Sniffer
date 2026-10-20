@@ -103,7 +103,7 @@ void test_unusable_keys_default_individually_and_inconsistent_pair_defaults_toge
   TEST_ASSERT_TRUE(c.sleep_enabled);
 }
 
-void test_storage_operational_and_partition_errors_propagate_instead_of_erasing()
+void test_operational_power_read_errors_degrade_to_defaults_but_partition_corruption_propagates()
 {
   for (esp_err_t error : {ESP_ERR_NO_MEM, ESP_ERR_NVS_INVALID_HANDLE, ESP_ERR_NVS_CORRUPT_KEY_PART})
   {
@@ -114,7 +114,10 @@ void test_storage_operational_and_partition_errors_propagate_instead_of_erasing(
       if (field == 1) s.lowError = error;
       if (field == 2) s.enabledError = error;
       power_settings::Config c;
-      TEST_ASSERT_EQUAL_INT(error, s.load(c));
+      c.stay_awake_voltage_mv = 1;
+      const bool corrupt = error == ESP_ERR_NVS_CORRUPT_KEY_PART;
+      TEST_ASSERT_EQUAL_INT(corrupt ? error : ESP_OK, s.load(c));
+      if (corrupt) continue;
       TEST_ASSERT_EQUAL_UINT32(13200, c.stay_awake_voltage_mv);
       TEST_ASSERT_EQUAL_UINT32(11400, c.low_battery_voltage_mv);
       TEST_ASSERT_TRUE(c.sleep_enabled);
@@ -276,7 +279,7 @@ extern "C" void run_power_settings_tests()
   RUN_TEST(test_stored_power_fields_are_loaded_without_losing_integer_precision);
   RUN_TEST(test_legacy_missing_keys_use_defaults_independently);
   RUN_TEST(test_unusable_keys_default_individually_and_inconsistent_pair_defaults_together);
-  RUN_TEST(test_storage_operational_and_partition_errors_propagate_instead_of_erasing);
+  RUN_TEST(test_operational_power_read_errors_degrade_to_defaults_but_partition_corruption_propagates);
   RUN_TEST(test_json_patch_updates_exact_integer_millivolts_and_boolean);
   RUN_TEST(test_json_partial_patch_validates_the_final_pair_without_mutating_on_error);
   RUN_TEST(test_json_rejects_wrong_types_fractional_out_of_range_and_duplicate_fields);
