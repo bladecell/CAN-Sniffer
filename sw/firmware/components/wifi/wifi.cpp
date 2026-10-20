@@ -216,8 +216,14 @@ esp_err_t WIFI::start()
     ERROR_CHECK(esp_wifi_start(), "Failed to start WiFi", goto err);
     m_closing = false;
 
-    // Connect if STA mode is active
-    if (m_config.mode == WIFI_MODE_STA || m_config.mode == WIFI_MODE_APSTA)
+    if (wifi_scan::staNeedsApFallback(m_config.mode == WIFI_MODE_STA, m_config.sta_ssid.empty()))
+    {
+        ESP_LOGW(TAG, "No STA SSID configured, switching to AP Mode");
+        return switchToAP();
+    }
+
+    // Connect if STA mode is active and has a target (APSTA keeps serving its AP without one)
+    if ((m_config.mode == WIFI_MODE_STA || m_config.mode == WIFI_MODE_APSTA) && !m_config.sta_ssid.empty())
     {
         setState(State::STA_CONNECTING);
         ERROR_CHECK(esp_wifi_connect(), "Failed to connect to WiFi", goto err);

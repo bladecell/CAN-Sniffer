@@ -60,6 +60,13 @@ static void test_ap_restoration_never_starts_sta_reconnect(void)
   TEST_ASSERT_EQUAL_INT(true, wifi_scan::mayReconnect(false, false, false));
 }
 
+static void test_sta_without_ssid_falls_back_to_ap(void)
+{
+  TEST_ASSERT_EQUAL_INT(true, wifi_scan::staNeedsApFallback(true, true));
+  TEST_ASSERT_EQUAL_INT(false, wifi_scan::staNeedsApFallback(true, false));
+  TEST_ASSERT_EQUAL_INT(false, wifi_scan::staNeedsApFallback(false, true));
+}
+
 static void test_scan_route_accepts_only_bodyless_queryless_requests(void)
 {
   TEST_ASSERT_EQUAL_INT(true, wifi_scan_http::accepts("/api/v1/wifi/scan", 0, false));
@@ -75,6 +82,7 @@ extern "C" void run_wifi_scan_tests(void)
   RUN_TEST(test_scan_expiry_and_hostile_ssid);
   RUN_TEST(test_completion_is_one_shot_and_teardown_rejects_late_events);
   RUN_TEST(test_ap_restoration_never_starts_sta_reconnect);
+  RUN_TEST(test_sta_without_ssid_falls_back_to_ap);
   RUN_TEST(test_scan_route_accepts_only_bodyless_queryless_requests);
 }
 

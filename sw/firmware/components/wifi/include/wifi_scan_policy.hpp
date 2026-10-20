@@ -37,6 +37,12 @@ inline bool mayReconnect(bool apOnly, bool closing, bool scanning)
     return !apOnly && !closing && !scanning;
 }
 
+// STA-only with no SSID cannot connect (esp_wifi_connect fails at once), so no disconnect event ever drives the retry-then-AP fallback.
+inline bool staNeedsApFallback(bool staOnly, bool ssidEmpty)
+{
+    return staOnly && ssidEmpty;
+}
+
 enum class Admission
 {
     Ready,
