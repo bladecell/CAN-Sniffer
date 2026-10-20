@@ -21,10 +21,10 @@
 namespace
 {
 // Preserve the existing log tag while moving ownership of the wiring.
-const char* const TAG = "SUPERVISOR";
-esp_pm_lock_handle_t powerLock = nullptr;
+const char* const     TAG         = "SUPERVISOR";
+esp_pm_lock_handle_t  powerLock   = nullptr;
 constexpr const char* MOUNT_POINT = "/sdcard";
-}
+}  // namespace
 
 namespace application_components
 {
@@ -338,7 +338,7 @@ esp_err_t setupSdCard(void*)
 
     return ESP_OK;
 }
-}
+}  // namespace application_components
 
 // The existing member still owns its configuration; only the settings-loading
 // implementation is colocated with the application's other section loaders.

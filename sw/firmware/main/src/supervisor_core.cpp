@@ -48,7 +48,7 @@ esp_err_t Core::init(const SettingsBootstrap& bootstrap)
 
     // Infrastructure precedes task publication, never registry validation. NVS
     // remains application-owned; failed bootstrap starts only the ERROR owner.
-    const esp_err_t settingsError = bootstrap.initialize(bootstrap.context);
+    const esp_err_t        settingsError = bootstrap.initialize(bootstrap.context);
     power_settings::Config policy{};
     if (settingsError == ESP_OK)
     {
@@ -89,8 +89,8 @@ esp_err_t Core::init(const SettingsBootstrap& bootstrap)
 Lifecycle Core::status(Id id) const
 {
     ops_.lock(ops_.context);
-    const Component* c = registry_.find(id);
-    const Lifecycle result = id == Id::SETTINGS ? settings_ : c ? c->lifecycle : Lifecycle{};
+    const Component* c      = registry_.find(id);
+    const Lifecycle  result = id == Id::SETTINGS ? settings_ : c ? c->lifecycle : Lifecycle{};
     ops_.unlock(ops_.context);
     return result;
 }
@@ -146,9 +146,9 @@ void Core::invalidateSleepReservation()
 
 esp_err_t Core::initialize(Id id, bool boot)
 {
-    Component& c = *registry_.find(id);
-    const auto& d = c.descriptor;
-    bool blocked = false;
+    Component&  c       = *registry_.find(id);
+    const auto& d       = c.descriptor;
+    bool        blocked = false;
     for (size_t i = 0; i < d.dependencyCount; ++i)
     {
         if (d.dependencies[i].requireSuccess && status(d.dependencies[i].id).phase != Phase::ACTIVE)
@@ -348,7 +348,7 @@ void Core::step()
         case State::STARTING:
             for (size_t i = 0; i < registry_.size(); ++i)
             {
-                const auto& d = registry_.at(registry_.bootSlot(i)).descriptor;
+                const auto&     d     = registry_.at(registry_.bootSlot(i)).descriptor;
                 const esp_err_t error = initialize(d.id, true);
                 if (error != ESP_OK && d.critical)
                 {
