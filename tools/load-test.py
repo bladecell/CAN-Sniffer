@@ -6,6 +6,7 @@ Usage: tools/load-test.py [host] [legacy options]
          --handshake-schedule compare --handshake-only --stagger-ms 250
 Read-only mode uses only GET/WS, reports per-client handshake timing, then records per-client lifecycle and data
 rates while three steady WS clients run with stepped HTTP levels. It skips the load phase unless all three are live.
+--drain-seconds inserts a bounded pause after successful probes and before steady WS startup (default 0).
 The PID-stream flag is global: close every other WS client before confirming --no-other-ws-clients. The tool cannot
 detect or prove exclusivity and never sends the global 0xA1 stop command.
 The default legacy mode retains its historical PATCH /obd2 polling behavior.
@@ -38,6 +39,8 @@ LARGE = "/"  # gzipped frontend, the biggest read-only response
 READ_ONLY_METHODS = {"GET", "HEAD"}
 MAX_READ_ONLY_TIMEOUT = 60.0
 MAX_DIAGNOSTIC_BYTES = 16 * 1024
+DEFAULT_DRAIN_SECONDS = 0.0
+MAX_DRAIN_SECONDS = 30.0
 
 
 @dataclass(frozen=True)
@@ -142,9 +145,10 @@ def ws_ready_live_counts(clients: list[WsClientStats]) -> tuple[int, int]:
 def format_ws_diagnostics(
     clients: list[WsClientStats], duration: float,
     before: dict[str, tuple[int, int]] | None = None,
+    counts: tuple[int, int] | None = None,
 ) -> str:
     elapsed = max(duration, 0.001)
-    ready, live = ws_ready_live_counts(clients)
+    ready, live = counts if counts is not None else ws_ready_live_counts(clients)
     rows = []
     for client in clients:
         with client.lock:
@@ -192,6 +196,16 @@ def validate_operator_confirmation(confirmed: bool, target: str) -> None:
 def validate_read_only_timeout(timeout: float) -> None:
     if not math.isfinite(timeout) or not 0 < timeout <= MAX_READ_ONLY_TIMEOUT:
         raise ValueError(f"timeout must be finite and 0..{MAX_READ_ONLY_TIMEOUT:g} seconds")
+
+
+def validate_drain_seconds(seconds: float) -> None:
+    if not math.isfinite(seconds) or not 0 <= seconds <= MAX_DRAIN_SECONDS:
+        raise ValueError(f"drain interval must be finite and 0..{MAX_DRAIN_SECONDS:g} seconds")
+
+
+def drain_before_steady_start(seconds: float) -> None:
+    if seconds:
+        time.sleep(seconds)
 
 
 def open_websocket_socket(base_url: str, timeout: float) -> socket.socket:
@@ -393,6 +407,8 @@ def synchronized_handshakes(
                 clients[index].disconnect_reason = "cleanup_pending"
                 if clients[index].handshake_status == "pending":
                     clients[index].handshake_status = "worker_still_running"
+    primary_failure = any(client.disconnect_reason == "handshake_failed" for client in clients)
+    close_errors: dict[int, OSError] = {}
     for index, sock in enumerate(sockets):
         if sock is not None and not abandoned[index].is_set() and not workers[index].is_alive():
             with clients[index].lock:
@@ -404,16 +420,29 @@ def synchronized_handshakes(
             try:
                 sock.close()
             except OSError as error:
-                with clients[index].lock:
-                    clients[index].exception_class = type(error).__name__
-                    clients[index].exception_message = sanitize_diagnostic_text(str(error))
-                    clients[index].disconnect_reason = "close_exception"
+                close_errors[index] = error
+    reset_index = next((index for index, error in close_errors.items()
+                        if isinstance(error, ConnectionResetError)), None)
+    primary_close_index = reset_index if reset_index is not None else next(iter(close_errors), None)
+    for index, error in close_errors.items():
+        with clients[index].lock:
+            if clients[index].disconnect_reason == "handshake_failed":
+                continue
+            if primary_failure or index != primary_close_index:
+                clients[index].exception_class = ""
+                clients[index].exception_message = ""
+                clients[index].disconnect_reason = "controller_cancelled"
+            else:
+                clients[index].exception_class = type(error).__name__
+                clients[index].exception_message = sanitize_diagnostic_text(str(error))
+                clients[index].disconnect_reason = "close_exception"
     return clients
 
 
 def run_read_only_mode(args: argparse.Namespace) -> None:
     validate_operator_confirmation(args.simulator_no_car, args.base_url)
     validate_ws_exclusivity(getattr(args, "no_other_ws_clients", False))
+    validate_drain_seconds(getattr(args, "drain_seconds", DEFAULT_DRAIN_SECONDS))
     validate_read_only_timeout(args.timeout)
     if not 1 <= args.seconds <= 3600:
         raise ValueError("duration must be 1..3600 s")
@@ -440,6 +469,7 @@ def run_read_only_mode(args: argparse.Namespace) -> None:
     if schedule == "compare":
         print("handshake comparison complete; subsequent steady/load phase skipped in compare mode")
         return
+    drain_before_steady_start(getattr(args, "drain_seconds", DEFAULT_DRAIN_SECONDS))
     ws_stop = threading.Event()
     ws_clients = [WsClientStats(f"steady-{index + 1}", "steady-data") for index in range(3)]
     ws_threads = [threading.Thread(target=steady_ws_client,
@@ -452,6 +482,7 @@ def run_read_only_mode(args: argparse.Namespace) -> None:
         client.handshake_complete.wait(max(0.0, startup_deadline - time.monotonic()))
     ready, live = ws_ready_live_counts(ws_clients)
     if ready != 3 or live != 3:
+        failure_snapshot = (ready, live)
         ws_stop.set()
         for client in ws_clients:
             with client.lock:
@@ -473,7 +504,7 @@ def run_read_only_mode(args: argparse.Namespace) -> None:
                 with client.lock:
                     client.worker_still_running = True
         print("steady WebSocket startup incomplete; HTTP phase skipped:",
-              format_ws_diagnostics(ws_clients, max(args.timeout, 0.001)))
+              format_ws_diagnostics(ws_clients, max(args.timeout, 0.001), counts=failure_snapshot))
         return
     try:
         for concurrency in args.concurrency:
@@ -756,6 +787,8 @@ def main():
                     help="delay between staggered probe starts (0..2000 ms)")
     ap.add_argument("--handshake-only", action="store_true",
                     help="run selected handshake probes only; skip steady WebSockets and HTTP")
+    ap.add_argument("--drain-seconds", type=float, default=DEFAULT_DRAIN_SECONDS,
+                    help="pause between successful probes and steady WS startup (0..30; default 0)")
     ap.add_argument("--concurrency", default="1,2,4,8", help="HTTP concurrency levels for read-only mode")
     ap.add_argument("--timeout", type=float, default=5.0)
     a = ap.parse_args()

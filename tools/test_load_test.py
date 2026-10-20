@@ -144,6 +144,7 @@ class ReadOnlyLoadTest(unittest.TestCase):
         simulator_no_car=True, no_other_ws_clients=True, base_url="http://localhost",
         seconds=1, ws=3, concurrency=[1], timeout=1.0,
         handshake_schedule="compare", stagger_ms=30, handshake_only=True,
+        drain_seconds=1.0,
     )
     observed: list[str] = []
 
@@ -157,6 +158,7 @@ class ReadOnlyLoadTest(unittest.TestCase):
         patch.object(load_test, "synchronized_handshakes", side_effect=probes),
         patch.object(load_test, "steady_ws_client", side_effect=AssertionError("steady WS started")),
         patch.object(load_test, "read_only_http_request", side_effect=AssertionError("HTTP started")),
+        patch.object(load_test.time, "sleep", side_effect=AssertionError("handshake-only drained")),
     ):
       load_test.run_read_only_mode(args)
     self.assertEqual(observed, ["synchronized", "staggered"])
@@ -194,6 +196,129 @@ class ReadOnlyLoadTest(unittest.TestCase):
     self.assertEqual(sum(client.handshake_status.startswith("HTTP/1.1 503") for client in results), 3)
     self.assertEqual(state["closed"], 3)
     self.assertFalse(state["closed_too_early"])
+
+  def test_post_upgrade_reset_remains_primary_and_sibling_close_errors_are_cancelled(self) -> None:
+    sockets: list[Any] = []
+    close_count = 0
+
+    class FakeSocket:
+      def __init__(self, index: int) -> None:
+        self.index = index
+        self.response = b""
+
+      def settimeout(self, _timeout: float) -> None:
+        pass
+
+      def sendall(self, data: bytes) -> None:
+        key = next(line.split(b":", 1)[1].strip().decode()
+                   for line in data.split(b"\r\n") if line.startswith(b"Sec-WebSocket-Key:"))
+        self.response = fake_upgrade_response(key)
+
+      def recv(self, _size: int) -> bytes:
+        part, self.response = self.response[:1], self.response[1:]
+        return part
+
+      def close(self) -> None:
+        nonlocal close_count
+        close_count += 1
+        if close_count == 2:
+          raise ConnectionResetError("primary post-upgrade reset")
+        raise OSError("[Errno 9] Bad file descriptor")
+
+    def connect(*_args: Any, **_kwargs: Any) -> FakeSocket:
+      sock = FakeSocket(len(sockets))
+      sockets.append(sock)
+      return sock
+
+    original = load_test.socket.create_connection
+    load_test.socket.create_connection = connect
+    try:
+      results = load_test.synchronized_handshakes("http://localhost", 3, 1.0)
+    finally:
+      load_test.socket.create_connection = original
+    self.assertTrue(all(client.handshake_valid for client in results))
+    primary = next(client for client in results if client.exception_class == "ConnectionResetError")
+    self.assertEqual(primary.disconnect_reason, "close_exception")
+    cancelled = [client for client in results if client is not primary]
+    self.assertEqual([client.disconnect_reason for client in cancelled],
+                     ["controller_cancelled"] * 2)
+    self.assertEqual([client.exception_class for client in cancelled], ["", ""])
+
+  def test_startup_failure_reports_ready_live_snapshot_before_cleanup(self) -> None:
+    args = argparse.Namespace(
+        simulator_no_car=True, no_other_ws_clients=True, base_url="http://localhost",
+        seconds=1, ws=3, concurrency=[1], timeout=1.0,
+    )
+    probes = [load_test.WsClientStats(f"probe-{index}", "handshake-probe") for index in range(1, 4)]
+
+    def start_client(_url: str, client: Any, _stop: threading.Event,
+                     _timeout: float, _exclusive: bool) -> None:
+      with client.lock:
+        client.handshake_valid = client.client_id != "steady-3"
+        client.connected = client.client_id != "steady-3"
+      client.handshake_complete.set()
+
+    from contextlib import redirect_stdout
+    from io import StringIO
+    output = StringIO()
+    with (
+        patch.object(load_test, "synchronized_handshakes", return_value=probes),
+        patch.object(load_test, "steady_ws_client", side_effect=start_client),
+        patch.object(load_test.time, "sleep"),
+        redirect_stdout(output),
+    ):
+      load_test.run_read_only_mode(args)
+    self.assertIn("ready=2 live=2 expected=3", output.getvalue())
+
+  def test_probe_to_steady_drain_is_finite_configurable_and_zero_by_default(self) -> None:
+    self.assertEqual(load_test.DEFAULT_DRAIN_SECONDS, 0.0)
+    for value in (-0.1, float("inf"), float("nan"), 31.0):
+      with self.subTest(value=value), self.assertRaises(ValueError):
+        load_test.validate_drain_seconds(value)
+    load_test.validate_drain_seconds(2.5)
+    sleeps: list[float] = []
+    with patch.object(load_test.time, "sleep", side_effect=sleeps.append):
+      load_test.drain_before_steady_start(0)
+      load_test.drain_before_steady_start(0.25)
+    self.assertEqual(sleeps, [0.25])
+
+  def test_invalid_drain_fails_before_probes_in_every_read_only_mode(self) -> None:
+    for schedule, handshake_only in (
+        ("synchronized", False),
+        ("synchronized", True),
+        ("compare", False),
+    ):
+      for drain_seconds in (float("nan"), float("inf"), -0.1, 30.1):
+        with self.subTest(schedule=schedule, handshake_only=handshake_only,
+                          drain_seconds=drain_seconds):
+          args = argparse.Namespace(
+              simulator_no_car=True, no_other_ws_clients=True,
+              base_url="http://localhost", seconds=1, ws=3,
+              concurrency=[1], timeout=1.0, handshake_schedule=schedule,
+              stagger_ms=0, handshake_only=handshake_only,
+              drain_seconds=drain_seconds,
+          )
+          with (
+              patch.object(load_test, "synchronized_handshakes",
+                           side_effect=AssertionError("probes started before drain validation")),
+              self.assertRaises(ValueError),
+          ):
+            load_test.run_read_only_mode(args)
+
+  def test_cli_selects_immediate_or_drained_transition_without_networking(self) -> None:
+    for option, expected in [(None, 0.0), ("0.5", 0.5)]:
+      argv = ["load-test.py", "--mode", "read-only", "--base-url", "http://localhost",
+              "--simulator-no-car", "--no-other-ws-clients"]
+      if option is not None:
+        argv.extend(["--drain-seconds", option])
+      captured: list[float] = []
+      with (
+          patch.object(sys, "argv", argv),
+          patch.object(load_test, "run_read_only_mode",
+                       side_effect=lambda args: captured.append(args.drain_seconds)),
+      ):
+        load_test.main()
+      self.assertEqual(captured, [expected])
 
   def test_socket_created_after_controller_returns_is_closed_by_late_worker(self) -> None:
     connect_started = threading.Event()
