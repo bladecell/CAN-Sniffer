@@ -212,6 +212,34 @@ describe("login and 401 retry", () => {
     expect(clearCalls.map((c) => c.auth)).toEqual([`Bearer ${TOKEN}`, `Bearer ${TOKEN2}`]);
   });
 
+  test("a late 401 for an old token does not drop a newer session; the request retries with it", async () => {
+    let nextToken = TOKEN;
+    let releaseSlow: (r: Response) => void = () => {};
+    const h = harness((url, init) => {
+      if (url === "/api/v1/auth/login") return json(200, session(nextToken));
+      const bearer = new Headers(init?.headers).get("Authorization");
+      if (bearer !== `Bearer ${TOKEN}`) return json(200, { status: "success" });
+      if (url === "/api/v1/slow") return new Promise<Response>((r) => (releaseSlow = r));
+      return json(401, { code: "UNAUTHORIZED" });
+    });
+    await h.auth.login(PIN);
+    const slow = h.auth.gatedFetch("/api/v1/slow");
+    const fast = h.auth.gatedFetch("/api/v1/fast");
+    await until(() => h.auth.view.dialog === "login");
+    nextToken = TOKEN2;
+    await h.auth.login(PIN);
+    expect((await fast).status).toBe(200);
+    expect(h.auth.view.loggedIn).toBe(true);
+
+    releaseSlow(json(401, { code: "UNAUTHORIZED" }));
+    const res = await slow;
+    expect(res.status).toBe(200);
+    expect(h.auth.view.loggedIn).toBe(true);
+    expect(h.auth.view.dialog).toBe("none");
+    const slowCalls = h.calls.filter((c) => c.url === "/api/v1/slow");
+    expect(slowCalls.map((c) => c.auth)).toEqual([`Bearer ${TOKEN}`, `Bearer ${TOKEN2}`]);
+  });
+
   test("401 BAD_PIN is an answer to the request (wrong old PIN), not a session end", async () => {
     const h = harness((url) => (url === "/api/v1/auth/login" ? json(200, session(TOKEN)) : json(401, { code: "BAD_PIN" })));
     await h.auth.login(PIN);

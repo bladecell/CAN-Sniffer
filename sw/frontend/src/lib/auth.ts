@@ -423,7 +423,8 @@ export function createAuth(deps: AuthDeps) {
    */
   async function gatedFetch(url: string, init?: RequestInit): Promise<Response> {
     if (!(await ensureLogin())) return refusedResponse();
-    let res = await send(url, init, liveToken());
+    const sentToken = liveToken();
+    let res = await send(url, init, sentToken);
     if (view.devBypass) return res;
     if (res.status !== 401 && res.status !== 403) {
       touch();
@@ -432,7 +433,8 @@ export function createAuth(deps: AuthDeps) {
     const code = await codeOf(res);
     if (code !== "UNAUTHORIZED" && code !== "NOT_CLAIMED") return res;
     failure(res, code);
-    dropSession("session_ended");
+    // A late 401 for a token that has since been replaced must not end the newer session.
+    if (session?.token === sentToken) dropSession("session_ended");
     if (!(await ensureLogin())) return res;
     res = await send(url, init, liveToken());
     if (res.status !== 401 && res.status !== 403) touch();
