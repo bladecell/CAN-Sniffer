@@ -210,6 +210,12 @@ The supervisor puts the device into automatic light sleep when the bus stays dow
 ## Host tests
 `sw/firmware/test/host/` is an IDF project for the linux target (`tools/ci.sh --host`). It compiles `pid_def.cpp`, `obd2_data_model.cpp`, `obd2_frame.cpp` and `pid_json.cpp` straight from `components/obd2/`, plus `tinyexpr` and cJSON. `components/can_driver/` there is a stub header (CAN frame type only), so parsing, formulas, the PID database and the PID JSON build without hardware. Code that talks to the bus (the OBD2 class, tasks, queues) is not host-tested; keep new parsing logic in the pure files. The host build needs `sw/firmware/managed_components/` (run a firmware build first on a fresh clone).
 
+## WebSocket broadcast dispatch
+
+`wsBroadcast` copies each binary payload into one owned work item. Client enumeration, upgraded-state checks and sends all run within that item's HTTPD callback; no client FD is retained across queue turns. Recipients are the currently upgraded clients at execution time, not a snapshot taken by the producer. The binary protocol and global stream flags are unchanged.
+
+At most eight broadcasts (including producers still submitting) may be pending, each with at most 125 payload bytes. Admission, allocation or queue failure drops the broadcast; send and enumeration errors are logged. Shutdown closes admission, discards queued broadcasts as their callbacks run, and waits for all accepted work to release its payload before stopping HTTPD. A drain timeout leaves HTTPD alive for a later stop retry. No lifecycle lock is held across queueing or sending.
+
 ## Web server limits (measured with `tools/load-test.py`, simulator, V1_1 board)
 - Without WebSocket clients the server held 8 to 16 parallel HTTP clients: p50 91 to 105 ms, p95 0.4 to 1.2 s, over 50 requests/s answered with `429` (the global rate limit), no `503`. At 32 parallel clients about 35% of requests timed out (5 s) and p95 was 4.6 s.
 - With 3 WebSocket clients streaming (about 17 packets/s each, which stayed nominal), the same HTTP load collapsed: p50 up to 5 s and most requests timing out from 4 parallel clients up. The device never reset and recovered once the load stopped.

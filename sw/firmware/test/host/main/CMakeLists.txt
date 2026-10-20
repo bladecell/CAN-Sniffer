@@ -11,6 +11,7 @@ target_include_directories(${COMPONENT_LIB} PRIVATE "$ENV{IDF_PATH}/components/n
 target_sources(${COMPONENT_LIB} PRIVATE "../../../main/src/supervisor_core.cpp")
 target_sources(${COMPONENT_LIB} PRIVATE "../../../main/src/supervisor_registry.cpp")
 target_include_directories(${COMPONENT_LIB} PRIVATE "../../../main/include")
+target_sources(${COMPONENT_LIB} PRIVATE "test_ws_broadcast.cpp")
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -Wall -Wextra -Werror)
 target_link_libraries(${COMPONENT_LIB} PUBLIC m)
