@@ -1,6 +1,6 @@
 # ESP32 CAN Sniffer
 
-An open-source OBD-II diagnostics and data logger for the ESP32-S3. It reads PIDs, DTCs and the VIN from the car's CAN bus and serves a web dashboard from the device.
+An open-source OBD-II diagnostics and data logger based on the ESP32-S3. It reads PIDs, DTCs and the VIN from the car's CAN bus and serves a web dashboard from the device.
 
 ![Render Image](https://github.com/bladecell/CAN-Sniffer/raw/main/hw/img/can-sniffer.png)
 
@@ -19,24 +19,16 @@ An open-source OBD-II diagnostics and data logger for the ESP32-S3. It reads PID
 - Battery-aware sleep and wake: sleeps after inactivity, wakes only when the bus is alive, power settings kept in flash, manual sleep from the API
 - Failure handling: a failed Wi-Fi, web server or SD card disables only that feature; a critical failure backs off into deep sleep instead of a reboot loop
 
-## Status
-
-Phase P2, robustness and power. The supervisor lifecycle refactor is merged and tested on hardware (HW v1.1 with a live bus, HW v1.2 with a dead bus). CI runs 426 host tests plus static analysis.
-
-Still to verify on a device: the deep-sleep error path, sleep current, and a wake in a real car.
-
 ## Plan
 
-| Phase | Goal | State |
-| :---- | :--- | :---- |
-| P0-P1 | Tooling, quality gate, verify existing features | Done |
-| P2 | Robustness, power, security, API cleanup | In progress |
-| P3 | Trip recorder on the SD card, per-component settings | Next |
-| P4 | ECU scan and CAN bus view | Planned |
-| P5 | HW v2: modem, GNSS, MQTT | Planned |
-| P6 | OTA updates | Planned |
-
-Next in P2: boot-loop protection (clear the restart counter only after a stable run) and a watchdog audit.
+| Phase | Goal                                                 | State       |
+| :---- | :--------------------------------------------------- | :---------- |
+| P0-P1 | Tooling, quality gate, verify existing features      | Done        |
+| P2    | Robustness, power, security, API cleanup             | In progress |
+| P3    | Trip recorder on the SD card, per-component settings | Next        |
+| P4    | ECU scan and CAN bus view                            | Planned     |
+| P5    | HW v2: modem, GNSS, MQTT                             | Planned     |
+| P6    | OTA updates                                          | Planned     |
 
 ## Build
 
