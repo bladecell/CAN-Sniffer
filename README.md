@@ -1,68 +1,50 @@
 # ESP32 CAN Sniffer
 
-An open-source vehicle diagnostics and data logging project based on the ESP32-S3 and SN65HVD230 CAN transceiver.  
-This project enables real-time vehicle data monitoring, OBD-II diagnostics, and fault code management through a web interface hosted on the ESP.
+An open-source OBD-II diagnostics and data logger for the ESP32-S3. It reads PIDs, DTCs and the VIN from the car's CAN bus and serves a web dashboard from the device.
 
 ![Render Image](https://github.com/bladecell/CAN-Sniffer/raw/main/hw/img/can-sniffer.png)
 
----
+## Hardware
 
-## Hardware Overview
+- ESP32-S3 with a CAN transceiver, 12 V automotive input, SD card slot
+- HW v1.2 is the current board. HW v2 (LTE modem, GNSS, MQTT, ignition sense) is planned.
+- Schematics and PCB files are in `hw/`.
 
-- MCU: ESP32-S3
-- CAN Transceiver: SN65HVD230
-- Power: 12V automotive input, regulated to 5V/3.3V
-- PCB: Custom-designed 2-layer board (tested and verified)
+## Features (working)
 
-Schematics and PCB files are available in the `hw/` directory.
+- CAN (TWAI) driver and OBD-II: live PIDs, DTCs, VIN, PID definitions from JSON on the SD card
+- Web dashboard (Svelte) over REST and WebSocket, API in `docs/api.md`
+- PIN login: the first user claims the device with a BOOT press
+- Wi-Fi station mode, with a fallback access point when the network is missing
+- Battery-aware sleep and wake: sleeps after inactivity, wakes only when the bus is alive, power settings kept in flash, manual sleep from the API
+- Failure handling: a failed Wi-Fi, web server or SD card disables only that feature; a critical failure backs off into deep sleep instead of a reboot loop
 
----
+## Status
 
-## Features
+Phase P2, robustness and power. The supervisor lifecycle refactor is merged and tested on hardware (HW v1.1 with a live bus, HW v1.2 with a dead bus). CI runs 426 host tests plus static analysis.
 
-- Real-time CAN bus data logging  
-- OBD-II communication (PID requests)  
-- Live web dashboard hosted on the ESP  
-- Display of:
-  - Live OBDII data
-  - Diagnostic Trouble Codes (DTCs)
-- Clear DTCs through the web interface  
-- JSON API for external applications  
-- Persistent logging to SD card
+Still to verify on a device: the deep-sleep error path, sleep current, and a wake in a real car.
 
----
+## Plan
 
-## Roadmap
+| Phase | Goal | State |
+| :---- | :--- | :---- |
+| P0-P1 | Tooling, quality gate, verify existing features | Done |
+| P2 | Robustness, power, security, API cleanup | In progress |
+| P3 | Trip recorder on the SD card, per-component settings | Next |
+| P4 | ECU scan and CAN bus view | Planned |
+| P5 | HW v2: modem, GNSS, MQTT | Planned |
+| P6 | OTA updates | Planned |
 
-| Stage | Task                                             | Status     |
-| :---- | :----------------------------------------------- | :--------- |
-| 1     | Design and fabricate PCB                         | Completed  |
-| 2     | Test hardware and verify CAN transceiver         | Completed  |
-| 3     | Implement ESP32 TWAI CAN driver                  | Completed  |
-| 4     | Implement OBD-II driver for PID parsing          | Completed  |
-| 5     | Add DTC read/clear functionality                 | Completed  |
-| 6     | Create web server backend and API                | In Progres |
-| 7     | Define REST/JSON API for frontend                | In Progres |
-| 8     | Create Svelte frontend project (layout, routing) | In Progres |
-| 9     | Add data logging to SD card                      | Planned    |
-| 10    | Optimize for performance and stability           | Planned    |
+Next in P2: boot-loop protection (clear the restart counter only after a stable run) and a watchdog audit.
 
----
+## Build
 
-## Web Dashboard (Planned)
+Needs ESP-IDF 6.1 and bun. From the repo root:
 
-The onboard web interface will display:
-- Real-time vehicle parameters
-- Diagnostic Trouble Codes
-- Buttons to clear DTCs
-- Graphs for engine data over time
+```sh
+tools/ci.sh                                  # full gate: frontend, firmware, static checks, host tests
+idf.py -C sw/firmware -p /dev/ttyACM0 flash  # flash
+```
 
-Planned technologies:
-- HTML5 and JavaScript frontend  
-- WebSocket and REST API backend  
-- JSON-based communication
-
-## Tools and Libraries
-
--   [ESP-IDF Core for ESP32](https://idf.espressif.com)   
--   [TWAI (CAN) Driver Documentation](https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/api-reference/peripherals/twai.html)
+Docs are in `docs/`: architecture, API, power, hardware, SD card format and decisions.
