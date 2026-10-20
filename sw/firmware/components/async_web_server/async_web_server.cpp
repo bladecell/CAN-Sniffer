@@ -4,6 +4,7 @@
 
 #include <new>
 #include "async_web_server.hpp"
+#include "ws_broadcast_dispatch.hpp"
 
 #include "esp_check.h"
 #include "esp_log.h"
@@ -11,29 +12,36 @@
 
 static const char* TAG = "ASYNC_WEB_SERVER";
 
-struct WsSendContext
+struct WsBroadcastBackend
 {
-    httpd_handle_t server;
-    int            fd;
-    size_t         len;
-    uint8_t        payload[0];
+    httpd_handle_t* server;
+
+    void* allocate(size_t size) { return heap_caps_malloc(size, MALLOC_CAP_INTERNAL); }
+    void release(void* ptr) { heap_caps_free(ptr); }
+    bool queue(void (*callback)(void*), void* arg)
+    {
+        return httpd_queue_work(*server, callback, arg) == ESP_OK;
+    }
+    bool list(int* fds, size_t& count)
+    {
+        const esp_err_t err = httpd_get_client_list(*server, &count, fds);
+        if (err != ESP_OK) { ESP_LOGW(TAG, "Failed to enumerate WS clients: %s", esp_err_to_name(err)); }
+        return err == ESP_OK;
+    }
+    bool ready(int fd) { return httpd_ws_get_fd_info(*server, fd) == HTTPD_WS_CLIENT_WEBSOCKET; }
+    void send(int fd, uint8_t* payload, size_t len)
+    {
+        httpd_ws_frame_t frame = {};
+        frame.final = true;
+        frame.type = HTTPD_WS_TYPE_BINARY;
+        frame.payload = payload;
+        frame.len = len;
+        const esp_err_t err = httpd_ws_send_frame_async(*server, fd, &frame);
+        if (err != ESP_OK) { ESP_LOGW(TAG, "WS send to #%d failed: %s", fd, esp_err_to_name(err)); }
+    }
 };
 
-static void ws_send_work_func(void* arg)
-{
-    WsSendContext* ctx = (WsSendContext*)arg;
-
-    httpd_ws_frame_t ws_frame = {};
-    ws_frame.final            = true;
-    ws_frame.fragmented       = false;
-    ws_frame.type             = HTTPD_WS_TYPE_BINARY;
-    ws_frame.payload          = ctx->payload;
-    ws_frame.len              = ctx->len;
-
-    httpd_ws_send_frame_async(ctx->server, ctx->fd, &ws_frame);
-
-    free(ctx);
-}
+static ws_broadcast::Dispatcher<WsBroadcastBackend> wsDispatcher;
 
 esp_err_t AsyncWebServer::sendError(httpd_req_t* req, int status, const char* reason, const char* code,
                                     uint32_t retryAfterS)
@@ -124,6 +132,11 @@ esp_err_t AsyncWebServer::start(Config config)
         return err;
     }
     ESP_LOGI(TAG, "Server started successfully.");
+    if (!wsDispatcher.start())
+    {
+        stop();
+        return ESP_ERR_INVALID_STATE;
+    }
     return ESP_OK;
 }
 
@@ -140,6 +153,7 @@ void AsyncWebServer::closeSocket(httpd_handle_t, int sockfd)
 
 esp_err_t AsyncWebServer::stop()
 {
+    wsDispatcher.stop();
     running_ = false;
 
     // Drain workers FIRST, while the server is still alive, so their request
@@ -179,6 +193,19 @@ esp_err_t AsyncWebServer::stop()
     // Workers leave on the poison pill or when running_ drops, so requests may still sit in the queue (ASYNC-2).
     // Answer each with 503 and release it, while httpd is still alive.
     drainQueue();
+
+    // Admission covers producers still submitting as well as queued callbacks.
+    // Keep HTTPD and server_ alive until every accepted payload has been freed.
+    const int64_t wsDeadline = esp_timer_get_time() + STOP_WAIT_US;
+    while (wsDispatcher.pending() != 0)
+    {
+        if (esp_timer_get_time() >= wsDeadline)
+        {
+            ESP_LOGE(TAG, "WS broadcasts still draining, server not stopped");
+            return ESP_ERR_TIMEOUT;
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
 
     // Now safe to stop the httpd server: no worker is touching its data.
     if (server_)
@@ -471,47 +498,14 @@ esp_err_t AsyncWebServer::registerSocketRoute(const char* uri, esp_err_t (*handl
 
 void AsyncWebServer::wsBroadcast(httpd_ws_frame_t* ws_pkt)
 {
-    if (!server_ || !ws_pkt || !ws_pkt->payload || ws_pkt->len == 0)
+    if (!ws_pkt)
     {
         return;
     }
-
-    static const size_t MAX_CLIENTS = 20;
-    int                 client_fds[MAX_CLIENTS];
-    size_t              fds = MAX_CLIENTS;
-
-    if (httpd_get_client_list(server_, &fds, client_fds) == ESP_OK)
+    const ws_broadcast::Result result = wsDispatcher.submit(WsBroadcastBackend{&server_}, ws_pkt->payload, ws_pkt->len);
+    if (result != ws_broadcast::Result::accepted && result != ws_broadcast::Result::stopped)
     {
-        for (size_t i = 0; i < fds; i++)
-        {
-            if (httpd_ws_get_fd_info(server_, client_fds[i]) == HTTPD_WS_CLIENT_WEBSOCKET)
-            {
-                // 1. Dynamically allocate memory: size of struct + size of payload
-                WsSendContext* ctx =
-                    (WsSendContext*)heap_caps_malloc(sizeof(WsSendContext) + ws_pkt->len, MALLOC_CAP_INTERNAL);
-
-                if (!ctx)
-                {
-                    ESP_LOGW(TAG, "Failed to allocate memory for WS broadcast");
-                    continue;  // Skip this client if out of memory
-                }
-
-                // 2. Populate the context and copy the payload immediately
-                ctx->server = server_;
-                ctx->fd     = client_fds[i];
-                ctx->len    = ws_pkt->len;
-                memcpy(ctx->payload, ws_pkt->payload, ws_pkt->len);
-
-                // 3. Queue the work to the HTTP task
-                esp_err_t err = httpd_queue_work(server_, ws_send_work_func, ctx);
-
-                if (err != ESP_OK)
-                {
-                    ESP_LOGE(TAG, "Failed to queue WS work");
-                    heap_caps_free(ctx);  // Prevent memory leak if queueing fails
-                }
-            }
-        }
+        ESP_LOGW(TAG, "WS broadcast dropped: %u", static_cast<unsigned>(result));
     }
 }
 

@@ -33,6 +33,7 @@ void run_settings_merge_tests(void);
 void run_input_limits_tests(void);
 void run_single_flight_tests(void);
 void run_response_rules_tests(void);
+void run_ws_broadcast_tests(void);
 
 /* The linux IDF port starts FreeRTOS and calls app_main(); exit with the failure count. */
 void app_main(void)
@@ -70,5 +71,6 @@ void app_main(void)
     run_input_limits_tests();
     run_single_flight_tests();
     run_response_rules_tests();
+    run_ws_broadcast_tests();
     exit(UNITY_END() == 0 ? 0 : 1);
 }
