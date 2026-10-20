@@ -152,6 +152,11 @@ export function createAuth(deps: AuthDeps) {
   let waiters: Array<(ok: boolean) => void> = [];
   // Bumped to stop this client's own claim poll.
   let generation = 0;
+  // Auth status is only authoritative for the session state under which its request began.
+  let authRevision = 0;
+  // Ignore out-of-order responses without making an in-flight later request block this one.
+  let refreshGeneration = 0;
+  let appliedRefreshGeneration = 0;
 
   function set(patch: Partial<AuthView>) {
     view = { ...view, ...patch };
@@ -159,6 +164,7 @@ export function createAuth(deps: AuthDeps) {
   }
 
   function startSession(token: string, idleS: number, maxS: number) {
+    authRevision++;
     const t = deps.now();
     session = { token, loginAt: t, lastActivity: t, idleMs: idleS * 1000, maxMs: maxS * 1000 };
     set({ loggedIn: true });
@@ -166,6 +172,7 @@ export function createAuth(deps: AuthDeps) {
 
   function dropSession(notice: AuthNotice | null = null) {
     if (!session) return;
+    authRevision++;
     session = null;
     set({ loggedIn: false, notice: notice ?? view.notice });
   }
@@ -191,6 +198,16 @@ export function createAuth(deps: AuthDeps) {
     for (const resolve of pending) resolve(ok);
   }
 
+  function reconcileLoginWaiters() {
+    if (waiters.length === 0 || view.dialog === "none") return;
+    if (view.devBypass || liveToken()) {
+      set({ dialog: "none" });
+      settleWaiters(true);
+    } else {
+      set({ dialog: dialogFor(view.state), error: null });
+    }
+  }
+
   function dialogFor(state: AuthState): AuthDialog {
     return state === "unclaimed" || state === "pending" ? "claim" : "login";
   }
@@ -201,10 +218,10 @@ export function createAuth(deps: AuthDeps) {
     return new Promise((resolve) => {
       waiters.push(resolve);
       if (view.dialog !== "none") return;
-      // Re-read the state first: the PIN may have been cleared or set since this page last asked (BOOT-hold recovery).
-      void refresh().then(() => {
-        if (view.dialog === "none" && waiters.length > 0) set({ dialog: dialogFor(view.state), error: null });
-      });
+      // Show a prompt from cached state; a slow status request must not hide the gated route's next step.
+      set({ dialog: dialogFor(view.state), error: null });
+      // Re-read the state because a BOOT hold may have cleared or set the PIN since the last request.
+      void refresh();
     });
   }
 
@@ -272,7 +289,9 @@ export function createAuth(deps: AuthDeps) {
   }
 
   async function refresh(): Promise<void> {
+    const gen = ++refreshGeneration;
     const token = liveToken();
+    const revision = authRevision;
     let res: Response;
     try {
       res = await send(API, undefined, token);
@@ -281,7 +300,11 @@ export function createAuth(deps: AuthDeps) {
     }
     if (!res.ok) return;
     const body = await readJson(res);
-    if (isRecord(body)) applyStatus(body, token !== null);
+    if (gen > appliedRefreshGeneration && revision === authRevision && isRecord(body)) {
+      appliedRefreshGeneration = gen;
+      applyStatus(body, token !== null);
+      reconcileLoginWaiters();
+    }
   }
 
   /** While another client holds a claim, re-read GET /auth once a second until it ends. */

@@ -76,7 +76,7 @@ esp_err_t Registry::add(const Descriptor& d)
     const Participation expected = r < 3 ? Participation::RETAINED :
       d.role == Role::BATTERY ? Participation::BATTERY : d.role == Role::CAN ? Participation::PROBE : Participation::NORMAL;
     if (static_cast<size_t>(d.id) != r || std::strcmp(d.name, legacyName(r)) != 0 ||
-        d.critical != (r < 3 || r > 6) || d.participation != expected)
+        d.critical != (r < 3 || r > 6) || d.participation != expected || d.wakeCritical != (r >= 6))
     {
       return ESP_ERR_INVALID_ARG;
     }

@@ -1,6 +1,7 @@
 // supervisor.cpp
 
 #include "supervisor.hpp"
+#include "supervisor_sleep.hpp"
 
 #include <sys/stat.h>
 
@@ -46,6 +47,11 @@ static RTC_NOINIT_ATTR uint32_t s_errorRestarts;
 namespace
 {
 constexpr TickType_t SD_OPERATION_TIMEOUT_TICKS = pdMS_TO_TICKS(5000);
+supervisor::SleepTransaction sleepTransaction({
+    nullptr,
+    [](void*, uint64_t us) { return esp_sleep_enable_timer_wakeup(us); },
+    [](void*) { return application_components::releasePowerLock(); },
+    [](void*) { return application_components::acquirePowerLock(); }});
 
 // SDCard accepts either leading-slash form for a relative path and one trailing
 // slash.  Normalize those accepted spellings before comparing copy endpoints.
@@ -117,16 +123,17 @@ supervisor::Operations SUPERVISOR::operations(SUPERVISOR* self)
             [](void*, uint64_t us) -> esp_err_t
             {
                 ESP_LOGI(TAG, "Entering Light Sleep (%llu us)", static_cast<unsigned long long>(us));
-                const esp_err_t error = application_components::releasePowerLock();
-                if (error != ESP_OK)
-                {
-                    return error;
-                }
-                return esp_sleep_enable_timer_wakeup(us);
+                return sleepTransaction.prepare(us);
             },
-            [](void*) { return application_components::acquirePowerLock(); },
+            [](void*) { return sleepTransaction.finish(); },
             [](void*, uint32_t ms) { vTaskDelay(pdMS_TO_TICKS(ms)); },
-            [](void*, bool standby) { gpio_set_level(CAN_RS_GPIO, standby ? 1 : 0); },
+            [](void*, bool standby) -> esp_err_t
+            {
+                // Preload the latch before enabling output, including recovery
+                // after failed bootstrap where CAN never configured this pin.
+                const esp_err_t error = gpio_set_level(CAN_RS_GPIO, standby ? 1 : 0);
+                return error == ESP_OK ? gpio_set_direction(CAN_RS_GPIO, GPIO_MODE_OUTPUT) : error;
+            },
             [](void*) { return LedStatus::getInstance().init(LED_GPIO); },
             [](void*) { return LedStatus::getInstance().deinit(); },
             [](void*) { LedStatus::getInstance().blink(0xFFFFFFFF, 100, 100); },

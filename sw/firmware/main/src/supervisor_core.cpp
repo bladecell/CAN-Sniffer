@@ -191,18 +191,35 @@ esp_err_t Core::deinit(Id id)
     return error;
 }
 
-bool Core::shutdown()
+esp_err_t Core::standby(bool enabled)
 {
+    const esp_err_t error = ops_.standby(ops_.context, enabled);
+    if (error != ESP_OK)
+    {
+        ops_.report(ops_.context, "CAN standby GPIO", error, false);
+    }
+    return error;
+}
+
+bool Core::shutdown(bool recovery)
+{
+    bool clean = true;
     for (size_t i = 0; i < registry_.shutdownCount(); ++i)
     {
         const Id id = registry_.at(registry_.shutdownSlot(i)).descriptor.id;
         if (deinit(id) != ESP_OK)
         {
-            return false;
+            clean = false;
+            break;
         }
     }
-    ops_.standby(ops_.context, true);
-    return ops_.ledDeinit(ops_.context) == ESP_OK;
+    // Standby cuts off the bus, not provider storage. ERROR must attempt it
+    // even while a failed consumer still owns its drivers and queues.
+    if (clean || recovery)
+    {
+        clean = standby(true) == ESP_OK && clean;
+    }
+    return clean && ops_.ledDeinit(ops_.context) == ESP_OK;
 }
 
 void Core::disconnected()
@@ -254,7 +271,20 @@ void Core::recover()
     }
     const uint32_t attempt = ops_.readFailures(ops_.context);
     ops_.writeFailures(ops_.context, error_policy::nextCount(attempt));
-    (void)shutdown();
+    if (!shutdown(true))
+    {
+        ops_.report(ops_.context, "Unclean recovery; live components retained below", ESP_ERR_INVALID_STATE, false);
+    }
+    for (size_t i = 0; i < registry_.shutdownCount(); ++i)
+    {
+        const auto& c = registry_.at(registry_.shutdownSlot(i));
+        const auto lifecycle = status(c.descriptor.id);
+        if (lifecycle.phase != Phase::STOPPED && lifecycle.phase != Phase::NEVER_STARTED)
+        {
+            ops_.report(ops_.context, c.name.data(),
+                        lifecycle.deinitError != ESP_OK ? lifecycle.deinitError : ESP_ERR_INVALID_STATE, false);
+        }
+    }
     recoveryIssued_ = true;
     ops_.deepSleep(ops_.context, error_policy::backoffS(attempt));
 }
@@ -264,24 +294,37 @@ void Core::sleepCycle()
     const float    voltage    = ops_.voltage(ops_.context);
     const float    lowVoltage = static_cast<float>(policy_.low_battery_voltage_mv) / 1000.0f;
     const uint64_t us         = voltage < lowVoltage ? 60000000ULL : 10000000ULL;
-    if (ops_.prepareSleep(ops_.context, us) != ESP_OK)
+    const esp_err_t prepareError = ops_.prepareSleep(ops_.context, us);
+    if (prepareError != ESP_OK)
     {
+        ops_.report(ops_.context, "Sleep preparation", prepareError, false);
         enterError();
         return;
     }
     if (deinit(registry_.role(Role::BATTERY)) != ESP_OK)
     {
+        const esp_err_t rollbackError = ops_.finishSleep(ops_.context);
+        if (rollbackError != ESP_OK)
+        {
+            ops_.report(ops_.context, "Sleep PM rollback", rollbackError, false);
+        }
         enterError();
         return;
     }
     ops_.delayMs(ops_.context, static_cast<uint32_t>(us / 1000));
     (void)initialize(registry_.role(Role::BATTERY));
-    if (ops_.finishSleep(ops_.context) != ESP_OK)
+    const esp_err_t finishError = ops_.finishSleep(ops_.context);
+    if (finishError != ESP_OK)
+    {
+        ops_.report(ops_.context, "Sleep PM restore", finishError, false);
+        enterError();
+        return;
+    }
+    if (standby(false) != ESP_OK)
     {
         enterError();
         return;
     }
-    ops_.standby(ops_.context, false);
     (void)ops_.ledInit(ops_.context);
     if (initialize(registry_.role(Role::CAN)) != ESP_OK)
     {
@@ -298,8 +341,7 @@ void Core::sleepCycle()
                 continue;
             }
             const esp_err_t error = initialize(d.id);
-            // The legacy SD role still tolerates a missing/unusable card on wake.
-            if (error != ESP_OK && d.role != Role::SD_CARD)
+            if (error != ESP_OK && d.wakeCritical)
             {
                 state_.store(State::STOPPING);
                 return;
@@ -314,8 +356,7 @@ void Core::sleepCycle()
             state_.store(State::STOPPING);
             return;
         }
-        ops_.standby(ops_.context, true);
-        if (ops_.ledDeinit(ops_.context) != ESP_OK)
+        if (standby(true) != ESP_OK || ops_.ledDeinit(ops_.context) != ESP_OK)
         {
             state_.store(State::STOPPING);
         }

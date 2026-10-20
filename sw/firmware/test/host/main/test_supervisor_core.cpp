@@ -1,7 +1,9 @@
 #include "../../../main/include/supervisor_core.hpp"
+#include "../../../main/include/supervisor_sleep.hpp"
 #include "../../../main/include/manual_sleep_http.hpp"
 #include "unity.h"
 #include <cmath>
+#include <cstring>
 #include <mutex>
 #include <thread>
 
@@ -38,7 +40,11 @@ struct Fake
   esp_err_t taskRegistrationError = ESP_OK;
   esp_err_t prepareError = ESP_OK;
   esp_err_t finishError = ESP_OK;
+  SleepTransaction* sleepPlatform = nullptr;
+  int rollbackFailuresReported = 0;
+  std::array<bool, 9> uncleanReported{};
   esp_err_t ledStopError = ESP_OK;
+  esp_err_t standbyError = ESP_OK;
   bool stopDuringWebInit = false;
   bool stopDuringWebDeinit = false;
   power_settings::Config storedPower{};
@@ -85,6 +91,7 @@ struct Fake
       d.init = inits[i];
       d.deinit = stops[i];
       d.critical = i < 3 || i > 6;
+      d.wakeCritical = i == 6 || i == 7 || i == 8;
       d.role = static_cast<Role>(i);
       d.participation = i < 3 ? Participation::RETAINED : i == 4 ? Participation::BATTERY :
         i == 5 ? Participation::PROBE : Participation::NORMAL;
@@ -115,17 +122,23 @@ struct Fake
       [](void* p) { return static_cast<Fake*>(p)->connected; },
       [](void* p) { static_cast<Fake*>(p)->record(200); return static_cast<Fake*>(p)->alive; },
       [](void* p) { return static_cast<Fake*>(p)->volts; },
-      [](void* p, uint64_t us) { auto& f = *static_cast<Fake*>(p); f.lightUs = us; f.record(201); return f.prepareError; },
-      [](void* p) { auto& f = *static_cast<Fake*>(p); f.record(202); return f.finishError; },
+      [](void* p, uint64_t us) { auto& f = *static_cast<Fake*>(p); f.lightUs = us; f.record(201); return f.sleepPlatform ? f.sleepPlatform->prepare(us) : f.prepareError; },
+      [](void* p) { auto& f = *static_cast<Fake*>(p); f.record(202); return f.sleepPlatform ? f.sleepPlatform->finish() : f.finishError; },
       [](void* p, uint32_t ms) { static_cast<Fake*>(p)->elapsedMs += ms; },
-      [](void* p, bool standby) { static_cast<Fake*>(p)->record(standby ? 203 : 204); },
+      [](void* p, bool standby) { auto& f = *static_cast<Fake*>(p); f.record(standby ? 203 : 204); return f.standbyError; },
       [](void* p) { static_cast<Fake*>(p)->record(205); return ESP_OK; },
       [](void* p) { auto& f = *static_cast<Fake*>(p); f.record(206); return f.ledStopError; },
       [](void*) {},
       [](void* p) { return static_cast<Fake*>(p)->failures; },
       [](void* p, uint32_t n) { static_cast<Fake*>(p)->failures = n; },
       [](void* p, uint32_t s) { auto& f = *static_cast<Fake*>(p); ++f.sleeps; f.sleepS = s; },
-      [](void*, const char*, esp_err_t, bool) {},
+      [](void* p, const char* name, esp_err_t error, bool initializing) {
+        if (std::strcmp(name, "Sleep PM rollback") == 0 && error != ESP_OK)
+          ++static_cast<Fake*>(p)->rollbackFailuresReported;
+        for (size_t i = 0; i < 9; ++i)
+          if (!initializing && error != ESP_OK && std::strcmp(name, Registry::legacyName(i)) == 0)
+            static_cast<Fake*>(p)->uncleanReported[i] = true;
+      },
       [](void* p) { auto& f = *static_cast<Fake*>(p); ++f.policyReads; return f.storedPower; }};
   }
   esp_err_t start() { return core.init({this, init<0>}); }
@@ -427,7 +440,7 @@ void test_recorder_lifecycle_and_legacy_http_view_are_independent_of_registratio
   f.core.step();
   f.count = 0;
   f.core.step();
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(State::STOPPING), static_cast<int>(f.core.state()));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(State::NOT_CONNECTED), static_cast<int>(f.core.state()));
   TEST_ASSERT_EQUAL_INT(static_cast<int>(Phase::PARTIAL), static_cast<int>(f.core.status(d.id).phase));
   for (size_t i = 0; i < 9; ++i) TEST_ASSERT_EQUAL_INT(ESP_OK, legacy[i].result.load());
 }
@@ -460,6 +473,7 @@ void test_required_success_blocks_callback_and_cleanup_but_order_only_still_runs
   auto d = recorder.descriptor();
   d.dependencies[0] = {Id::SD_CARD, true};
   d.dependencyCount = 1;
+  d.wakeCritical = true;
   TEST_ASSERT_EQUAL_INT(ESP_OK, f.core.registerComponent(d));
   f.initErrors[3] = ESP_FAIL;
   f.boot();
@@ -792,6 +806,44 @@ void test_alive_wake_order_optional_sd_and_frozen_boot_status()
   TEST_ASSERT_EQUAL_INT(ESP_ERR_NOT_FOUND, f.core.status(Id::SD_CARD).initError);
 }
 
+void test_optional_wake_failure_and_required_success_dependents()
+{
+  for (bool strictDependent : {false, true})
+  {
+    Fake f(false);
+    for (size_t i = 1; i < f.descriptors.size(); ++i)
+      TEST_ASSERT_EQUAL_INT(ESP_OK, f.core.registerComponent(f.descriptors[i]));
+    Extra provider{f, 40};
+    Extra dependent{f, 41};
+    Extra unrelated{f, 42};
+    auto p = provider.descriptor();
+    auto d = dependent.descriptor("DEPENDENT");
+    auto u = unrelated.descriptor("UNRELATED");
+    d.dependencies = {{{p.id, true}}};
+    d.dependencyCount = 1;
+    d.wakeCritical = strictDependent;
+    TEST_ASSERT_EQUAL_INT(ESP_OK, f.core.registerComponent(p));
+    TEST_ASSERT_EQUAL_INT(ESP_OK, f.core.registerComponent(d));
+    TEST_ASSERT_EQUAL_INT(ESP_OK, f.core.registerComponent(u));
+    f.sleepReady();
+    provider.initError = ESP_FAIL;
+    f.alive = true;
+    f.core.step();
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(strictDependent ? State::STOPPING : State::NOT_CONNECTED),
+                          static_cast<int>(f.core.state()));
+    TEST_ASSERT_EQUAL_INT(2, provider.initialized);
+    TEST_ASSERT_EQUAL_INT(1, dependent.initialized);
+    TEST_ASSERT_EQUAL_INT(strictDependent ? 1 : 2, unrelated.initialized);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(Phase::STOPPED), static_cast<int>(f.core.status(d.id).phase));
+    TEST_ASSERT_EQUAL_INT(ESP_ERR_INVALID_STATE, f.core.status(d.id).initError);
+    TEST_ASSERT_EQUAL_INT(ESP_OK, f.core.legacySetupSteps()[6].result.load());
+    f.core.requestStop();
+    f.core.step();
+    TEST_ASSERT_EQUAL_INT(1, dependent.stopped);
+    TEST_ASSERT_EQUAL_INT(2, provider.stopped);
+  }
+}
+
 void test_wake_failures_do_not_start_later_components()
 {
   for (int fail : {5, 6, 7, 8})
@@ -871,6 +923,59 @@ void test_failure_history_survives_boot_until_successful_orderly_teardown()
   TEST_ASSERT_EQUAL_INT(static_cast<int>(State::SLEEPING), static_cast<int>(f.core.state()));
 }
 
+void test_standby_error_blocks_wake_but_never_retries_error_sleep()
+{
+  Fake f;
+  f.sleepReady();
+  f.standbyError = ESP_FAIL;
+  f.core.step();
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(State::ERROR), static_cast<int>(f.core.state()));
+  f.expect({201, 104, 4, 202, 204});
+  f.idle(31);
+  TEST_ASSERT_EQUAL_INT(1, f.sleeps);
+  f.idle(40);
+  TEST_ASSERT_EQUAL_INT(1, f.sleeps);
+}
+
+void test_error_standby_keeps_every_failed_provider_barrier()
+{
+  for (int fail : {8, 6, 7, 5, 3})
+  {
+    Fake f;
+    f.boot();
+    f.stopErrors[fail] = ESP_ERR_TIMEOUT;
+    f.core.requestStop();
+    f.idle(11);
+    f.count = 0;
+    f.idle(31);
+    const int order[] = {8, 6, 7, 5, 3};
+    size_t n = 0;
+    while (order[n] != fail) ++n;
+    // Completed consumers are skipped; the failed barrier alone retries.
+    TEST_ASSERT_EQUAL_UINT32(2, f.count);
+    TEST_ASSERT_EQUAL_INT(100 + order[n], f.calls[0]);
+    TEST_ASSERT_EQUAL_INT(203, f.calls[1]);
+    for (size_t i = n; i < 5; ++i) TEST_ASSERT_TRUE(f.uncleanReported[order[i]]);
+    TEST_ASSERT_EQUAL_INT(1, f.sleeps);
+    f.idle(3);
+    TEST_ASSERT_EQUAL_INT(1, f.sleeps);
+  }
+}
+
+void test_bootstrap_error_standby_needs_no_component_init_and_led_failure_is_bounded()
+{
+  Fake f;
+  f.initErrors[0] = ESP_FAIL;
+  f.ledStopError = ESP_FAIL;
+  TEST_ASSERT_EQUAL_INT(ESP_OK, f.start());
+  f.expect({0});
+  f.idle(31);
+  f.expect({203, 206});
+  TEST_ASSERT_EQUAL_INT(1, f.sleeps);
+  f.idle(40);
+  TEST_ASSERT_EQUAL_INT(1, f.sleeps);
+}
+
 void test_shutdown_exhaustion_uses_backoff_once_and_keeps_provider_barriers()
 {
   uint32_t history = 0;
@@ -892,8 +997,9 @@ void test_shutdown_exhaustion_uses_backoff_once_and_keeps_provider_barriers()
     f.core.step();
     TEST_ASSERT_EQUAL_UINT32(seconds, f.sleepS);
     TEST_ASSERT_EQUAL_UINT32(history + 1, f.failures);
-    TEST_ASSERT_EQUAL_UINT32(11, f.count);
-    for (size_t i = 0; i < f.count; ++i) TEST_ASSERT_EQUAL_INT(108, f.calls[i]);
+    TEST_ASSERT_EQUAL_UINT32(12, f.count);
+    for (size_t i = 0; i + 1 < f.count; ++i) TEST_ASSERT_EQUAL_INT(108, f.calls[i]);
+    TEST_ASSERT_EQUAL_INT(203, f.calls[f.count - 1]);
     f.idle(50);
     TEST_ASSERT_EQUAL_INT(1, f.sleeps);
     TEST_ASSERT_EQUAL_UINT32(history + 1, f.failures);
@@ -967,6 +1073,92 @@ void test_manual_stop_does_not_carry_old_inactivity_into_the_next_wake()
   TEST_ASSERT_EQUAL_INT(static_cast<int>(StopAck::SLEEP_READY), static_cast<int>(f.core.stopAcknowledgment()));
 }
 
+void test_sleep_transaction_owns_exactly_one_release_and_restore()
+{
+  struct Platform
+  {
+    int locks = 1;
+    int timers = 0;
+    int releases = 0;
+    int acquires = 0;
+    esp_err_t timerError = ESP_OK;
+    esp_err_t releaseError = ESP_OK;
+    esp_err_t acquireError = ESP_OK;
+    SleepOperations operations()
+    {
+      return {this,
+        [](void* p, uint64_t) { auto& f = *static_cast<Platform*>(p); ++f.timers; return f.timerError; },
+        [](void* p) { auto& f = *static_cast<Platform*>(p); ++f.releases; if (f.releaseError == ESP_OK) --f.locks; return f.releaseError; },
+        [](void* p) { auto& f = *static_cast<Platform*>(p); ++f.acquires; if (f.acquireError == ESP_OK) ++f.locks; return f.acquireError; }};
+    }
+  };
+  Platform f;
+  SleepTransaction transaction(f.operations());
+  f.timerError = ESP_FAIL;
+  TEST_ASSERT_EQUAL_INT(ESP_FAIL, transaction.prepare(10000));
+  TEST_ASSERT_EQUAL_INT(0, f.releases);
+  TEST_ASSERT_EQUAL_INT(ESP_OK, transaction.finish());
+  TEST_ASSERT_EQUAL_INT(0, f.acquires);
+  TEST_ASSERT_EQUAL_INT(1, f.locks);
+  f.timerError = ESP_OK;
+  f.releaseError = ESP_FAIL;
+  TEST_ASSERT_EQUAL_INT(ESP_FAIL, transaction.prepare(10000));
+  TEST_ASSERT_EQUAL_INT(ESP_OK, transaction.finish());
+  TEST_ASSERT_EQUAL_INT(0, f.acquires);
+  TEST_ASSERT_EQUAL_INT(1, f.locks);
+  f.releaseError = ESP_OK;
+  for (int i = 0; i < 3; ++i)
+  {
+    TEST_ASSERT_EQUAL_INT(ESP_OK, transaction.prepare(10000));
+    TEST_ASSERT_EQUAL_INT(0, f.locks);
+    TEST_ASSERT_EQUAL_INT(ESP_ERR_INVALID_STATE, transaction.prepare(10000));
+    TEST_ASSERT_EQUAL_INT(ESP_OK, transaction.finish());
+    TEST_ASSERT_EQUAL_INT(ESP_OK, transaction.finish());
+    TEST_ASSERT_EQUAL_INT(i + 1, f.acquires);
+    TEST_ASSERT_EQUAL_INT(1, f.locks);
+  }
+  TEST_ASSERT_EQUAL_INT(ESP_OK, transaction.prepare(10000));
+  f.acquireError = ESP_FAIL;
+  TEST_ASSERT_EQUAL_INT(ESP_FAIL, transaction.finish());
+  TEST_ASSERT_EQUAL_INT(ESP_OK, transaction.finish());
+  TEST_ASSERT_EQUAL_INT(4, f.acquires);
+  TEST_ASSERT_EQUAL_INT(0, f.locks);
+  // Exercise the production transaction through the actual Core failure exits.
+  for (int failure = 0; failure < 6; ++failure)
+  {
+    Platform platform;
+    SleepTransaction sleep(platform.operations());
+    Fake coreFake;
+    coreFake.sleepReady();
+    coreFake.sleepPlatform = &sleep;
+    if (failure == 0) platform.timerError = ESP_FAIL;
+    if (failure == 1) platform.releaseError = ESP_FAIL;
+    if (failure == 2 || failure == 3) coreFake.stopErrors[4] = ESP_ERR_TIMEOUT;
+    if (failure == 3 || failure == 4) platform.acquireError = ESP_FAIL;
+    coreFake.core.step();
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(failure == 5 ? State::SLEEPING : State::ERROR),
+                          static_cast<int>(coreFake.core.state()));
+    TEST_ASSERT_EQUAL_INT(failure < 2 ? 0 : 1, platform.acquires);
+    TEST_ASSERT_EQUAL_INT(failure == 0 ? 0 : 1, platform.releases);
+    TEST_ASSERT_EQUAL_INT(failure == 3 || failure == 4 ? 0 : 1, platform.locks);
+    TEST_ASSERT_EQUAL_INT(failure == 3 ? 1 : 0, coreFake.rollbackFailuresReported);
+    if (failure < 5)
+    {
+      coreFake.idle(31);
+      TEST_ASSERT_EQUAL_INT(1, coreFake.sleeps);
+      TEST_ASSERT_EQUAL_INT(failure < 2 ? 0 : 1, platform.acquires);
+    }
+    else
+    {
+      coreFake.core.step();
+      coreFake.core.step();
+      TEST_ASSERT_EQUAL_INT(3, platform.acquires);
+      TEST_ASSERT_EQUAL_INT(3, platform.releases);
+      TEST_ASSERT_EQUAL_INT(1, platform.locks);
+    }
+  }
+}
+
 void test_battery_cleanup_failure_does_not_enter_light_sleep()
 {
   Fake f;
@@ -974,7 +1166,7 @@ void test_battery_cleanup_failure_does_not_enter_light_sleep()
   f.stopErrors[4] = ESP_ERR_TIMEOUT;
   f.core.step();
   TEST_ASSERT_EQUAL_INT(static_cast<int>(State::ERROR), static_cast<int>(f.core.state()));
-  f.expect({201, 104});
+  f.expect({201, 104, 202});
 }
 
 void test_configured_awake_boundary_and_boot_only_policy_snapshot()
@@ -1203,15 +1395,20 @@ extern "C" void run_supervisor_core_tests()
   RUN_TEST(test_shutdown_order_and_each_provider_barrier);
   RUN_TEST(test_dead_bus_sleep_order_and_voltage_limits);
   RUN_TEST(test_alive_wake_order_optional_sd_and_frozen_boot_status);
+  RUN_TEST(test_optional_wake_failure_and_required_success_dependents);
   RUN_TEST(test_wake_failures_do_not_start_later_components);
   RUN_TEST(test_stop_is_a_coalesced_request_acknowledged_only_after_cleanup);
   RUN_TEST(test_missing_supervisor_task_recovers_on_start_caller_without_retrying_allocation);
   RUN_TEST(test_failure_history_survives_boot_until_successful_orderly_teardown);
+  RUN_TEST(test_standby_error_blocks_wake_but_never_retries_error_sleep);
+  RUN_TEST(test_error_standby_keeps_every_failed_provider_barrier);
+  RUN_TEST(test_bootstrap_error_standby_needs_no_component_init_and_led_failure_is_bounded);
   RUN_TEST(test_shutdown_exhaustion_uses_backoff_once_and_keeps_provider_barriers);
   RUN_TEST(test_recovery_counter_saturates_and_successful_error_cleanup_does_not_reset_it);
   RUN_TEST(test_stop_from_component_callbacks_never_waits_or_interrupts_lifecycle_work);
   RUN_TEST(test_sleep_platform_failures_take_error_without_starting_providers);
   RUN_TEST(test_manual_stop_does_not_carry_old_inactivity_into_the_next_wake);
+  RUN_TEST(test_sleep_transaction_owns_exactly_one_release_and_restore);
   RUN_TEST(test_battery_cleanup_failure_does_not_enter_light_sleep);
   RUN_TEST(test_configured_awake_boundary_and_boot_only_policy_snapshot);
   RUN_TEST(test_disabled_automatic_sleep_includes_low_and_unknown_voltage_but_not_explicit_stop);

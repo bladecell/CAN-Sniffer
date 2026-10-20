@@ -42,7 +42,7 @@ struct Operations
   esp_err_t (*prepareSleep)(void*, uint64_t);
   esp_err_t (*finishSleep)(void*);
   void (*delayMs)(void*, uint32_t);
-  void (*standby)(void*, bool);
+  esp_err_t (*standby)(void*, bool);
   esp_err_t (*ledInit)(void*);
   esp_err_t (*ledDeinit)(void*);
   void (*blink)(void*);
@@ -85,7 +85,8 @@ public:
 private:
   esp_err_t initialize(Id id, bool boot = false);
   esp_err_t deinit(Id id);
-  bool shutdown();
+  bool shutdown(bool recovery = false);
+  esp_err_t standby(bool enabled);
   void sleepCycle();
   void enterError();
   void recover();

@@ -45,6 +45,19 @@ async function until(cond: () => boolean) {
 }
 
 describe("stale state", () => {
+  test("an older overlapping refresh cannot overwrite the newer auth status", async () => {
+    const pending: Array<(response: Response) => void> = [];
+    const h = harness(() => new Promise<Response>((resolve) => pending.push(resolve)));
+    const first = h.auth.refresh();
+    const second = h.auth.refresh();
+    pending[1](json(200, { state: "claimed", dev_bypass: true }));
+    await second;
+    expect(h.auth.view.devBypass).toBe(true);
+    pending[0](json(200, { state: "claimed", dev_bypass: false }));
+    await first;
+    expect(h.auth.view.devBypass).toBe(true);
+  });
+
   test("opening the login prompt re-reads the state: a PIN cleared by BOOT hold opens the claim dialog", async () => {
     let state = "claimed";
     const h = harness(() => json(200, { state }));
@@ -54,6 +67,82 @@ describe("stale state", () => {
     void h.auth.ensureLogin();
     await until(() => h.auth.view.dialog === "claim");
     expect(h.auth.view.state).toBe("unclaimed");
+  });
+
+  test("a status response from an older session cannot end a newer login", async () => {
+    let resolveStatus!: (response: Response) => void;
+    let loginCount = 0;
+    const h = harness((url) => {
+      if (url === "/api/v1/auth/login") return json(200, session(++loginCount === 1 ? TOKEN : TOKEN2));
+      if (url === "/api/v1/auth") return new Promise<Response>((resolve) => { resolveStatus = resolve; });
+      return empty(204);
+    });
+    await h.auth.login(PIN);
+    const staleRefresh = h.auth.refresh();
+    await h.auth.login(PIN);
+    resolveStatus(json(200, { state: "claimed", authenticated: false }));
+    await staleRefresh;
+    expect(h.auth.view.loggedIn).toBe(true);
+    const gated = await h.auth.gatedFetch("/api/v1/system/reboot");
+    expect(gated.status).toBe(204);
+    expect(h.calls.find((call) => call.url === "/api/v1/system/reboot")?.auth).toBe(`Bearer ${TOKEN2}`);
+  });
+});
+
+describe("login prompt while auth state refreshes", () => {
+  test("shows the cached login dialog and close cancels a gated request before GET /auth resolves", async () => {
+    let resolveStatus!: (response: Response) => void;
+    const h = harness((url) => url === "/api/v1/auth" ? new Promise<Response>((resolve) => { resolveStatus = resolve; }) : empty(204));
+    const gated = h.auth.gatedFetch("/api/v1/system/reboot");
+    expect(h.auth.view.dialog).toBe("login");
+    expect(h.calls.filter((call) => call.url === "/api/v1/system/reboot")).toHaveLength(0);
+    h.auth.closeDialog();
+    expect(await gated).toHaveProperty("status", 401);
+    resolveStatus(json(200, { state: "claimed" }));
+    await Promise.resolve();
+    expect(h.auth.view.dialog).toBe("none");
+  });
+
+  test("fresh dev bypass resolves queued gated requests without opening a dialog", async () => {
+    let resolveStatus!: (response: Response) => void;
+    const h = harness((url) => url === "/api/v1/auth"
+      ? new Promise<Response>((resolve) => { resolveStatus = resolve; })
+      : empty(204));
+    const gated = h.auth.gatedFetch("/api/v1/system/reboot");
+    expect(h.auth.view.dialog).toBe("login");
+    resolveStatus(json(200, { state: "claimed", dev_bypass: true }));
+    expect((await gated).status).toBe(204);
+    expect(h.auth.view.dialog).toBe("none");
+    expect(h.calls.filter((call) => call.url === "/api/v1/system/reboot")).toHaveLength(1);
+    expect(h.calls.find((call) => call.url === "/api/v1/system/reboot")?.auth).toBeNull();
+  });
+
+  test("concurrent gated requests share one prompt and close cancels every waiter", async () => {
+    const h = harness((url) => url === "/api/v1/auth" ? new Promise<Response>(() => {}) : empty(204));
+    const first = h.auth.gatedFetch("/api/v1/system/reboot");
+    const second = h.auth.gatedFetch("/api/v1/system/sleep");
+    expect(h.auth.view.dialog).toBe("login");
+    expect(h.calls.filter((call) => call.url === "/api/v1/auth")).toHaveLength(1);
+    h.auth.closeDialog();
+    expect((await Promise.all([first, second])).map((response) => response.status)).toEqual([401, 401]);
+    expect(h.calls.filter((call) => call.url.includes("/system/"))).toHaveLength(0);
+  });
+
+  test("login settles its waiter and a stale status refresh cannot reopen the dialog", async () => {
+    let resolveStatus!: (response: Response) => void;
+    const h = harness((url) => {
+      if (url === "/api/v1/auth") return new Promise<Response>((resolve) => { resolveStatus = resolve; });
+      if (url === "/api/v1/auth/login") return json(200, session(TOKEN));
+      return empty(204);
+    });
+    const waiting = h.auth.ensureLogin();
+    expect(h.auth.view.dialog).toBe("login");
+    await h.auth.login(PIN);
+    expect(await waiting).toBe(true);
+    resolveStatus(json(200, { state: "claimed" }));
+    await Promise.resolve();
+    expect(h.auth.view.dialog).toBe("none");
+    expect(h.auth.view.loggedIn).toBe(true);
   });
 });
 

@@ -36,9 +36,10 @@ static esp_err_t registerComponents(SUPERVISOR& supervisor)
          6,
          1,
          {{{Id::CAN}, {Id::SD_CARD}}},
-         2},
+         2,
+         true},
         {Id::WIFI, "WIFI", application_components::setupWifi, application_components::stopWifi, nullptr, true,
-         Participation::NORMAL, Role::WIFI, 7, 2},
+         Participation::NORMAL, Role::WIFI, 7, 2, {}, 0, true},
         {Id::WEBSERVER,
          "WEBSERVER",
          application_components::setupWebserver,
@@ -50,7 +51,8 @@ static esp_err_t registerComponents(SUPERVISOR& supervisor)
          8,
          0,
          {{{Id::OBD}, {Id::WIFI}, {Id::FLASH_FILESYSTEM}, {Id::SD_CARD}}},
-         4},
+         4,
+         true},
     };
     for (const auto& component : components)
     {

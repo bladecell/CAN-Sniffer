@@ -87,6 +87,8 @@ struct Descriptor
     uint16_t                                    shutdownPriority = 0;
     std::array<Dependency, kDependencyCapacity> dependencies{};
     size_t                                      dependencyCount = 0;
+    // Independent of boot criticality; also applies to blocked required providers.
+    bool wakeCritical = false;
 };
 
 struct Component
