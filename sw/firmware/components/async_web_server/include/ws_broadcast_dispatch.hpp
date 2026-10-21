@@ -17,7 +17,8 @@ class Dispatcher
 {
 public:
     static constexpr size_t kMaxPayload = 125;
-    static constexpr unsigned kMaxPending = 8;
+    // The SDK ctrl mailbox has CONFIG_LWIP_UDP_RECVMBOX_SIZE (6) slots; leave room for its own session closes
+    static constexpr unsigned kMaxPending = 3;
     static constexpr size_t kMaxClients = 20;
 
     bool start()
