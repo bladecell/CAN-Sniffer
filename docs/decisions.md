@@ -200,3 +200,6 @@ Decided by the user. STARTING to NOT_CONNECTED writes 0 to the ERROR/factory-res
 
 ## 2026-10-22: PATCH /obd2 and POST /req/static_pid stay ungated
 Decided by the user. `PATCH /api/v1/obd2` only toggles `auto_poll` (one key, `obd2_patch.hpp`) and `POST /api/v1/req/static_pid` issues a standard OBD-II read; both keep `gated = 0` in `api_routes.hpp`. No route, auth rule or contract changes. Accepted risk: anyone on the network can start or stop polling and trigger a standard static PID request.
+
+## 2026-10-22: SD file upload/download stays in webserver.cpp (B21)
+Decided by the user. The SD file routes (`/api/v1/sd_card/file/*` GET download, PUT upload) keep calling `SDCard` directly from `webserver.cpp` instead of going through `middleware.cpp`. They stream large bodies in chunks with receive deadlines (`http_body_policy.hpp`), which the middleware's request/response handlers do not model. Moving them would touch the B23/B25 and auth paths and need hardware re-testing for no functional gain. Listed under "Layering discrepancies" in `docs/architecture.md`. The OBD2 `subscribe` call for the PID stream stays as a separate documented exception.
