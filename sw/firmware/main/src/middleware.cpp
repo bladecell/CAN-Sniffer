@@ -96,8 +96,10 @@ static bool is_confirmed_missing_errno(int error_number)
     return error_number == ENOENT || error_number == ENOTDIR;
 }
 
-static MiddlewareJsonResult dtc_db_io_error(cJSON* root, const std::string& reason, int http_status)
+static MiddlewareJsonResult dtc_db_io_error(cJSON* root, const char* prefix, const char* path, const char* suffix, int http_status)
 {
+    FixedText<256> reason;
+    reason.set(prefix).append(path).append(suffix);
     cJSON_AddStringToObject(root, "status", "error");
     cJSON_AddStringToObject(root, "reason", reason.c_str());
     cJSON_AddNumberToObject(root, "dtc_count", 0);
@@ -829,29 +831,28 @@ MiddlewareJsonResult m_dtc_description_get(const char* target_codes[], size_t co
     if (!file)
     {
         const int         open_errno = errno;
-        const std::string reason = is_confirmed_missing_errno(open_errno) ? "File " + dtc_desc_db_path + " not found"
-                                                                          : "Failed to open file " + dtc_desc_db_path;
-        return dtc_db_io_error(root, reason, is_confirmed_missing_errno(open_errno) ? 404 : 500);
+        const bool missing = is_confirmed_missing_errno(open_errno);
+        return dtc_db_io_error(root, missing ? "File " : "Failed to open file ", dtc_desc_db_path.c_str(), missing ? " not found" : "", missing ? 404 : 500);
     }
 
     errno = 0;
     if (fseek(file.get(), 0, SEEK_END) != 0)
     {
-        return dtc_db_io_error(root, "Failed to seek file " + dtc_desc_db_path, 500);
+        return dtc_db_io_error(root, "Failed to seek file ", dtc_desc_db_path.c_str(), "", 500);
     }
 
     errno                = 0;
     const long file_size = ftell(file.get());
     if (file_size < 0)
     {
-        return dtc_db_io_error(root, "Failed to determine size of file " + dtc_desc_db_path, 500);
+        return dtc_db_io_error(root, "Failed to determine size of file ", dtc_desc_db_path.c_str(), "", 500);
     }
 
     const long total_records = file_size / 128;
 
     if (total_records <= 0)
     {
-        return dtc_db_io_error(root, "No records found in " + dtc_desc_db_path, 500);
+        return dtc_db_io_error(root, "No records found in ", dtc_desc_db_path.c_str(), "", 500);
     }
 
     cJSON* dtcs_array = cJSON_CreateArray();
@@ -890,7 +891,7 @@ MiddlewareJsonResult m_dtc_description_get(const char* target_codes[], size_t co
             {
                 cJSON_Delete(item);
                 cJSON_Delete(dtcs_array);
-                return dtc_db_io_error(root, "Failed to seek file " + dtc_desc_db_path, 500);
+                return dtc_db_io_error(root, "Failed to seek file ", dtc_desc_db_path.c_str(), "", 500);
             }
 
             errno              = 0;
@@ -900,7 +901,7 @@ MiddlewareJsonResult m_dtc_description_get(const char* target_codes[], size_t co
             {
                 cJSON_Delete(item);
                 cJSON_Delete(dtcs_array);
-                return dtc_db_io_error(root, "Failed to read file " + dtc_desc_db_path, 500);
+                return dtc_db_io_error(root, "Failed to read file ", dtc_desc_db_path.c_str(), "", 500);
             }
 
             read_code[5] = '\0';
@@ -914,7 +915,7 @@ MiddlewareJsonResult m_dtc_description_get(const char* target_codes[], size_t co
                 {
                     cJSON_Delete(item);
                     cJSON_Delete(dtcs_array);
-                    return dtc_db_io_error(root, "Failed to read file " + dtc_desc_db_path, 500);
+                    return dtc_db_io_error(root, "Failed to read file ", dtc_desc_db_path.c_str(), "", 500);
                 }
                 desc_buf[122] = '\0';
 
@@ -946,7 +947,7 @@ MiddlewareJsonResult m_dtc_description_get(const char* target_codes[], size_t co
     if (fclose(raw_file) != 0)
     {
         cJSON_Delete(dtcs_array);
-        return dtc_db_io_error(root, "Failed to close file " + dtc_desc_db_path, 500);
+        return dtc_db_io_error(root, "Failed to close file ", dtc_desc_db_path.c_str(), "", 500);
     }
 
     cJSON_AddStringToObject(root, "status", "success");
