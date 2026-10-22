@@ -4,7 +4,8 @@
 // ERROR blinks the LED for kBlinkS, shuts the modules down, then deep-sleeps backoffS(n) and reboots. n is the number of
 // recovery episodes, kept in RTC memory; it grows the sleep so a permanent fault is retried at most once per
 // kMaxBackoffS instead of looping and draining the car battery.
-// Startup does not clear history; only successful orderly teardown before normal sleep does.
+// Completed startup (STARTING to NOT_CONNECTED) and successful orderly teardown before normal sleep clear it; ERROR cleanup
+// never does (docs/decisions.md, 2026-10-20).
 
 #include <cstdint>
 
