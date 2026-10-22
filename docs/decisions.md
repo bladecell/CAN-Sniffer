@@ -197,3 +197,6 @@ Approved sequencing change: settings/NVS work runs synchronously on main's calle
 
 ## 2026-10-20: Completed startup clears the RTC restart counter (R3)
 Decided by the user. STARTING to NOT_CONNECTED writes 0 to the ERROR/factory-reset counter, as the pre-core supervisor did, in addition to the clear on successful orderly STOPPING teardown. ERROR cleanup still never clears it. The NVS factory-reset budget (3) shares the counter: a corrupt-NVS reset happens in bootstrap, before startup completes, so a reset that does not cure the corruption still counts toward 3, while a boot that completes startup restores the whole budget.
+
+## 2026-10-22: PATCH /obd2 and POST /req/static_pid stay ungated
+Decided by the user. `PATCH /api/v1/obd2` only toggles `auto_poll` (one key, `obd2_patch.hpp`) and `POST /api/v1/req/static_pid` issues a standard OBD-II read; both keep `gated = 0` in `api_routes.hpp`. No route, auth rule or contract changes. Accepted risk: anyone on the network can start or stop polling and trigger a standard static PID request.
