@@ -815,7 +815,7 @@ MiddlewareJsonResult m_dtc_description_get(const char* target_codes[], size_t co
         return json_result(nullptr, 500);
     }
 
-    std::string dtc_desc_db_path = SUPERVISOR::getInstance().get_dtc_desc_path();
+    const FixedText<256> dtc_desc_db_path = SUPERVISOR::getInstance().get_dtc_desc_path();
 
     // Retain this lease for the whole lookup, including every seek/read of the
     // shared VFS file. Do not add OBD or settings calls below this point.

@@ -1,4 +1,6 @@
 #pragma once
+
+#include "fixed_text.hpp"
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -75,13 +77,18 @@ public:
         return core_.status(id);
     }
 
-    std::string get_pid_def_path() const
+    // Paths are validated to <= 255 bytes; a FixedText copy avoids a throwing std::string allocation.
+    FixedText<256> get_pid_def_path() const
     {
-        return _config.pid_def_path;
+        FixedText<256> t;
+        t.set(_config.pid_def_path.c_str());
+        return t;
     }
-    std::string get_dtc_desc_path() const
+    FixedText<256> get_dtc_desc_path() const
     {
-        return _config.dtc_desc_path;
+        FixedText<256> t;
+        t.set(_config.dtc_desc_path.c_str());
+        return t;
     }
     void set_pid_def_path(const std::string& path)
     {
