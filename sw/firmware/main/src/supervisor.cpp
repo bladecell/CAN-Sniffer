@@ -228,20 +228,16 @@ static_assert(ESP_RST_UNKNOWN == 0 && ESP_RST_EXT == 2 && ESP_RST_SW == 3 && ESP
                   ESP_RST_CPU_LOCKUP == 15,
               "reset_reason.hpp text table is indexed by esp_reset_reason_t");
 
-std::string SUPERVISOR::get_restart_reason() const
+const char* SUPERVISOR::get_restart_reason() const
 {
     return reset_reason::text(static_cast<int>(esp_reset_reason()));
 }
 
-std::string SUPERVISOR::get_MAC_address() const
+void SUPERVISOR::get_MAC_address(char (&out)[18]) const
 {
     uint8_t mac[6];
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
-
-    char buf[18];
-    (void)snprintf(buf, sizeof(buf), "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-
-    return std::string(buf);
+    (void)snprintf(out, sizeof(out), "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
 
 void SUPERVISOR::restart_system()

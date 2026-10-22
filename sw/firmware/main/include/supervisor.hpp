@@ -61,8 +61,8 @@ public:
     void     finish_sleep_request(uint32_t token, bool responseSent);
 
     uint32_t          get_uptime_seconds() const;
-    std::string       get_restart_reason() const;
-    std::string       get_MAC_address() const;
+    const char*       get_restart_reason() const;
+    void              get_MAC_address(char (&out)[18]) const;
     float             get_battery_voltage() const;
     void              restart_system();
     SUPERVISOR::State get_state() const

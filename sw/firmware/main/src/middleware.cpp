@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "cJSON.h"
+#include "fixed_text.hpp"
 #include "power_settings_json.hpp"
 #include "can_config_limits.hpp"
 #include "esp_check.h"
@@ -498,8 +499,10 @@ MiddlewareJsonResult m_system_get()
     cJSON_AddNumberToObject(root, "api_version", API_VERSION);
     cJSON_AddStringToObject(root, "app_version", APP_VERSION_STRING);
     cJSON_AddNumberToObject(root, "uptime_s", SUPERVISOR::getInstance().get_uptime_seconds());
-    cJSON_AddStringToObject(root, "restart_reason", SUPERVISOR::getInstance().get_restart_reason().c_str());
-    cJSON_AddStringToObject(root, "mac", SUPERVISOR::getInstance().get_MAC_address().c_str());
+    cJSON_AddStringToObject(root, "restart_reason", SUPERVISOR::getInstance().get_restart_reason());
+    char mac[18];
+    SUPERVISOR::getInstance().get_MAC_address(mac);
+    cJSON_AddStringToObject(root, "mac", mac);
     cJSON_AddNumberToObject(root, "state", static_cast<uint32_t>(SUPERVISOR::getInstance().get_state()));
     // 0 = unknown (ADC unavailable or a conversion failed); the frontend ignores values at or below 1 V.
     const float battery_v = SUPERVISOR::getInstance().get_battery_voltage();
@@ -1058,8 +1061,9 @@ MiddlewareJsonResult m_dtc_request(int mode)
         return json_result(nullptr, 500);
     }
 
-    std::string failure_reason = "DTC request failed for:";
-    bool        has_failures   = false;
+    FixedText<> failure_reason;
+    failure_reason.set("DTC request failed for:");
+    bool has_failures = false;
     for (const auto& result : results)
     {
         if (result.error == ESP_OK)
@@ -1080,11 +1084,7 @@ MiddlewareJsonResult m_dtc_request(int mode)
         cJSON_AddStringToObject(failed_mode, "error", esp_err_to_name(result.error));
         cJSON_AddItemToArray(failed_modes, failed_mode);
 
-        failure_reason += has_failures ? ", " : " ";
-        failure_reason += result.name;
-        failure_reason += " (";
-        failure_reason += esp_err_to_name(result.error);
-        failure_reason += ')';
+        failure_reason.append(has_failures ? ", " : " ").append(result.name).append(" (").append(esp_err_to_name(result.error)).append(")");
         has_failures = true;
     }
 
@@ -1765,9 +1765,9 @@ static bool cj_bool(cJSON* obj, const char* key, T& out)
 // sets `err`; later fields are skipped.
 struct SettingsFields
 {
-    cJSON*      obj;
-    size_t      n = 0;
-    std::string err;
+    cJSON*        obj;
+    size_t        n = 0;
+    FixedText<96> err;
 
     explicit SettingsFields(cJSON* o) : obj(o) {}
 
@@ -1782,11 +1782,11 @@ struct SettingsFields
         int64_t x = 0;
         if (!cJSON_IsNumber(v) || !settings_validation::checkedInt(v->valuedouble, lo, hi, x))
         {
-            err = std::string(key) + " must be an integer in range";
+            err.set(key).append(" must be an integer in range");
         }
         else if (valid != nullptr && !valid(x))
         {
-            err = std::string(key) + " has an unsupported value";
+            err.set(key).append(" has an unsupported value");
         }
         else
         {
@@ -1866,35 +1866,35 @@ static SettingsFields apply_system_settings(cJSON* s, SUPERVISOR::Config& c)
     f.n += power.count;
     if (power.error != nullptr)
     {
-        f.err = power.error;
+        f.err.set(power.error);
     }
     return f;
 }
 
 // Rejects the section (nothing saved for it) on a bad field or an invalid merged section.
 template <typename Cfg>
-static bool section_ok(const SettingsFields& f, const Cfg& cfg, const char* (*check)(const Cfg&), std::string& reason)
+static bool section_ok(const SettingsFields& f, const Cfg& cfg, const char* (*check)(const Cfg&), FixedText<>& reason)
 {
     const char* why = !f.err.empty() ? f.err.c_str() : (f.n != 0 ? check(cfg) : nullptr);
     if (why == nullptr)
     {
         return true;
     }
-    reason = why;
+    reason.set(why);
     return false;
 }
 
 // Reads the stored section, merges the fields of `fields` into it and saves it. Invalid leaves the store untouched.
 template <typename Cfg>
 static settings_patch::Outcome patch_section(cJSON* fields, esp_err_t (Settings::*get)(Cfg&), esp_err_t (Settings::*set)(const Cfg&),
-                                             SettingsFields (*apply)(cJSON*, Cfg&), const char* (*check)(const Cfg&), std::string& reason)
+                                             SettingsFields (*apply)(cJSON*, Cfg&), const char* (*check)(const Cfg&), FixedText<>& reason)
 {
     using settings_patch::Outcome;
     Cfg       cfg;
     esp_err_t res = (Settings::getInstance().*get)(cfg);
     if (res != ESP_OK)
     {
-        reason = esp_err_to_name(res);
+        reason.set(esp_err_to_name(res));
         return Outcome::Failed;
     }
     const SettingsFields f = apply(fields, cfg);
@@ -1904,25 +1904,25 @@ static settings_patch::Outcome patch_section(cJSON* fields, esp_err_t (Settings:
     }
     if (f.n == 0)
     {
-        reason = "no valid settings fields";
+        reason.set("no valid settings fields");
         return Outcome::Invalid;
     }
     res = (Settings::getInstance().*set)(cfg);
     if (res != ESP_OK)
     {
-        reason = esp_err_to_name(res);
+        reason.set(esp_err_to_name(res));
         return Outcome::Failed;
     }
     return Outcome::Saved;
 }
 
-static settings_patch::Outcome patch_one_section(const char* name, cJSON* fields, std::string& reason)
+static settings_patch::Outcome patch_one_section(const char* name, cJSON* fields, FixedText<>& reason)
 {
     using settings_patch::Outcome;
     using settings_patch::Section;
     if (!cJSON_IsObject(fields))
     {
-        reason = "section must be a JSON object";
+        reason.set("section must be a JSON object");
         return Outcome::Invalid;
     }
     switch (settings_patch::sectionOf(name))
@@ -1939,7 +1939,7 @@ static settings_patch::Outcome patch_one_section(const char* name, cJSON* fields
         case Section::Unknown:
             break;
     }
-    reason = "unknown settings section";
+    reason.set("unknown settings section");
     return Outcome::Unknown;
 }
 
@@ -2006,7 +2006,7 @@ MiddlewareJsonResult m_settings_set(cJSON* payload)
     size_t i = 0;
     for (cJSON* c = payload->child; c != nullptr && i < n; c = c->next, i++)
     {
-        std::string reason;
+        FixedText<> reason;
         outcomes[i] = patch_one_section(c->string != nullptr ? c->string : "", c, reason);
         if (outcomes[i] != settings_patch::Outcome::Saved)
         {

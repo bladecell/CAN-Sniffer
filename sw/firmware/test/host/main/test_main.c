@@ -22,6 +22,7 @@ void run_manual_sleep_http_tests(void);
 void run_atomic_file_tests(void);
 void run_battery_calc_tests(void);
 void run_reset_reason_tests(void);
+void run_fixed_text_tests(void);
 void run_http_parse_tests(void);
 void run_api_routes_tests(void);
 void run_http_error_tests(void);
@@ -64,6 +65,7 @@ void app_main(void)
     run_atomic_file_tests();
     run_battery_calc_tests();
     run_reset_reason_tests();
+    run_fixed_text_tests();
     run_http_parse_tests();
     run_api_routes_tests();
     run_http_error_tests();
