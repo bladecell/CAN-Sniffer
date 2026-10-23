@@ -152,3 +152,22 @@ def test_sd_root_tree_schema(api, mounted_sd):
             assert isinstance(child.get("name"), str)
             assert child.get("type") == "file"
             assert isinstance(child.get("size"), (int, float))
+
+
+@pytest.mark.parametrize("kind", ["pid_def", "pid_data"])
+def test_single_pid_get_matches_list_item(api, device_reachable, kind):
+    items = get_json(api, f"/api/v1/{kind}")["data"]
+    if not items:
+        pytest.skip(f"no {kind} entries on device")
+    item = items[0]
+    single = get_json(api, f"/api/v1/{kind}/{item['pid']}")
+    assert "data" not in single and "count" not in single
+    assert single.keys() == item.keys()
+    if kind == "pid_def":
+        assert single == item
+
+
+@pytest.mark.parametrize("kind", ["pid_def", "pid_data"])
+def test_single_pid_get_errors(api, device_reachable, kind):
+    assert api.request("GET", f"/api/v1/{kind}/zzz").status_code == 400
+    assert api.request("GET", f"/api/v1/{kind}/65535").status_code == 404

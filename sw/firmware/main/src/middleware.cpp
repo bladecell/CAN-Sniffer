@@ -257,6 +257,14 @@ cJSON* single_pid_data_get(uint16_t pid, esp_err_t* operation_error)
 
 MiddlewareJsonResult m_pid_def_get(int filter_id)
 {
+    if (filter_id >= 0)
+    {
+        // One PID: the bare object, no list wrapper allocated.
+        esp_err_t item_error = ESP_OK;
+        cJSON*    item       = single_pid_def_get((uint16_t)filter_id, &item_error);
+        return item != nullptr ? json_result(item) : json_result(nullptr, status_for_error(item_error, 404));
+    }
+
     cJSON* root = cJSON_CreateObject();
     if (root == nullptr)
     {
@@ -273,16 +281,6 @@ MiddlewareJsonResult m_pid_def_get(int filter_id)
     }
     int count = 0;
 
-    if (filter_id >= 0)
-    {
-        esp_err_t item_error = ESP_OK;
-        cJSON*    item       = single_pid_def_get((uint16_t)filter_id, &item_error);
-        cJSON_Delete(data_array);
-        cJSON_Delete(root);
-        // One PID: the bare object, no list wrapper.
-        return item != nullptr ? json_result(item) : json_result(nullptr, status_for_error(item_error, 404));
-    }
-    else
     {
         std::vector<PIDDefinitionData> definitions;
         esp_err_t                      err = OBD2::getInstance().getDefinitionSnapshot(definitions);
@@ -331,6 +329,14 @@ MiddlewareJsonResult m_pid_def_get(int filter_id)
 
 MiddlewareJsonResult m_pid_data_get(int filter_id)
 {
+    if (filter_id >= 0)
+    {
+        // One PID: the bare object, no list wrapper allocated.
+        esp_err_t item_error = ESP_OK;
+        cJSON*    item       = single_pid_data_get((uint16_t)filter_id, &item_error);
+        return item != nullptr ? json_result(item) : json_result(nullptr, status_for_error(item_error, 404));
+    }
+
     cJSON* root = cJSON_CreateObject();
     if (root == nullptr)
     {
@@ -347,16 +353,6 @@ MiddlewareJsonResult m_pid_data_get(int filter_id)
     }
     int count = 0;
 
-    if (filter_id >= 0)
-    {
-        esp_err_t item_error = ESP_OK;
-        cJSON*    item       = single_pid_data_get((uint16_t)filter_id, &item_error);
-        cJSON_Delete(data_array);
-        cJSON_Delete(root);
-        // One PID: the bare object, no list wrapper.
-        return item != nullptr ? json_result(item) : json_result(nullptr, status_for_error(item_error, 404));
-    }
-    else
     {
         std::vector<std::pair<uint16_t, PIDData_t>> data;
         esp_err_t                                   err = OBD2::getInstance().getDataSnapshot(data);
