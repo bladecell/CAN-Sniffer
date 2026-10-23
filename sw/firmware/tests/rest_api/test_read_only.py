@@ -28,6 +28,7 @@ def test_index(api, device_reachable):
 def test_system_schema(api, device_reachable):
     payload = get_json(api, "/api/v1/system")
     assert set(payload) == {
+        "api_version",
         "app_version",
         "uptime_s",
         "restart_reason",
@@ -36,7 +37,12 @@ def test_system_schema(api, device_reachable):
         "battery_voltage",
         "sd_card_detected",
         "component_status",
+        "heap_free",
+        "heap_min_free",
+        "tasks",
     }
+    for field in ("api_version", "heap_free", "heap_min_free"):
+        assert isinstance(payload[field], int) and not isinstance(payload[field], bool)
     assert isinstance(payload["app_version"], str)
     assert isinstance(payload["uptime_s"], int)
     assert isinstance(payload["restart_reason"], str)
@@ -51,6 +57,12 @@ def test_system_schema(api, device_reachable):
         assert set(component) == {"name", "status"}
         assert isinstance(component["name"], str)
         assert isinstance(component["status"], str)
+    assert isinstance(payload["tasks"], list)
+    for task in payload["tasks"]:
+        assert isinstance(task, dict)
+        assert set(task) == {"name", "stack_free"}
+        assert isinstance(task["name"], str)
+        assert isinstance(task["stack_free"], int) and not isinstance(task["stack_free"], bool)
 
 
 def test_can_bus_schema(api, device_reachable):
@@ -107,8 +119,8 @@ def test_dtc_schema(api, device_reachable):
         assert all(isinstance(code, str) for code in section["dtc"])
 
 
-def test_settings_schema(api, device_reachable):
-    payload = get_json(api, "/api/v1/settings")
+def test_settings_schema(auth_api):
+    payload = get_json(auth_api, "/api/v1/settings")
     assert isinstance(payload, dict)
     assert set(payload) == {"wifi", "can", "system"}
     for section in payload.values():
@@ -138,8 +150,8 @@ def test_sd_info_schema(sd_info):
     assert isinstance(sd_info["is_present"], bool)
 
 
-def test_sd_root_tree_schema(api, mounted_sd):
-    payload = get_json(api, "/api/v1/sd_card/tree")
+def test_sd_root_tree_schema(auth_api, mounted_sd):
+    payload = get_json(auth_api, "/api/v1/sd_card/tree")
     assert payload.get("status") == "success"
     assert payload.get("path") == "/"
     assert isinstance(payload.get("children"), list)
