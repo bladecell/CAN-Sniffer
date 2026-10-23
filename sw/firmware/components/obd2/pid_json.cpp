@@ -124,6 +124,85 @@ bool lengthFromJson(const cJSON* object, uint8_t& output, bool required)
     return true;
 }
 
+bool parseAddItem(const cJSON* item, PIDDefinitionData& out)
+{
+    if (!cJSON_IsObject(item))
+    {
+        return false;
+    }
+    const auto get      = [item](const char* key) { return cJSON_GetObjectItem(item, key); };
+    const auto present  = [](const cJSON* v) { return v != nullptr && !cJSON_IsNull(v); };
+    const auto text     = [&](const char* key, size_t maxLength, bool required, std::string& dst)
+    {
+        const cJSON* v = get(key);
+        if (!required && (v == nullptr || cJSON_IsNull(v)))
+        {
+            return true;  // absent or null keeps the default ""
+        }
+        if (!cJSON_IsString(v) || v->valuestring == nullptr)
+        {
+            return false;
+        }
+        if (strlen(v->valuestring) > maxLength)
+        {
+            return false;
+        }
+        dst = v->valuestring;
+        return true;
+    };
+
+    PIDDefinitionData d = {};
+    uint32_t          id = 0, mode = 0, pid = 0, interval = 0, priority = 0, color = 0x4EB31B;
+    d.minValue = d.maxValue = std::numeric_limits<float>::quiet_NaN();
+
+    bool ok = integerFromJson(get("pid"), 0, std::numeric_limits<uint16_t>::max(), pid) &&
+              integerFromJson(get("id"), 0, 0x7FF, id) &&
+              integerFromJson(get("mode"), 0, std::numeric_limits<uint8_t>::max(), mode) &&
+              integerFromJson(get("interval"), 0, std::numeric_limits<uint16_t>::max(), interval) &&
+              text("name", PID_NAME_MAX, true, d.name) && text("formula", PID_FORMULA_MAX, true, d.formula) &&
+              !d.formula.empty() && text("unit", PID_UNIT_MAX, false, d.unit) &&
+              text("desc", PID_DESC_MAX, false, d.description) && text("icon", PID_ICON_MAX, false, d.icon);
+    if (ok && present(get("priority")))
+    {
+        ok = integerFromJson(get("priority"), 0, std::numeric_limits<uint8_t>::max(), priority);
+    }
+    if (ok && present(get("color")))
+    {
+        ok = integerFromJson(get("color"), 0, 0xFFFFFF, color);
+    }
+    if (ok && present(get("minV")))
+    {
+        ok = floatFromJson(get("minV"), d.minValue);
+    }
+    if (ok && present(get("maxV")))
+    {
+        ok = floatFromJson(get("maxV"), d.maxValue);
+    }
+    if (ok && std::isfinite(d.minValue) && std::isfinite(d.maxValue) && d.minValue > d.maxValue)
+    {
+        ok = false;
+    }
+    uint8_t length = mode == MODE_READ_DATA_BY_IDENTIFIER ? 3 : (mode == MODE_DERIVED_DATA ? 0 : 2);
+    if (ok)
+    {
+        ok = lengthFromJson(item, length, false) &&
+             obd2frame::isValidPidSpec(static_cast<uint8_t>(mode), static_cast<uint16_t>(pid), length);
+    }
+    if (!ok)
+    {
+        return false;
+    }
+    d.id                = id;
+    d.mode              = static_cast<uint8_t>(mode);
+    d.pid               = static_cast<uint16_t>(pid);
+    d.len               = length;
+    d.priority          = static_cast<uint8_t>(priority);
+    d.updateInterval_ms = static_cast<uint16_t>(interval);
+    d.color             = color;
+    out                 = std::move(d);
+    return true;
+}
+
 ParseResult parse(const cJSON* array, std::vector<PIDDefinitionData>& out)
 {
     out.clear();

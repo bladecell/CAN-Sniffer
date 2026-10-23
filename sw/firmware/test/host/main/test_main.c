@@ -8,6 +8,7 @@ void run_obd2_diag_collector_tests(void);
 void run_obd2_model_tests(void);
 void run_pid_json_tests(void);
 void run_pid_json_numbers_tests(void);
+void run_pid_json_add_tests(void);
 void run_can_config_limits_tests(void);
 void run_op_gate_tests(void);
 void run_hook_cell_tests(void);
@@ -51,6 +52,7 @@ void app_main(void)
     run_obd2_model_tests();
     run_pid_json_tests();
     run_pid_json_numbers_tests();
+    run_pid_json_add_tests();
     run_can_config_limits_tests();
     run_op_gate_tests();
     run_hook_cell_tests();

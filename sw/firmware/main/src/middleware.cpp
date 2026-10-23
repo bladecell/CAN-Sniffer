@@ -1335,58 +1335,9 @@ MiddlewareJsonResult m_pid_def_post(cJSON* data)
         }
 
         cJSON* pid      = cJSON_GetObjectItem(item, "pid");
-        cJSON* id       = cJSON_GetObjectItem(item, "id");
-        cJSON* mode     = cJSON_GetObjectItem(item, "mode");
-        cJSON* name     = cJSON_GetObjectItem(item, "name");
-        cJSON* formula  = cJSON_GetObjectItem(item, "formula");
-        cJSON* interval = cJSON_GetObjectItem(item, "interval");
-        cJSON* unit     = cJSON_GetObjectItem(item, "unit");
-        cJSON* desc     = cJSON_GetObjectItem(item, "desc");
-        cJSON* minV     = cJSON_GetObjectItem(item, "minV");
-        cJSON* maxV     = cJSON_GetObjectItem(item, "maxV");
-        cJSON* priority = cJSON_GetObjectItem(item, "priority");
-        cJSON* color    = cJSON_GetObjectItem(item, "color");
-        cJSON* icon     = cJSON_GetObjectItem(item, "icon");
-
-        // Every number is range-checked against the schema (docs/pid-config.md) before any cast: nothing wraps.
-        // Optional fields that are absent or null keep their default; present but invalid rejects the item.
-        uint32_t   parsed_id = 0, parsed_mode = 0, parsed_pid32 = 0, parsed_interval = 0;
-        uint32_t   parsed_priority32 = 0, parsed_color = 0x4EB31B;
-        float      parsed_minV = NAN, parsed_maxV = NAN;
-        const auto optionalPresent = [](const cJSON* v) { return v != nullptr && !cJSON_IsNull(v); };
-
-        bool valid = pidjson::integerFromJson(pid, 0, std::numeric_limits<uint16_t>::max(), parsed_pid32) &&
-                     pidjson::integerFromJson(id, 0, 0x7FF, parsed_id) &&
-                     pidjson::integerFromJson(mode, 0, std::numeric_limits<uint8_t>::max(), parsed_mode) &&
-                     pidjson::integerFromJson(interval, 0, std::numeric_limits<uint16_t>::max(), parsed_interval) &&
-                     cJSON_IsString(name) && name->valuestring != nullptr && cJSON_IsString(formula) &&
-                     formula->valuestring != nullptr;
-        if (valid && optionalPresent(priority))
-        {
-            valid = pidjson::integerFromJson(priority, 0, std::numeric_limits<uint8_t>::max(), parsed_priority32);
-        }
-        if (valid && optionalPresent(color))
-        {
-            valid = pidjson::integerFromJson(color, 0, 0xFFFFFF, parsed_color);
-        }
-        if (valid && optionalPresent(minV))
-        {
-            valid = pidjson::floatFromJson(minV, parsed_minV);
-        }
-        if (valid && optionalPresent(maxV))
-        {
-            valid = pidjson::floatFromJson(maxV, parsed_maxV);
-        }
-        if (valid && std::isfinite(parsed_minV) && std::isfinite(parsed_maxV) && parsed_minV > parsed_maxV)
-        {
-            valid = false;
-        }
-        uint8_t parsed_len =
-            parsed_mode == MODE_READ_DATA_BY_IDENTIFIER ? 3 : (parsed_mode == MODE_DERIVED_DATA ? 0 : 2);
-        if (valid)
-        {
-            valid = pidjson::lengthFromJson(item, parsed_len, false);
-        }
+        // Same field rules as PUT and the SD load (pid_json.cpp); only the optional fields and the interval floor differ.
+        PIDDefinitionData def   = {};
+        const bool        valid = pidjson::parseAddItem(item, def);
         if (!valid)
         {
             cJSON* fail_obj = cJSON_CreateObject();
@@ -1406,15 +1357,11 @@ MiddlewareJsonResult m_pid_def_post(cJSON* data)
             continue;
         }
 
-        const uint16_t parsed_pid  = static_cast<uint16_t>(parsed_pid32);
-        std::string    parsed_unit = cJSON_IsString(unit) && unit->valuestring != nullptr ? unit->valuestring : "";
-        std::string    parsed_desc = cJSON_IsString(desc) && desc->valuestring != nullptr ? desc->valuestring : "";
-        std::string    parsed_icon = cJSON_IsString(icon) && icon->valuestring != nullptr ? icon->valuestring : "";
-
-        esp_err_t err = OBD2::getInstance().addPID(
-            parsed_id, static_cast<uint8_t>(parsed_mode), parsed_pid, parsed_len, std::string(name->valuestring),
-            parsed_unit, parsed_desc, std::string(formula->valuestring), parsed_minV, parsed_maxV,
-            static_cast<uint8_t>(parsed_priority32), static_cast<uint16_t>(parsed_interval), parsed_color, parsed_icon);
+        const uint16_t parsed_pid = def.pid;
+        esp_err_t      err        = OBD2::getInstance().addPID(
+            def.id, def.mode, def.pid, def.len, std::move(def.name), std::move(def.unit), std::move(def.description),
+            std::move(def.formula), def.minValue, def.maxValue, def.priority, def.updateInterval_ms, def.color,
+            std::move(def.icon));
 
         if (err == ESP_OK)
         {

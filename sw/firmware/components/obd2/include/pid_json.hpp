@@ -21,6 +21,13 @@ struct ParseResult
 // Validates a JSON array of PID definitions (schema in docs/pid-config.md) into `out`.
 ParseResult parse(const cJSON* array, std::vector<PIDDefinitionData>& out);
 
+// Validates one item of `POST /pid_def` (add) into `out`, with the same field ranges, string length caps, non-empty
+// formula and (mode, PID, length) rule as parse(). Looser only where docs/pid-config.md says so: required are id, mode,
+// pid, name, formula, interval; priority, color, length/len, unit, desc, icon, minV, maxV are optional (null = absent);
+// an interval of 1..3 is accepted here and raised by the poll queue. Keys read here are matched case-insensitively, as POST always did; length/len go through lengthFromJson and are case-sensitive. A present optional string of the wrong type is rejected; absent or null keeps "".
+// Does not check for an existing PID: the data model does that. False leaves `out` unspecified.
+bool parseAddItem(const cJSON* item, PIDDefinitionData& out);
+
 // "length" is the canonical key, "len" is accepted as an alias. Both present must agree.
 // Returns false if the value is out of range or the aliases disagree; absent is ok unless `required`.
 bool lengthFromJson(const cJSON* object, uint8_t& output, bool required);
