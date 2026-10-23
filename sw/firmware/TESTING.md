@@ -89,89 +89,20 @@ raw HTTP/device-card tests cannot provide deterministically.
 
 ## On-target OBD/CAN lifecycle and fault-path regression app
 
-The standalone ESP-IDF Unity app under `tests/on_target` links the existing
-`obd2`, `obd2_simulator`, `can_driver`, and `tinyexpr` components plus Unity and
-compiles `main/src/settings.cpp` for the persisted-CAN-queue case. It does not
-build the normal `main` app or initialize Wi-Fi, the supervisor, web server, or
-SD card. `main/Kconfig.projbuild`'s hardware-revision choice is mirrored in
-`tests/on_target/main/Kconfig.projbuild`; the test app is configured for the
-V1_1 pin map. Build it from `sw/firmware` with the repository's ESP-IDF
-installation (currently ESP-IDF v6.1, ESP32-S3 target) and an isolated build
-directory so the normal `sdkconfig` is untouched:
+`tests/on_target` is the sole canonical harness. It links production CAN, OBD,
+simulator and settings sources without modifying them. See
+[`tests/on_target/README.md`](tests/on_target/README.md) for offline checks,
+explicit command admission, durable external NVS backup/recovery, proof limits
+and the separately approved correct-slot **app-only** installation procedure.
 
-```sh
-source ~/.espressif/tools/activate_idf_v6.1.sh
-idf.py -C tests/on_target -B /tmp/opencode/obd-can-lifecycle-build build
-```
+The app starts no tests or NVS initialization automatically. `unity` enters the
+five retained CAN/OBD regressions; `lifecycle` runs P2.8's three simulator
+lifecycle/fault cases. The NVS case requires `backup` followed by an explicit
+external-backup acknowledgment. Recovery is available before any Unity menu.
+No full-flash command is appropriate: the test image uses the production
+V1_1/16MB partition layout, preserving OTA, www, coredump and NVS ownership.
 
-Build is not a hardware test. To run the tests, use a dedicated isolated bench
-with no vehicle connected, flash the resulting test app using the same project
-and build directory, and open the serial monitor:
-
-```sh
-idf.py -C tests/on_target -B /tmp/opencode/obd-can-lifecycle-build -p PORT flash monitor
-```
-
-In the monitor, press Enter for the test list and `*` to run every registered
-case. Record the Unity summary and the `lifecycle_test` heap line as evidence.
-
-**Warning:** the app initializes the actual CAN controller and OBD service;
-diagnostic behavior can transmit CAN frames. Never run it connected to a vehicle.
-The board defaults copied from `main/include/utilities.h` are CAN RX GPIO 4,
-TX GPIO 5, loopback GPIO 6, and transceiver RS GPIO 7. Adapt only for an isolated
-bench wired to those pins and a CAN transceiver. No flash/device run is implied
-by a successful compile.
-
-The suite exercises the actual CAN callback fence and self-unregister rejection,
-OBD callback-worker shutdown/admission fencing, reset of discovery bookkeeping
-across teardown/reinit, and each of OBD's three
-worker-task creation failure positions followed by retry. Friend accessors are
-defined only in this test app and take production synchronization locks when
-reading or injecting state. The linker wrapper targets the actual
-`xTaskCreatePinnedToCore` symbol and is enabled only around synchronous `OBD2::init`
-in the initiating test task. A standalone poll-wait case seeds a future raw poll
-request through the queue's synchronized API; pending queue contents are not
-seeded as part of the broader reset-state test. The reset-state test does not seed
-readiness tokens or connection events because live workers can consume them
-before teardown; those token/event-clearing cases are not claimed. Receive-owned
-multiframe cleanup is not claimed by assigning its private fields. Diagnostic-wait cancellation and
-shutdown rejection originating from a worker/self callback are also not yet
-covered. The parent validation owner must separately review runtime output on a
-bench; this app's compilation alone establishes build evidence, not hardware
-execution or race-free runtime behavior.
-
-Unity's ESP-IDF runner calls `setUp()` and the test body inside one
-`TEST_PROTECT()` region, then invokes `tearDown()` in a separate protected region
-even when an assertion longjmps (verified in the local `components/unity/unity_runner.c`).
-The suite-owned fixture uses `tearDown()` to disable linker injection first,
-release callback/subscriber gates, join every helper, fence CAN callbacks, and
-deinitialize and verify OBD before deleting fixture semaphores. If a bounded join
-or quiescence proof fails, it restarts the test app rather than freeing state
-that may still be live or continuing to the next test.
-
-The far-future poll-shutdown case inserts a raw request due 10 seconds later,
-checks the poll task is scheduler-blocked with that request still pending and
-the bus/configuration mutexes available, then requires deinit to join the poll
-worker before the deadline without a test-side queue enqueue. This is a
-scheduler-state handshake based on the production poll task's current control
-flow; existing test-only access cannot directly observe which kernel wait object
-caused `eBlocked` or receive an explicit acknowledgement from inside
-`ulTaskNotifyTake`. A dedicated in-worker handshake would require runtime test
-instrumentation, which is outside this change's write scope.
-
-P2.8 adds four CAN/simulator cases against the production code paths. (1) Twenty
-init/deinit cycles with the real simulator hooks require `hasResources()` to be
-false, both queues, the TX ring and the TWAI node to be gone, the TX, health and
-simulator task handles to be null, and free internal heap not to fall across the
-cycles. (2) The linker wrapper is enabled for the first `xTaskCreatePinnedToCore`
-call in `bringUp()`, so `start_sim_task` really fails; `init()` must return
-`ESP_ERR_NO_MEM` with every pre-simulator allocation released, and a retry must
-succeed. (3) The test suspends the simulator task, so `stop_sim_task` really
-times out; `deinit()` must return `ESP_ERR_TIMEOUT` with the queues, node, and
-tasks still owned, a concurrent `init()` must return `ESP_ERR_INVALID_STATE`,
-and resuming the task plus a second `deinit()` must finish cleanup and allow a
-fresh cycle. (4) The test backs up the persisted `c_rx_q`/`c_tx_q` values, seeds
-0, 0, 257, 65, and 4096, and checks that `Settings::getCanConfig()` returns
-20/20 from the production reader before `CanDriver::init()` comes up. The backup
-is restored in `tearDown()` even when an assertion longjmps; the test app never
-erases or factory-resets NVS. The seeded keys are the only writes.
+All target cases remain hardware-unverified until separately authorized bench
+execution. A build/host-test pass does not establish cleanup, heap stability,
+NVS behavior, race freedom or normal-image boot-loop avoidance. No vehicle may
+be connected: legacy Unity tests initialize real CAN/OBD and can transmit.
