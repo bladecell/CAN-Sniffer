@@ -87,17 +87,20 @@ contention, physical card removal during an operation, or injected file-close
 failures. Those require timing, hardware, or fault-injection control that the
 raw HTTP/device-card tests cannot provide deterministically.
 
-## On-target OBD/CAN lifecycle regression app
+## On-target OBD/CAN lifecycle and fault-path regression app
 
-The standalone ESP-IDF Unity app under `tests/on_target` links only the existing
-`obd2`, `can_driver`, and `tinyexpr` components plus Unity. It does not build the
-normal `main` app or initialize Wi-Fi, the supervisor, web server, or SD card.
-Build it from `sw/firmware` with the repository's ESP-IDF installation
-(currently ESP-IDF v6.1, ESP32-S3 target) and an isolated build directory so
-the normal `sdkconfig` is untouched:
+The standalone ESP-IDF Unity app under `tests/on_target` links the existing
+`obd2`, `obd2_simulator`, `can_driver`, and `tinyexpr` components plus Unity and
+compiles `main/src/settings.cpp` for the persisted-CAN-queue case. It does not
+build the normal `main` app or initialize Wi-Fi, the supervisor, web server, or
+SD card. `main/Kconfig.projbuild`'s hardware-revision choice is mirrored in
+`tests/on_target/main/Kconfig.projbuild`; the test app is configured for the
+V1_1 pin map. Build it from `sw/firmware` with the repository's ESP-IDF
+installation (currently ESP-IDF v6.1, ESP32-S3 target) and an isolated build
+directory so the normal `sdkconfig` is untouched:
 
 ```sh
-source /home/kuba/.esp/esp-idf/export.sh
+source ~/.espressif/tools/activate_idf_v6.1.sh
 idf.py -C tests/on_target -B /tmp/opencode/obd-can-lifecycle-build build
 ```
 
@@ -152,3 +155,20 @@ flow; existing test-only access cannot directly observe which kernel wait object
 caused `eBlocked` or receive an explicit acknowledgement from inside
 `ulTaskNotifyTake`. A dedicated in-worker handshake would require runtime test
 instrumentation, which is outside this change's write scope.
+
+P2.8 adds four CAN/simulator cases against the production code paths. (1) Twenty
+init/deinit cycles with the real simulator hooks require `hasResources()` to be
+false, both queues, the TX ring and the TWAI node to be gone, the TX, health and
+simulator task handles to be null, and free internal heap not to fall across the
+cycles. (2) The linker wrapper is enabled for the first `xTaskCreatePinnedToCore`
+call in `bringUp()`, so `start_sim_task` really fails; `init()` must return
+`ESP_ERR_NO_MEM` with every pre-simulator allocation released, and a retry must
+succeed. (3) The test suspends the simulator task, so `stop_sim_task` really
+times out; `deinit()` must return `ESP_ERR_TIMEOUT` with the queues, node, and
+tasks still owned, a concurrent `init()` must return `ESP_ERR_INVALID_STATE`,
+and resuming the task plus a second `deinit()` must finish cleanup and allow a
+fresh cycle. (4) The test backs up the persisted `c_rx_q`/`c_tx_q` values, seeds
+0, 0, 257, 65, and 4096, and checks that `Settings::getCanConfig()` returns
+20/20 from the production reader before `CanDriver::init()` comes up. The backup
+is restored in `tearDown()` even when an assertion longjmps; the test app never
+erases or factory-resets NVS. The seeded keys are the only writes.

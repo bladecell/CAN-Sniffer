@@ -1,0 +1,18 @@
+menu "CAN Sniffer test app"
+
+    choice SNIFFER_HW_REV
+        prompt "Hardware revision"
+        default SNIFFER_HW_REV_V1_2
+        help
+            Selects the board pin map in main/include/utilities.h. Mirrors main/Kconfig.projbuild; the standalone
+            lifecycle app compiles main/src/settings.cpp for the persisted-CAN-queue case.
+
+        config SNIFFER_HW_REV_V1_1
+            bool "HW v1.1"
+        config SNIFFER_HW_REV_V1_2
+            bool "HW v1.2"
+        config SNIFFER_HW_REV_V2
+            bool "HW v2 (LTE modem, GNSS, ignition sense; pin map not defined yet)"
+    endchoice
+
+endmenu
