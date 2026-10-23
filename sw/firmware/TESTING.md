@@ -100,6 +100,31 @@ CAN_SNIFFER_PIN=<pin> CAN_SNIFFER_ENABLE_PID_DEF_WRITE=1 \
   pytest --run-pid-def-write tests/rest_api/test_pid_def_post.py
 ```
 
+`tests/rest_api/test_auth.py` covers the P2.10 cases that need a real PIN change: `PUT /auth/pin`
+round trip (new PIN logs in, old gives 401 `BAD_PIN` with `Retry-After`), wrong old PIN (401, counted as a
+failed login), bad `new_pin` format (422), no token (401), the 4-session cap (a fifth login replaces the
+oldest; the replaced token answers 401), and a 30 minute idle expiry. The mutating tests are opt-in and
+need `CAN_SNIFFER_PIN` (the only source of the PIN; the temporary PIN is generated in-process; no PIN is
+printed). They refuse to change anything unless the current PIN first logs in, and restore the original PIN
+in a `finally`, waiting out any login backoff. Run them alone: `PUT /auth/pin` ends every session, and a
+fifth login can evict the shared `auth_token`. If a restore ever fails the test says so; recovery is a 10 s
+BOOT hold on the device (this clears the PIN, so the device must be claimed again):
+
+```sh
+CAN_SNIFFER_PIN=<pin> CAN_SNIFFER_ENABLE_AUTH_MUTATING=1 \
+  pytest --run-auth-mutating tests/rest_api/test_auth.py
+```
+
+The idle test takes about 31 minutes and is a further opt-in (it does not change the PIN). The 12 h
+absolute expiry is not tested: the limit is fixed in firmware and a 12 h run is impractical.
+
+```sh
+CAN_SNIFFER_PIN=<pin> CAN_SNIFFER_SLOW_AUTH=1 pytest -m auth_slow tests/rest_api/test_auth.py
+```
+
+The scenario logic (`auth_scenarios.py`) is covered offline against an in-memory fake device by
+`test_auth_scenarios_offline.py`.
+
 GET-only path-security checks run by default and continue to require HTTP 400.
 They will fail against older firmware, which is useful evidence that the target
 must be reflashed. Potentially destructive POST/DELETE security probes include

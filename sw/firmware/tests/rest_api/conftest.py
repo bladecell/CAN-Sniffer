@@ -38,6 +38,19 @@ def pytest_addoption(parser):
         default=False,
         help="allow the opt-in PID definition replacement/clear roundtrip",
     )
+    parser.addoption(
+        "--run-auth-mutating",
+        action="store_true",
+        default=False,
+        help="allow tests that change the device PIN or fill its session slots (CAN_SNIFFER_ENABLE_AUTH_MUTATING=1 and CAN_SNIFFER_PIN also required)",
+    )
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers", "auth_mutating: temporarily changes the PIN / fills session slots (needs --run-auth-mutating)"
+    )
+    config.addinivalue_line("markers", "auth_slow: 31 minute idle-expiry test (needs CAN_SNIFFER_SLOW_AUTH=1)")
 
 
 def pytest_collection_modifyitems(config, items):
@@ -48,7 +61,12 @@ def pytest_collection_modifyitems(config, items):
     skip_pid_def_write = pytest.mark.skip(
         reason="pass --run-pid-def-write and set CAN_SNIFFER_ENABLE_PID_DEF_WRITE=1"
     )
+    skip_auth_mutating = pytest.mark.skip(
+        reason="pass --run-auth-mutating and set CAN_SNIFFER_ENABLE_AUTH_MUTATING=1"
+    )
     for item in items:
+        if "auth_mutating" in item.keywords and not config.getoption("--run-auth-mutating"):
+            item.add_marker(skip_auth_mutating)
         if "sd_write" in item.keywords and not config.getoption("--run-sd-write"):
             item.add_marker(skip_write)
         if "sd_mutating_security" in item.keywords and not config.getoption("--run-mutating-sd-security"):
@@ -376,3 +394,30 @@ def auth_api(base_url, request_limiter, auth_token):
     client = ApiClient(base_url, request_limiter, token=auth_token)
     yield client
     client.close()
+
+
+@pytest.fixture
+def auth_call(base_url, request_limiter, device_reachable):
+    """call(method, path, body=None, token=None) -> (status, headers, JSON); never raises on 429."""
+    session = requests.Session()
+    session.trust_env = False
+
+    def call(method, path, body=None, token=None):
+        request_limiter.wait()
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        response = session.request(
+            method,
+            urljoin(base_url + "/", path.lstrip("/")),
+            json=body,
+            headers=headers,
+            timeout=REQUEST_TIMEOUT,
+            allow_redirects=False,
+        )
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = None
+        return response.status_code, dict(response.headers), payload
+
+    yield call
+    session.close()
