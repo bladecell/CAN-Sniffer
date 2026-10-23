@@ -203,3 +203,6 @@ Decided by the user. `PATCH /api/v1/obd2` only toggles `auto_poll` (one key, `ob
 
 ## 2026-10-22: SD file upload/download stays in webserver.cpp (B21)
 Decided by the user. The SD file routes (`/api/v1/sd_card/file/*` GET download, PUT upload) keep calling `SDCard` directly from `webserver.cpp` instead of going through `middleware.cpp`. They stream large bodies in chunks with receive deadlines (`http_body_policy.hpp`), which the middleware's request/response handlers do not model. Moving them would touch the B23/B25 and auth paths and need hardware re-testing for no functional gain. Listed under "Layering discrepancies" in `docs/architecture.md`. The OBD2 `subscribe` call for the PID stream stays as a separate documented exception.
+
+## 2026-10-23: POST /req/dtc stays ungated
+Decided by the user. `POST /api/v1/req/dtc` (and `/req/vin`) keep `gated = 0` in `api_routes.hpp`, consistent with `/req/static_pid`: they send standard OBD-II reads only. No route, auth rule or contract changes. Accepted risk: anyone on the network can hold the single DTC slot (other callers get 503 `BUSY`, `Retry-After: 5`) and add standard read traffic to the bus. `clear_dtc` stays gated.
