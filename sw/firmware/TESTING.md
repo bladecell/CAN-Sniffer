@@ -112,6 +112,9 @@ and build directory, and open the serial monitor:
 idf.py -C tests/on_target -B /tmp/opencode/obd-can-lifecycle-build -p PORT flash monitor
 ```
 
+In the monitor, press Enter for the test list and `*` to run every registered
+case. Record the Unity summary and the `lifecycle_test` heap line as evidence.
+
 **Warning:** the app initializes the actual CAN controller and OBD service;
 diagnostic behavior can transmit CAN frames. Never run it connected to a vehicle.
 The board defaults copied from `main/include/utilities.h` are CAN RX GPIO 4,
