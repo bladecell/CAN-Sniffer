@@ -89,6 +89,17 @@ CAN_SNIFFER_ENABLE_PID_DEF_WRITE=1 CAN_SNIFFER_ENABLE_SD_WRITE=1 \
   pytest --run-pid-def-write --run-sd-write -m pid_def_write
 ```
 
+`tests/rest_api/test_pid_def_post.py` covers `POST /pid_def` per-item validation
+(string caps, non-string fields, empty formula, duplicate pid in a batch, exact-cap
+acceptance). It also needs `CAN_SNIFFER_PIN` (gated route). It never PUTs the set: it
+adds only derived PIDs (mode 0x45, no CAN request) at free numbers from 61000 up, and
+deletes them in teardown, failing if the PID count differs afterwards:
+
+```sh
+CAN_SNIFFER_PIN=<pin> CAN_SNIFFER_ENABLE_PID_DEF_WRITE=1 \
+  pytest --run-pid-def-write tests/rest_api/test_pid_def_post.py
+```
+
 GET-only path-security checks run by default and continue to require HTTP 400.
 They will fail against older firmware, which is useful evidence that the target
 must be reflashed. Potentially destructive POST/DELETE security probes include
