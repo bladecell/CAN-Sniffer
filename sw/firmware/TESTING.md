@@ -13,6 +13,23 @@ The target defaults to `http://can-sniffer.local`. Override it when needed:
 CAN_SNIFFER_URL=http://192.168.4.1 pytest -m "integration and not sd_write and not sd_mutating_security and not pid_def_write"
 ```
 
+Gated routes need a login. Export the 6-digit PIN in the environment only; it is
+never written to a file, log or test output:
+
+```sh
+read -rs CAN_SNIFFER_PIN && export CAN_SNIFFER_PIN
+pytest -m integration
+```
+
+Tests that take the `auth_api` fixture log in once per run (`POST /api/v1/auth/login`),
+send `Authorization: Bearer <token>`, and log out at the end so the device's 4 session
+slots are not used up. Without `CAN_SNIFFER_PIN` those tests skip. They also skip when
+the device is unclaimed, auth is unavailable, or a 429 `Retry-After` exceeds 60 s
+(shorter waits are honored, up to 3 attempts). A wrong PIN fails the run and is not
+retried, since each wrong PIN lengthens the global login backoff. The `api` fixture stays
+unauthenticated, so tests that assert 401/403 without a token are unchanged. The login
+helper is covered offline by `tests/rest_api/test_auth_session.py`.
+
 Tests skip clearly when the device or SD card is unavailable. Every request has
 bounded connect/read timeouts, ignores proxy environment variables, does not
 follow redirects, and is paced at no more than 20 requests/second. HTTP 429 is

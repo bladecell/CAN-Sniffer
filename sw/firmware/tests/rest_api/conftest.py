@@ -10,6 +10,8 @@ from urllib.parse import urljoin, urlsplit
 import pytest
 import requests
 
+from auth_session import AuthSkip, LoginError, login, logout, pin_from_env
+
 
 CONNECT_TIMEOUT = 2.0
 READ_TIMEOUT = 5.0
@@ -71,7 +73,8 @@ class RateLimiter:
 
 
 class ApiClient:
-    def __init__(self, base_url: str, limiter: RateLimiter):
+    def __init__(self, base_url: str, limiter: RateLimiter, token: str | None = None):
+        self.token = token
         self.base_url = base_url.rstrip("/") + "/"
         self.limiter = limiter
         self.session = requests.Session()
@@ -85,6 +88,8 @@ class ApiClient:
             if not any(k.lower() == "content-type" for k in headers):
                 headers["Content-Type"] = "application/octet-stream"
             kwargs["headers"] = headers
+        if self.token:
+            kwargs["headers"] = {**(kwargs.get("headers") or {}), "Authorization": f"Bearer {self.token}"}
         self.limiter.wait()
         response = self.session.request(method, urljoin(self.base_url, path.lstrip("/")), **kwargs)
         if response.status_code == 429:
@@ -318,3 +323,56 @@ def mounted_sd(sd_info):
     if not sd_info.get("is_mounted"):
         pytest.skip("SD-card-dependent test skipped: SD card is not mounted")
     return sd_info
+
+
+@pytest.fixture(scope="session")
+def auth_token(base_url, request_limiter, device_reachable):
+    """One login per run; logs out at the end. Skips when CAN_SNIFFER_PIN is unset."""
+    try:
+        pin = pin_from_env(os.environ)
+    except LoginError as exc:
+        pytest.fail(str(exc), pytrace=False)
+    if pin is None:
+        pytest.skip("set CAN_SNIFFER_PIN to run gated-route tests")
+
+    session = requests.Session()
+    session.trust_env = False
+
+    def post(path, body=None, token=None):
+        request_limiter.wait()
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        response = session.post(
+            urljoin(base_url + "/", path.lstrip("/")),
+            json=body,
+            headers=headers,
+            timeout=REQUEST_TIMEOUT,
+            allow_redirects=False,
+        )
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = None
+        return response.status_code, dict(response.headers), payload
+
+    try:
+        token = login(post, pin)
+    except AuthSkip as exc:
+        session.close()
+        pytest.skip(str(exc))
+    except LoginError as exc:
+        session.close()
+        pytest.fail(str(exc), pytrace=False)
+    except requests.RequestException as exc:
+        session.close()
+        pytest.skip(f"login request failed: {type(exc).__name__}")
+    yield token
+    logout(post, token)
+    session.close()
+
+
+@pytest.fixture(scope="session")
+def auth_api(base_url, request_limiter, auth_token):
+    """ApiClient that sends the Bearer token. Use `api` for unauthenticated checks."""
+    client = ApiClient(base_url, request_limiter, token=auth_token)
+    yield client
+    client.close()
