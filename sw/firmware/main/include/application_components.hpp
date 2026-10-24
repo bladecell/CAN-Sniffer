@@ -17,12 +17,14 @@ esp_err_t setupObd(void*);
 esp_err_t setupBattery(void*);
 esp_err_t setupSdCard(void*);
 esp_err_t setupWebserver(void*);
+esp_err_t setupRecorder(void*);
 esp_err_t stopSdCard(void*);
 esp_err_t stopBattery(void*);
 esp_err_t stopCan(void*);
 esp_err_t stopObd(void*);
 esp_err_t stopWifi(void*);
 esp_err_t stopWebserver(void*);
+esp_err_t stopRecorder(void*);
 
 // Sleep-platform bridge: the handle remains private to application wiring.
 esp_err_t releasePowerLock();

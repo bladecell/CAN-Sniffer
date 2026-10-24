@@ -72,3 +72,15 @@ describe("parseWsFrame", () => {
     expect(parseWsFrame(new Uint8Array([0x55, 1, 2]).buffer)).toBeNull();
   });
 });
+
+describe("recorder state frame", () => {
+  test("parses the fixed 16 byte 0x04 frame and rejects other sizes", () => {
+    const bytes = new Uint8Array([0x04, 14, 1, 0x04, 0x03, 0x02, 0x01, 0x0d, 0x0c, 0x0b, 0x0a, 0x44, 0x33, 0x22, 0x11, 1]);
+    expect(parseWsFrame(bytes.buffer)).toEqual({ kind: "recorder", state: "recording", trip: 0x01020304, rows: 0x0a0b0c0d, dropped: 0x11223344, hasError: true });
+    expect(parseWsFrame(bytes.slice(0, 15).buffer)).toBeNull();
+    const badState = bytes.slice(); badState[2] = 9;
+    expect(parseWsFrame(badState.buffer)).toBeNull();
+    const badLen = bytes.slice(); badLen[1] = 13;
+    expect(parseWsFrame(badLen.buffer)).toBeNull();
+  });
+});

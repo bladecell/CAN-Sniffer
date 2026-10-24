@@ -41,6 +41,7 @@
 #include "middleware.hpp"
 #include "obd2_patch.hpp"
 #include "obd2.hpp"
+#include "recorder_http.hpp"
 #include "sd_card.hpp"
 #include "wifi.hpp"
 #include "wifi_scan_http.hpp"
@@ -773,6 +774,60 @@ esp_err_t g_can_bus_index_handler(httpd_req_t* req, void* arg)
 esp_err_t g_obdii_index_handler(httpd_req_t* req, void* arg)
 {
     return send_json_response(req, m_obdii_get());
+}
+
+void ws_send_recorder_state();
+
+esp_err_t g_recorder_handler(httpd_req_t* req, void* arg)
+{
+    return send_json_response(req, m_recorder_get());
+}
+
+// Body is optional: none (or {}) records the PIDs OBD2 polls. Runs on an async worker, so the 5 s stop wait never
+// blocks the HTTP task.
+esp_err_t p_recorder_start_handler(httpd_req_t* req, void* arg)
+{
+    recorder_core::PidSel pids[recorder_core::kMaxPids];
+    size_t                n = 0;
+    if (req->content_len > 0)
+    {
+        cJSON* root = get_validated_json_payload(req, 2048);
+        if (root == nullptr)
+        {
+            return ESP_OK;
+        }
+        const bool ok = recorder_http::parseStart(root, pids, n);
+        cJSON_Delete(root);
+        if (!ok)
+        {
+            return AsyncWebServer::sendError(req, 422, "Body must be {\"pids\":[{\"pid\":n,\"min_interval_ms\":n}]} (max 32)");
+        }
+    }
+    MiddlewareJsonResult result = m_recorder_start(pids, n);
+    const bool           started = result.http_status == 200;
+    const esp_err_t      sent    = send_json_response(req, result);
+    if (started)
+    {
+        ws_send_recorder_state();
+    }
+    return sent;
+}
+
+esp_err_t p_recorder_stop_handler(httpd_req_t* req, void* arg)
+{
+    MiddlewareJsonResult result  = m_recorder_stop();
+    const bool           stopped = result.http_status == 200;
+    const esp_err_t      sent    = send_json_response(req, result);
+    if (stopped)
+    {
+        ws_send_recorder_state();
+    }
+    return sent;
+}
+
+esp_err_t g_recorder_trips_handler(httpd_req_t* req, void* arg)
+{
+    return send_json_response(req, m_recorder_trips_get());
 }
 
 esp_err_t g_vin_index_handler(httpd_req_t* req, void* arg)
@@ -1747,6 +1802,21 @@ void ws_send_can_status()
     }
 }
 
+void ws_send_recorder_state()
+{
+    uint8_t   packet[RECORDER_STATE_PACKET_SIZE];
+    if (recorder_state_packet_get(packet) == ESP_OK)
+    {
+        httpd_ws_frame_t ws_frame = {.final      = true,
+                                     .fragmented = false,
+                                     .type       = HTTPD_WS_TYPE_BINARY,
+                                     .payload    = packet,
+                                     .len        = RECORDER_STATE_PACKET_SIZE,
+                                     .left_len   = 0};
+        AsyncWebServer::getInstance().wsBroadcast(&ws_frame);
+    }
+}
+
 // Any socket that closes (close frame or not) may have been the last stream client. Runs in the httpd task.
 static void ws_socket_closed(int fd)
 {
@@ -1774,6 +1844,7 @@ static void WSDataStreamTask(void* pvParameters)
             if (wsStreamingEnabled.load())
             {
                 ws_send_can_status();
+                ws_send_recorder_state();
             }
             else
             {

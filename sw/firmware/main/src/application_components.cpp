@@ -10,6 +10,7 @@
 #include "led_status.hpp"
 #include "obd2.hpp"
 #include "obd2_simulator.hpp"
+#include "recorder.hpp"
 #include "sd_card.hpp"
 #include "settings.hpp"
 #include "settings_merge.hpp"
@@ -57,6 +58,16 @@ esp_err_t stopWifi(void*)
 esp_err_t stopWebserver(void*)
 {
     return stop_web_server();
+}
+
+esp_err_t stopRecorder(void*)
+{
+    return Recorder::getInstance().deinit();
+}
+
+esp_err_t setupRecorder(void*)
+{
+    return Recorder::getInstance().init();
 }
 
 esp_err_t setupPowerManagement(void*)

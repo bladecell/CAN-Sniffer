@@ -4,6 +4,7 @@
 
 #include "cJSON.h"
 #include "esp_err.h"
+#include "recorder_core.hpp"
 #include "tree_limits.hpp"
 
 // Forward declarations to minimize includes
@@ -13,9 +14,11 @@ struct PIDData_t;
 #define MSG_TYPE_LOG 0x01
 #define MSG_TYPE_PID 0x02
 #define MSG_TYPE_CAN_STATUS 0x03
+#define MSG_TYPE_RECORDER 0x04  // = recorder_http::kMsgTypeRecorder
 
 #define PID_STREAM_PACKET_SIZE 20
 #define CAN_STATUS_PACKET_SIZE 12
+#define RECORDER_STATE_PACKET_SIZE 16
 
 // The HTTP outcome is explicit and is never inferred from the JSON body.
 struct MiddlewareJsonResult
@@ -64,6 +67,14 @@ cJSON* m_static_pid_request();
 MiddlewareJsonResult m_pid_def_set(cJSON* payload);
 MiddlewareJsonResult m_pid_def_save(cJSON* payload);
 MiddlewareJsonResult m_pid_def_load(cJSON* payload);
+// Recorder (R4). Start: 200 state, 409 already recording/stopping, 422 bad PID list, 503 no card or recorder not running.
+// Stop is idempotent. `n` = 0 starts the PIDs OBD2 currently polls. Stop blocks up to 5 s: call it from a REST worker only.
+MiddlewareJsonResult m_recorder_get();
+MiddlewareJsonResult m_recorder_start(const recorder_core::PidSel* pids, size_t n);
+MiddlewareJsonResult m_recorder_stop();
+MiddlewareJsonResult m_recorder_trips_get();
+esp_err_t recorder_state_packet_get(uint8_t* out_packet);
+
 MiddlewareJsonResult m_settings_get();
 MiddlewareJsonResult m_settings_set(cJSON* payload);
 

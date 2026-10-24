@@ -30,6 +30,8 @@
 #include "freertos/task.h"
 #include "http_error.hpp"
 #include "obd2.hpp"
+#include "recorder.hpp"
+#include "recorder_http.hpp"
 #include "pid_json.hpp"
 #include "sd_card.hpp"
 #include "settings.hpp"
@@ -1982,4 +1984,132 @@ MiddlewareJsonResult m_settings_set(cJSON* payload)
         cJSON_Delete(errors);
     }
     return json_result(root, status);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Recorder (R4)
+// ---------------------------------------------------------------------------------------------------------------------
+static cJSON* recorder_status_json(bool success)
+{
+    const Recorder::Status st = Recorder::getInstance().getStatus();
+    cJSON*                 root = cJSON_CreateObject();
+    if (root == nullptr)
+    {
+        return nullptr;
+    }
+    bool ok = !success || cJSON_AddStringToObject(root, "status", "success") != nullptr;
+    ok = ok && cJSON_AddStringToObject(root, "state", recorder_core::stateName(st.state)) != nullptr;
+    ok = ok && (st.lastError == ESP_OK ? cJSON_AddNullToObject(root, "last_error")
+                                       : cJSON_AddStringToObject(root, "last_error", esp_err_to_name(st.lastError))) != nullptr;
+    ok = ok && cJSON_AddNumberToObject(root, "trip", st.trip) != nullptr &&
+         cJSON_AddNumberToObject(root, "rows", st.rows) != nullptr &&
+         cJSON_AddNumberToObject(root, "dropped", st.dropped) != nullptr &&
+         cJSON_AddNumberToObject(root, "file_bytes", st.fileBytes) != nullptr;
+    if (!ok)
+    {
+        cJSON_Delete(root);
+        return nullptr;
+    }
+    return root;
+}
+
+MiddlewareJsonResult m_recorder_get()
+{
+    cJSON* root = recorder_status_json(false);
+    return json_result(root, root != nullptr ? 200 : 500);
+}
+
+MiddlewareJsonResult m_recorder_start(const recorder_core::PidSel* pids, size_t n)
+{
+    Recorder::Config config;
+    if (n > recorder_core::kMaxPids || (n > 0 && pids == nullptr))
+    {
+        return json_result(json_error_body("Invalid PID list"), 422);
+    }
+    for (size_t i = 0; i < n; ++i)
+    {
+        config.pids[i] = pids[i];
+    }
+    config.pidCount = n;
+
+    const esp_err_t err = Recorder::getInstance().start(config);
+    if (err == ESP_OK)
+    {
+        cJSON* root = recorder_status_json(true);
+        return json_result(root, root != nullptr ? 200 : 500);
+    }
+    const int status = recorder_http::startHttpStatus(err);
+    const char* reason = err == ESP_ERR_INVALID_ARG    ? "Invalid PID list"
+                         : err == ESP_ERR_NOT_FINISHED ? "Recorder is already running; stop it first"
+                         : err == ESP_ERR_NOT_FOUND    ? "SD card not mounted"
+                         : err == ESP_ERR_TIMEOUT      ? "Recorder busy"
+                         : err == ESP_FAIL             ? "SD card could not be written"
+                         : status == 503               ? "Recorder is not running"
+                                                       : "Recorder start failed";
+    return json_result(json_error_body(reason), status);
+}
+
+MiddlewareJsonResult m_recorder_stop()
+{
+    const esp_err_t err = Recorder::getInstance().stop();
+    if (err == ESP_ERR_TIMEOUT)
+    {
+        return json_result(json_error_body("Recorder is still stopping"), 503);
+    }
+    if (err != ESP_OK)
+    {
+        return json_result(json_error_body(esp_err_to_name(err), esp_err_to_name(err)), status_for_error(err));
+    }
+    cJSON* root = recorder_status_json(true);
+    return json_result(root, root != nullptr ? 200 : 500);
+}
+
+MiddlewareJsonResult m_recorder_trips_get()
+{
+    Recorder::TripInfo trips[recorder_core::kMaxListedTrips];
+    size_t             count     = 0;
+    bool               truncated = false;
+    const esp_err_t    err       = Recorder::getInstance().listTrips(trips, recorder_core::kMaxListedTrips, count, truncated);
+    if (err != ESP_OK)
+    {
+        return sd_operation_error(err);
+    }
+    cJSON* root = cJSON_CreateObject();
+    cJSON* list = root != nullptr ? cJSON_AddArrayToObject(root, "trips") : nullptr;
+    bool   ok   = list != nullptr;
+    for (size_t i = 0; ok && i < count; ++i)
+    {
+        char name[24];
+        cJSON* item = cJSON_CreateObject();
+        if (item == nullptr || !recorder_core::formatTripName(name, sizeof(name), trips[i].index, false))
+        {
+            cJSON_Delete(item);
+            ok = false;
+            break;
+        }
+        cJSON_AddItemToArray(list, item);
+        ok = cJSON_AddNumberToObject(item, "index", trips[i].index) != nullptr &&
+             cJSON_AddStringToObject(item, "name", name) != nullptr &&
+             cJSON_AddNumberToObject(item, "size", trips[i].bytes) != nullptr &&
+             cJSON_AddBoolToObject(item, "sidecar", trips[i].sidecar) != nullptr;
+    }
+    ok = ok && cJSON_AddNumberToObject(root, "count", static_cast<double>(count)) != nullptr &&
+         cJSON_AddBoolToObject(root, "truncated", truncated) != nullptr;
+    if (!ok)
+    {
+        cJSON_Delete(root);
+        return json_result(nullptr, 500);
+    }
+    return json_result(root, 200);
+}
+
+esp_err_t recorder_state_packet_get(uint8_t* out_packet)
+{
+    if (out_packet == nullptr)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const Recorder::Status st = Recorder::getInstance().getStatus();
+    recorder_http::encodeStateFrame(out_packet, {st.state, st.trip, st.rows, st.dropped, st.lastError != ESP_OK});
+    return ESP_OK;
 }

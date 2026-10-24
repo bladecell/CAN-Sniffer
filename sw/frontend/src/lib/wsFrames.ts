@@ -1,11 +1,16 @@
+import type { RecorderState } from "./types";
+
 // Binary WebSocket frames, little-endian, exact sizes per docs/api.md.
 export type WsFrame =
   | { kind: "pid"; pid: number; value: number; lastUpdated: number; rate: number; isSupported: boolean; isValid: boolean }
   | { kind: "canStatus"; state: number; utilization: number; batteryVoltage: number; busConnected: boolean }
+  | { kind: "recorder"; state: RecorderState; trip: number; rows: number; dropped: number; hasError: boolean }
   | { kind: "pong" };
 
 export const PID_FRAME_BYTES = 20;
 export const CAN_STATUS_FRAME_BYTES = 12;
+export const RECORDER_FRAME_BYTES = 16;
+const RECORDER_STATES: RecorderState[] = ["idle", "recording", "stopping", "error"];
 
 /** Returns null for anything that is not an exactly sized, known frame. */
 export function parseWsFrame(data: unknown): WsFrame | null {
@@ -34,6 +39,11 @@ export function parseWsFrame(data: unknown): WsFrame | null {
       batteryVoltage: view.getFloat32(7, true),
       busConnected: view.getUint8(11) !== 0,
     };
+  }
+  if (type === 0x04) {
+    const state = RECORDER_STATES[view.getUint8(2)];
+    if (view.byteLength !== RECORDER_FRAME_BYTES || view.getUint8(1) !== RECORDER_FRAME_BYTES - 2 || state === undefined) return null;
+    return { kind: "recorder", state, trip: view.getUint32(3, true), rows: view.getUint32(7, true), dropped: view.getUint32(11, true), hasError: view.getUint8(15) !== 0 };
   }
   if (type === 0xa3) return view.byteLength === 1 ? { kind: "pong" } : null;
   return null;

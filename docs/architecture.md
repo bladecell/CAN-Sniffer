@@ -21,12 +21,14 @@ All paths are relative to `sw/firmware/`. Dependencies are the `REQUIRES` / `PRI
 | Async web server | `components/async_web_server/` | Wraps `esp_http_server`: request queue, worker tasks, rate limit, WebSocket broadcast | esp_http_server, esp_timer |
 | Web server (routes) | `main/src/webserver.cpp`, `main/src/middleware.cpp` | REST routes, WebSocket handler. `webserver.cpp` does HTTP parsing and calls `m_*` functions in `middleware.cpp`, which return cJSON | OBD2, SD card, Settings, Supervisor, CAN driver |
 | Frontend | `../frontend/` (Svelte, built with bun) | UI, served as one gzipped file from the `www` LittleFS partition | REST and WebSocket only |
-| Recorder (planned) | – | Trip detection, CSV logging, 0–100 timing. Not in the code | OBD2, SD |
+| Recorder | `components/recorder/` | Records selected PID updates to `/logs/trips/trip_NNNNNN.csv` plus a JSON sidecar (`sd-card.md`). Pure rules in `include/recorder_core.hpp` (state machine, CSV row format, trip names, PID filter, flush and rotate policy, callback gate; host-tested) and `include/recorder_queue.hpp` (256-row drop-oldest queue). `recorder.cpp`: `Recorder::init/deinit/start/stop/getState/getStatus/listTrips`. `init()` subscribes to OBD2 PID updates; the callback only reads the PID, filters it and does a non-blocking queue push. A writer task is created by `start()` and deleted by `stop()`. Manual start/stop only; automatic trip rules and 0–100 timing are planned (R6, R7). REST and WebSocket: `api.md` | obd2, sd_card, freertos, cjson |
+| Recorder wire rules | `main/include/recorder_http.hpp` | Start-body parser and the 16-byte WebSocket state frame (IDF-free, host-tested) | – |
 | OTA (planned) | – | Not in the code (`ota.md`). `partitions.csv` already has `otadata`, `ota_0`, `ota_1` | – |
 | Modem (v2, planned) | – | Not in the code | – |
 
 Layering discrepancies, as built:
 - `webserver.cpp` calls `SDCard` directly for SD file upload and download, instead of going through `middleware.cpp`. The rule in `CLAUDE.md` says firmware data goes through the middleware.
+- `Recorder::init` calls `OBD2::getInstance().subscribe(...)` directly (component to component through the public OBD2 header, not through the middleware), and reads `OBD2::getData`/`getDef`/`getVIN` and uses `SDCard` from its own task. The callback captures a generation number so a callback left over from an earlier `init` does nothing (OBD2 has no unsubscribe; `OBD2::deinit` clears the list).
 - `webserver.cpp` calls `OBD2::getInstance().subscribe(pid_stream_callback)` directly (`setup_web_server`) to push PID updates to WebSocket clients, instead of going through `middleware.cpp`.
 - `supervisor.cpp` includes `middleware.hpp` (it calls `m_pid_def_put` to load PID JSON), so the supervisor depends on the web layer.
 - `main/main.cpp.disabled_sd` is a stray, unused file.
@@ -52,6 +54,7 @@ Priorities are absolute FreeRTOS numbers (`tskIDLE_PRIORITY` is 0). "Core" is th
 | `OBD2_PollTask` | `components/obd2/` | 1 | 8192 | 1 | startup gate, then `ulTaskNotifyTake` with the wait time of the poll queue (next due request) |
 | `OBD_Connection_callback_task` | `components/obd2/` | 1 | 4096 | 0 | `xQueueReceive(event_queue)` with a 100 ms timeout. Runs the supervisor's VIN and DTC requests and the discovery retries while `autoPoll` is set |
 | `DataSimTask` | `components/obd2_simulator/` | 1 | 4096 | 2 | `xQueueReceive(portMAX_DELAY)` on the ISR queue. Exists only when the CAN config has `debug=true` |
+| `recorder` | `components/recorder/` | any | 6144 | 2 | `xQueueReceive` on the row queue with a 200 ms timeout. Exists only between `Recorder::start` and `stop`. Takes the SD lease (250 ms) per batch; deletes itself after `stop()` asks it to finish |
 | `sys_reboot` | `main/src/middleware.cpp` | any | 2048 | 5 | one-shot: waits 500 ms, then `esp_restart()` |
 | `wifi_scan` | `components/wifi/wifi_scan.cpp` | any | 6144 | 2 | one task per admitted scan; blocks on completion/cancellation semaphore until the 5 s deadline, then at most 500 ms to drain cancellation; exits itself |
 
@@ -67,7 +70,7 @@ Task watchdog: enabled, 5 s timeout, panic on timeout is off, idle tasks of both
 `app_main` (`main/main.cpp`):
 1. Sets the `CAN_DRIVER` log level to DEBUG.
 2. `LedStatus::init(LED_GPIO)` (GPIO 47 in both pin sets).
-3. Registers eight explicit component descriptors in `main.cpp`, then calls error-returning `SUPERVISOR::init({nullptr, application_components::bootstrapSettings})`. Admission validates/freezes the complete registry before any bootstrap side effects. The application-owned bootstrap synchronously initializes NVS and loads only the supervisor's own config on main's caller stack; the core copies its result and one validated power-policy snapshot before creating `SupervisorTask` on core 1. Ordinary component initialization remains asynchronous. A rejected interface/registration/graph is logged and main deep-sleeps on a 3600 s timer (stopping the LED first) instead of idling awake; it retries on wake. Failed bootstrap creates only the bounded ERROR owner; failed task creation runs that same recovery inline, without replacement allocation.
+3. Registers nine explicit component descriptors (eight legacy roles plus RECORDER, application ID 9) from `production_components.hpp`, then calls error-returning `SUPERVISOR::init({nullptr, application_components::bootstrapSettings})`. Admission validates/freezes the complete registry before any bootstrap side effects. The application-owned bootstrap synchronously initializes NVS and loads only the supervisor's own config on main's caller stack; the core copies its result and one validated power-policy snapshot before creating `SupervisorTask` on core 1. Ordinary component initialization remains asynchronous. A rejected interface/registration/graph is logged and main deep-sleeps on a 3600 s timer (stopping the LED first) instead of idling awake; it retries on wake. Failed bootstrap creates only the bounded ERROR owner; failed task creation runs that same recovery inline, without replacement allocation.
 4. Waits in a 250 ms loop until the supervisor state is RUNNING. It never times out.
 
 The legacy boot sequence below contains a synchronous SETTINGS bootstrap prefix followed by eight registered steps run by `SupervisorTask` in STARTING (descriptors in `production_components.hpp`). Each legacy result is kept and shown by `GET /api/v1/system` as `component_status`. An accepted task yields init success even if bootstrap failed: it then owns ERROR recovery and never runs ordinary steps. Init success is not successful component startup.
@@ -110,6 +113,7 @@ System power settings live in `SUPERVISOR::Config::power`: integer millivolt thr
 | 7 | OBD | Registers the connected-callbacks, `OBD2::init()` (needs the CAN driver initialized), waits 1 s, then loads the PID JSON from the SD card. No card mounted: warns and returns OK with no PIDs. Card mounted but the file is missing or fails to parse: returns an error | no |
 | 8 | WIFI | Reads the Wi-Fi config from NVS (defaults on first boot; a missing key takes its default and the other stored keys are kept), `WIFI::init` + `start` | yes |
 | 9 | WEBSERVER | `setup_web_server()`: starts `AsyncWebServer`, registers routes, subscribes `pid_stream_callback` to PID updates, creates `WSDataStreamTask`, with access control brought up first: `button_init()` (a failure only disables PIN claim and recovery) and `auth_service::start()` (loads the PIN record; a storage failure only closes the gated routes) | yes |
+| 10 | RECORDER | `Recorder::init()`: subscribes to OBD2 PID updates and marks the recorder ready. Depends on SD_CARD (ordering only) and OBD (required: skipped if OBD did not start). It starts no task and writes nothing until `start()`. Not critical, not wake-critical | no |
 
 Failure handling:
 - A step that fails and is not critical is logged and skipped. The next step still runs and the state goes on to NOT_CONNECTED. The web server then runs with that feature missing (for example OBD calls return 503).
@@ -130,7 +134,7 @@ Derived PIDs: PollTask → derivedPidQueue (10) → receive task → parseDerive
 WSDataStreamTask → 1 Hz CAN status packet 0x03 → WebSocket
 Browser → REST (AsyncWebServer workers) → webserver.cpp handlers → middleware m_* → OBD2 / SD / Settings / Supervisor
 ```
-There is no Recorder. Nothing writes to the SD card besides the PID JSON save, file upload and the SD file copy. Details of each interface are in `api.md`, `pid-config.md` and `sd-card.md`.
+Recorder: OBD2 receive thread → `pid update callback` → `Recorder::onPid` (filter, `RowQueue::push`, never blocks) → `recorder` task (format, 8 KB or 10 s batches; runs at idle priority so a stuck SD driver cannot starve IDLE) → `SDCard::write_file(append)`. `POST /recorder/start|stop` and `GET /recorder/trips` run on REST workers; `stop` blocks a worker for up to 5 s. The WebSocket state frame 0x04 is broadcast by `WSDataStreamTask` once per second and after a successful start or stop. A broadcast is dropped when eight are already pending (B25 admission), so a frame can be missed during a PID flood; the next second repeats it. Besides the recorder, the SD card is written by the PID JSON save, file upload and the SD file copy. Details of each interface are in `api.md`, `pid-config.md` and `sd-card.md`.
 
 ## CAN, OBD2 recovery and health check
 - CAN driver: `NOT_CONNECTED` becomes `CONNECTED` after 3 clean pings; more than 3 consecutive ACK or stuff errors drop it back (callback on both edges).

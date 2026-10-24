@@ -19,7 +19,8 @@ describe("firmware API client", () => {
     await api.createSdDirectory("logs/new"); await api.deleteSdFile("logs/trip.csv");
     await api.deleteSdFile("logs/old", true); await api.copySdFile("a", "b"); await api.formatSdCard();
     await api.getSettings(); await api.patchSettings({ can: {} }); await api.startWifiScan(); await api.wifiScan();
-    expect(calls).toHaveLength(38);
+    await api.recorder(); await api.startRecorder(); await api.stopRecorder(); await api.recorderTrips();
+    expect(calls).toHaveLength(42);
     expect(calls.filter((call) => call === "GET /api/v1/settings" || call === "GET /api/v1/wifi/scan")).toHaveLength(2);
     expect(calls.some((call) => call.includes("/api/v1/req/clear_dtc"))).toBe(true);
   });
@@ -45,6 +46,11 @@ describe("firmware API client", () => {
     await api.startWifiScan();
     await api.downloadSdFile("a/b.csv");
     await api.uploadSdFile("a/b.csv", new Blob(["x"]));
+    await api.recorder();
+    await api.startRecorder();
+    await api.startRecorder([{ pid: 12 }, { pid: 13, min_interval_ms: 500 }]);
+    await api.stopRecorder();
+    await api.recorderTrips();
 
     expect(calls.map(({ url, init, gated }) => [init?.method ?? "GET", url, gated])).toEqual([
       ["GET", "/api/v1/pid_data", false],
@@ -60,7 +66,14 @@ describe("firmware API client", () => {
       ["POST", "/api/v1/wifi/scan", true],
       ["GET", "/api/v1/sd_card/file/a/b.csv?download=true", true],
       ["PUT", "/api/v1/sd_card/file/a/b.csv", true],
+      ["GET", "/api/v1/recorder", false],
+      ["POST", "/api/v1/recorder/start", true],
+      ["POST", "/api/v1/recorder/start", true],
+      ["POST", "/api/v1/recorder/stop", true],
+      ["GET", "/api/v1/recorder/trips", true],
     ]);
+    expect(calls[14].init?.body).toBeUndefined();
+    expect(calls[15].init?.body).toBe('{"pids":[{"pid":12},{"pid":13,"min_interval_ms":500}]}');
     expect(calls[11].init?.method).toBeUndefined();
     expect(calls[12].init?.body).toBeInstanceOf(Blob);
     expect(new Headers(calls[12].init?.headers).get("Content-Type")).toBe("application/octet-stream");

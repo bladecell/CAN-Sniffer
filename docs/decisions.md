@@ -206,3 +206,13 @@ Decided by the user. The SD file routes (`/api/v1/sd_card/file/*` GET download, 
 
 ## 2026-10-23: POST /req/dtc stays ungated
 Decided by the user. `POST /api/v1/req/dtc` (and `/req/vin`) keep `gated = 0` in `api_routes.hpp`, consistent with `/req/static_pid`: they send standard OBD-II reads only. No route, auth rule or contract changes. Accepted risk: anyone on the network can hold the single DTC slot (other callers get 503 `BUSY`, `Retry-After: 5`) and add standard read traffic to the bus. `clear_dtc` stays gated.
+
+## 2026-10-24: Recorder design (D3, D5, D6 recorder part)
+Decided by the user ("recommended" on all points).
+- **PIDs:** a recorder-owned selected list (max 32), default the currently polled set, optional per-PID minimum spacing. No `record` field in `pid_def.json`. Polling throughput is shared (about 18 updates/s total), so recording everything would slow every PID.
+- **CSV:** long format, one row per PID update: `t_ms,pid,value,valid`, `t_ms` is the RX time in ms since boot. Invalid/NaN gives an empty value and valid=0. Units, names, VIN, drops and wall time (when known) go in a `trip_N.json` sidecar. Files in `/logs/trips/trip_NNNNNN.csv`, rotated at 8 MB or on a PID-definition change.
+- **Time:** uptime ms; wall time only in the sidecar when available (modem v2). No SNTP for now.
+- **D3 trip rules:** start when the bus is connected and (RPM > 0 or speed > 0); end when the bus is lost or RPM = 0 for 60 s; manual start/stop always available. Auto mode may poll continuously while the bus is up, as an opt-in setting.
+- **API:** start/stop and trip list are gated. State is open. Additive, no api_version bump.
+- **D5/D6:** separate Recorder page; a `recorder` section in settings.
+- **0-100 km/h:** separate mode with a fast speed poll. It needs an OBD2 temporary interval override/suspend API, approved as a separate task (R7).

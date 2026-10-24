@@ -23,12 +23,14 @@ esp_err_t setupCan(void*) { return mark(5); }
 esp_err_t setupObd(void*) { return mark(6); }
 esp_err_t setupWifi(void*) { return mark(7); }
 esp_err_t setupWebserver(void*) { return mark(8); }
+esp_err_t setupRecorder(void*) { return mark(9); }
 esp_err_t stopSdCard(void*) { return mark(103); }
 esp_err_t stopBattery(void*) { return mark(104); }
 esp_err_t stopCan(void*) { return mark(105); }
 esp_err_t stopObd(void*) { return mark(106); }
 esp_err_t stopWifi(void*) { return mark(107); }
 esp_err_t stopWebserver(void*) { return mark(108); }
+esp_err_t stopRecorder(void*) { return mark(109); }
 esp_err_t releasePowerLock() { return ESP_OK; }
 esp_err_t acquirePowerLock() { return ESP_OK; }
 }
@@ -1139,8 +1141,11 @@ void test_production_descriptor_table_is_admitted_with_expected_lifecycle()
   const auto table = production_components::descriptors();
   for (const auto& d : table)
   {
-    TEST_ASSERT_EQUAL_STRING(Registry::legacyName(static_cast<size_t>(d.role)), d.name);
-    TEST_ASSERT_EQUAL_INT(static_cast<int>(d.id), static_cast<int>(d.role));
+    if (d.role != Role::NONE)
+    {
+      TEST_ASSERT_EQUAL_STRING(Registry::legacyName(static_cast<size_t>(d.role)), d.name);
+      TEST_ASSERT_EQUAL_INT(static_cast<int>(d.id), static_cast<int>(d.role));
+    }
     TEST_ASSERT_NOT_NULL(d.init);
   }
   Fake f(false);
@@ -1148,12 +1153,12 @@ void test_production_descriptor_table_is_admitted_with_expected_lifecycle()
   TEST_ASSERT_EQUAL_INT(ESP_OK, f.core.init({nullptr, application_components::bootstrapSettings}));
   f.core.step();
   TEST_ASSERT_EQUAL_INT(static_cast<int>(State::NOT_CONNECTED), static_cast<int>(f.core.state()));
-  const std::vector<int> boot{0, 1, 2, 3, 4, 5, 6, 7, 8};
+  const std::vector<int> boot{0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
   TEST_ASSERT_TRUE(boot == productionCalls);
   productionCalls.clear();
   TEST_ASSERT_TRUE(f.core.requestStop());
   f.core.step();
-  const std::vector<int> stop{108, 106, 107, 105, 103};
+  const std::vector<int> stop{108, 109, 106, 107, 105, 103};
   TEST_ASSERT_TRUE(stop == productionCalls);
   TEST_ASSERT_EQUAL_INT(static_cast<int>(State::SLEEPING), static_cast<int>(f.core.state()));
 }

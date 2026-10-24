@@ -8,7 +8,7 @@
 // callbacks are only addressed here, so a host build supplies stubs for them.
 namespace production_components
 {
-inline std::array<supervisor::Descriptor, 8> descriptors()
+inline std::array<supervisor::Descriptor, 9> descriptors()
 {
     using namespace supervisor;
     return {{
@@ -50,6 +50,9 @@ inline std::array<supervisor::Descriptor, 8> descriptors()
          {{{Id::OBD}, {Id::WIFI}, {Id::FLASH_FILESYSTEM}, {Id::SD_CARD}}},
          4,
          false},
+        // Application component (ID 9+, no legacy role). Stops before OBD and SD, which it consumes.
+        {static_cast<Id>(9), "RECORDER", application_components::setupRecorder, application_components::stopRecorder,
+         nullptr, false, Participation::NORMAL, Role::NONE, 9, 0, {{{Id::SD_CARD}, {Id::OBD, true}}}, 2, false},
     }};
 }
 }  // namespace production_components

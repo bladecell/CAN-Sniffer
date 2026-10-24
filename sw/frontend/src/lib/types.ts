@@ -379,3 +379,18 @@ export interface DataTableProps {
   onExport?: () => void;
   onImport?: () => void;
 }
+
+export type RecorderState = "idle" | "recording" | "stopping" | "error";
+export interface RecorderStatus {
+  state: RecorderState;
+  last_error: string | null;
+  trip: number;
+  rows: number;
+  dropped: number;
+  file_bytes: number;
+}
+export interface RecorderTrips {
+  trips: { index: number; name: string; size: number; sidecar: boolean }[];
+  count: number;
+  truncated: boolean;
+}

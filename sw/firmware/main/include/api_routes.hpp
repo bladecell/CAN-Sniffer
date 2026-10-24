@@ -36,6 +36,10 @@
   X("/api/v1/dtc/descriptions",     GET,    g_dtc_descriptions_handler,      0)                \
   X("/api/v1/req/dtc",              POST,   p_dtc_index_handler,             0)                \
   X("/api/v1/req/clear_dtc",        POST,   p_clear_dtc_index_handler,       1)                \
+  X("/api/v1/recorder",             GET,    g_recorder_handler,              0)                \
+  X("/api/v1/recorder/start",       POST,   p_recorder_start_handler,        1)                \
+  X("/api/v1/recorder/stop",        POST,   p_recorder_stop_handler,         1)                \
+  X("/api/v1/recorder/trips",       GET,    g_recorder_trips_handler,        1)                \
   X("/api/v1/system",               GET,    g_system_index_handler,          0)                \
   X("/api/v1/system/reboot",        POST,   p_system_reboot_index_handler,   1)                \
   X("/api/v1/system/sleep",         POST,   p_system_sleep_index_handler,    1)                \

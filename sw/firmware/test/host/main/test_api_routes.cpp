@@ -85,7 +85,7 @@ void test_renamed_routes_are_removed(void)
 
 void test_route_count_matches_docs(void)
 {
-  TEST_ASSERT_EQUAL_UINT32(40, kCount);  // docs/api.md: GET / plus 39 under /api/v1
+  TEST_ASSERT_EQUAL_UINT32(44, kCount);  // docs/api.md: GET / plus 43 under /api/v1
 }
 // The access-control decision (docs/decisions.md 2026-10-18), spelled out. A route is gated if and only if it is listed;
 // adding a route forces a decision here.
@@ -106,6 +106,8 @@ const GatedRoute kGated[] = {
     {"DELETE", "/api/v1/pid_def/*"},      {"POST", "/api/v1/pid_def/save"},
     {"POST", "/api/v1/pid_def/load"},     {"POST", "/api/v1/req/clear_dtc"},
     {"POST", "/api/v1/auth/logout"},      {"PUT", "/api/v1/auth/pin"},
+    {"POST", "/api/v1/recorder/start"},   {"POST", "/api/v1/recorder/stop"},
+    {"GET", "/api/v1/recorder/trips"},
 };
 constexpr size_t kGatedCount = sizeof(kGated) / sizeof(kGated[0]);
 
@@ -162,6 +164,7 @@ void test_open_routes_stay_open(void)
                            {"GET", "/api/v1/pid_data"},
                            {"GET", "/api/v1/pid_data/*"},
                            {"GET", "/api/v1/sd_card/info"},
+                           {"GET", "/api/v1/recorder"},
                            {"POST", "/api/v1/req/vin"},
                            {"POST", "/api/v1/req/dtc"},
                            {"PATCH", "/api/v1/obd2"},
