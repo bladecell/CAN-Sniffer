@@ -59,7 +59,7 @@ export function createFirmwareApi(deps: FirmwareApiDeps) {
     startWifiScan: () => gated<Json>("/api/v1/wifi/scan", body("POST")),
     wifiScan: () => gated<Json>("/api/v1/wifi/scan"),
     recorder: () => open<RecorderStatus>("/api/v1/recorder"),
-    /** No `pids` records the PIDs OBD2 currently polls. 409 already recording, 422 bad list, 503 no card. */
+    /** No `pids` records the PIDs OBD2 currently polls. 409 already recording, 429 start cooldown (Retry-After seconds), 422 bad list, 503 no card. */
     startRecorder: (pids?: readonly { pid: number; min_interval_ms?: number }[]) => gated<RecorderStatus & { status: "success" }>("/api/v1/recorder/start", body("POST", pids === undefined ? undefined : { pids })),
     stopRecorder: () => gated<RecorderStatus & { status: "success" }>("/api/v1/recorder/stop", body("POST")),
     recorderTrips: () => gated<RecorderTrips>("/api/v1/recorder/trips"),

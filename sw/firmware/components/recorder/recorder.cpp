@@ -183,6 +183,7 @@ esp_err_t Recorder::start(const Config& config)
   if (!lock) { return ESP_ERR_TIMEOUT; }
   if (!initialized_) { return ESP_ERR_INVALID_STATE; }
   if (session_ != nullptr) { return ESP_ERR_NOT_FINISHED; }  // live, also when paused in Error: stop first
+  if (startCooldownRemainingMs(marked_, nowMs(), markMs_) != 0) { return ESP_ERR_NOT_ALLOWED; }  // before any SD or OBD2 access
 
   PidSel          pids[kMaxPids];
   size_t          n = 0;
@@ -238,6 +239,8 @@ esp_err_t Recorder::start(const Config& config)
   }
 
   session_ = s;
+  marked_  = true;
+  markMs_  = nowMs();
   if (xTaskCreate(taskEntry, "recorder", kStackBytes, s, tskIDLE_PRIORITY, nullptr) != pdPASS)
   {
     session_ = nullptr;
@@ -262,6 +265,12 @@ esp_err_t Recorder::start(const Config& config)
     return ESP_FAIL;
   }
   return ESP_OK;
+}
+
+uint32_t Recorder::startRetryAfterMs()
+{
+  Lock lock(lock_);
+  return lock ? startCooldownRemainingMs(marked_, nowMs(), markMs_) : 0;
 }
 
 esp_err_t Recorder::stop()
@@ -301,6 +310,8 @@ esp_err_t Recorder::stopLocked()
   if (s->enabledAutoPoll && OBD2::getInstance().isAutoPoll()) { OBD2::getInstance().setAutoPoll(false); }
   session_ = nullptr;
   delete s;
+  marked_ = true;
+  markMs_ = nowMs();
   state_.move(State::Stopping, State::Idle);
   return ESP_OK;
 }

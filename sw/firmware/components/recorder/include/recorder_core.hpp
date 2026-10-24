@@ -14,6 +14,9 @@ constexpr size_t   kMaxRowBytes   = 40;    // longest CSV row with its newline
 // keep the card out of the open/append/close churn that wedged it at 2 s / 4 KB.
 constexpr size_t   kBatchBytes    = 8192;  // line buffer size and size flush trigger
 constexpr uint32_t kFlushMs       = 10000;
+// Minimum gap between recordings, from the previous accepted start or the end of the previous session (stop completed or
+// session failed), whichever is later. Rapid start/stop cycling wedged the V1_1 card (sdmmc timeout, power cycle needed).
+constexpr uint32_t kStartCooldownMs = 10000;
 constexpr uint64_t kRotateBytes   = 8ull * 1024 * 1024;
 constexpr uint32_t kMaxTripIndex  = 999999;
 constexpr size_t   kMaxPids       = 32;
@@ -249,6 +252,12 @@ private:
 constexpr bool shouldFlush(size_t pendingBytes, uint32_t nowMs, uint32_t lastFlushMs)
 {
   return pendingBytes > 0 && (pendingBytes + kMaxRowBytes > kBatchBytes || static_cast<uint32_t>(nowMs - lastFlushMs) >= kFlushMs);
+}
+
+// Milliseconds a start must still wait; 0 = allowed. `marked` is false before the first session after boot.
+constexpr uint32_t startCooldownRemainingMs(bool marked, uint32_t nowMs, uint32_t markMs)
+{
+  return marked && static_cast<uint32_t>(nowMs - markMs) < kStartCooldownMs ? kStartCooldownMs - static_cast<uint32_t>(nowMs - markMs) : 0;
 }
 
 // A flush that failed is retried at most every kFlushMs, so a missing card is not hammered (or waited on while stopping).

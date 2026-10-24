@@ -61,13 +61,14 @@ inline bool parseStart(const cJSON* body, recorder_core::PidSel* out, size_t& n)
 }
 
 // HTTP status for Recorder::start(). ESP_ERR_NOT_FINISHED = a session is live (recording, stopping, or paused by a card
-// error), so a client must stop first (409); ESP_ERR_INVALID_STATE = the recorder is not initialized (503).
+// error), so a client must stop first (409); ESP_ERR_NOT_ALLOWED = start cooldown (429 + Retry-After); ESP_ERR_INVALID_STATE = the recorder is not initialized (503).
 inline int startHttpStatus(esp_err_t err)
 {
   switch (err)
   {
     case ESP_OK: return 200;
     case ESP_ERR_NOT_FINISHED: return 409;
+    case ESP_ERR_NOT_ALLOWED: return 429;
     case ESP_ERR_INVALID_ARG: return 422;
     case ESP_ERR_INVALID_STATE:
     case ESP_ERR_NOT_FOUND:

@@ -2041,12 +2041,18 @@ MiddlewareJsonResult m_recorder_start(const recorder_core::PidSel* pids, size_t 
     const int status = recorder_http::startHttpStatus(err);
     const char* reason = err == ESP_ERR_INVALID_ARG    ? "Invalid PID list"
                          : err == ESP_ERR_NOT_FINISHED ? "Recorder is already running; stop it first"
+                         : err == ESP_ERR_NOT_ALLOWED  ? "Recorder start cooldown"
                          : err == ESP_ERR_NOT_FOUND    ? "SD card not mounted"
                          : err == ESP_ERR_TIMEOUT      ? "Recorder busy"
                          : err == ESP_FAIL             ? "SD card could not be written"
                          : status == 503               ? "Recorder is not running"
                                                        : "Recorder start failed";
-    return json_result(json_error_body(reason), status);
+    MiddlewareJsonResult result = json_result(json_error_body(reason), status);
+    if (err == ESP_ERR_NOT_ALLOWED)
+    {
+        result.retry_after_s = (Recorder::getInstance().startRetryAfterMs() + 999) / 1000;  // whole seconds, rounded up
+    }
+    return result;
 }
 
 MiddlewareJsonResult m_recorder_stop()

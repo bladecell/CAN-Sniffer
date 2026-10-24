@@ -39,9 +39,12 @@ public:
   esp_err_t deinit();
 
   // ESP_ERR_INVALID_STATE: not initialized. ESP_ERR_NOT_FINISHED: a session is live (recording, stopping, or paused in Error). ESP_ERR_INVALID_ARG: bad PID list.
+  // ESP_ERR_NOT_ALLOWED: inside the start cooldown (kStartCooldownMs); nothing was touched, see startRetryAfterMs(). Checked after the live-session test and before the PID list.
   // ESP_ERR_NOT_FOUND: no card mounted (state becomes Error). ESP_ERR_NO_MEM: allocation failed.
   // Blocks for the lifecycle lock only; the writer runs in its own task.
   esp_err_t start(const Config& config);
+  // Milliseconds until a start is accepted again; 0 when it is allowed now.
+  uint32_t startRetryAfterMs();
   // Drains the queue, writes the last batch and the sidecar, frees the writer. Blocks up to 5 s; a second concurrent call returns ESP_ERR_TIMEOUT at once.
   esp_err_t stop();
 
@@ -82,6 +85,8 @@ private:
   SemaphoreHandle_t           lock_ = nullptr;
   Session*                    session_ = nullptr;  // written under lock_ while the gate is closed
   bool                        initialized_ = false;
+  bool                        marked_ = false;  // a session started or ended since boot; under lock_
+  uint32_t                    markMs_ = 0;
   uint32_t                    nextTrip_ = 0;  // 0 = /logs/trips not scanned yet; only the writer task touches it
   std::atomic<uint32_t>       gen_{0};
   std::atomic<bool>           stopInFlight_{false};

@@ -299,6 +299,25 @@ static void test_newest_trips_is_bounded_and_reports_truncation(void)
   TEST_ASSERT_EQUAL_UINT32(21, t.at(kMaxListedTrips - 1));
 }
 
+static void test_start_cooldown_window(void)
+{
+  TEST_ASSERT_EQUAL_UINT32(10000, kStartCooldownMs);
+  TEST_ASSERT_EQUAL_UINT32(0, startCooldownRemainingMs(false, 5, 0));  // first start after boot
+  TEST_ASSERT_EQUAL_UINT32(0, startCooldownRemainingMs(false, 0, 123));
+  TEST_ASSERT_EQUAL_UINT32(10000, startCooldownRemainingMs(true, 1000, 1000));  // same tick as the mark
+  TEST_ASSERT_EQUAL_UINT32(1, startCooldownRemainingMs(true, 10999, 1000));
+  TEST_ASSERT_EQUAL_UINT32(0, startCooldownRemainingMs(true, 11000, 1000));  // exactly at the boundary
+  TEST_ASSERT_EQUAL_UINT32(0, startCooldownRemainingMs(true, 500000, 1000));
+}
+
+static void test_start_cooldown_survives_tick_wrap(void)
+{
+  const uint32_t mark = 0xFFFFFFFFu - 2999u;  // 3 s before the wrap
+  TEST_ASSERT_EQUAL_UINT32(3000, startCooldownRemainingMs(true, 4000, mark));   // 7 s elapsed across the wrap
+  TEST_ASSERT_EQUAL_UINT32(1, startCooldownRemainingMs(true, 6999, mark));
+  TEST_ASSERT_EQUAL_UINT32(0, startCooldownRemainingMs(true, 7000, mark));
+}
+
 extern "C" void run_recorder_core_tests(void)
 {
   RUN_TEST(test_row_valid_value);
@@ -321,4 +340,6 @@ extern "C" void run_recorder_core_tests(void)
   RUN_TEST(test_row_queue_create_rejects_zero_depth_and_recreates);
   RUN_TEST(test_newest_trips_keeps_highest_indices_descending);
   RUN_TEST(test_newest_trips_is_bounded_and_reports_truncation);
+  RUN_TEST(test_start_cooldown_window);
+  RUN_TEST(test_start_cooldown_survives_tick_wrap);
 }

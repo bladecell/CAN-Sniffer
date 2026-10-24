@@ -61,7 +61,7 @@ Decision: `decisions.md`, 2026-10-24. Start, stop and list them over REST (`api.
 - `valid`: `1`, or `0` with an empty value.
 - A PID with a minimum spacing is thinned: an update less than that many ms after the last accepted one is not written. An update with the same `t_ms` as the last accepted one is dropped.
 
-Rows are appended in batches (every 10 s or 8 KB, `kFlushMs` and `kBatchBytes` in `recorder_core.hpp`) with one open, write, `fsync` and close per batch. After a power cut up to about 10 s of rows are lost, and the last row can be cut short. The first file and its sidecar are created when the recording starts, before any row arrives; if that fails, `start` fails (503) and the state is `error`.
+Rows are appended in batches (every 10 s or 8 KB, `kFlushMs` and `kBatchBytes` in `recorder_core.hpp`) with one open, write, `fsync` and close per batch. Recordings start at least 10 s apart (`kStartCooldownMs`) because rapid start/stop cycling wedged the V1_1 card. After a power cut up to about 10 s of rows are lost, and the last row can be cut short. The first file and its sidecar are created when the recording starts, before any row arrives; if that fails, `start` fails (503) and the state is `error`.
 
 **Rotation.** A new file starts when the CSV would reach 8 MiB, when the definition (name, unit or formula; or its removal) of a selected PID changes (checked every 10 s), or after a write failure once the card works again. The old file gets a final sidecar where possible.
 

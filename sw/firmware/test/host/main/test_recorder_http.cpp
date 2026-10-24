@@ -101,6 +101,7 @@ static void test_start_error_mapping(void)
   TEST_ASSERT_EQUAL(200, startHttpStatus(ESP_OK));
   TEST_ASSERT_EQUAL(409, startHttpStatus(ESP_ERR_NOT_FINISHED));  // live session, including one paused in Error
   TEST_ASSERT_EQUAL(422, startHttpStatus(ESP_ERR_INVALID_ARG));
+  TEST_ASSERT_EQUAL(429, startHttpStatus(ESP_ERR_NOT_ALLOWED));  // start cooldown
   TEST_ASSERT_EQUAL(503, startHttpStatus(ESP_ERR_INVALID_STATE));  // not initialized
   TEST_ASSERT_EQUAL(503, startHttpStatus(ESP_ERR_NOT_FOUND));      // no card
   TEST_ASSERT_EQUAL(503, startHttpStatus(ESP_ERR_TIMEOUT));
