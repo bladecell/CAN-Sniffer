@@ -37,22 +37,33 @@
 
   let open = $state(false);
   let activeIndex = $state(-1);
-  let placement = $state<"down" | "up">("down");
-  let menuMaxHeight = $state(MENU_MAX_HEIGHT);
+  let menuStyle = $state("");
   let rootEl = $state<HTMLDivElement>();
+  let listEl = $state<HTMLDivElement>();
   let triggerEl = $state<HTMLButtonElement>();
   let optionEls: (HTMLButtonElement | undefined)[] = [];
 
   let selectedIndex = $derived(options.findIndex((o) => o.value === value));
   let selected = $derived(selectedIndex >= 0 ? options[selectedIndex] : undefined);
 
-  async function openMenu() {
-    if (disabled || !triggerEl || options.length === 0) return;
+  /** Places the list against the trigger. Fixed to the viewport, so a scrolling dialog body cannot clip it. */
+  function place() {
+    if (!triggerEl) return;
     const rect = triggerEl.getBoundingClientRect();
     const spaceBelow = window.innerHeight - rect.bottom;
-    placement = spaceBelow < MENU_MAX_HEIGHT && rect.top > spaceBelow ? "up" : "down";
+    const placement = spaceBelow < MENU_MAX_HEIGHT && rect.top > spaceBelow ? "up" : "down";
     const space = placement === "up" ? rect.top : spaceBelow;
-    menuMaxHeight = Math.max(80, Math.min(MENU_MAX_HEIGHT, space - 8));
+    const menuMaxHeight = Math.max(80, Math.min(MENU_MAX_HEIGHT, space - 8));
+    const edge =
+      placement === "up"
+        ? `bottom:${window.innerHeight - rect.top + 4}px`
+        : `top:${rect.bottom + 4}px`;
+    menuStyle = `left:${rect.left}px;width:${rect.width}px;max-height:${menuMaxHeight}px;${edge}`;
+  }
+
+  async function openMenu() {
+    if (disabled || !triggerEl || options.length === 0) return;
+    place();
     activeIndex = defaultIndex(options, selectedIndex);
     open = true;
     await tick();
@@ -79,6 +90,13 @@
   }
 
   function onTriggerKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape" && open) {
+      // Closes only the list: preventDefault stops the dialog's native Esc (cancel) from firing.
+      e.preventDefault();
+      e.stopPropagation();
+      closeMenu(true);
+      return;
+    }
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
     e.preventDefault();
     if (!open) openMenu();
@@ -104,6 +122,25 @@
   function onWindowPointerDown(e: PointerEvent) {
     if (open && !rootEl?.contains(e.target as Node)) closeMenu(false);
   }
+
+  // Top layer: a fixed box inside the blurred dialog would be positioned against the dialog, not the viewport.
+  $effect(() => {
+    if (listEl?.showPopover && !listEl.matches(":popover-open")) listEl.showPopover();
+  });
+
+  // Follow the trigger when the page or a scroll container moves; the list's own scroll is ignored.
+  $effect(() => {
+    if (!open) return;
+    const onMove = (e: Event) => {
+      if (!(e.target instanceof Node && listEl?.contains(e.target))) place();
+    };
+    window.addEventListener("scroll", onMove, { capture: true, passive: true });
+    window.addEventListener("resize", onMove);
+    return () => {
+      window.removeEventListener("scroll", onMove, { capture: true });
+      window.removeEventListener("resize", onMove);
+    };
+  });
 </script>
 
 <svelte:window onpointerdown={onWindowPointerDown} />
@@ -138,12 +175,13 @@
 
   {#if open}
     <div
+      bind:this={listEl}
       id={listId}
+      popover="manual"
       class="select-menu-list blur-background"
-      class:up={placement === "up"}
       role="listbox"
       tabindex="-1"
-      style:max-height="{menuMaxHeight}px"
+      style={menuStyle}
       onkeydown={onListKeydown}
     >
       {#each options as option, i (i)}
@@ -224,11 +262,10 @@
   }
 
   .select-menu-list {
-    position: absolute;
-    top: calc(100% + 4px);
-    left: 0;
+    position: fixed;
+    inset: auto;
+    margin: 0;
     box-sizing: border-box;
-    width: 100%;
     overflow-y: auto;
     z-index: 100;
     padding: 4px 0;
@@ -236,11 +273,6 @@
     border-radius: var(--pico-border-radius);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
     animation: select-menu-in 0.15s ease-out;
-  }
-
-  .select-menu-list.up {
-    top: auto;
-    bottom: calc(100% + 4px);
   }
 
   .select-menu-option {
@@ -254,7 +286,7 @@
     background: none;
     border: none;
     border-radius: 0;
-    color: var(--pico-color);
+    color: var(--text);
     cursor: pointer;
     text-align: left;
     transition: background-color 0.2s;

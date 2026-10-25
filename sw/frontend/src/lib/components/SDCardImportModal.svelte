@@ -1,13 +1,12 @@
 <script lang="ts">
 import { vehicleStore } from "$lib/vehicleStore.svelte";
 
-
   import { alertStore } from "$lib/alertStore.svelte";
   import { telemetryStore } from "$lib/telemetryStore.svelte";
   import { parseJsonResponse } from "$lib/api";
   import { firmwareApi } from "$lib/firmwareApi.svelte";
   import FileTree from "./FileTree.svelte";
-  import { dialogFocus } from "$lib/dialogFocus";
+  import Modal from "./Modal.svelte";
   import type { SdTreeNode } from "$lib/types";
 
   interface Props {
@@ -74,99 +73,44 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
   }
 </script>
 
-{#if isOpen}
-  <div
-    class="modal-backdrop"
-    role="presentation"
-    onclick={(e) => {
-      if (e.target === e.currentTarget) onClose();
-    }}
-  >
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="sd-import-title"
-      tabindex="-1"
-      {@attach dialogFocus(() => onClose())}
-      class="pico-orange-glass-modal blur-background"
-    >
-      <header class="modal-header-hull">
-        <h5 id="sd-import-title" class="modal-title-heading">Select PID Configuration File</h5>
-        <button aria-label="Close" class="close-modal-x" onclick={onClose}
-          >✕</button
-        >
-      </header>
-
-      <div
-        class="modal-form-body"
-        style="max-height: 60vh; overflow-y: auto; padding: 24px;"
-      >
-        {#if !vehicleStore.sdInfo?.is_mounted}
-          <div class="alert-box warning">
-            SD Card is not mounted or present.
-          </div>
-        {:else if loadingTree}
-          <div class="alert-box info">Scanning SD Card...</div>
-        {:else if tree}
-          <FileTree
-            node={tree}
-            onFileSelect={handleFileSelect}
-            allowedExtensions={[".json"]}
-            onUploadSuccess={loadTree}
-          />
-        {:else}
-          <div class="alert-box error">Failed to load directory tree.</div>
-        {/if}
-      </div>
+<Modal open={isOpen} title="Select PID Configuration File" size="lg" onClose={onClose}>
+  {#if !vehicleStore.sdInfo?.is_mounted}
+    <div class="alert-box warning">
+      SD Card is not mounted or present.
     </div>
-  </div>
-{/if}
+  {:else if loadingTree}
+    <div class="alert-box info">Scanning SD Card...</div>
+  {:else if tree}
+    <div class="tree">
+      <FileTree
+        node={tree}
+        onFileSelect={handleFileSelect}
+        allowedExtensions={[".json"]}
+        onUploadSuccess={loadTree}
+      />
+    </div>
+  {:else}
+    <div class="alert-box error">Failed to load directory tree.</div>
+  {/if}
+</Modal>
 
 <style>
-  /* --- CUSTOM MODAL STYLES (Matching PIDSettingsModal) --- */
-
-  .pico-orange-glass-modal {
-    max-width: 500px;
-    width: 100%;
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
-    border-radius: var(--pico-border-radius);
-    box-shadow: var(--pico-card-box-shadow);
-  }
-  .modal-header-hull {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 16px 24px;
-    border-bottom: 1px solid var(--pico-border-color);
-    background: transparent;
-    margin: 0;
-  }
-  .modal-title-heading {
-    margin: 0;
-    font-size: 1.1rem;
-    font-weight: 600;
-  }
-  .close-modal-x {
-    background: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
-    color: var(--pico-muted-color) !important;
-    cursor: pointer;
-    font-size: 1.1rem;
-    padding: 4px !important;
-  }
-  .modal-form-body {
-    padding: 24px;
-  }
   .alert-box {
     padding: 1rem;
-    border-radius: var(--pico-border-radius);
+    border-radius: var(--r-ctl);
+    background: var(--card);
+    color: var(--muted);
     text-align: center;
-    font-weight: 600;
-    background: var(--pico-form-element-disabled-background-color);
-    border: 1px dashed var(--pico-border-color);
-    color: var(--pico-muted-color);
+    font-weight: 700;
+  }
+  /* Tree labels sit on control fills; full text colour keeps them above 4.5:1 (muted text does not). */
+  .tree {
+    --pico-muted-color: var(--text);
+  }
+  .alert-box.warning {
+    color: var(--warning-color);
+  }
+  .alert-box.error {
+    color: var(--error-color);
   }
 </style>

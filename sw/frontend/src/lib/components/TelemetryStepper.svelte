@@ -26,7 +26,7 @@
   <div
     role="button"
     tabindex={value <= min ? -1 : 0}
-    class="stepper-target subtract-target"
+    class="stepper-target"
     class:is-disabled={value <= min}
     onclick={() => (value = Math.max(min, value - 1))}
     onkeydown={(e) => handleKeyDown(e, "sub")}
@@ -37,7 +37,7 @@
   <div
     role="button"
     tabindex={value >= max ? -1 : 0}
-    class="stepper-target add-target"
+    class="stepper-target"
     class:is-disabled={value >= max}
     onclick={() => (value = Math.min(max, value + 1))}
     onkeydown={(e) => handleKeyDown(e, "add")}
@@ -47,17 +47,15 @@
 </div>
 
 <style>
+  /* One control fill, no borders (DESIGN.md Controls). */
   .minimal-ui-stepper {
     display: flex;
     align-items: center;
-    background-color: var(--pico-card-background-color);
-    border: var(--pico-border-width) solid var(--pico-form-element-border-color);
-    border-radius: var(--pico-border-radius);
-    height: 44px;
+    height: var(--ctl-h);
     overflow: hidden;
-    background-color: rgb(
-      from var(--pico-form-element-background-color) r g b / 0.6
-    );
+    border-radius: var(--r-ctl);
+    background: var(--ctl);
+    color: var(--ctl-text);
   }
 
   .value-pane {
@@ -65,13 +63,13 @@
     padding-left: 16px;
     font-size: 1.15rem;
     font-weight: 500;
-    color: var(--pico-color);
+    color: var(--ctl-text);
     font-family: var(--pico-font-family-monospace);
+    font-variant-numeric: tabular-nums;
     text-align: left;
     user-select: none;
   }
 
-  /* Structural UI Div Tap Blocks */
   .stepper-target {
     display: flex;
     align-items: center;
@@ -81,63 +79,32 @@
     min-width: 44px;
     font-size: 1.25rem;
     font-weight: 500;
+    /* Pico styles [role="button"] as a primary button, so the fill, border and radius are reset explicitly. */
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    color: var(--ctl-text);
     cursor: pointer;
     user-select: none;
-
-    /* Clean, soft semi-transparent contrast background */
-    background-color: var(--pico-form-element-disabled-background-color);
-    color: var(--pico-color-orange-500);
-
-    transition:
-      background-color 0.15s,
-      color 0.15s,
-      opacity 0.15s,
-      transform 0.1s ease-out;
+    transition: background-color 0.15s, opacity 0.15s;
   }
 
-  /* Segment boundaries divider line styling */
-  .subtract-target {
-    background: none;
-    border-left: var(--pico-border-width) solid
-      var(--pico-form-element-border-color);
-    border-right: var(--pico-border-width) solid
-      var(--pico-form-element-border-color);
-    border-top: none;
-    border-bottom: none;
-    border-radius: 0px;
+  .stepper-target:hover {
+    background: var(--ctl-h2);
   }
 
-  .add-target {
-    background: none;
-    border: none;
+  .stepper-target:active {
+    transition: background-color 0s;
+  }
+
+  .stepper-target.is-disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
 
   .stepper-target:focus:not(:focus-visible) {
     outline: none !important;
     box-shadow: none !important;
-  }
-
-  .subtract-target:focus,
-  .subtract-target:active,
-  .subtract-target:hover {
-    border: var(--pico-border-width) solid var(--pico-form-element-color);
-  }
-
-  .subtract-target:active {
-    background-color: var(--overlay-2) !important;
-    transition: background-color 0s !important;
-  }
-
-  .add-target:focus,
-  .add-target:active,
-  .add-target:hover {
-    border: var(--pico-border-width) solid var(--pico-form-element-color);
-    border-top-left-radius: 0px !important;
-    border-bottom-left-radius: 0px !important;
-  }
-
-  .add-target:active {
-    background-color: var(--overlay-2) !important;
-    transition: background-color 0s !important;
   }
 </style>

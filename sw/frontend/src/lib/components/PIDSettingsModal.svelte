@@ -1,9 +1,9 @@
 <script lang="ts">
 import { vehicleStore } from "$lib/vehicleStore.svelte";
 
-
   import TelemetryStepper from "./TelemetryStepper.svelte";
   import SelectMenu from "./SelectMenu.svelte";
+  import Modal from "./Modal.svelte";
   import type {
     DashboardItem,
     PidGridItem,
@@ -15,7 +15,6 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
   } from "$lib/types";
   import { MODULE_CONFIGS, getModuleBounds } from "$lib/types";
   import { untrack } from "svelte";
-  import { dialogFocus } from "$lib/dialogFocus";
   import type { SelectMenuOption } from "$lib/selectMenu";
 
   interface Props {
@@ -193,34 +192,13 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
   }
 </script>
 
-{#if isOpen}
-  <div
-    class="modal-backdrop"
-    role="presentation"
-    onclick={(e) => {
-      if (e.target === e.currentTarget) handleCancel();
-    }}
-  >
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="pid-settings-title"
-      tabindex="-1"
-      {@attach dialogFocus(handleCancel)}
-      class="pico-orange-glass-modal blur-background"
-    >
-      <header class="modal-header-hull">
-        <h5 id="pid-settings-title" class="modal-title-heading">
-          {isNewCard
-            ? "Create System Component"
-            : "Configure Component Parameters"}
-        </h5>
-        <button aria-label="Close" class="close-modal-x" onclick={handleCancel}
-          >✕</button
-        >
-      </header>
-
-      <form onsubmit={handleSubmit} class="modal-form-body">
+<Modal
+  open={isOpen}
+  title={isNewCard ? "Create System Component" : "Configure Component Parameters"}
+  size="lg"
+  onClose={handleCancel}
+>
+  <form id="pid-settings-form" onsubmit={handleSubmit}>
         <label for="card-type-select" class="field-heading"
           >Component Classification</label
         >
@@ -341,7 +319,7 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
             </div>
 
             <div class="pids-selection-grid">
-              {#each [0, 1, 2] as idx}
+              {#each [0, 1, 2] as idx (idx)}
                 <div class="pid-select-field">
                   <label for="pid-select-{idx}" class="field-heading"
                     >Footer Metric #{idx + 1}</label
@@ -415,84 +393,36 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
           </div>
         {/if}
 
-        <footer class="modal-footer-actions">
-          <button type="submit" class="apply-btn">Apply</button>
-        </footer>
-      </form>
-    </div>
-  </div>
-{/if}
+  </form>
+  {#snippet footer()}
+    <button type="submit" form="pid-settings-form" class="btn pri">Apply</button>
+  {/snippet}
+</Modal>
 
 <style>
-  .pico-orange-glass-modal {
-    max-width: 500px;
-    width: 100%;
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
-    border-radius: var(--pico-border-radius);
-    box-shadow: var(--pico-card-box-shadow);
-  }
-  .modal-header-hull {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 16px 24px;
-    border-bottom: 1px solid var(--pico-border-color);
-    background: transparent;
-    margin: 0;
-  }
-  .modal-title-heading {
-    margin: 0;
-    font-size: 1.1rem;
-    font-weight: 600;
-  }
-  .close-modal-x {
-    background: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
-    color: var(--pico-muted-color) !important;
-    cursor: pointer;
-    font-size: 1.1rem;
-    padding: 4px !important;
-  }
-  .modal-form-body {
-    padding: 24px;
-  }
   .field-heading {
-    font-size: 0.75rem !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.05em !important;
-    font-weight: 700 !important;
-    color: var(--pico-muted-color) !important;
-    margin-bottom: 0.35rem !important;
     display: block;
+    margin-bottom: 6px;
+    color: var(--muted);
+    font-size: 0.85rem;
+    font-weight: 700;
   }
   .orange-select-field {
-    margin-bottom: 1rem !important;
-  }
-  .orange-select-field :global(.select-menu-trigger) {
-    background-color: rgb(
-      from var(--pico-form-element-background-color) r g b / 0.6
-    );
-    transition:
-      border-color 0.2s ease,
-      box-shadow 0.2s ease;
-  }
-  .orange-select-field :global(.select-menu-trigger:active),
-  .orange-select-field :global(.select-menu-trigger:focus),
-  .orange-select-field :global(.select-menu-trigger:hover) {
-    border: var(--pico-border-width) solid var(--pico-form-element-color);
-    box-shadow: none !important;
+    margin-bottom: 1rem;
   }
   .orange-select-field.compact {
-    margin-bottom: 0.5rem !important;
+    margin-bottom: 0.5rem;
+  }
+  .orange-select-field :global(.select-menu-trigger) {
+    background: var(--ctl);
+    border: 0;
+    border-radius: var(--r-ctl);
+    color: var(--ctl-text);
+    box-shadow: none;
   }
   .orange-select-field.compact :global(.select-menu-trigger) {
+    min-height: 40px;
     font-size: 0.85rem;
-    padding: 6px 8px;
-    outline: none !important;
-    box-shadow: none !important;
   }
   .steppers-inline-grid {
     display: grid;
@@ -501,14 +431,15 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
     margin: 1.25rem 0;
   }
   .form-section-divider {
-    border-color: var(--pico-muted-color);
+    height: 1px;
     margin: 1.25rem 0;
+    border: 0;
+    background: var(--ctl);
   }
   .conditional-settings-panel {
-    background-color: var(--pico-form-element-disabled-background-color);
-    border: 1px solid var(--pico-border-color);
+    background: var(--card);
     padding: 1rem;
-    border-radius: var(--pico-border-radius);
+    border-radius: var(--r-ctl);
     margin-bottom: 1.5rem;
   }
   .panel-section-title {
@@ -526,11 +457,11 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
   }
   .pico-color-input {
     width: 60px;
-    height: 38px;
-    padding: 2px;
-    border-radius: 4px;
-    background: var(--overlay-1);
-    border: 1px solid var(--pico-border-color);
+    height: 40px;
+    padding: 3px;
+    border: 0;
+    border-radius: var(--r-ctl);
+    background: var(--ctl);
     cursor: pointer;
   }
   .pids-selection-grid {
@@ -539,42 +470,15 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
     gap: 12px;
   }
   .static-presets-notice {
-    border: 1px dashed var(--pico-border-color);
     padding: 1rem;
-    border-radius: var(--pico-border-radius);
+    border-radius: var(--r-ctl);
+    background: var(--card);
     text-align: center;
-    color: var(--pico-muted-color);
+    color: var(--muted);
     margin-bottom: 1.5rem;
   }
-  .modal-footer-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 12px;
-  }
-  .modal-footer-actions button {
-    width: auto;
-    padding: 8px 22px;
-    font-size: 0.85rem;
-    font-weight: 600;
-  }
-  .apply-btn {
-    border: var(--pico-border-width) solid var(--pico-form-element-border-color);
-    background-color: rgb(
-      from var(--pico-form-element-background-color) r g b / 0.6
-    );
-  }
-  .apply-btn:focus,
-  .apply-btn:active,
-  .apply-btn:hover {
-    border: var(--pico-border-width) solid var(--pico-form-element-color);
-    box-shadow: none !important;
-  }
-  .apply-btn:active {
-    background-color: var(--overlay-2) !important;
-    transition: background-color 0s !important;
-  }
   .animate-fade-in {
-    animation: modalBoxFadeIn 0.18s ease-out forwards;
+    animation: modalBoxFadeIn 0.18s ease-out;
   }
   @keyframes modalBoxFadeIn {
     from {
