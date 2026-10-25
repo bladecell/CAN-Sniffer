@@ -158,6 +158,7 @@
     color: #f3f4f6; /* High contrast off-white */
     display: -webkit-box;
     -webkit-line-clamp: 3;
+    line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
@@ -199,6 +200,7 @@
     .dtc-description {
       font-size: 0.8rem;
       -webkit-line-clamp: 2;
+      line-clamp: 2;
     }
   }
 

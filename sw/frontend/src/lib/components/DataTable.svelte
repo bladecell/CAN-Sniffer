@@ -2,7 +2,9 @@
   import type { DataTableProps } from "$lib/types";
   import Switch from "$lib/components/Switch.svelte";
   import Icon from "$lib/Icon.svelte";
-  import { filterRows, formatNumber, sortRows, type FilterRule } from "$lib/tableRows";
+  import { filterRows, formatNumber, sortRows, type FilterOperator, type FilterRule } from "$lib/tableRows";
+  import SelectMenu from "$lib/components/SelectMenu.svelte";
+  import type { SelectMenuOption } from "$lib/selectMenu";
 
   let {
     columns,
@@ -52,6 +54,15 @@
   // --- FILTER STATE ---
 
   let filterRules = $state<FilterRule[]>([]);
+
+  const columnOptions = $derived(columns.map((c) => ({ value: c.key, label: c.label })));
+  const operatorOptions: SelectMenuOption<FilterOperator>[] = [
+    { value: "contains", label: "contains" },
+    { value: "equals", label: "equals" },
+    { value: "starts_with", label: "starts with" },
+    { value: "gt", label: "> greater than" },
+    { value: "lt", label: "< less than" },
+  ];
 
   // --- DERIVED FILTERED & SORTED DATA ---
   let processedData = $derived.by(() => {
@@ -202,19 +213,21 @@
                 <div class="filter-row">
                   <span class="filter-label">{i === 0 ? "Where" : "And"}</span>
 
-                  <select class="filter-select" bind:value={rule.column}>
-                    {#each columns as col (col.key)}
-                      <option value={col.key}>{col.label}</option>
-                    {/each}
-                  </select>
+                  <div class="filter-select">
+                    <SelectMenu
+                      bind:value={rule.column}
+                      options={columnOptions}
+                      ariaLabel="filter column"
+                    />
+                  </div>
 
-                  <select class="filter-select" bind:value={rule.operator}>
-                    <option value="contains">contains</option>
-                    <option value="equals">equals</option>
-                    <option value="starts_with">starts with</option>
-                    <option value="gt">&gt; greater than</option>
-                    <option value="lt">&lt; less than</option>
-                  </select>
+                  <div class="filter-select">
+                    <SelectMenu
+                      bind:value={rule.operator}
+                      options={operatorOptions}
+                      ariaLabel="filter operator"
+                    />
+                  </div>
 
                   <input
                     class="filter-input-text"
@@ -522,7 +535,7 @@
   .toolbar {
     display: flex;
     padding: 0.75rem 1rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid var(--overlay-1);
     background: transparent;
   }
 
@@ -536,23 +549,23 @@
     align-items: center;
     gap: 0.4rem;
     background: transparent;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--overlay-2);
     color: var(--pico-color);
     padding: 0.35rem 0.75rem;
     border-radius: 6px;
     font-size: 0.75rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: background 0.2s var(--ease-out), color 0.2s var(--ease-out), border-color 0.2s var(--ease-out), opacity 0.2s var(--ease-out), transform 0.2s var(--ease-out);
   }
 
   .toolbar-btn:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--overlay-1);
     border-color: rgba(255, 255, 255, 0.2);
   }
 
   .toolbar-btn.active {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--overlay-2);
     border-color: rgba(255, 255, 255, 0.25);
   }
 
@@ -625,11 +638,42 @@
     line-height: 1;
   }
 
-  .filter-select,
+  .filter-select {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .filter-select :global(.select-menu-trigger) {
+    background: var(--overlay-1);
+    border: 1px solid var(--overlay-2);
+    color: #fff;
+    padding: 0 0.6rem;
+    height: 34px;
+    min-height: 0;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-family: var(--pico-font-family-monospace);
+    outline: none;
+    box-shadow: none !important;
+    box-sizing: border-box;
+    transition: border-color 0.2s;
+    margin: 0 !important; /* Overrides Pico CSS default bottom margin! */
+  }
+
+  .filter-select :global(.select-menu-trigger:focus) {
+    border-color: var(--pico-primary);
+  }
+
+  @media (pointer: coarse) {
+    .filter-select :global(.select-menu-trigger) {
+      min-height: 44px;
+    }
+  }
+
   .filter-input-text {
     flex: 1 1 0;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--overlay-1);
+    border: 1px solid var(--overlay-2);
     color: #fff;
     padding: 0 0.6rem;
     height: 34px;
@@ -642,11 +686,6 @@
     margin: 0 !important; /* Overrides Pico CSS default bottom margin! */
   }
 
-  .filter-select {
-    cursor: pointer;
-  }
-
-  .filter-select:focus,
   .filter-input-text:focus {
     border-color: var(--pico-primary);
   }
@@ -662,7 +701,7 @@
     padding: 0;
 
     flex: 0 0 auto;
-    transition: all 0.2s ease;
+    transition: background 0.2s var(--ease-out), color 0.2s var(--ease-out), border-color 0.2s var(--ease-out), opacity 0.2s var(--ease-out), transform 0.2s var(--ease-out);
   }
 
   .empty-state {
@@ -676,7 +715,7 @@
     align-items: center;
     gap: 0.75rem;
     padding-top: 1.25rem;
-    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    border-top: 1px solid var(--overlay-1);
   }
 
   .btn-primary {
@@ -701,7 +740,7 @@
 
   .btn-ghost:hover {
     color: #fff;
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--overlay-1);
   }
 
   /* View Menu Specific */
@@ -732,7 +771,7 @@
   }
 
   .column-toggle-btn:hover {
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--overlay-1);
     color: #fff;
   }
 
@@ -785,7 +824,7 @@
     text-transform: uppercase;
     font-size: 0.7rem;
     color: var(--pico-muted-color);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid var(--overlay-2);
     padding: 0.75rem;
     text-align: left;
   }
@@ -827,7 +866,7 @@
 
   td {
     padding: 0.75rem !important;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid var(--overlay-1);
     word-break: break-word;
     overflow-wrap: break-word;
     vertical-align: middle;
@@ -844,7 +883,7 @@
   }
 
   tbody tr:not(.selected):hover td {
-    background-color: rgba(255, 255, 255, 0.05) !important;
+    background-color: var(--overlay-1) !important;
   }
 
   tbody tr.selected td {

@@ -355,7 +355,7 @@ import { firmwareApi } from "$lib/firmwareApi.svelte";
   .file-item.is-clickable {
     cursor: pointer;
     opacity: 1;
-    color: #f97316; /* Highlight valid files in orange */
+    color: var(--pico-primary); /* Highlight valid files in orange */
   }
 
   .tree-label:hover,
@@ -372,7 +372,7 @@ import { firmwareApi } from "$lib/firmwareApi.svelte";
 
   .tree-toggle:checked ~ .tree-label :global(.folder-open-icon) {
     display: block;
-    color: #f97316;
+    color: var(--pico-primary);
   }
   
   .tree-toggle:checked ~ .tree-label :global(.folder-closed-icon) {

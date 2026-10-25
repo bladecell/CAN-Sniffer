@@ -112,7 +112,7 @@
     border: none;
   }
 
-  .stepper-target:focus {
+  .stepper-target:focus:not(:focus-visible) {
     outline: none !important;
     box-shadow: none !important;
   }
@@ -124,7 +124,7 @@
   }
 
   .subtract-target:active {
-    background-color: rgba(255, 255, 255, 0.1) !important;
+    background-color: var(--overlay-2) !important;
     transition: background-color 0s !important;
   }
 
@@ -137,7 +137,7 @@
   }
 
   .add-target:active {
-    background-color: rgba(255, 255, 255, 0.1) !important;
+    background-color: var(--overlay-2) !important;
     transition: background-color 0s !important;
   }
 </style>

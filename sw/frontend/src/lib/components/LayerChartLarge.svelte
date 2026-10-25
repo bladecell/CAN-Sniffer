@@ -412,7 +412,7 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
+    box-shadow: 0 0 0 1px var(--overlay-2);
   }
 
   .legend-label {
@@ -462,8 +462,7 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
     background-color: rgba(var(--pico-background-color), 0.1);
   }
 
-  .chart-toolbar-btn:focus,
-  .chart-toolbar-btn:focus-visible,
+  .chart-toolbar-btn:focus:not(:focus-visible),
   .chart-toolbar-btn:active {
     box-shadow: none !important;
     outline: none;

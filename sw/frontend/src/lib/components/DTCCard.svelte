@@ -187,11 +187,11 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
   }
 
   .status-warn {
-    background: color-mix(in srgb, #f59e0b 5%, rgba(25, 25, 30, 0.55));
+    background: color-mix(in srgb, var(--warning-color) 8%, transparent);
   }
 
   .status-error {
-    background: color-mix(in srgb, #ef4444 5%, rgba(25, 25, 30, 0.55));
+    background: color-mix(in srgb, var(--error-color) 8%, transparent);
   }
 
   .empty-log-state {
@@ -241,19 +241,19 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid var(--overlay-1);
     padding-bottom: 6px;
     flex-shrink: 0;
   }
 
   .error-text {
-    color: #ef4444;
+    color: var(--status-err-text);
   }
   .permanent-text {
-    color: #a1a1aa;
+    color: var(--pico-muted-color);
   }
   .warn-text {
-    color: #f59e0b;
+    color: var(--status-warn-text);
   }
 
   .column-viewport {
@@ -280,6 +280,12 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
 
   .marquee-active:hover {
     animation-play-state: paused;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .marquee-active {
+      animation: none;
+    }
   }
 
   @keyframes verticalMarquee {
@@ -318,18 +324,18 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
 
   .confirmed-chip {
     background: rgba(239, 68, 68, 0.16);
-    color: #f87171;
+    color: var(--status-err-text);
     border: 1px solid rgba(239, 68, 68, 0.3);
   }
   .permanent-chip {
     background: rgba(161, 161, 170, 0.1);
-    color: #d4d4d8;
+    color: var(--pico-muted-color);
     border: 1px solid rgba(161, 161, 170, 0.2);
   }
   .clip-chip,
   .pending-chip {
     background: rgba(245, 158, 11, 0.12);
-    color: #fbbf24;
+    color: var(--status-warn-text);
     border: 1px solid rgba(245, 158, 11, 0.2);
   }
 

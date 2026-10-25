@@ -110,19 +110,17 @@
     color: var(--pico-secondary);
     background: transparent;
     cursor: pointer;
-    transition: all 0.2s ease;
-    outline: none;
+    transition: background 0.2s var(--ease-out), color 0.2s var(--ease-out), border-color 0.2s var(--ease-out), opacity 0.2s var(--ease-out), transform 0.2s var(--ease-out);
     box-shadow: none;
   }
 
   button:hover {
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--overlay-1);
   }
 
   button.active {
     color: var(--pico-primary);
     border: none;
-    outline: none;
     box-shadow: none;
   }
 
@@ -176,6 +174,12 @@
   .hud-lock-btn:hover {
     background: var(--pico-primary);
     color: var(--pico-primary-inverse, #1a1a1a);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      animation: none !important;
+    }
   }
 
   @keyframes pulse-glow {

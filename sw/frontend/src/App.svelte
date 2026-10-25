@@ -123,6 +123,13 @@ import { connectionStore } from "$lib/connectionStore.svelte";
   ::view-transition-old(root),
   ::view-transition-new(root) {
     animation-duration: 0.25s;
-    animation-timing-function: ease-in-out;
+    animation-timing-function: var(--ease-out);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    ::view-transition-old(root),
+    ::view-transition-new(root) {
+      animation-duration: 0.12s;
+    }
   }
 </style>

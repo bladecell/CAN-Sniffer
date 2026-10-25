@@ -346,7 +346,7 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
     align-items: center;
     justify-content: center;
     padding: 6rem 2rem;
-    border: 2px dashed rgba(255, 255, 255, 0.1);
+    border: 2px dashed var(--overlay-2);
     border-radius: 12px;
     color: #a0a0a5;
     gap: 1.5rem;

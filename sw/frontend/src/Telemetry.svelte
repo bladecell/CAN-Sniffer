@@ -28,11 +28,8 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
   import LayerChartLarge from "$lib/components/LayerChartLarge.svelte";
   import GridSelector from "$lib/components/GridSelector.svelte";
   import Tabs from "$lib/components/Tabs.svelte";
+  import SelectMenu from "$lib/components/SelectMenu.svelte";
   import Icon from "$lib/Icon.svelte";
-
-
-  let iconDropdownOpen = $state(false);
-  let iconDropdownRef: HTMLElement | undefined = $state();
 
   $effect(() => {
     if (
@@ -220,6 +217,11 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
     const parts = path.split('/');
     return parts[parts.length - 1].replace('.svg', '');
   });
+  const iconLabel = (name: string) =>
+    name.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+  const iconOptions = icons.map((name) => ({ value: name, label: iconLabel(name), icon: name }));
+  const modeOptions = modes.map((m) => ({ value: m.value, label: m.label }));
+  const unitOptions = units.map((u) => ({ value: u, label: u }));
 </script>
 
 <SDCardImportModal
@@ -345,21 +347,17 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
               <small id="id-helper"> ECU CAN Identifier </small>
             </div>
             <div>
-              <select
+              <SelectMenu
                 bind:value={telemetryStore.modeInput}
-                name="Mode"
-                aria-label="mode"
-                aria-describedby="mode-helper"
-                aria-invalid={!isModeValidForPid(
+                options={modeOptions}
+                placeholder="Select a mode..."
+                ariaLabel="mode"
+                ariaDescribedby="mode-helper"
+                ariaInvalid={!isModeValidForPid(
                   telemetryStore.pidInput,
                   telemetryStore.modeInput,
                 )}
-              >
-                <option value="" disabled selected>Select a mode...</option>
-                {#each modes as mode}
-                  <option value={mode.value}>{mode.label}</option>
-                {/each}
-              </select>
+              />
               <small id="mode-helper"> OBD2 Service Mode </small>
             </div>
             <div>
@@ -430,17 +428,13 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
           <!-- Row 3: UNIT, MIN, MAX -->
           <div class="grid margin-top">
             <div>
-              <select
+              <SelectMenu
                 bind:value={telemetryStore.unitInput}
-                name="Unit"
-                aria-label="unit"
-                aria-describedby="unit-helper"
-              >
-                <option value="" disabled selected>Select a unit...</option>
-                {#each units as unit}
-                  <option value={unit}>{unit}</option>
-                {/each}
-              </select>
+                options={unitOptions}
+                placeholder="Select a unit..."
+                ariaLabel="unit"
+                ariaDescribedby="unit-helper"
+              />
               <small id="unit-helper"> Unit of measurement </small>
             </div>
             <div>
@@ -547,53 +541,13 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
             <div>
               <div class="icon-selector-wrapper">
                 <div class="icon-select-container">
-                  <div class="custom-icon-dropdown" bind:this={iconDropdownRef}>
-                    <button
-                      class="dropdown-trigger"
-                      onclick={() => (iconDropdownOpen = !iconDropdownOpen)}
-                      aria-label="icon"
-                      aria-describedby="icon-helper"
-                      aria-expanded={iconDropdownOpen}
-                      aria-controls="icon-menu"
-                    >
-                      {#if telemetryStore.iconInput}
-                        <div class="trigger-content">
-                          <Icon name={telemetryStore.iconInput} size={18} />
-                          <span>
-                            {telemetryStore.iconInput
-                              .split("-")
-                              .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-                              .join(" ")}
-                          </span>
-                        </div>
-                      {:else}
-                        <span class="placeholder">Select an icon...</span>
-                      {/if}
-                      <Icon name="chevron-down" class="caret" size={14} />
-                    </button>
-                    {#if iconDropdownOpen}
-                      <div id="icon-menu" class="dropdown-menu blur-background">
-                        {#each icons as iconName}
-                          <button
-                            class="dropdown-item"
-                            class:active={telemetryStore.iconInput === iconName}
-                            onclick={() => {
-                              telemetryStore.iconInput = iconName;
-                              iconDropdownOpen = false;
-                            }}
-                          >
-                            <Icon name={iconName} size={18} />
-                            <span>
-                              {iconName
-                                .split("-")
-                                .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-                                .join(" ")}
-                            </span>
-                          </button>
-                        {/each}
-                      </div>
-                    {/if}
-                  </div>
+                  <SelectMenu
+                    bind:value={telemetryStore.iconInput}
+                    options={iconOptions}
+                    placeholder="Select an icon..."
+                    ariaLabel="icon"
+                    ariaDescribedby="icon-helper"
+                  />
                   <small id="icon-helper"> Display icon </small>
                 </div>
               </div>
@@ -657,17 +611,6 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
     {/if}
   </div>
 
-<svelte:window
-  onkeydown={(e) => {
-    if (e.key === "Escape") iconDropdownOpen = false;
-  }}
-  onclick={(e) => {
-    if (iconDropdownOpen && !iconDropdownRef?.contains(e.target as Node)) {
-      iconDropdownOpen = false;
-    }
-  }}
-/>
-
 <DataTable
   onExport={handleExport}
   onImport={handleImport}
@@ -698,19 +641,6 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
     border-color: var(--pico-muted-border-color) !important;
   }
 
-  .sync-button:focus,
-  .sync-button:focus-visible,
-  .sync-button:active {
-    box-shadow: none;
-    outline: none;
-  }
-
-  .sync-button.active {
-    background: color-mix(in srgb, var(--normal-color) 15%, transparent);
-    border-color: var(--normal-color);
-    color: var(--normal-color);
-  }
-
   .aligned-title-row {
     display: grid;
     grid-template-columns: max-content 1fr;
@@ -738,79 +668,6 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
   /* --- 2. LAYOUT UTILITIES --- */
 
 
-  
-  .custom-icon-dropdown {
-    position: relative;
-    width: 100%;
-  }
-
-  .dropdown-trigger {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
-    padding: var(--pico-form-element-spacing-vertical) var(--pico-form-element-spacing-horizontal);
-    background-color: var(--pico-form-element-background-color);
-    border: var(--pico-border-width) solid var(--pico-form-element-border-color);
-    border-radius: var(--pico-border-radius);
-    color: var(--pico-form-element-color);
-    cursor: pointer;
-    text-align: left;
-    height: 48px;
-    transition: background-color var(--pico-transition), border-color var(--pico-transition), color var(--pico-transition), box-shadow var(--pico-transition);
-  }
-
-  .dropdown-trigger:focus {
-    box-shadow: var(--pico-form-element-focus-color) 0 0 0 0.125rem;
-    border-color: var(--pico-form-element-active-border-color);
-  }
-
-  .trigger-content {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-
-
-  .dropdown-menu {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    width: 100%;
-    max-height: 250px;
-    overflow-y: auto;
-    background-color: var(--pico-form-element-background-color);
-    border: 1px solid var(--pico-form-element-border-color);
-    border-radius: var(--pico-border-radius);
-    z-index: 100;
-    margin-top: 4px;
-    padding: 4px 0;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-  }
-
-  .dropdown-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-    padding: 8px 12px;
-    background: none;
-    border: none;
-    color: var(--pico-color);
-    cursor: pointer;
-    text-align: left;
-    transition: background-color 0.2s;
-  }
-
-  .dropdown-item:hover {
-    background-color: rgba(255, 255, 255, 0.05);
-  }
-
-  .dropdown-item.active {
-    background-color: rgba(from var(--pico-primary) r g b / 0.1);
-    color: var(--pico-primary);
-  }
 
 
 

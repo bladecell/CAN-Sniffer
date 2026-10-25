@@ -216,6 +216,12 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
     color: var(--pico-muted-color);
   }
 
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      animation: none !important;
+    }
+  }
+
   @keyframes pulse-glow {
     0% {
       opacity: 1;

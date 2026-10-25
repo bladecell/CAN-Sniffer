@@ -41,7 +41,7 @@
     padding: 4px;
     background: var(--pico-muted-border-color);
     border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--overlay-1);
     width: fit-content;
   }
 
@@ -54,7 +54,7 @@
     font-weight: 500;
     color: var(--pico-muted-color);
     border-radius: 8px;
-    transition: all 0.2s ease;
+    transition: background 0.2s var(--ease-out), color 0.2s var(--ease-out), border-color 0.2s var(--ease-out), opacity 0.2s var(--ease-out), transform 0.2s var(--ease-out);
     user-select: none;
   }
 

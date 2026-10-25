@@ -217,7 +217,7 @@ is detected
     box-shadow: none !important;
   }
   .btn:active {
-    background-color: rgba(255, 255, 255, 0.1) !important;
+    background-color: var(--overlay-2) !important;
     transition: background-color 0s !important;
   } */
 </style>

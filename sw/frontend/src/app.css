@@ -2,6 +2,7 @@
 @import '@fontsource/atkinson-hyperlegible/latin-400.css';
 
 :root {
+	--ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 	--pico-font-family: 'Atkinson Hyperlegible', sans-serif;
 }
 
@@ -546,4 +547,72 @@ body:has(.scroll) {
   position: fixed;
   inset: 0;
   z-index: 99;
+}
+
+/* Visible keyboard focus on every interactive element */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible,
+[role='button']:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--pico-primary);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-card-status-dot {
+    animation: none;
+  }
+
+  .dashboard-card,
+  .dashboard-card-icon {
+    transition: none;
+  }
+
+  .dashboard-card:hover .dashboard-card-icon {
+    transform: none;
+  }
+}
+
+/* Theme-aware tokens: remap with the Pico theme instead of assuming a dark canvas */
+:root {
+  --overlay-1: color-mix(in srgb, var(--pico-color) 5%, transparent);
+  --overlay-2: color-mix(in srgb, var(--pico-color) 10%, transparent);
+  --status-err-text: #f87171;
+  --status-warn-text: #fbbf24;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    --status-err-text: #b91c1c;
+    --status-warn-text: #92400e;
+  }
+}
+
+:root[data-theme='light'] {
+  --status-err-text: #b91c1c;
+  --status-warn-text: #92400e;
+}
+
+/* Touch: bigger hit area for the grid resize handle */
+@media (pointer: coarse) {
+  .grid-item-resizer {
+    width: 36px !important;
+    height: 36px !important;
+  }
+
+  .grid-item-resizer::after {
+    right: 6px;
+    bottom: 6px;
+  }
+}
+
+/* Hover transforms only where hover exists, so touch doesn't stick on them */
+@media (hover: none) {
+  .dashboard-card:hover .dashboard-card-icon {
+    transform: none;
+  }
 }

@@ -3,6 +3,7 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
 
 
   import TelemetryStepper from "./TelemetryStepper.svelte";
+  import SelectMenu from "./SelectMenu.svelte";
   import type {
     DashboardItem,
     PidGridItem,
@@ -10,10 +11,12 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
     OverviewGridItem,
     BatteryGridItem,
     BarStyle,
+    GaugeStyle,
   } from "$lib/types";
   import { MODULE_CONFIGS, getModuleBounds } from "$lib/types";
   import { untrack } from "svelte";
   import { dialogFocus } from "$lib/dialogFocus";
+  import type { SelectMenuOption } from "$lib/selectMenu";
 
   interface Props {
     isOpen: boolean;
@@ -43,6 +46,44 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
   } as DashboardItem);
 
   let internalSync = $state(false);
+
+  const gaugeStyleOptions: SelectMenuOption<GaugeStyle | undefined>[] = [
+    { value: undefined, label: "Arc (Default 240°)" },
+    { value: "arc", label: "Arc (240°)" },
+    { value: "half", label: "Half (180°)" },
+    { value: "donut", label: "Donut (360°)" },
+    { value: "speedometer", label: "Speedometer (Detailed)" },
+    { value: "gradient", label: "Gradient Progress" },
+  ];
+
+  const pidBarStyleOptions: SelectMenuOption<BarStyle>[] = [
+    { value: "solid", label: "Solid (Default)" },
+    { value: "zones", label: "Zones (equal thirds)" },
+    { value: "segmented", label: "Segmented" },
+    { value: "gradient", label: "Gradient" },
+    { value: "marker", label: "Marker" },
+  ];
+
+  const batteryBarStyleOptions: SelectMenuOption<BarStyle>[] = [
+    { value: "zones", label: "Zones (Default)" },
+    { value: "solid", label: "Solid" },
+    { value: "segmented", label: "Segmented" },
+    { value: "gradient", label: "Gradient" },
+    { value: "marker", label: "Marker" },
+  ];
+
+  const pidOptions: SelectMenuOption<number>[] = $derived(
+    vehicleStore.pidDefinitions.length > 0
+      ? vehicleStore.pidDefinitions.map((d) => ({
+          value: d.pid,
+          label: `0x${d.pid.toString(16).toUpperCase()} — ${d.name}`,
+        }))
+      : [{ value: 0, label: "No PID definitions available", disabled: true }],
+  );
+
+  const pidNameOptions: SelectMenuOption<number>[] = $derived(
+    vehicleStore.pidDefinitions.map((d) => ({ value: d.pid, label: d.name })),
+  );
 
   $effect(() => {
     if (item) {
@@ -183,18 +224,20 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
         <label for="card-type-select" class="field-heading"
           >Component Classification</label
         >
-        <select
-          id="card-type-select"
-          bind:value={localItem.cardType}
-          onchange={handleCardTypeChange}
-          disabled={!isNewCard}
-          class="orange-select-field"
-        >
-          <option value="pid">OBD-II Parameter</option>
-          <option value="battery">Car Battery (12 V)</option>
-          <option value="dtcs">Diagnostic Trouble Codes (DTC)</option>
-          <option value="overview">Performance Overview</option>
-        </select>
+        <div class="orange-select-field">
+          <SelectMenu
+            id="card-type-select"
+            bind:value={localItem.cardType}
+            onChange={handleCardTypeChange}
+            disabled={!isNewCard}
+            options={[
+              { value: "pid", label: "OBD-II Parameter" },
+              { value: "battery", label: "Car Battery (12 V)" },
+              { value: "dtcs", label: "Diagnostic Trouble Codes (DTC)" },
+              { value: "overview", label: "Performance Overview" },
+            ]}
+          />
+        </div>
 
         <div class="steppers-inline-grid">
           <div class="stepper-field-wrapper">
@@ -226,69 +269,56 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
             <label for="pid-sensor-select" class="field-heading"
               >Target Vehicle Sensor Stream</label
             >
-            <select
-              id="pid-sensor-select"
-              bind:value={pidItem.pid}
-              class="orange-select-field"
-            >
-              {#each vehicleStore.pidDefinitions as definition}
-                <option value={definition.pid}>
-                  0x{definition.pid.toString(16).toUpperCase()} — {definition.name}
-                </option>
-              {:else}
-                <option value={0} disabled>No PID definitions available</option>
-              {/each}
-            </select>
+            <div class="orange-select-field">
+              <SelectMenu
+                id="pid-sensor-select"
+                bind:value={pidItem.pid}
+                options={pidOptions}
+              />
+            </div>
 
             <label for="pid-visualization-select" class="field-heading"
               >Widget Visualization Mode</label
             >
-            <select
-              id="pid-visualization-select"
-              bind:value={pidItem.displayMode}
-              onchange={handleVisualizationChange}
-              class="orange-select-field"
-            >
-              <option value="card">Digit Badge</option>
-              <option value="chart">Live History Chart</option>
-              <option value="gauge">Radial Gauge</option>
-              <option value="bar">Horizon Bar</option>
-            </select>
+            <div class="orange-select-field">
+              <SelectMenu
+                id="pid-visualization-select"
+                bind:value={pidItem.displayMode}
+                onChange={handleVisualizationChange}
+                options={[
+                  { value: "card", label: "Digit Badge" },
+                  { value: "chart", label: "Live History Chart" },
+                  { value: "gauge", label: "Radial Gauge" },
+                  { value: "bar", label: "Horizon Bar" },
+                ]}
+              />
+            </div>
 
             {#if pidItem.displayMode === "gauge"}
               <label for="pid-gauge-style-select" class="field-heading"
                 >Gauge Style</label
               >
-              <select
-                id="pid-gauge-style-select"
-                bind:value={pidItem.gaugeStyle}
-                class="orange-select-field"
-              >
-                <option value={undefined}>Arc (Default 240°)</option>
-                <option value="arc">Arc (240°)</option>
-                <option value="half">Half (180°)</option>
-                <option value="donut">Donut (360°)</option>
-                <option value="speedometer">Speedometer (Detailed)</option>
-                <option value="gradient">Gradient Progress</option>
-              </select>
+              <div class="orange-select-field">
+                <SelectMenu
+                  id="pid-gauge-style-select"
+                  bind:value={pidItem.gaugeStyle}
+                  options={gaugeStyleOptions}
+                />
+              </div>
             {/if}
 
             {#if pidItem.displayMode === "bar"}
               <label for="pid-bar-style-select" class="field-heading"
                 >Bar Style</label
               >
-              <select
-                id="pid-bar-style-select"
-                value={pidItem.barStyle ?? "solid"}
-                onchange={(e) => (pidItem.barStyle = e.currentTarget.value as BarStyle)}
-                class="orange-select-field"
-              >
-                <option value="solid">Solid (Default)</option>
-                <option value="zones">Zones (equal thirds)</option>
-                <option value="segmented">Segmented</option>
-                <option value="gradient">Gradient</option>
-                <option value="marker">Marker</option>
-              </select>
+              <div class="orange-select-field">
+                <SelectMenu
+                  id="pid-bar-style-select"
+                  value={pidItem.barStyle ?? "solid"}
+                  onChange={(v) => (pidItem.barStyle = v)}
+                  options={pidBarStyleOptions}
+                />
+              </div>
             {/if}
           </div>
         {:else if localItem.cardType === "overview"}
@@ -316,17 +346,13 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
                   <label for="pid-select-{idx}" class="field-heading"
                     >Footer Metric #{idx + 1}</label
                   >
-                  <select
-                    id="pid-select-{idx}"
-                    bind:value={overItem.pids[idx]}
-                    class="orange-select-field compact"
-                  >
-                    {#each vehicleStore.pidDefinitions as definition}
-                      <option value={definition.pid}>
-                        {definition.name}
-                      </option>
-                    {/each}
-                  </select>
+                  <div class="orange-select-field compact">
+                    <SelectMenu
+                      id="pid-select-{idx}"
+                      bind:value={overItem.pids[idx]}
+                      options={pidNameOptions}
+                    />
+                  </div>
                 </div>
               {/each}
             </div>
@@ -339,52 +365,45 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
             <label for="battery-visualization-select" class="field-heading"
               >Widget Visualization Mode</label
             >
-            <select
-              id="battery-visualization-select"
-              bind:value={batteryItem.displayMode}
-              onchange={handleVisualizationChange}
-              class="orange-select-field"
-            >
-              <option value="glyph">Battery</option>
-              <option value="bar">Horizontal Bar</option>
-              <option value="gauge">Radial Gauge</option>
-              <option value="chart">Live History Chart</option>
-            </select>
+            <div class="orange-select-field">
+              <SelectMenu
+                id="battery-visualization-select"
+                bind:value={batteryItem.displayMode}
+                onChange={handleVisualizationChange}
+                options={[
+                  { value: "glyph", label: "Battery" },
+                  { value: "bar", label: "Horizontal Bar" },
+                  { value: "gauge", label: "Radial Gauge" },
+                  { value: "chart", label: "Live History Chart" },
+                ]}
+              />
+            </div>
 
             {#if batteryItem.displayMode === "bar"}
               <label for="battery-bar-style-select" class="field-heading"
                 >Bar Style</label
               >
-              <select
-                id="battery-bar-style-select"
-                value={batteryItem.barStyle ?? "zones"}
-                onchange={(e) => (batteryItem.barStyle = e.currentTarget.value as BarStyle)}
-                class="orange-select-field"
-              >
-                <option value="zones">Zones (Default)</option>
-                <option value="solid">Solid</option>
-                <option value="segmented">Segmented</option>
-                <option value="gradient">Gradient</option>
-                <option value="marker">Marker</option>
-              </select>
+              <div class="orange-select-field">
+                <SelectMenu
+                  id="battery-bar-style-select"
+                  value={batteryItem.barStyle ?? "zones"}
+                  onChange={(v) => (batteryItem.barStyle = v)}
+                  options={batteryBarStyleOptions}
+                />
+              </div>
             {/if}
 
             {#if batteryItem.displayMode === "gauge"}
               <label for="battery-gauge-style-select" class="field-heading"
                 >Gauge Style</label
               >
-              <select
-                id="battery-gauge-style-select"
-                bind:value={batteryItem.gaugeStyle}
-                class="orange-select-field"
-              >
-                <option value={undefined}>Arc (Default 240°)</option>
-                <option value="arc">Arc (240°)</option>
-                <option value="half">Half (180°)</option>
-                <option value="donut">Donut (360°)</option>
-                <option value="speedometer">Speedometer (Detailed)</option>
-                <option value="gradient">Gradient Progress</option>
-              </select>
+              <div class="orange-select-field">
+                <SelectMenu
+                  id="battery-gauge-style-select"
+                  bind:value={batteryItem.gaugeStyle}
+                  options={gaugeStyleOptions}
+                />
+              </div>
             {/if}
           </div>
         {:else}
@@ -451,23 +470,25 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
   }
   .orange-select-field {
     margin-bottom: 1rem !important;
+  }
+  .orange-select-field :global(.select-menu-trigger) {
     background-color: rgb(
       from var(--pico-form-element-background-color) r g b / 0.6
     );
     transition:
       border-color 0.2s ease,
       box-shadow 0.2s ease;
-    outline: none !important;
   }
-  .orange-select-field:active,
-  .orange-select-field:focus,
-  .orange-select-field:hover {
+  .orange-select-field :global(.select-menu-trigger:active),
+  .orange-select-field :global(.select-menu-trigger:focus),
+  .orange-select-field :global(.select-menu-trigger:hover) {
     border: var(--pico-border-width) solid var(--pico-form-element-color);
-    outline: none !important;
     box-shadow: none !important;
   }
   .orange-select-field.compact {
     margin-bottom: 0.5rem !important;
+  }
+  .orange-select-field.compact :global(.select-menu-trigger) {
     font-size: 0.85rem;
     padding: 6px 8px;
     outline: none !important;
@@ -508,7 +529,7 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
     height: 38px;
     padding: 2px;
     border-radius: 4px;
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--overlay-1);
     border: 1px solid var(--pico-border-color);
     cursor: pointer;
   }
@@ -546,11 +567,10 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
   .apply-btn:active,
   .apply-btn:hover {
     border: var(--pico-border-width) solid var(--pico-form-element-color);
-    outline: none !important;
     box-shadow: none !important;
   }
   .apply-btn:active {
-    background-color: rgba(255, 255, 255, 0.1) !important;
+    background-color: var(--overlay-2) !important;
     transition: background-color 0s !important;
   }
   .animate-fade-in {

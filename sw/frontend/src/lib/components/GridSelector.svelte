@@ -19,6 +19,8 @@
   }
 </script>
 
+<svelte:window onkeydown={(e) => e.key === "Escape" && open && (open = false)} />
+
 <div class="grid-selector-container">
   <button class="btn btn-outline" onclick={() => (open = !open)}>
     <Icon name="grid" size={16} />
@@ -28,7 +30,7 @@
   {#if open}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="dropdown-overlay" onclick={() => (open = false)}></div>
+    <div class="dropdown-overlay" role="presentation" onclick={() => (open = false)}></div>
     <div class="popup-menu blur-background">
       <div class="grid-label">
         {hoverR > 0 && hoverC > 0 ? `${hoverR} x ${hoverC}` : "Select Layout"}
@@ -64,18 +66,18 @@
     align-items: center;
     gap: 0.4rem;
     background: transparent;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--overlay-2);
     color: var(--pico-color);
     padding: 0.35rem 0.75rem;
     border-radius: 6px;
     font-size: 0.75rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: background 0.2s var(--ease-out), color 0.2s var(--ease-out), border-color 0.2s var(--ease-out), opacity 0.2s var(--ease-out), transform 0.2s var(--ease-out);
   }
   
   .btn-outline:hover {
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--overlay-1);
     border-color: rgba(255, 255, 255, 0.2);
   }
   
@@ -112,7 +114,7 @@
   .square {
     width: 24px;
     height: 24px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--overlay-2);
     background: transparent;
     border-radius: 4px;
     cursor: pointer;
@@ -120,6 +122,13 @@
     transition: background 0.1s, border-color 0.1s;
   }
   
+  @media (pointer: coarse) {
+    .square {
+      width: 36px;
+      height: 36px;
+    }
+  }
+
   .square.active {
     background: var(--pico-primary);
     border-color: var(--pico-primary);

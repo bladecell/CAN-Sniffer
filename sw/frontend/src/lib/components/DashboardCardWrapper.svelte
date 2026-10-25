@@ -417,7 +417,7 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
     padding: 8px 16px;
     border-radius: 40px;
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: background 0.15s var(--ease-out), color 0.15s var(--ease-out), border-color 0.15s var(--ease-out), opacity 0.15s var(--ease-out), transform 0.15s var(--ease-out);
   }
   .pill-btn.delete {
     padding: 8px 12px;

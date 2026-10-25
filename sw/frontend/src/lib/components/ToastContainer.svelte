@@ -1,9 +1,11 @@
 <script lang="ts">
   import { alertStore } from "$lib/alertStore.svelte";
-  import { fly } from "svelte/transition";
+  import { fly, fade } from "svelte/transition";
   import { flip } from "svelte/animate";
   import type { Alert } from "$lib/types";
   import Icon from "$lib/Icon.svelte"; // Adjust this path to where your Icon component is saved
+
+  const reduceMotion = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   // Maps the alert type to the keys in your iconData
   const getIconName = (type: Alert["type"]) => {
@@ -32,7 +34,8 @@
       class:error={alert.type === "error"}
       class:warning={alert.type === "warning"}
       class:info={alert.type === "info"}
-      transition:fly={{ y: 20, duration: 300 }}
+      in:fly={{ y: reduceMotion ? 0 : 20, duration: reduceMotion ? 150 : 300 }}
+      out:fade={{ duration: 150 }}
       animate:flip
       onclick={() => alertStore.remove(alert.id)}
       role="alert"
