@@ -73,19 +73,20 @@ import { connectionStore } from "$lib/connectionStore.svelte";
 
 <style>
   .main-content {
-    margin-top: 100px;
+    margin-top: 102px; /* Below the floating dock (DESIGN.md, Layout) */
     padding: clamp(0.75rem, 3vw, 1.5rem);
     width: 100vw;
     max-width: 100vw;
     margin-left: 0;
     margin-right: 0;
     overflow-x: clip;
-    padding-bottom: 200px !important;
+    padding-bottom: 56px;
   }
 
-  @media (max-width: 991px) {
+  @media (max-width: 859px) {
     .main-content {
-      margin-top: 1rem; /* Remove the huge 100px gap since the nav bar is at the bottom on mobile */
+      margin-top: 20px; /* The nav is a bottom bar here */
+      padding-bottom: calc(118px + env(safe-area-inset-bottom)); /* Clears the bottom bar */
     }
   }
 

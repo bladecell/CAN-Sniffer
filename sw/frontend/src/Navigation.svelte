@@ -6,51 +6,67 @@
 
   const tabs = [
     { id: "dashboard", icon: "gauge", label: "Dashboard" },
-    { id: "recorder", icon: "route", label: "Recorder" },
     { id: "diagnostics", icon: "engine", label: "Diagnostics" },
+    { id: "recorder", icon: "route", label: "Recorder" },
     { id: "telemetry", icon: "chart", label: "Telemetry" },
-    { id: "can-logging", icon: "timeline-arrow", label: "CAN Logging" },
+    { id: "can-logging", icon: "timeline-arrow", label: "CAN Bus" },
     { id: "settings", icon: "gear", label: "Settings" },
   ];
+
+  let tabList: HTMLUListElement | undefined = $state();
+
+  function go(id: string) {
+    if (!document.startViewTransition) {
+      activeTab = id;
+      return;
+    }
+    document.startViewTransition(() => {
+      activeTab = id;
+    });
+  }
+
+  // Slides the accent bar under the active tab. Position comes from the DOM, so it re-runs on route change and resize.
+  function moveBar() {
+    const current = tabList?.querySelector<HTMLElement>("[aria-current='page']");
+    if (!tabList || !current) return;
+    tabList.style.setProperty("--ix", `${current.offsetLeft}px`);
+    tabList.style.setProperty("--iw", `${current.offsetWidth}px`);
+  }
+
+  $effect(() => {
+    if (tabList && activeTab) moveBar();
+  });
 </script>
 
+<svelte:window onresize={moveBar} />
+
 <div class="nav-wrapper">
-  <nav class="pill-nav blur-background" class:is-editing={dashboardStore.isEditMode}>
+  <nav class="dock" aria-label="Main">
     {#if dashboardStore.isEditMode}
-      <!-- EDIT MODE OVERRIDE -->
-      <div class="edit-mode-hud">
-        <span class="live-dot"></span>
-        <span class="label-text">CANVAS UNLOCKED</span>
-        <button
-          class="hud-lock-btn"
-          onclick={() => (dashboardStore.isEditMode = false)}
-        >
-          Done Editing
+      <div class="hud">
+        <span class="live-dot" aria-hidden="true"></span>
+        <span>Canvas unlocked</span>
+        <button class="hud-lock-btn" onclick={() => (dashboardStore.isEditMode = false)}>
+          Done editing
         </button>
       </div>
     {:else}
-      <!-- STANDARD NAVIGATION -->
-      <ul>
-        {#each tabs as tab}
+      <ul class="tabs" bind:this={tabList}>
+        {#each tabs as tab (tab.id)}
           <li>
-            <button
-              class:active={activeTab === tab.id}
-              onclick={() => {
-                if (!document.startViewTransition) {
-                  activeTab = tab.id;
-                  return;
-                }
-
-                document.startViewTransition(() => {
-                  activeTab = tab.id;
-                });
+            <a
+              class="tab"
+              href="#{tab.id}"
+              aria-current={activeTab === tab.id ? "page" : undefined}
+              onclick={(e) => {
+                if (e.metaKey || e.ctrlKey || e.shiftKey) return;
+                e.preventDefault();
+                go(tab.id);
               }}
             >
-              <div class="icon">
-                <Icon class="icon" name={tab.icon} size={26} />
-              </div>
+              <span class="ic"><Icon name={tab.icon} size={24} /></span>
               <span class="label">{tab.label}</span>
-            </button>
+            </a>
           </li>
         {/each}
       </ul>
@@ -61,213 +77,219 @@
 <style>
   .nav-wrapper {
     position: fixed;
-    left: 0;
-    right: 0;
+    top: 14px;
+    left: 14px;
+    right: 14px;
     display: flex;
     justify-content: center;
     z-index: 1000;
     pointer-events: none;
   }
 
-  .pill-nav {
+  /* Floating layer: the only place blur and float tokens are used for page chrome (DESIGN.md, Elevation) */
+  .dock {
     pointer-events: auto;
-    border-radius: 26px;
-    padding: 0px 20px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-    transition:
-      border-color 0.3s ease,
-      box-shadow 0.3s ease;
-  }
-
-  /* When editing, the entire nav bar glows orange/primary */
-  .pill-nav.is-editing {
-    border-color: var(--pico-primary);
-    box-shadow: 0 10px 30px
-      color-mix(in srgb, var(--pico-primary) 15%, transparent);
-  }
-
-  ul {
-    list-style: none;
-    padding: 0;
-    margin: 0;
     display: flex;
-    gap: 8px;
-  }
-
-  li {
-    margin: 0;
-  }
-
-  button {
-    display: flex;
-    flex-direction: column;
     align-items: center;
-    justify-items: center;
+    margin: 0;
+    padding: 8px 10px;
+    border-radius: 28px;
+    background: var(--float);
+    -webkit-backdrop-filter: blur(var(--blur)) saturate(1.35);
+    backdrop-filter: blur(var(--blur)) saturate(1.35);
+    box-shadow: var(--shadow-float);
+    color: var(--text);
+  }
+
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .dock {
+      background: var(--float-solid);
+    }
+  }
+
+  .tabs {
+    position: relative;
+    display: flex;
     gap: 4px;
-    padding: 8px 16px;
-    border: none;
-    border-radius: 26px;
-    color: var(--pico-secondary);
-    background: transparent;
-    cursor: pointer;
-    transition: background 0.2s var(--ease-out), color 0.2s var(--ease-out), border-color 0.2s var(--ease-out), opacity 0.2s var(--ease-out), transform 0.2s var(--ease-out);
-    box-shadow: none;
+    list-style: none;
+    margin: 0;
+    padding: 0;
   }
 
-  button:hover {
-    background: var(--overlay-1);
+  .tabs::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    height: 3px;
+    border-radius: 3px;
+    background: var(--accent);
+    left: calc(var(--ix, 0px) + var(--iw, 0px) * 0.2);
+    width: calc(var(--iw, 0px) * 0.6);
+    transition:
+      left 0.45s var(--ease-out),
+      width 0.45s var(--ease-out);
   }
 
-  button.active {
-    color: var(--pico-primary);
-    border: none;
-    box-shadow: none;
+  .tabs li {
+    margin: 0;
+    padding: 0;
+    display: flex;
   }
 
-  .icon {
+  /* Pico nav rules add a negative margin to the first link; reset it */
+  .tabs .tab {
+    margin: 0;
+  }
+
+  .tab {
+    position: relative;
     display: flex;
     align-items: center;
-    justify-content: center;
-    height: 48px;
-    width: 48px;
+    gap: 8px;
+    padding: 11px 16px 13px;
+    border-radius: 20px;
+    color: var(--muted);
+    font-weight: 800;
+    text-decoration: none;
+    white-space: nowrap;
+    transition:
+      color 0.2s var(--ease-out),
+      background-color 0.2s var(--ease-out);
   }
 
-  /* --- NEW: EDIT MODE HUD STYLES --- */
-  .edit-mode-hud {
+  .tab[aria-current="page"],
+  .tab[aria-current="page"]:hover {
+    color: var(--accent-text);
+  }
+
+  .ic {
+    display: flex;
+    transition: transform 0.35s var(--ease-out);
+  }
+
+  .label {
+    line-height: 1.2;
+  }
+
+  .hud {
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 12px;
-    padding: 10px 0;
-    color: var(--pico-color);
-    font-family: var(--pico-font-family-monospace);
-    font-size: 0.85rem;
+    min-height: 48px;
+    padding: 0 4px;
+    color: var(--text);
     font-weight: 700;
+    font-size: 0.9rem;
+    white-space: nowrap;
   }
 
   .live-dot {
+    flex: none;
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    background: var(--pico-primary);
-    animation: pulse-glow 1.5s infinite alternate;
+    background: var(--accent);
   }
 
   .hud-lock-btn {
-    background: var(--pico-primary);
-    color: var(--pico-primary-inverse, #1a1a1a);
-    border: none;
+    display: block;
+    margin: 0;
     padding: 8px 18px;
-    border-radius: 20px;
-    font-family: var(--pico-font-family);
+    border: none;
+    border-radius: 16px;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-family: inherit;
     font-weight: 800;
-    font-size: 0.75rem;
+    font-size: 0.85rem;
     cursor: pointer;
-    text-transform: uppercase;
-    transition: transform 0.15s ease;
-    display: block; /* Overrides the flex-column of normal nav buttons */
   }
 
   .hud-lock-btn:active {
-    transform: scale(0.95);
-  }
-  .hud-lock-btn:hover {
-    background: var(--pico-primary);
-    color: var(--pico-primary-inverse, #1a1a1a);
+    filter: brightness(0.94);
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    * {
-      animation: none !important;
+  @media (hover: hover) {
+    .tab:hover {
+      background: var(--hov);
     }
   }
 
-  @keyframes pulse-glow {
-    0% {
-      opacity: 1;
-      box-shadow: 0 0 1px var(--pico-primary);
-    }
-    50% {
-      opacity: 0.85;
-      box-shadow: 0 0 6px var(--pico-primary);
-    }
-    100% {
-      opacity: 1;
-      box-shadow: 0 0 8px var(--pico-primary);
+  @media (pointer: coarse) {
+    .tab,
+    .hud-lock-btn {
+      min-height: 44px;
     }
   }
 
-  @media (min-width: 992px) {
-    .nav-wrapper {
-      top: 20px;
-    }
-    .icon {
+  /* Desktop: floating dock at the top, icon and label side by side */
+  @media (min-width: 860px) and (max-width: 1060px) {
+    .ic {
       display: none;
     }
-    button {
-      display: block;
-    }
   }
 
-  @media (max-width: 991px) {
+  /* Phone: bottom bar, six equal slots, icon over label */
+  @media (max-width: 859px) {
     .nav-wrapper {
-      bottom: 20px;
-      padding: 0 10px; /* Gives a safe zone on the extreme edges of tiny screens */
-      box-sizing: border-box;
+      top: auto;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 0 6px calc(10px + env(safe-area-inset-bottom));
     }
 
-    .pill-nav {
-      padding: 0px 6px; /* Reduced padding on the left/right of the pill */
+    .dock {
       width: 100%;
-      max-width: 450px; /* Keeps it looking nice on medium tablets, but shrinks on phones */
-      box-sizing: border-box;
+      padding: 7px 2px 9px;
+      border-radius: 32px;
     }
 
-    ul {
-      height: 70px; /* Slightly shorter to maintain nice proportions */
-      gap: 2px; /* Tiny gap to save space */
+    .tabs {
       width: 100%;
     }
 
-    li {
-      flex: 1; /* THE MAGIC FIX: Forces all 6 list items to share the width equally */
-      display: flex;
+    .tabs li {
+      flex: 1 1 0;
+      min-width: 0;
     }
 
-    button {
-      height: 100%;
-      width: 100%; /* Stretches to fill the flexible li */
-      min-height: auto;
-      padding: 0; /* Remove padding to maximize touch area */
+    .tabs::after {
+      bottom: 1px;
     }
 
-    .icon {
-      /* Shrink the icon wrapper slightly so it fits inside the compressed button */
-      width: 40px;
-      height: 40px;
-    }
-
-    .label {
-      display: none;
-    }
-
-    /* --- EDIT MODE ADJUSTMENTS --- */
-    .edit-mode-hud {
-      height: 70px; /* Match the new UL height */
+    .tab {
+      flex-direction: column;
+      justify-content: center;
+      gap: 2px;
       width: 100%;
-      gap: 8px; /* Tighter spacing */
+      min-height: 58px;
+      padding: 6px 0 8px;
+      border-radius: 24px;
+      font-size: 0.64rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
     }
 
-    .edit-mode-hud .hud-lock-btn {
-      width: auto;
-      height: auto;
-      display: block;
+    .tab[aria-current="page"] .ic {
+      transform: translateY(-1px) scale(1.12);
+    }
+
+    .hud {
+      min-height: 58px;
+      gap: 8px;
+    }
+
+    .hud-lock-btn {
       padding: 8px 12px;
     }
+  }
 
-    .edit-mode-hud .label-text {
-      font-size: 0.7rem;
-      white-space: nowrap; /* Prevents text from awkwardly stacking */
+  @media (max-width: 374px) {
+    .tab {
+      font-size: 0.58rem;
+      letter-spacing: -0.02em;
     }
   }
 </style>
