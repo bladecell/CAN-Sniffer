@@ -1,0 +1,291 @@
+/* Telemetry control vocabulary (DESIGN.md, Components). Global, prefixed tel-, imported once by Telemetry.svelte. */
+
+/* Buttons: fill, no border. Text is --ctl-text; the accent is only the primary fill. */
+.tel-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-sizing: border-box;
+  min-height: var(--ctl-h);
+  margin: 0;
+  padding: 0 var(--btn-px);
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: var(--ctl);
+  color: var(--ctl-text);
+  font: 700 1rem/1.2 var(--font);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+@media (hover: hover) {
+  .tel-btn:hover {
+    background: var(--ctl-h2);
+  }
+}
+.tel-btn:active {
+  filter: brightness(0.94);
+}
+.tel-btn.pri {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 800;
+}
+.tel-btn.danger {
+  color: var(--ctl-crit);
+}
+.tel-btn.fill-crit {
+  background: var(--crit-solid);
+  color: var(--on-crit);
+  font-weight: 800;
+}
+.tel-btn.sm {
+  min-height: calc(var(--ctl-h) - 8px);
+  padding: 0 12px;
+  font-size: 0.9rem;
+}
+.tel-btn.icon {
+  width: var(--ctl-h);
+  padding: 0;
+}
+.tel-btn[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: not-allowed;
+  filter: none;
+}
+.tel-btn :global(svg) {
+  flex: none;
+}
+.tel-btn :global(.badge) {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 0.7rem;
+}
+@media (pointer: coarse) {
+  .tel-btn {
+    min-height: 44px;
+  }
+  .tel-btn.icon {
+    width: 44px;
+  }
+}
+
+/* Status chips (fixed status colours, always with icon or label) and count tags. */
+.tel-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 11px 2px 9px;
+  border-radius: 99px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.tel-chip :global(svg) {
+  width: 1em;
+  height: 1em;
+  flex: none;
+}
+.tel-chip.k-ok {
+  background: var(--ok-f);
+  color: var(--ok);
+}
+.tel-chip.k-warn {
+  background: var(--warn-f);
+  color: var(--warn);
+}
+.tel-chip.k-crit {
+  background: var(--crit-f);
+  color: var(--crit);
+}
+.tel-chip.k-plain {
+  background: var(--ctl);
+  color: var(--ctl-sub);
+}
+.tel-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 9px;
+  border-radius: 99px;
+  background: var(--ctl);
+  color: var(--ctl-sub);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+/* Floating layers only: popovers, dialogs, sheets, tooltip. Never in-flow controls. */
+.tel-float {
+  background: var(--float);
+  color: var(--text);
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(1.35);
+  backdrop-filter: blur(var(--blur)) saturate(1.35);
+  box-shadow: var(--shadow-float);
+  border-radius: var(--r-float);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .tel-float {
+    background: var(--float-solid);
+  }
+}
+
+/* Segmented control: selected is bold with a 3px accent bar, text stays plain. */
+.tel-seg {
+  display: inline-flex;
+  gap: 2px;
+  max-width: 100%;
+  padding: 3px;
+  border-radius: calc(var(--r-ctl) + 2px);
+  background: var(--ctl);
+}
+.tel-seg button {
+  position: relative;
+  min-height: calc(var(--ctl-h) - 8px);
+  margin: 0;
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: transparent;
+  color: var(--ctl-sub);
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tel-seg button::after {
+  content: '';
+  position: absolute;
+  left: 22%;
+  right: 22%;
+  bottom: 3px;
+  height: 3px;
+  border-radius: 3px;
+  background: var(--accent);
+  transform: scaleX(0);
+  transition: transform 0.2s var(--ease-out);
+}
+.tel-seg button[aria-pressed='true'] {
+  color: var(--ctl-sel);
+  font-weight: 800;
+}
+.tel-seg button[aria-pressed='true']::after {
+  transform: scaleX(1);
+}
+.tel-seg button[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+@media (pointer: coarse) {
+  .tel-seg button {
+    min-height: 44px;
+  }
+}
+
+/* Switch: role=switch, 52x32. Off track is --track, on track is the accent. */
+.tel-switch {
+  position: relative;
+  flex: none;
+  width: 52px;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 99px;
+  background: var(--track);
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+.tel-switch::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--float-solid);
+  transition: transform 0.2s var(--ease-out);
+}
+.tel-switch[aria-checked='true'] {
+  background: var(--accent);
+}
+.tel-switch[aria-checked='true']::after {
+  transform: translateX(20px);
+  background: var(--on-accent);
+}
+@media (pointer: coarse) {
+  .tel-switch {
+    min-width: 52px;
+    min-height: 44px;
+  }
+}
+
+/* Text input in a control fill. */
+.tel-in {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--ctl-h);
+  margin: 0;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: var(--ctl);
+  color: var(--ctl-text);
+  font: inherit;
+}
+.tel-in::placeholder {
+  color: var(--ctl-sub);
+  opacity: 1;
+}
+.tel-in[aria-invalid='true'] {
+  outline: 2px solid var(--crit);
+  outline-offset: 0;
+}
+
+/* Selected row marker: 3px accent bar, no tint. */
+.tel-bar-mark {
+  position: relative;
+}
+.tel-bar-mark::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 22%;
+  bottom: 22%;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--accent);
+  transform: scaleY(0);
+  transition: transform 0.2s var(--ease-out);
+}
+.tel-bar-mark[aria-current='true']::before {
+  transform: scaleY(1);
+}
+
+/* Native checkboxes take the accent. */
+.tel-check {
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+@media (pointer: coarse) {
+  .tel-check {
+    width: 26px;
+    height: 26px;
+  }
+}
+
+/* Form fields inside the editor sheet: the shared Modal adds a 14px bottom margin to every input, which splits the hints from their fields. */
+dialog.modal .edform input:not([type='checkbox']):not([type='radio']):not([type='color']) {
+  margin: 0;
+}

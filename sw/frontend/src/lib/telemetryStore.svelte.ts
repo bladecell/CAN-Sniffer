@@ -1,4 +1,4 @@
-import type { Column, PidDefinition } from "$lib/types";
+import type { PidDefinition } from "$lib/types";
 import { getModeLabel } from "$lib/pidHelpers.svelte.ts";
 import {
   MAX_PID_FORMULA_LENGTH,
@@ -66,7 +66,6 @@ export class TelemetryStore {
   activeChartIndex = $state(0);
   chartPids = $state<number[][]>([[]]);
   activeIndex = $state(-1);
-  activeTab = $state("editor");
 
   // --- FORM STATE ---
   pidInput = $state("");
@@ -310,123 +309,6 @@ export function handleSavePid() {
   // Force reactivity on the array if needed (though localIndex assignment might suffice, it's safer)
   telemetryStore.local_piddef = [...telemetryStore.local_piddef];
 }
-
-export const columns: Column[] = [
-  {
-    label: "Select",
-    key: "selected",
-    type: "checkbox",
-    width_px: 70, // Fixed: Just wide enough for the checkbox +padg
-    showHeaderLabel: false,
-    showHeaderToggle: true,
-  },
-  {
-    label: "Pending Sync",
-    key: "pendingChanges",
-    type: "badge",
-    width_px: 100,
-    colorKey: "pendingChangesColor",
-    hidden: true,
-    autoShowKey: "pendingChanges",
-    autoShowValue: "Yes",
-  },
-  {
-    label: "Name",
-    key: "name",
-    type: "text",
-    width_px: 160,
-    tooltipKey: "moduleDescription",
-  },
-  {
-    label: "PID",
-    key: "pid",
-    type: "code",
-    width_px: 120,
-  },
-  {
-    label: "Mode",
-    key: "mode",
-    type: "number",
-    formatKey: "modeDisplayFormat",
-    hidden: true,
-    tooltipKey: "modeDescription",
-    width_px: 70,
-  },
-  {
-    label: "Length",
-    key: "len",
-    type: "number",
-    width_px: 70,
-    hidden: true,
-  },
-  {
-    label: "Formula",
-    key: "formula",
-    type: "code",
-    width_px: 500,
-    hidden: true,
-  },
-  {
-    label: "Value",
-    key: "value",
-    type: "number",
-    unitKey: "metricUnit",
-    width_px: 140, // Fixed pixel width to prevent subpixel roundingoverw
-  },
-  {
-    label: "Min Value",
-    key: "min_val",
-    type: "number",
-    width_px: 140,
-    unitKey: "metricUnit",
-    hidden: true,
-  },
-  {
-    label: "Max Value",
-    key: "max_val",
-    type: "number",
-    width_px: 140,
-    unitKey: "metricUnit",
-    hidden: true,
-  },
-  {
-    label: "Update Interval",
-    key: "updateInterval",
-    type: "number",
-    unit: "ms",
-    width_px: 120,
-  },
-
-  {
-    label: "Priority",
-    key: "priority",
-    type: "number",
-    width_px: 80,
-    hidden: true,
-  },
-  {
-    label: "Valid",
-    key: "validDisplay",
-    type: "badge",
-    width_px: 100,
-    colorKey: "validBadgeColor",
-  },
-  {
-    label: "Supported",
-    key: "supported",
-    type: "badge",
-    width_px: 100,
-    colorKey: "badgeColor",
-  },
-  {
-    label: "Loaded",
-    key: "loaded",
-    type: "toggle",
-    width_px: 80,
-    showHeaderLabel: true,
-    showHeaderToggle: false,
-  },
-];
 
 export const modes = [
   { label: "Current Data", value: "0x01" },

@@ -1,110 +1,40 @@
 <script lang="ts">
-import { connectionStore } from "$lib/connectionStore.svelte";
-import { vehicleStore } from "$lib/vehicleStore.svelte";
-
-
-  import { safeHexColor } from "$lib/color";
-  import SDCardImportModal from "$lib/components/SDCardImportModal.svelte";
+  import "$lib/components/telemetry/telemetry.css";
+  import { connectionStore } from "$lib/connectionStore.svelte";
+  import { vehicleStore } from "$lib/vehicleStore.svelte";
   import { alertStore } from "$lib/alertStore.svelte";
-  import {
-    isValidHex,
-    isValidName,
-    isValidDescription,
-    isModeValidForPid,
-    isLengthValidForPid,
-    isIdValidForMode,
-    isValidFormula,
-  } from "$lib/pidInputRules";
-  import {
-    telemetryStore,
-    handleSavePid,
-    createRowObject,
-    columns,
-    modes,
-    units,
-  } from "$lib/telemetryStore.svelte";
-  import { onMount, untrack } from "svelte";
-  import DataTable from "$lib/components/DataTable.svelte";
-  import LayerChartLarge from "$lib/components/LayerChartLarge.svelte";
-  import GridSelector from "$lib/components/GridSelector.svelte";
-  import Tabs from "$lib/components/Tabs.svelte";
-  import SelectMenu from "$lib/components/SelectMenu.svelte";
+  import { chartSyncStore } from "$lib/chartSyncStore.svelte";
+  import { telemetryStore } from "$lib/telemetryStore.svelte";
+  import { safeHexColor } from "$lib/color";
+  import { untrack } from "svelte";
   import Icon from "$lib/Icon.svelte";
-
-  $effect(() => {
-    if (
-      isValidHex(telemetryStore.pidInput) &&
-      telemetryStore.pidInput !== telemetryStore.lastValidPidForLength
-    ) {
-      telemetryStore.lastValidPidForLength = telemetryStore.pidInput;
-      const pidVal = parseInt(telemetryStore.pidInput.replace(/^0x/i, ""), 16);
-      telemetryStore.lengthInput = pidVal <= 0xff ? 2 : 3;
-    }
-  });
-
-  $effect(() => {
-    if (
-      telemetryStore.modeInput &&
-      telemetryStore.modeInput !== telemetryStore.lastValidModeForId
-    ) {
-      telemetryStore.lastValidModeForId = telemetryStore.modeInput;
-      if (
-        telemetryStore.modeInput === "0x01" ||
-        telemetryStore.modeInput === "0x45"
-      ) {
-        telemetryStore.idInput = "0x7DF";
-      }
-      if (telemetryStore.modeInput === "0x45") {
-        telemetryStore.lengthInput = 0;
-      }
-    }
-  });
-
-  $effect(() => {
-    console.log("Active index changed to:", telemetryStore.activeIndex);
-  });
+  import Modal from "$lib/components/Modal.svelte";
+  import SDCardImportModal from "$lib/components/SDCardImportModal.svelte";
+  import PidList from "$lib/components/telemetry/PidList.svelte";
+  import PidEditorForm from "$lib/components/telemetry/PidEditorForm.svelte";
+  import ChartCell from "$lib/components/telemetry/ChartCell.svelte";
+  import FloatPanel from "$lib/components/telemetry/FloatPanel.svelte";
+  import LayoutGrid from "$lib/components/telemetry/LayoutGrid.svelte";
+  import { chartPidsFor, chipAction } from "$lib/telemetryView";
 
   // Ref-counted: the stream stays on while any view needs it.
   $effect(() => connectionStore.acquireStream());
 
   let showSdImportModal = $state(false);
+  let pidSheetOpen = $state(false);
+  let editorOpen = $state(false);
 
-  function handleExport() {
-    const definitions = vehicleStore.pidDefinitions;
-    const blob = new Blob([JSON.stringify(definitions, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "can_sniffer_pid_definitions.json";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }
-
-  async function handleImport() {
-    await vehicleStore.requestSDInfo();
-    if (!vehicleStore.sdInfo?.is_mounted) {
-      alertStore.add("SD Card is not mounted or present.", "warning");
-      return;
-    }
-    showSdImportModal = true;
-  }
-
-  let selectedElements = $derived(
-    telemetryStore.local_piddef.filter((item) => item.selected),
+  let selectedRow = $derived(
+    telemetryStore.activeIndex >= 0 && telemetryStore.activeIndex < telemetryStore.local_piddef.length
+      ? telemetryStore.local_piddef[telemetryStore.activeIndex]
+      : null,
   );
 
+  // Ticked PIDs (or the selected row when none is ticked) are what the active chart shows.
   $effect(() => {
-    let currentSelectedPids: number[] = [];
-    if (selectedElements.length > 0) {
-      currentSelectedPids = selectedElements.map((row) => parseInt(row.pid, 16));
-    } else if (selectedRow?.pid) {
-      currentSelectedPids = [parseInt(selectedRow.pid, 16)];
-    }
-    
+    const ticked = telemetryStore.local_piddef.filter((r) => r.selected).map((row) => parseInt(row.pid, 16));
+    const currentSelectedPids = chartPidsFor(ticked, selectedRow?.pid ? parseInt(selectedRow.pid, 16) : null);
+
     untrack(() => {
       if (telemetryStore.activeChartIndex >= 0 && telemetryStore.activeChartIndex < telemetryStore.chartRows * telemetryStore.chartCols) {
         telemetryStore.chartPids[telemetryStore.activeChartIndex] = currentSelectedPids;
@@ -117,16 +47,14 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
     telemetryStore.chartCols = c;
     const total = r * c;
     const newChartPids = [...telemetryStore.chartPids];
-    while (newChartPids.length < total) {
-      newChartPids.push([]);
-    }
+    while (newChartPids.length < total) newChartPids.push([]);
     telemetryStore.chartPids = newChartPids;
-    if (telemetryStore.activeChartIndex >= total) {
-      setActiveChart(0);
-    }
+    if (telemetryStore.activeChartIndex >= total) setActiveChart(0);
   }
 
   function setActiveChart(index: number) {
+    // Pointer-down fires on every drag and zoom of the active chart; only a switch of chart rewrites the selection.
+    if (index === telemetryStore.activeChartIndex) return;
     telemetryStore.activeChartIndex = index;
     const targetPids = telemetryStore.chartPids[index] || [];
     for (const item of telemetryStore.local_piddef) {
@@ -134,697 +62,354 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
     }
   }
 
-  function getChartAccent(pids: number[]) {
-    if (!pids || pids.length === 0) return null;
-    const pid = pids[0];
-    const def = telemetryStore.local_piddef.find((d) => parseInt(d.pid, 16) === pid)?.def;
-    return safeHexColor(def?.color);
+  async function handleImport() {
+    await vehicleStore.requestSDInfo();
+    if (!vehicleStore.sdInfo?.is_mounted) {
+      alertStore.add("SD Card is not mounted or present.", "warning");
+      return;
+    }
+    showSdImportModal = true;
   }
 
-  let dirtyCount = $derived(
-    telemetryStore.local_piddef.filter((r) => r.pendingChanges === "Yes")
-      .length,
+  function newPid() {
+    telemetryStore.activeIndex = -1;
+    editorOpen = true;
+  }
+
+  function editPid(index: number) {
+    telemetryStore.activeIndex = index;
+    editorOpen = true;
+  }
+
+  // Phone chips: the loaded PIDs, pressed when they are on the active chart.
+  const activeChartPids = $derived(telemetryStore.chartPids[telemetryStore.activeChartIndex] ?? []);
+
+  function toggleChip(pid: number, pressed: boolean) {
+    const row = telemetryStore.local_piddef.find((r) => parseInt(r.pid, 16) === pid);
+    if (!row) return;
+    const action = chipAction(pressed, row.selected);
+    if (action === "tick") row.selected = true;
+    else if (action === "untick") row.selected = false;
+    else telemetryStore.activeIndex = -1;
+  }
+
+  const editorTitle = $derived(
+    selectedRow && telemetryStore.activeIndex >= 0 ? `Edit ${selectedRow.name} (${selectedRow.pid})` : "New PID",
   );
-  let selectedCount = $derived(
-    telemetryStore.local_piddef.filter((r) => r.selected).length,
-  );
-  let selectedDirtyCount = $derived(
-    telemetryStore.local_piddef.filter(
-      (r) => r.selected && r.pendingChanges === "Yes",
-    ).length,
-  );
-
-  let updateButtonText = $derived(
-    selectedCount > 0
-      ? `Update ${selectedCount} Selected`
-      : `Update ${dirtyCount} Pending`,
-  );
-
-  let updateButtonDisabled = $derived(
-    selectedCount > 0 ? selectedDirtyCount !== selectedCount : dirtyCount === 0,
-  );
-
-  let selectedRow = $derived(
-    telemetryStore.activeIndex >= 0 && telemetryStore.activeIndex < telemetryStore.local_piddef.length
-      ? telemetryStore.local_piddef[telemetryStore.activeIndex]
-      : null,
-  );
-
-  $effect(() => {
-    // Only subscribe to activeIndex changes
-    const idx = telemetryStore.activeIndex;
-
-    untrack(() => {
-      if (idx >= 0 && idx < telemetryStore.local_piddef.length) {
-        const row = telemetryStore.local_piddef[idx];
-        const def = row.def;
-
-        if (def) {
-          telemetryStore.pidInput =
-            "0x" + Number(def.pid).toString(16).toUpperCase().padStart(2, "0");
-          telemetryStore.lastValidPidForLength = telemetryStore.pidInput; // Prevent auto-fill from instantly overwriting loaded length
-
-          telemetryStore.nameInput = def.name || "";
-          telemetryStore.descInput = def.description || "";
-          telemetryStore.unitInput = def.unit || "";
-          telemetryStore.minInput = def.minValue;
-          telemetryStore.maxInput = def.maxValue;
-
-          telemetryStore.modeInput =
-            "0x" + Number(def.mode).toString(16).padStart(2, "0");
-          telemetryStore.lastValidModeForId = telemetryStore.modeInput; // Prevent auto-fill from instantly overwriting loaded ID
-
-          telemetryStore.formulaInput = def.formula || "";
-          telemetryStore.lengthInput = def.length;
-          telemetryStore.idInput = def.id
-            ? "0x" + Number(def.id).toString(16).toUpperCase()
-            : "";
-          telemetryStore.priorityInput = def.priority;
-          telemetryStore.updateIntervalInput = def.update_interval_ms;
-          telemetryStore.colorInput =
-            "#" + Number(def.color).toString(16).padStart(6, "0");
-          telemetryStore.iconInput = def.icon || "";
-        }
-      } else {
-        // Clear form when no row is selected
-        telemetryStore.clearForm();
-      }
-    });
-  });
-
-  const svgFiles = import.meta.glob("$lib/icons_svg/*.svg");
-  const icons: string[] = Object.keys(svgFiles).map(path => {
-    const parts = path.split('/');
-    return parts[parts.length - 1].replace('.svg', '');
-  });
-  const iconLabel = (name: string) =>
-    name.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
-  const iconOptions = icons.map((name) => ({ value: name, label: iconLabel(name), icon: name }));
-  const modeOptions = modes.map((m) => ({ value: m.value, label: m.label }));
-  const unitOptions = units.map((u) => ({ value: u, label: u }));
+  const cellCount = $derived(telemetryStore.chartRows * telemetryStore.chartCols);
 </script>
 
-<SDCardImportModal
-  isOpen={showSdImportModal}
-  onClose={() => (showSdImportModal = false)}
-/>
+<SDCardImportModal isOpen={showSdImportModal} onClose={() => (showSdImportModal = false)} />
 
-<Tabs
-  options={[
-    { value: "info", label: "Info" },
-    { value: "editor", label: "Editor" },
-    { value: "chart", label: "Chart" }
-  ]}
-  bind:selected={telemetryStore.activeTab}
-/>
+{#snippet syncSwitch()}
+  <span class="sync">
+    <button
+      type="button"
+      class="tel-switch"
+      role="switch"
+      aria-checked={chartSyncStore.syncEnabled}
+      aria-label="Sync zoom"
+      onclick={() => (chartSyncStore.syncEnabled = !chartSyncStore.syncEnabled)}
+    ></button>
+    <span aria-hidden="true">Sync zoom</span>
+  </span>
+{/snippet}
 
-  <div class="tab-content">
-    {#if telemetryStore.activeTab === "info"}
-      <div
-        class="dashboard-card header-container"
-        style="--module-accent: #01AAFF;"
-      >
-        <div
-          style="display: flex; justify-content: space-between; align-items: center; width: 100%; flex-wrap: wrap; gap: 1rem;"
+<section class="tel">
+  <div class="wb">
+    <aside class="card side" aria-label="PID list">
+      <PidList onImport={handleImport} onNew={newPid} onEdit={editPid} />
+    </aside>
+
+    <div class="main">
+      <div class="card bar">
+        <h1 tabindex="-1">Telemetry</h1>
+
+        <div class="src">
+          <div class="tel-seg" role="group" aria-label="Data source">
+            <button type="button" aria-pressed="true">Live</button>
+            <button
+              type="button"
+              aria-disabled="true"
+              aria-describedby="src-tag"
+              onclick={() => alertStore.add("Recorded trips open here from Recorder, Analyze. Not available yet.", "info")}
+            >
+              Recorded
+            </button>
+          </div>
+          <span class="tel-tag" id="src-tag">Recorded: needs API</span>
+        </div>
+
+        <div class="desk">
+          <FloatPanel class="tel-btn" ariaLabel="Chart layout">
+            {#snippet trigger()}
+              <Icon name="grid" size={18} />
+              <span>Layout <b class="num">{telemetryStore.chartRows} &times; {telemetryStore.chartCols}</b></span>
+            {/snippet}
+            {#snippet children(close)}
+              <LayoutGrid
+                rows={telemetryStore.chartRows}
+                cols={telemetryStore.chartCols}
+                onPick={(r, c) => {
+                  handleLayoutSelect(r, c);
+                  close();
+                }}
+              />
+            {/snippet}
+          </FloatPanel>
+          {@render syncSwitch()}
+        </div>
+
+        <div class="phone">
+          <button type="button" class="tel-btn" onclick={() => (pidSheetOpen = true)} aria-haspopup="dialog">
+            <Icon name="list" size={18} />PIDs
+          </button>
+          <FloatPanel class="tel-btn" ariaLabel="Chart options">
+            {#snippet trigger()}
+              <Icon name="grid" size={18} />Chart
+            {/snippet}
+            {#snippet children(close)}
+              <LayoutGrid
+                rows={telemetryStore.chartRows}
+                cols={telemetryStore.chartCols}
+                onPick={(r, c) => {
+                  handleLayoutSelect(r, c);
+                  close();
+                }}
+              />
+              <div class="opt">{@render syncSwitch()}</div>
+            {/snippet}
+          </FloatPanel>
+        </div>
+
+        <button
+          type="button"
+          class="tel-btn"
+          aria-disabled={telemetryStore.activeIndex < 0}
+          title={telemetryStore.activeIndex < 0 ? "Select a PID to edit it. New PID is in the list." : undefined}
+          onclick={() => telemetryStore.activeIndex >= 0 && (editorOpen = true)}
         >
-          <div class="aligned-title-row">
-            <div class="status-subtitle">
-              <span class="label">Loaded PIDs:</span>
-              <span class="value"
-                >{vehicleStore.obd2Status?.pid_def_count ?? 0}</span
-              >
-            </div>
-            <div class="status-subtitle">
-              <span class="label">Supported PIDs:</span>
-              <span class="value"
-                >{vehicleStore.obd2Status?.supported_pids.count ?? 0}</span
-              >
-            </div>
-            <div class="status-subtitle">
-              <span class="label">Updated:</span>
-              <span class="value">{dirtyCount}</span>
-            </div>
-          </div>
-          <div style="display: flex; gap: 1rem; align-items: center;">
-            <button
-              class="btn btn-remove"
-              disabled={selectedCount === 0}
-              onclick={async () => {
-                const pidsToRemove = new Set(
-                  selectedElements.map((row) => parseInt(row.pid, 16)),
-                );
-                const desiredRows = telemetryStore.local_piddef.filter(
-                  (row) =>
-                    row.loaded && !pidsToRemove.has(parseInt(row.pid, 16)),
-                );
-                await vehicleStore.replacePids(desiredRows);
-              }}
-            >
-              Remove {selectedCount > 0 ? selectedCount : ""} Selected
-            </button>
-            <button
-              class="btn btn-save"
-              disabled={updateButtonDisabled}
-              onclick={async () => {
-                await vehicleStore.updatePids(telemetryStore.local_piddef);
-              }}
-            >
-              {updateButtonText}
-            </button>
-            <button
-              class="btn btn-save"
-              onclick={async () => {
-                await vehicleStore.savePids(telemetryStore.local_piddef);
-              }}
-              title="Save current PID map to ESP filesystem"
-            >
-              Save to FS
-            </button>
-          </div>
-        </div>
+          <Icon name="edit" size={18} />Edit PID
+        </button>
       </div>
-    {:else if telemetryStore.activeTab === "editor"}
-      <div
-        class="dashboard-card header-container"
-        style="--module-accent: {safeHexColor(telemetryStore.colorInput, '#01AAFF')};"
-      >
-        <div class="title-row">
-          <div class="header-title-row">
-            <h2>{telemetryStore.activeIndex === -1 ? "Editor" : "Editing"}</h2>
-            <p class="status-subtitle">{selectedRow?.pid}</p>
-          </div>
-        </div>
-        <div class="editor-wrapper">
-          {#if telemetryStore.validationErrors.length > 0}
-            <div class="validation-errors-container">
-              <div class="validation-errors-header">
-                <Icon name="circle-exclamantion" size={16} />
-                Please fix the following errors:
-              </div>
-              <div class="validation-errors-list">
-                {#each telemetryStore.validationErrors as error}
-                  <div>• {error}</div>
-                {/each}
-              </div>
-            </div>
-          {/if}
 
-          <!-- Row 1: ID, MODE, PID, LENGTH -->
-          <div class="grid">
-            <div>
-              <input
-                name="CAN ID"
-                placeholder="CAN ID (e.g., 0x7DF)"
-                aria-label="can id"
-                aria-describedby="id-helper"
-                autocomplete="off"
-                bind:value={telemetryStore.idInput}
-                aria-invalid={!isIdValidForMode(
-                  telemetryStore.modeInput,
-                  telemetryStore.idInput,
-                )}
-              />
-              <small id="id-helper"> ECU CAN Identifier </small>
-            </div>
-            <div>
-              <SelectMenu
-                bind:value={telemetryStore.modeInput}
-                options={modeOptions}
-                placeholder="Select a mode..."
-                ariaLabel="mode"
-                ariaDescribedby="mode-helper"
-                ariaInvalid={!isModeValidForPid(
-                  telemetryStore.pidInput,
-                  telemetryStore.modeInput,
-                )}
-              />
-              <small id="mode-helper"> OBD2 Service Mode </small>
-            </div>
-            <div>
-              <input
-                name="PID"
-                placeholder="PID (e.g., 0x0C)"
-                aria-label="pid"
-                aria-describedby="pid-helper"
-                autocomplete="off"
-                bind:value={telemetryStore.pidInput}
-                aria-invalid={!isValidHex(telemetryStore.pidInput)}
-              />
-              <small id="pid-helper"> Parameter ID </small>
-            </div>
-            <div>
-              <input
-                type="number"
-                name="Length"
-                placeholder="Length (bytes)"
-                aria-label="length"
-                aria-describedby="length-helper"
-                bind:value={telemetryStore.lengthInput}
-                aria-invalid={!isLengthValidForPid(
-                  telemetryStore.pidInput,
-                  telemetryStore.lengthInput,
-                  telemetryStore.modeInput,
-                )}
-                disabled={telemetryStore.modeInput === "0x45"}
-              />
-              <small id="length-helper">
-                {telemetryStore.modeInput === "0x45"
-                  ? "Not used in Derived Data"
-                  : "Expected response bytes"}
-              </small>
-            </div>
-          </div>
-
-          <!-- Row 2: NAME, DESCRIPTION -->
-          <div class="grid margin-top">
-            <div>
-              <input
-                name="Name"
-                placeholder="Name"
-                aria-label="name"
-                aria-describedby="name-helper"
-                autocomplete="off"
-                bind:value={telemetryStore.nameInput}
-                aria-invalid={!isValidName(telemetryStore.nameInput)}
-              />
-              <small id="name-helper"> Name of the parameter </small>
-            </div>
-            <div>
-              <input
-                name="Description"
-                placeholder="Description (optional)"
-                aria-label="description"
-                aria-describedby="desc-helper"
-                autocomplete="off"
-                bind:value={telemetryStore.descInput}
-                aria-invalid={telemetryStore.descInput.length > 0
-                  ? !isValidDescription(telemetryStore.descInput)
-                  : undefined}
-              />
-              <small id="desc-helper"> Detailed description </small>
-            </div>
-          </div>
-
-          <!-- Row 3: UNIT, MIN, MAX -->
-          <div class="grid margin-top">
-            <div>
-              <SelectMenu
-                bind:value={telemetryStore.unitInput}
-                options={unitOptions}
-                placeholder="Select a unit..."
-                ariaLabel="unit"
-                ariaDescribedby="unit-helper"
-              />
-              <small id="unit-helper"> Unit of measurement </small>
-            </div>
-            <div>
-              <input
-                type="number"
-                name="MinValue"
-                placeholder="Min Value"
-                aria-label="Min value"
-                bind:value={telemetryStore.minInput}
-                aria-invalid={telemetryStore.minInput !== undefined &&
-                telemetryStore.maxInput !== undefined &&
-                telemetryStore.minInput > telemetryStore.maxInput
-                  ? "true"
-                  : undefined}
-              />
-              <small>Minimum expected value</small>
-            </div>
-            <div>
-              <input
-                type="number"
-                name="MaxValue"
-                placeholder="Max Value"
-                aria-label="Max value"
-                bind:value={telemetryStore.maxInput}
-                aria-invalid={telemetryStore.minInput !== undefined &&
-                telemetryStore.maxInput !== undefined &&
-                telemetryStore.minInput > telemetryStore.maxInput
-                  ? "true"
-                  : undefined}
-              />
-              <small>Maximum expected value</small>
-            </div>
-          </div>
-
-          <!-- Row 4: FORMULA -->
-          <div class="grid margin-top">
-            <div>
-              <input
-                name="Formula"
-                placeholder="Formula (e.g., A * 100 / 255)"
-                aria-label="formula"
-                aria-describedby="formula-helper"
-                autocomplete="off"
-                bind:value={telemetryStore.formulaInput}
-                aria-invalid={!isValidFormula(
-                  telemetryStore.modeInput,
-                  telemetryStore.formulaInput,
-                )}
-              />
-              <small id="formula-helper">
-                Expression to compute the final value
-              </small>
-            </div>
-          </div>
-
-          <!-- Row 5: PRIORITY, INTERVAL, COLOR, ICON -->
-          <div class="grid margin-top">
-            <div>
-              <input
-                type="number"
-                name="Priority"
-                placeholder="Priority (0-255)"
-                aria-label="priority"
-                aria-describedby="priority-helper"
-                min="0"
-                max="255"
-                bind:value={telemetryStore.priorityInput}
-                aria-invalid={telemetryStore.priorityInput !== undefined &&
-                (telemetryStore.priorityInput < 0 ||
-                  telemetryStore.priorityInput > 255)
-                  ? "true"
-                  : undefined}
-              />
-              <small id="priority-helper"> Polling priority </small>
-            </div>
-            <div>
-              <input
-                type="number"
-                name="Update Interval"
-                placeholder="Interval (ms)"
-                aria-label="update interval"
-                aria-describedby="interval-helper"
-                min="0"
-                max="65535"
-                bind:value={telemetryStore.updateIntervalInput}
-                aria-invalid={telemetryStore.updateIntervalInput !==
-                  undefined &&
-                telemetryStore.updateIntervalInput !== 0 &&
-                (telemetryStore.updateIntervalInput < 16 ||
-                  telemetryStore.updateIntervalInput > 65535)
-                  ? "true"
-                  : undefined}
-              />
-              <small id="interval-helper"
-                >{telemetryStore.updateIntervalInput === 0
-                  ? "Polling Disabled"
-                  : "Interval in ms"}</small
-              >
-            </div>
-            <div>
-              <input class="color-picker" type="color" name="Color" aria-label="color" aria-describedby="color-helper" bind:value={telemetryStore.colorInput} />
-              <small id="color-helper"> Color ({telemetryStore.colorInput.toUpperCase()}) </small>
-            </div>
-            <div>
-              <div class="icon-selector-wrapper">
-                <div class="icon-select-container">
-                  <SelectMenu
-                    bind:value={telemetryStore.iconInput}
-                    options={iconOptions}
-                    placeholder="Select an icon..."
-                    ariaLabel="icon"
-                    ariaDescribedby="icon-helper"
-                  />
-                  <small id="icon-helper"> Display icon </small>
-                </div>
-              </div>
-            </div>
-          </div>
-          <!-- Form Actions -->
-          <div
-            style="display: flex; justify-content: flex-end; margin-top: 1.5rem; gap: 1rem;"
-          >
-            <button
-              class="btn btn-clear"
-              onclick={() => telemetryStore.clearForm()}
-            >
-              Clear Form
-            </button>
-            <button
-              class="btn btn-save"
-              disabled={!telemetryStore.isFormValid}
-              onclick={handleSavePid}
-            >
-              {telemetryStore.activeIndex === -1 ? "Add PID Definition" : "Save Changes"}
-            </button>
-          </div>
-        </div>
+      <div class="chips" role="group" aria-label="PIDs on the active chart">
+        {#each telemetryStore.local_piddef.filter((r) => r.loaded) as row (row)}
+          {@const pid = parseInt(row.pid, 16)}
+          {@const on = activeChartPids.includes(pid)}
+          <button type="button" class="tel-pchip" aria-pressed={on} onclick={() => toggleChip(pid, on)}>
+            <i style="--sw: {safeHexColor('#' + Number(row.def.color).toString(16).padStart(6, '0'))}"></i>{row.name}
+          </button>
+        {/each}
       </div>
-    {:else if telemetryStore.activeTab === "chart"}
-      <div class="dashboard-card header-container" style="--module-accent: var(--pico-primary); padding: 1rem; display: flex; flex-direction: column; gap: 1rem;">
-        <div style="display: flex; justify-content: flex-end; align-items: center; gap: 1rem;">
-          <GridSelector maxRows={4} maxCols={4} onSelect={handleLayoutSelect} />
-        </div>
-        <div 
-          class="chart-grid" 
-          style="display: grid; grid-template-columns: repeat({telemetryStore.chartCols}, 1fr); grid-template-rows: repeat({telemetryStore.chartRows}, 1fr); gap: 1rem; flex: 1;"
-        >
-          {#each Array(telemetryStore.chartRows * telemetryStore.chartCols) as _, i}
-            <div
-              class="chart-cell"
-              role="group"
-              aria-label={`Chart ${i + 1}`}
-              class:active={telemetryStore.activeChartIndex === i}
-              style:border-color={telemetryStore.activeChartIndex === i && telemetryStore.chartPids[i]?.length > 0 ? `${getChartAccent(telemetryStore.chartPids[i])}30` : undefined}
-              style:background-color={telemetryStore.activeChartIndex === i && telemetryStore.chartPids[i]?.length > 0 ? `${getChartAccent(telemetryStore.chartPids[i])}15` : undefined}
-              onpointerdown={() => setActiveChart(i)}
-            >
-              <!-- Keyboard activation. Pointer selection is on the group so the chart's own buttons keep working. -->
-              <button
-                type="button"
-                class="chart-select"
-                aria-pressed={telemetryStore.activeChartIndex === i}
-                onclick={() => setActiveChart(i)}
-              >
-                Select chart {i + 1}
-              </button>
-              <div class="chart-cell-inner">
-                <LayerChartLarge pids={telemetryStore.chartPids[i] || []} isActive={telemetryStore.activeChartIndex === i} />
-              </div>
-            </div>
-          {/each}
-        </div>
+
+      <div class="cgrid" style="--cols: {telemetryStore.chartCols}">
+        {#each Array(cellCount) as _, i (i)}
+          <ChartCell
+            n={i + 1}
+            pids={telemetryStore.chartPids[i] || []}
+            active={telemetryStore.activeChartIndex === i}
+            onActivate={() => setActiveChart(i)}
+          />
+        {/each}
       </div>
-    {/if}
+    </div>
   </div>
+</section>
 
-<DataTable
-  onExport={handleExport}
-  onImport={handleImport}
-  {columns}
-  data={telemetryStore.local_piddef}
-  bind:selectedRowIndex={telemetryStore.activeIndex}
-/>
+<Modal open={pidSheetOpen} title="PIDs" variant="sheet" onClose={() => (pidSheetOpen = false)}>
+  {#snippet children()}
+    <PidList onImport={handleImport} onNew={newPid} onEdit={editPid} />
+  {/snippet}
+</Modal>
+
+<Modal open={editorOpen} title={editorTitle} variant="sheet" onClose={() => (editorOpen = false)}>
+  {#snippet children()}
+    <PidEditorForm onDone={() => (editorOpen = false)} />
+  {/snippet}
+</Modal>
 
 <style>
-  .header-container {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 1.5rem;
-    width: 100%;
-    padding: 1.5rem;
-    margin-bottom: 2rem;
-    box-sizing: border-box;
-  }
-
-  .dashboard-card.header-container {
-    border: none !important;
-    overflow: visible !important;
-  }
-
-  .dashboard-card.header-container:hover {
-    box-shadow: none;
-    border-color: var(--pico-muted-border-color) !important;
-  }
-
-  .aligned-title-row {
+  .tel {
+    --gap: 20px;
+    --stick: 104px;
     display: grid;
-    grid-template-columns: max-content 1fr;
-    column-gap: 0.75rem; /* Space between label and value */
-    row-gap: 0.25rem; /* Space between the two rows */
+    gap: var(--gap);
+    min-width: 0;
+  }
+  .wb {
+    display: grid;
+    gap: var(--gap);
+    grid-template-columns: minmax(0, 1fr);
     align-items: start;
   }
-
-  /* 2. Visually strip away the wrappers so children join the master grid */
-  .status-subtitle {
-    display: contents;
+  .main {
+    display: grid;
+    gap: var(--gap);
+    min-width: 0;
+  }
+  .side {
+    display: none;
+  }
+  @media (min-width: 860px) {
+    .tel {
+      --gap: 20px;
+    }
+    .wb {
+      grid-template-columns: 340px minmax(0, 1fr);
+    }
+    .side {
+      display: flex;
+      flex-direction: column;
+      position: sticky;
+      top: var(--stick);
+      max-height: calc(100dvh - var(--stick) - var(--gap));
+      min-height: 0;
+      padding: 12px;
+      box-sizing: border-box;
+    }
+  }
+  @media (max-width: 859px) {
+    .tel {
+      --gap: 14px;
+    }
   }
 
-  /* 3. Style the text as normal */
-  .status-subtitle .label {
-    color: var(--pico-muted-color);
-    font-weight: 500;
-  }
-
-  .status-subtitle .value {
-    color: var(--pico-color);
-    text-align: left;
-  }
-
-  /* --- 2. LAYOUT UTILITIES --- */
-
-
-
-
-
-
-
-  .header-title-row {
+  .bar {
     display: flex;
-    align-items: baseline;
-    gap: 1.5rem;
     flex-wrap: wrap;
+    align-items: center;
+    gap: 10px var(--gap);
+    padding: var(--pad-card);
+    border-radius: var(--r-card);
   }
-
-  .header-title-row h2 {
-    margin: 0;
-    font-size: 1.5rem;
+  .bar h1 {
+    margin: 0 auto 0 0;
+    font-size: 2.1rem;
+    font-weight: 800;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
   }
-
-  .status-subtitle {
-    margin: 0;
-    color: var(--module-accent, #a1a1aa);
-    text-transform: uppercase;
-    font-size: 0.85rem;
-    letter-spacing: 0.05em;
+  h1:focus {
+    outline: none;
   }
-
-
-
-  .editor-wrapper {
-    width: 100%;
-    padding-top: 0.5rem;
-    /* Remove default PicoCSS orange focus outline, but preserve red validation outlines */
-    --pico-form-element-focus-color: transparent;
-    --pico-form-element-active-border-color: var(
-      --pico-form-element-border-color
-    );
-
-    /* Condense the inputs for a sleeker, tighter design */
-    --pico-form-element-spacing-vertical: 0.4rem;
-    --pico-form-element-spacing-horizontal: 0.75rem;
-    --pico-spacing: 0.25rem;
+  @media (max-width: 859px) {
+    .bar h1 {
+      font-size: 1.7rem;
+    }
   }
-
-  .margin-top {
-    margin-top: 0.5rem;
-  }
-
-
-
-  .icon-selector-wrapper {
+  .src {
     display: flex;
-    align-items: flex-start;
-    gap: 0.5rem;
-    width: 100%;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
   }
-
-  .icon-select-container {
-    flex-grow: 1;
+  .desk {
+    display: none;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 14px;
   }
-
-
-
-  .validation-errors-container {
-    margin-bottom: 1.5rem;
-    color: var(--pico-form-element-invalid-active-border-color);
+  .phone {
+    display: flex;
+    gap: 8px;
   }
-
-  .validation-errors-header {
+  @media (min-width: 860px) {
+    .desk {
+      display: flex;
+    }
+    .phone {
+      display: none;
+    }
+  }
+  .sync {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+  }
+  .opt {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    font-size: 0.9rem;
-    font-weight: 600;
-    margin-bottom: 0.25rem;
+    justify-content: space-between;
+    gap: 16px;
+    margin-top: 14px;
+    font-weight: 700;
   }
 
-  .validation-errors-list {
-    font-size: 0.85rem;
-    padding-left: 1.5rem;
+  .chips {
     display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 2px 2px 6px;
+    scrollbar-width: none;
   }
-
-  .btn-clear {
-    --color: 246, 142, 104;
-    height: 54px;
-    border-radius: 8px;
-    font-weight: 500;
+  .chips::-webkit-scrollbar {
+    display: none;
   }
-
-  .btn-remove {
-    --color: 231, 75, 26;
-    height: 54px;
-    border-radius: 8px;
-    font-weight: 500;
+  @media (min-width: 860px) {
+    .chips {
+      display: none;
+    }
   }
-
-  .btn-save {
-    --color: 57, 241, 166;
-    height: 54px;
-    border-radius: 8px;
-    font-weight: 500;
-  }
-
-  .chart-cell {
-    border: 2px solid transparent;
-    border-radius: 8px;
-    transition: border-color 0.2s;
-    background: rgba(0, 0, 0, 0.1);
-    display: flex;
-    flex-direction: column;
-    min-height: 200px;
-  }
-
-  .chart-cell.active {
-    border-color: rgba(255, 255, 255, 0.15);
-    background: rgba(0, 0, 0, 0.15);
-  }
-
-  .chart-cell {
+  .tel-pchip {
     position: relative;
-  }
-
-  /* Hidden until focused, so the keyboard path is visible without changing the layout. */
-  .chart-select {
-    position: absolute;
-    top: 0.25rem;
-    left: 0.25rem;
-    z-index: 1;
-    width: auto;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: var(--ctl-h);
     margin: 0;
-    padding: 0.2rem 0.5rem;
-    font-size: 0.7rem;
-    opacity: 0;
-    pointer-events: none;
+    padding: 0 14px;
+    border: 0;
+    border-radius: var(--r-ctl);
+    background: var(--ctl);
+    color: var(--ctl-sub);
+    font-weight: 700;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .tel-pchip i {
+    display: inline-block;
+    width: 14px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--sw);
+  }
+  .tel-pchip::after {
+    content: '';
+    position: absolute;
+    left: 18%;
+    right: 18%;
+    bottom: 3px;
+    height: 3px;
+    border-radius: 3px;
+    background: var(--accent);
+    transform: scaleX(0);
+    transition: transform 0.2s var(--ease-out);
+  }
+  .tel-pchip[aria-pressed='true'] {
+    color: var(--ctl-sel);
+    font-weight: 800;
+  }
+  .tel-pchip[aria-pressed='true']::after {
+    transform: scaleX(1);
+  }
+  @media (pointer: coarse) {
+    .tel-pchip {
+      min-height: 44px;
+    }
   }
 
-  .chart-select:focus-visible {
-    opacity: 1;
-    pointer-events: auto;
-    outline: 2px solid var(--pico-primary);
-    outline-offset: 2px;
+  .cgrid {
+    display: grid;
+    gap: var(--gap);
+    grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr));
+    min-width: 0;
   }
-
-  .chart-cell-inner {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    width: 100%;
-    height: 100%;
-    pointer-events: auto;
-  }
-
-  @media (max-width: 768px) {
-    :global(.chart-grid) {
-      grid-template-columns: 1fr !important;
-      grid-template-rows: auto !important;
+  @media (max-width: 700px) {
+    .cgrid {
+      grid-template-columns: minmax(0, 1fr);
     }
   }
 </style>

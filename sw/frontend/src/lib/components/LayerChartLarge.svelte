@@ -22,8 +22,10 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
   interface Props {
     pids?: number[];
     isActive?: boolean;
+    /** Out: true while the user has zoomed or brushed the x axis. The owning cell shows its reset tools from this. */
+    zoomed?: boolean;
   }
-  let { pids = [], isActive = true }: Props = $props();
+  let { pids = [], isActive = true, zoomed = $bindable(false) }: Props = $props();
 
   type Point = { t: number; v: number | null; pid: number };
 
@@ -62,6 +64,21 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
   }
 
   let chartContext = $state<any>();
+
+  $effect(() => {
+    zoomed = Boolean(isZoomed);
+  });
+
+  /** Called by the owning cell: back to the full x range and the auto y range. */
+  export function reset() {
+    chartContext?.transformState?.reset();
+    yDomainOverride = null;
+  }
+
+  /** Called by the owning cell: fit the y axis to the visible x range. */
+  export function fitY() {
+    adjustYToZoom();
+  }
 
   let isZoomed = $derived(
     chartContext?.transformState &&
@@ -160,37 +177,13 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
 
 {#if pids.length === 0}
   <div class="empty-state">
-    Select one or more PIDs from the table to view on the chart
+    Select one or more PIDs from the list to view on the chart
   </div>
 {:else if flatChartData.length === 0}
   <div class="empty-state">Waiting for data...</div>
 {:else}
   <div class="chart-wrapper">
     <div class="chart-inner-container">
-      {#if isZoomed}
-        <div class="chart-toolbar">
-          <button
-            class="secondary outline blur-background chart-toolbar-btn"
-            onclick={() => {
-              chartContext?.transformState?.reset();
-              yDomainOverride = null;
-            }}
-            title="Reset Zoom"
-          >
-            <Icon name="reload" size={14} />
-            Reset View
-          </button>
-          <button
-            class="secondary outline blur-background chart-toolbar-btn"
-            onclick={adjustYToZoom}
-            title="Auto-fit Y axis to the current zoom"
-          >
-            <Icon name="chart" size={14} />
-            Fit Y
-          </button>
-        </div>
-      {/if}
-
       <Chart
         bind:context={chartContext}
         data={flatChartData}
@@ -225,10 +218,10 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
                 }
                 return `${rounded}`;
               }}
-              grid={{ stroke: "rgba(128, 128, 128, 0.05)", dashArray: "2" }}
+              grid={{ dashArray: "2" }}
               rule={false}
               tickLabelProps={{
-                fill: "var(--pico-muted-color)",
+                fill: "var(--muted)",
                 fontSize: 11,
                 textAnchor: "end",
                 dx: -12,
@@ -243,9 +236,9 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
                   minute: "2-digit",
                   second: "2-digit",
                 })}
-              rule={{ stroke: "rgba(128, 128, 128, 0.1)" }}
+              rule={{ dashArray: "2" }}
               tickLabelProps={{
-                fill: "var(--pico-muted-color)",
+                fill: "var(--muted)",
                 fontSize: 11,
                 dy: 16,
               }}
@@ -300,7 +293,7 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
             anchor="right"
             contained={false}
             variant="none"
-            class="chart-tooltip-crosshair blur-background"
+            class="chart-tooltip-crosshair tel-float"
           >
             {#snippet children({ data })}
               {#if data.v !== null}
@@ -318,7 +311,7 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
             anchor="top"
             contained={false}
             variant="none"
-            class="chart-tooltip-crosshair blur-background"
+            class="chart-tooltip-crosshair tel-float"
           >
             {#snippet children({ data })}
               {new Date(data.t).toLocaleTimeString([], {
@@ -332,26 +325,6 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
       </Chart>
     </div>
 
-    {#if pids.length > 0}
-      <div class="custom-chart-legend">
-        {#each pids as p (p)}
-          <div
-            class="legend-item blur-background"
-            style="border-color: {getPidColor(
-              p,
-            )}20; background-color: {getPidColor(p)}15;"
-          >
-            <div
-              class="legend-color-dot"
-              style="background-color: {getPidColor(p)};"
-            ></div>
-            <span class="legend-label"
-              >{getPidDef(p)?.name || `0x${p.toString(16).toUpperCase()}`}</span
-            >
-          </div>
-        {/each}
-      </div>
-    {/if}
   </div>
 {/if}
 
@@ -361,9 +334,14 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
   }
   :global(.chart-tick-label),
   :global(text) {
-    fill: var(--pico-muted-color) !important;
+    fill: var(--muted) !important;
     font-size: 0.75rem;
     font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+  /* Grid, rules and crosshair lines use the theme grid token (presentation attributes cannot take var()). */
+  .chart-inner-container :global(svg line) {
+    stroke: var(--grid);
   }
 
   :global(.chart-spline) {
@@ -374,106 +352,46 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
   :global(.chart-tooltip-crosshair) {
     font-size: 14px;
     font-weight: 600;
-    color: var(--pico-h1-color);
+    color: var(--text);
     margin-top: 2px;
     padding: 4px 10px;
-    border-radius: 6px;
+    border-radius: 10px;
     white-space: nowrap;
-    border: 1px solid var(--pico-form-element-border-color) !important;
-    background-color: transparent !important;
-    box-shadow: none !important;
+    border: 0 !important;
+    font-variant-numeric: tabular-nums;
   }
   .chart-wrapper :global(svg) {
     overflow: visible !important;
   }
 
-  .custom-chart-legend {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 12px;
-    margin-top: 12px;
-    margin-bottom: 4px;
-  }
-
-  .legend-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 12px;
-    border-radius: 20px;
-    border: 1px solid transparent;
-    transition:
-      background-color 0.2s,
-      border-color 0.2s;
-  }
-
-  .legend-color-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    box-shadow: 0 0 0 1px var(--overlay-2);
-  }
-
-  .legend-label {
-    font-size: 0.85rem;
-    font-weight: 500;
-    color: var(--pico-color);
-  }
   .empty-state {
     display: flex;
     justify-content: center;
     align-items: center;
     height: 100%;
     min-height: 400px;
-    color: var(--pico-muted-color);
+    padding: 16px;
+    text-align: center;
+    color: var(--muted);
   }
 
   .chart-wrapper {
-    padding: 1rem;
     position: relative;
     display: flex;
     flex-direction: column;
+    min-width: 0;
   }
 
   .chart-inner-container {
-    height: 400px;
+    height: var(--plot-h, 360px);
     position: relative;
     width: 100%;
     flex-shrink: 0;
   }
 
-  .chart-toolbar {
-    position: absolute;
-    top: 0.5rem;
-    right: 1rem;
-    z-index: 10;
-    display: flex;
-    gap: 0.5rem;
-    align-items: flex-start;
-  }
-
-  .chart-toolbar-btn {
-    padding: 0.25rem 0.5rem;
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-    font-size: 0.75rem;
-    background-color: rgba(var(--pico-background-color), 0.1);
-  }
-
-  .chart-toolbar-btn:focus:not(:focus-visible),
-  .chart-toolbar-btn:active {
-    box-shadow: none !important;
-    outline: none;
-  }
-
   @media (max-width: 768px) {
     .empty-state {
       min-height: 250px;
-    }
-    .chart-wrapper {
-      padding: 0.5rem;
     }
     .chart-inner-container {
       height: 250px;
