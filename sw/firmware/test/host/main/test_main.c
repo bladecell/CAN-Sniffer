@@ -18,6 +18,7 @@ void run_body_reader_tests(void);
 void run_http_body_policy_tests(void);
 void run_error_policy_tests(void);
 void run_supervisor_core_tests(void);
+void run_can_raw_tests(void);
 void run_power_settings_tests(void);
 void run_manual_sleep_http_tests(void);
 void run_atomic_file_tests(void);
@@ -88,5 +89,6 @@ void app_main(void)
     run_ws_broadcast_tests();
     run_recorder_core_tests();
     run_recorder_http_tests();
+    run_can_raw_tests();
     exit(UNITY_END() == 0 ? 0 : 1);
 }

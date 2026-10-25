@@ -44,6 +44,7 @@ public:
         twai_frame_header_t header;
         uint8_t             data[8];
         size_t              length;
+        uint32_t            ts_us;  // esp_timer_get_time() (low 32 bits) taken in the RX ISR; 0 on frames nobody stamped
     };
 
     enum class STATE
@@ -131,6 +132,18 @@ public:
     bool setTxDoneHook(TxDoneFn fn, void* arg)
     {
         return txDoneHook_.set(fn, arg, 200, 1, [](uint32_t ms) { vTaskDelay(pdMS_TO_TICKS(ms) > 0 ? pdMS_TO_TICKS(ms) : 1); });
+    }
+
+    // Observer for every frame seen on the bus, raw and read-only: each frame the receive task takes from the RX queue
+    // (tx false, from the receive task, before anything parses it) and each frame that really left the controller
+    // (tx true, TX-done ISR context, so the function must be IRAM-safe, short and non-blocking; flow control included).
+    // `data` holds `length` (0 to 8; 0 for a remote frame) bytes and is only valid during the call. `tsUs` is the ISR time
+    // for RX frames and the TX-done time for TX frames. Same pair publication rules as setTxDoneHook.
+    typedef void (*FrameTapFn)(void* arg, uint32_t id, bool ext, bool rtr, const uint8_t* data, uint8_t length,
+                               uint32_t tsUs, bool tx);
+    bool setFrameTap(FrameTapFn fn, void* arg)
+    {
+        return frameTapHook_.set(fn, arg, 200, 1, [](uint32_t ms) { vTaskDelay(pdMS_TO_TICKS(ms) > 0 ? pdMS_TO_TICKS(ms) : 1); });
     }
 
     esp_err_t receive(CanDriver::CanFrame& frame, int timeout_ms = 100);
@@ -234,6 +247,10 @@ private:
     size_t  txRingSize_ = 0;
     HookCell<TxDoneFn> txDoneHook_;
     void IRAM_ATTR        notifyTxDone(const twai_frame_t* frame, bool success);
+
+    // Raw frame observer (setFrameTap). Idle cost: one slot read per frame.
+    HookCell<FrameTapFn> frameTapHook_;
+    void IRAM_ATTR       tapFrame(uint32_t id, bool ext, bool rtr, const uint8_t* data, size_t length, uint32_t tsUs, bool tx);
 
     // Simulation hooks (nullptr until injected by the simulator component)
     SimStartFn  simStart_  = nullptr;

@@ -8,6 +8,7 @@
 
 #include "can_driver.hpp"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/queue.h"
 #include "esp_random.h"
 #include "obd2_common.hpp"
@@ -141,7 +142,9 @@ static void injectRaw(CanDriver& canDriver, const CanDriver::CanFrame& f)
     {
         return;
     }
-    if (xQueueSend(q, &f, 0) != pdTRUE)
+    CanDriver::CanFrame stamped = f;
+    stamped.ts_us               = static_cast<uint32_t>(esp_timer_get_time());  // the real path stamps in the RX ISR
+    if (xQueueSend(q, &stamped, 0) != pdTRUE)
     {
         ESP_LOGW(TAG, "Failed to inject simulated frame.");
     }

@@ -216,3 +216,20 @@ Decided by the user ("recommended" on all points).
 - **API:** start/stop and trip list are gated. State is open. Additive, no api_version bump.
 - **D5/D6:** separate Recorder page; a `recorder` section in settings.
 - **0-100 km/h:** separate mode with a fast speed poll. It needs an OBD2 temporary interval override/suspend API, approved as a separate task (R7).
+
+## 2026-10-25: CAN bus view scope (D4)
+- Modes: (1) Monitor: polling and OBD parsing run as normal, a raw tap shows every RX and TX frame, read-only; (2) Raw: polling off, ISO-TP reassembly on; (3) Pure sniffer. Polling and parsing are independent switches; raw tap sits before the parser. Raw modes revert to Monitor when the last WebSocket client closes.
+- Tap: RX tap in the OBD2 rx task (ISR timestamp on the frame, larger RX queue while active); move to ISR only if drop counters show real loss. TX tap on actually-transmitted frames (flow control included), flagged TX.
+- Raw TX: standard OBD request IDs only (0x7E0-0x7E7, 0x7DF), PIN-gated only, polling off only. Response IDs taken from received data.
+- Recorder paused in raw modes. Binary batched WebSocket frames, off by default, drop counters in stream. Per-ID analysis in browser first.
+- Slices: A Monitor RX-only read-only page; B raw send + ISO-TP reassembly; C pure sniffer + optional listen-only.
+
+## 2026-10-25: CAN raw stream, slice A implementation choices (P4.C1, P4.C2)
+Where the build departs from the D4 wording, and why.
+- **RX tap point:** `CanDriver::receive()` (the one call the OBD2 receive task makes for every frame, before `handleDiagFrame` and `parseRecFrame`), through a second `HookCell` (`setFrameTap`) beside the OBD2 TX-done hook. The same hook carries the TX frames. This keeps `obd2` free of a `can_raw` dependency and puts the simulator path (frames injected into the RX queue) on the same tap. The timestamp is taken in the RX ISR (`CanFrame::ts_us`, `esp_timer_get_time()`, low 32 bits) and stamped in the simulator's inject helper.
+- **RX queue size:** not enlarged while the stream is active. The queue is a plain FreeRTOS queue the ISR writes without a lock, so it cannot be swapped live. The ISR drop count (`CanDriver::getRxDropped`) is in every batch and stats frame; the existing `rx_queue_size` setting (1 to 256) is the knob. Revisit if the counters show loss on a real bus.
+- **Timestamps in a batch:** `dt` is a signed 16-bit delta, not unsigned. RX frames are stamped in the ISR but enter the ring when the receive task runs, so a TX-done stamp can be earlier than the RX frame before it. A delta outside +-32.7 ms starts a new batch.
+- **Batch size:** up to 257 bytes (the length byte stays a u8), not 125, so a batch carries 16 full frames instead of 7. `ws_broadcast::Dispatcher` gets a second class, bulk, for this. Bulk holds at most 2 of the 3 pending slots (PID updates and status keep one), allocates only the bytes it needs, and skips a client whose socket has no room (zero-timeout `select`), because a blocking send of a larger frame would park the HTTP task. Frames skipped that way count as `ws` drops.
+- **Ring:** 256 frames x 20 bytes of internal RAM, allocated by `0xB0` and freed by `0xB1` or the last socket closing. A full ring drops the new frame and counts it.
+- **Hardware filter:** the stream cannot widen the controller's acceptance filter live (changing it needs the node disabled). With `filter` on, frames the filter rejects never reach the tap; stats flag bit 1 tells the page. The default is off.
+- **Access:** like the PID stream, `0xB0`/`0xB1` are not PIN-gated: Monitor mode sends nothing. Raw send (slice B) is the gated part.

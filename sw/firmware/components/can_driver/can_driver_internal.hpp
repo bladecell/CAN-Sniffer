@@ -7,6 +7,7 @@
 #include <new>
 
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/projdefs.h"
 #include "freertos/queue.h"
 #include "hal/twai_types.h"

@@ -55,6 +55,12 @@ void CanDriver::notifyTxDone(const twai_frame_t* frame, bool success)
     {
         return;
     }
+    if (success)
+    {
+        const twai_frame_header_t& h = frame->header;
+        tapFrame(h.id, h.ide != 0, h.rtr != 0, frame->buffer, frame->buffer_len, static_cast<uint32_t>(esp_timer_get_time()),
+                 true);
+    }
     HookCell<TxDoneFn>::Guard hook(txDoneHook_);  // holds the {fn,arg} pair steady until the callback returns
     if (hook.fn == nullptr)
     {
@@ -62,6 +68,17 @@ void CanDriver::notifyTxDone(const twai_frame_t* frame, bool success)
     }
     const uint8_t length = frame->buffer_len > 8 ? 8 : static_cast<uint8_t>(frame->buffer_len);
     hook.fn(hook.arg, frame->header.id, frame->buffer, length, success);
+}
+
+void CanDriver::tapFrame(uint32_t id, bool ext, bool rtr, const uint8_t* data, size_t length, uint32_t tsUs, bool tx)
+{
+    HookCell<FrameTapFn>::Guard hook(frameTapHook_);
+    if (hook.fn == nullptr)
+    {
+        return;
+    }
+    const uint8_t n = (rtr || data == nullptr) ? 0 : (length > 8 ? 8 : static_cast<uint8_t>(length));
+    hook.fn(hook.arg, id, ext, rtr, data, n, tsUs, tx);
 }
 
 esp_err_t CanDriver::receive(CanDriver::CanFrame& frame, int timeout_ms)
@@ -82,6 +99,7 @@ esp_err_t CanDriver::receive(CanDriver::CanFrame& frame, int timeout_ms)
     if (xQueueReceive(rxQueue, &frame, ticks) == pdTRUE)
     {
         LOG_CAN_FRAME(TAG, "RX <- ", frame.header.id, frame.data, frame.length);
+        tapFrame(frame.header.id, frame.header.ide != 0, frame.header.rtr != 0, frame.data, frame.length, frame.ts_us, false);
         rxCb();
         return ESP_OK;
     }
