@@ -348,8 +348,6 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
         transparent 1px
       );
     background-size: 20px 20px;
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
     border: 2px dashed var(--pico-primary);
     border-radius: inherit;
     display: flex;

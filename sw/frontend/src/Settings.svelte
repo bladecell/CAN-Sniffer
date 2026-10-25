@@ -3,8 +3,23 @@
   import { auth } from "$lib/auth.svelte";
   import { errorText, isPin, PIN_PATTERN, type AuthError } from "$lib/auth";
   import SelectMenu from "$lib/components/SelectMenu.svelte";
+  import Icon from "$lib/Icon.svelte";
+  import { ACCENTS, CONTROL_FILLS, THEMES, nextOption, type ControlFill, type Theme } from "$lib/appearance";
+  import { appearance, setAppearance } from "$lib/appearance.svelte";
 
   onMount(() => void auth.refresh());
+
+  const themeLabels: Record<Theme, string> = { system: "System", light: "Light", dark: "Dark" };
+  const fillLabels: Record<ControlFill, string> = { clear: "Clear", strong: "Strong" };
+
+  // Arrow keys move the selection and focus within a radio group (WAI-ARIA radio pattern).
+  function radioKey<T extends string>(e: KeyboardEvent, options: readonly T[], current: T, set: (v: T) => void) {
+    const next = nextOption(options, current, e.key);
+    if (next === undefined) return;
+    e.preventDefault();
+    set(next);
+    (e.currentTarget as HTMLElement).parentElement?.querySelector<HTMLElement>(`[data-value="${next}"]`)?.focus();
+  }
 
   let baudrate = $state("500 kbps");
 
@@ -34,6 +49,66 @@
 
   const pinMessage = $derived(pinError === null ? "" : pinError === "MISMATCH" ? "The new PINs do not match." : errorText(pinError));
 </script>
+
+<section class="card appearance" aria-labelledby="appearance-title">
+  <h2 id="appearance-title">Appearance</h2>
+
+  <div class="row">
+    <span class="lab" id="theme-label">Theme</span>
+    <div class="seg" role="radiogroup" aria-labelledby="theme-label">
+      {#each THEMES as t (t)}
+        <button
+          type="button"
+          role="radio"
+          data-value={t}
+          aria-checked={appearance.theme === t}
+          tabindex={appearance.theme === t ? 0 : -1}
+          onclick={() => setAppearance("theme", t)}
+          onkeydown={(e) => radioKey(e, THEMES, appearance.theme, (v) => setAppearance("theme", v))}>{themeLabels[t]}</button>
+      {/each}
+    </div>
+    <span class="hint">System follows your device setting.</span>
+  </div>
+
+  <div class="row">
+    <span class="lab" id="accent-label">Accent</span>
+    <div class="swatches" role="radiogroup" aria-labelledby="accent-label">
+      {#each ACCENTS as a (a.id)}
+        <button
+          type="button"
+          class="swatch"
+          role="radio"
+          data-value={a.id}
+          aria-label={a.label}
+          aria-checked={appearance.accent === a.id}
+          tabindex={appearance.accent === a.id ? 0 : -1}
+          style="--ah: {a.hue}; --ac: {a.chroma}"
+          onclick={() => setAppearance("accent", a.id)}
+          onkeydown={(e) => radioKey(e, ACCENTS.map((x) => x.id), appearance.accent, (v) => setAppearance("accent", v))}>
+          {#if appearance.accent === a.id}<Icon name="check" size={22} />{/if}
+        </button>
+      {/each}
+    </div>
+    <span class="hint">{ACCENTS.find((a) => a.id === appearance.accent)?.label}</span>
+  </div>
+
+  <div class="row">
+    <span class="lab" id="ctl-label">Control fill</span>
+    <div class="seg" role="radiogroup" aria-labelledby="ctl-label">
+      {#each CONTROL_FILLS as c (c)}
+        <button
+          type="button"
+          role="radio"
+          data-value={c}
+          aria-checked={appearance.ctl === c}
+          tabindex={appearance.ctl === c ? 0 : -1}
+          onclick={() => setAppearance("ctl", c)}
+          onkeydown={(e) => radioKey(e, CONTROL_FILLS, appearance.ctl, (v) => setAppearance("ctl", v))}>{fillLabels[c]}</button>
+      {/each}
+    </div>
+    <span class="hint">Strong gives buttons and fields a darker fill for more contrast.</span>
+  </div>
+</section>
 
 <section>
   <h2>System Settings</h2>
@@ -75,6 +150,30 @@
 </section>
 
 <style>
+  .appearance {
+    padding: var(--pad-card);
+    display: grid;
+    gap: 18px;
+    margin-bottom: 2rem;
+  }
+  .appearance h2 {
+    margin: 0;
+  }
+  .row {
+    display: grid;
+    gap: 8px;
+    justify-items: start;
+  }
+  .lab {
+    font-weight: 700;
+    font-size: 0.85rem;
+  }
+  .swatches {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    padding: 2px 0 8px;
+  }
   .access {
     margin-top: 2rem;
   }

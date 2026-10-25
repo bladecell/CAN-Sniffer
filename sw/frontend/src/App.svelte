@@ -90,22 +90,18 @@ import { connectionStore } from "$lib/connectionStore.svelte";
   }
 
   :global(:root) {
-    --shadow-s: "inset 0 1px 2px #ffffff30, 0 1px 2px #00000030, 0 1px 2px #00000015";
-    --shadow-m: "inset 0 1px 2px #ffffff50, 0 2px 4px #00000030, 0 2px 3px #00000015";
-    --shadow-l: "inset 0 1px 2px #ffffff70, 0 4px 6px #00000030, 0 4px 6px #00000015";
-
     --card-min-width: 200px;
     --card-pref-width: 280px;
     --card-gap: 1.25rem;
     --card-height: 160px;
     --card-max-width: calc((2 * var(--card-min-width)) + var(--card-gap));
 
-    --backdrop-filter: blur(10px) saturate(1.2);
-    --backdrop-filter-background: oklch(1 0 0 / 0.01);
+    --backdrop-filter: blur(var(--blur)) saturate(1.35);
+    --backdrop-filter-background: var(--float);
 
-    --normal-color: hsl(160, 84%, 39%);
-    --warning-color: #f59e0b;
-    --error-color: #ef4444;
+    --normal-color: var(--ok);
+    --warning-color: var(--warn);
+    --error-color: var(--crit);
 
     --grid-border-radius: 12px;
   }

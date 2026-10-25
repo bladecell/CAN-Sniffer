@@ -5,6 +5,17 @@
 	<meta charset="UTF-8" />
 	<link rel="icon" type="image/svg+xml" href="./assets/svelte.svg" />
 	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<!-- Appearance before first paint (src/lib/appearance.ts). Unknown stored values are harmless: the CSS treats them as the defaults. -->
+	<script>
+		(function (d) {
+			function get(key, fallback) {
+				try { return localStorage.getItem(key) || fallback; } catch (e) { return fallback; }
+			}
+			d.dataset.theme = get('cs-theme', 'system');
+			d.dataset.accent = get('cs-accent', 'orange');
+			d.dataset.ctl = get('cs-ctl', 'clear');
+		})(document.documentElement);
+	</script>
 	<title>Svelte</title>
 </head>
 
