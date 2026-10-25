@@ -82,7 +82,17 @@ public:
                                   esp_err_t (*preHandshake)(httpd_req_t* r)  = nullptr,
                                   esp_err_t (*postHandshake)(httpd_req_t* r) = nullptr);
 
+    // Normal broadcast: up to 125 bytes to every upgraded client. Best effort: dropped (and logged at most every 5 s)
+    // when three broadcasts are already pending.
     void wsBroadcast(httpd_ws_frame_t* ws_pkt);
+
+    // Bulk broadcast for the raw CAN stream: up to 257 bytes, at most two pending (so PID updates keep a slot), and a
+    // client whose socket has no room is skipped instead of blocking the HTTP task. `units` (frames in the payload) is
+    // added to takeBulkSkipped() when a client was skipped. busy: no slot now, retry later and keep the data.
+    enum class WsSend { accepted, busy, dropped };
+    WsSend   wsBroadcastBulk(const uint8_t* data, size_t len, uint16_t units);
+    // Units of bulk broadcasts that found a client unable to take them, since the last call.
+    uint32_t takeBulkSkipped();
 
     // WebSocket clients currently connected, not counting `excludeFd` (the socket being closed, still listed by httpd).
     uint32_t getActiveWSClientCount(int excludeFd = -1);

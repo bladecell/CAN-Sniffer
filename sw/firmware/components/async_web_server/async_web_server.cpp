@@ -1,9 +1,11 @@
+#include <sys/select.h>
 #include <unistd.h>
 
 #include <cstdio>
 
 #include <new>
 #include "async_web_server.hpp"
+#include "log_gate.hpp"
 #include "ws_broadcast_dispatch.hpp"
 
 #include "esp_check.h"
@@ -29,6 +31,17 @@ struct WsBroadcastBackend
         return err == ESP_OK;
     }
     bool ready(int fd) { return httpd_ws_get_fd_info(*server, fd) == HTTPD_WS_CLIENT_WEBSOCKET; }
+    // A zero-timeout select: lwIP reports a socket writable only with real room in its send buffer, so a bulk frame
+    // does not park the HTTP task in a blocking send behind a slow phone.
+    bool writable(int fd)
+    {
+        if (fd < 0 || fd >= FD_SETSIZE) { return false; }
+        fd_set w;
+        FD_ZERO(&w);
+        FD_SET(fd, &w);
+        timeval none = {0, 0};
+        return select(fd + 1, nullptr, &w, nullptr, &none) > 0;
+    }
     void send(int fd, uint8_t* payload, size_t len)
     {
         httpd_ws_frame_t frame = {};
@@ -42,6 +55,19 @@ struct WsBroadcastBackend
 };
 
 static ws_broadcast::Dispatcher<WsBroadcastBackend> wsDispatcher;
+
+// One line per 5 s however many broadcasts are refused; the count of swallowed ones rides on the next line.
+static LogGate wsDropLogGate(5000);
+
+static void logBroadcastDrop(ws_broadcast::Result result)
+{
+    uint32_t suppressed = 0;
+    if (wsDropLogGate.allow(static_cast<uint32_t>(esp_timer_get_time() / 1000), suppressed))
+    {
+        ESP_LOGW(TAG, "WS broadcast dropped: %u (%u more in the last interval)", static_cast<unsigned>(result),
+                 static_cast<unsigned>(suppressed));
+    }
+}
 
 esp_err_t AsyncWebServer::sendError(httpd_req_t* req, int status, const char* reason, const char* code,
                                     uint32_t retryAfterS)
@@ -505,8 +531,32 @@ void AsyncWebServer::wsBroadcast(httpd_ws_frame_t* ws_pkt)
     const ws_broadcast::Result result = wsDispatcher.submit(WsBroadcastBackend{&server_}, ws_pkt->payload, ws_pkt->len);
     if (result != ws_broadcast::Result::accepted && result != ws_broadcast::Result::stopped)
     {
-        ESP_LOGW(TAG, "WS broadcast dropped: %u", static_cast<unsigned>(result));
+        logBroadcastDrop(result);
     }
+}
+
+AsyncWebServer::WsSend AsyncWebServer::wsBroadcastBulk(const uint8_t* data, size_t len, uint16_t units)
+{
+    using Dispatcher = ws_broadcast::Dispatcher<WsBroadcastBackend>;
+    const ws_broadcast::Result result =
+        wsDispatcher.submit(WsBroadcastBackend{&server_}, data, len, Dispatcher::Class::bulk, units);
+    switch (result)
+    {
+        case ws_broadcast::Result::accepted:
+            return WsSend::accepted;
+        case ws_broadcast::Result::full:
+            return WsSend::busy;  // expected under load: the caller keeps the data and retries
+        case ws_broadcast::Result::stopped:
+            return WsSend::dropped;
+        default:
+            logBroadcastDrop(result);
+            return WsSend::dropped;
+    }
+}
+
+uint32_t AsyncWebServer::takeBulkSkipped()
+{
+    return wsDispatcher.takeBulkSkipped();
 }
 
 uint32_t AsyncWebServer::getActiveWSClientCount(int excludeFd)
