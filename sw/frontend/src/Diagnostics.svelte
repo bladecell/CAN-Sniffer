@@ -10,7 +10,7 @@
   import StateNote from "$lib/components/listDetail/StateNote.svelte";
   import MasterDetail from "$lib/components/listDetail/MasterDetail.svelte";
 
-  const GROUP_ICON: Record<DtcGroup, string> = { confirmed: "alert-circle", pending: "clock", permanent: "lock" };
+  const GROUP_ICON: Record<DtcGroup, string> = { confirmed: "triangle-exclamation", pending: "clock", permanent: "lock" };
   const GROUP_TONE: Record<DtcGroup, "crit" | "warn" | "perm"> = { confirmed: "crit", pending: "warn", permanent: "perm" };
   const GROUP_CHIP: Record<DtcGroup, string> = { confirmed: "c-crit", pending: "c-warn", permanent: "c-perm" };
 
@@ -158,7 +158,7 @@
         {#if r.description}
           <p class="rv-lede">{r.description}</p>
         {:else}
-          <p class="rv-muted">No description in the DTC file.</p>
+          <p class="rv-lede rv-muted">No description in the DTC file.</p>
         {/if}
         <dl class="rv-facts">
           <dt>Reported by</dt>

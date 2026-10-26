@@ -1,7 +1,7 @@
 <script lang="ts">
   import { alertStore } from "$lib/alertStore.svelte";
   import { escapeTarget } from "$lib/toast";
-  import { fade, fly } from "svelte/transition";
+  import { fly } from "svelte/transition";
   import { flip } from "svelte/animate";
   import type { Alert } from "$lib/types";
   import Icon from "$lib/Icon.svelte";
@@ -35,7 +35,7 @@
       class="toast {alert.type}"
       role={alert.type === "error" ? "alert" : "status"}
       in:fly={{ y: reduceMotion ? 0 : 16, duration: reduceMotion ? 0 : 300 }}
-      out:fade={{ duration: 150 }}
+      out:fly={{ y: reduceMotion ? 0 : 8, duration: reduceMotion ? 0 : 200 }}
       animate:flip
       onpointerenter={() => alertStore.pause(alert.id)}
       onpointerleave={(e) => {
@@ -81,7 +81,9 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    max-width: min(480px, 100%);
+    flex: none;
+    width: max-content;
+    max-width: min(480px, calc(100vw - 24px));
     padding: 8px 8px 8px 16px;
     border-radius: var(--r-float);
     background: var(--float);
