@@ -10,7 +10,7 @@ import { connectionStore } from "$lib/connectionStore.svelte";
   import Telemetry from "./Telemetry.svelte";
   import CanLogging from "./CanLogging.svelte";
   import { onMount } from "svelte";
-  import ToastContainer from "./lib/components/ToastContainer.svelte";
+  import Toast from "./lib/components/Toast.svelte";
   import AuthDialog from "./lib/components/AuthDialog.svelte";
   import ApOpenBanner from "./lib/components/ApOpenBanner.svelte";
   import DevBypassBanner from "./lib/components/DevBypassBanner.svelte";
@@ -68,13 +68,13 @@ import { connectionStore } from "$lib/connectionStore.svelte";
   {/if}
 </main>
 
-<ToastContainer />
+<Toast />
 <AuthDialog />
 
 <style>
   .main-content {
     margin-top: 102px; /* Below the floating dock (DESIGN.md, Layout) */
-    padding: clamp(0.75rem, 3vw, 1.5rem);
+    padding: 1.5rem; /* DESIGN.md page-pad 24px */
     width: 100vw;
     max-width: 100vw;
     margin-left: 0;
@@ -86,6 +86,8 @@ import { connectionStore } from "$lib/connectionStore.svelte";
   @media (max-width: 859px) {
     .main-content {
       margin-top: 20px; /* The nav is a bottom bar here */
+      padding-left: 0.875rem; /* page-pad 14px on phone */
+      padding-right: 0.875rem;
       padding-bottom: calc(118px + env(safe-area-inset-bottom)); /* Clears the bottom bar */
     }
   }

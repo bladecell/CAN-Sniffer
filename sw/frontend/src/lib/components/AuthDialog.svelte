@@ -1,7 +1,7 @@
 <script lang="ts">
   import { auth } from "$lib/auth.svelte";
   import { errorText, isPin, PIN_PATTERN, type ClaimOutcome } from "$lib/auth";
-  import Modal from "./Modal.svelte";
+  import Sheet from "./Sheet.svelte";
 
   // Local form state lives inside the {#if} blocks below, so it resets when the dialog closes.
   let clock = $state(Date.now());
@@ -56,7 +56,7 @@
   );
 </script>
 
-<Modal open={auth.view.dialog !== "none"} {title} onClose={() => auth.closeDialog()}>
+<Sheet open={auth.view.dialog !== "none"} {title} onClose={() => auth.closeDialog()}>
   {#if auth.view.dialog !== "none"}
     {#if auth.view.dialog === "login"}
       {#if auth.view.notice}
@@ -141,7 +141,7 @@
       </form>
     {/if}
   {/if}
-</Modal>
+</Sheet>
 
 <style>
   .auth-error {

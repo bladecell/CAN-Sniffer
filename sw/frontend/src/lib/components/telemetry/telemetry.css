@@ -35,11 +35,6 @@
 .tel-btn.danger {
   color: var(--ctl-crit);
 }
-.tel-btn.fill-crit {
-  background: var(--crit-solid);
-  color: var(--on-crit);
-  font-weight: 800;
-}
 .tel-btn.sm {
   min-height: calc(var(--ctl-h) - 8px);
   padding: 0 12px;
@@ -285,7 +280,7 @@
   }
 }
 
-/* Form fields inside the editor sheet: the shared Modal adds a 14px bottom margin to every input, which splits the hints from their fields. */
-dialog.modal .edform input:not([type='checkbox']):not([type='radio']):not([type='color']) {
+/* Form fields inside the editor sheet: the shared overlay adds a 14px bottom margin to every input, which splits the hints from their fields. */
+dialog.overlay .edform input:not([type='checkbox']):not([type='radio']):not([type='color']) {
   margin: 0;
 }

@@ -1,0 +1,218 @@
+/* Shared by Sheet.svelte and Dialog.svelte. Both render a native <dialog class="overlay ..."> with the overlay action. */
+
+:global(body.overlay-lock) {
+  overflow: hidden;
+  touch-action: none;
+}
+
+/*
+ * Pico sets every <dialog> to position:fixed with top:0 and bottom:0. With height:auto the box then stretches
+ * between the two insets up to max-height. Position from the top edge instead, so the box is content-sized.
+ */
+dialog.overlay {
+  box-sizing: border-box;
+  display: none;
+  position: fixed;
+  inset: auto;
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-float);
+  background: var(--float);
+  color: var(--text);
+  box-shadow: var(--shadow-float);
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(1.35);
+  backdrop-filter: blur(var(--blur)) saturate(1.35);
+}
+dialog.overlay[open] {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+}
+dialog.overlay::backdrop {
+  background: var(--scrim);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  dialog.overlay {
+    background: var(--float-solid);
+  }
+}
+
+/* Dialog: small centred confirmation. */
+dialog.overlay.dialog {
+  width: min(440px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+}
+dialog.overlay.dialog[open] {
+  animation: overlay-dialog-in 0.4s var(--ease-out);
+}
+
+/* Sheet: bottom sheet, centred on wide screens, full width on phones. The body scrolls. */
+dialog.overlay.sheet {
+  top: auto;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  translate: none;
+  width: min(100%, 960px);
+  max-height: 85dvh;
+  margin: 0 auto;
+  border-radius: var(--r-float) var(--r-float) 0 0;
+}
+dialog.overlay.sheet[open] {
+  animation: overlay-sheet-in 0.5s var(--ease-out);
+}
+
+.overlay .grab {
+  flex: none;
+  width: 40px;
+  height: 4px;
+  margin: 8px auto 0;
+  border-radius: 4px;
+  background: var(--muted);
+  opacity: 0.5;
+}
+.overlay header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 14px 6px 22px;
+}
+.sheet > header {
+  padding: 8px 12px 6px 20px;
+}
+.overlay h2 {
+  margin: 0;
+  color: var(--text);
+  font: 700 1.15rem/1.3 var(--font);
+}
+.overlay .close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.overlay .close:hover {
+  background: var(--hov);
+}
+.overlay .body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 22px 22px;
+}
+.sheet > .body {
+  padding-bottom: calc(22px + env(safe-area-inset-bottom));
+}
+.overlay footer {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 0 22px 22px;
+}
+
+/* Form content for every overlay: fills, no borders (DESIGN.md Controls). */
+.overlay :global(label) {
+  display: block;
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+.overlay :global(input:not([type="checkbox"]):not([type="radio"]):not([type="color"])) {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--ctl-h);
+  margin: 0 0 14px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: var(--ctl);
+  color: var(--ctl-text);
+  font: inherit;
+  box-shadow: none;
+}
+.overlay :global(input::placeholder) {
+  color: var(--ctl-sub);
+}
+.overlay :global(.btn) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-sizing: border-box;
+  width: auto;
+  min-height: var(--ctl-h);
+  margin: 0;
+  padding: 0 22px;
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: var(--ctl);
+  color: var(--ctl-text);
+  font: 700 1rem/1 var(--font);
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+.overlay :global(.btn:hover) {
+  background: var(--ctl-h2);
+}
+.overlay :global(.btn:active) {
+  filter: brightness(0.94);
+}
+.overlay :global(.btn.pri) {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 800;
+}
+.overlay :global(.btn.pri:hover) {
+  filter: brightness(1.06);
+}
+.overlay :global(.btn.danger) {
+  background: var(--crit-solid);
+  color: var(--on-crit);
+  font-weight: 800;
+}
+.overlay :global(.btn:disabled) {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+@keyframes overlay-dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+@keyframes overlay-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(32px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  dialog.overlay[open] {
+    animation-duration: 0.01ms;
+  }
+}

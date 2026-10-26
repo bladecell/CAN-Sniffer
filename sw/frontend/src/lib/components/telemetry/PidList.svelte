@@ -8,7 +8,7 @@
   import type { FilterOperator } from "$lib/tableRows";
   import type { SelectMenuOption } from "$lib/selectMenu";
   import Icon from "$lib/Icon.svelte";
-  import Modal from "$lib/components/Modal.svelte";
+  import Dialog from "$lib/components/Dialog.svelte";
   import SelectMenu from "$lib/components/SelectMenu.svelte";
   import FloatPanel from "./FloatPanel.svelte";
 
@@ -295,18 +295,15 @@
   </footer>
 </div>
 
-<Modal
+<Dialog
   open={confirmOpen}
   title="Remove {selectedCount} PID{selectedCount === 1 ? '' : 's'}?"
-  onClose={() => (confirmOpen = false)}
->
-  <p class="muted">Removes the definitions from the device. The SD card file changes when you press Save to SD card.</p>
-  {#snippet footer()}
-    <!-- svelte-ignore a11y_autofocus -->
-    <button type="button" class="tel-btn" autofocus onclick={() => (confirmOpen = false)}>Cancel</button>
-    <button type="button" class="tel-btn fill-crit" onclick={confirmRemove}>Remove {selectedCount}</button>
-  {/snippet}
-</Modal>
+  message="Removes the definitions from the device. The SD card file changes when you press Save to SD card."
+  confirmLabel="Remove {selectedCount}"
+  danger
+  onConfirm={confirmRemove}
+  onCancel={() => (confirmOpen = false)}
+/>
 
 <style>
   .tel-pidlist {

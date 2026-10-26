@@ -8,8 +8,8 @@
   import { safeHexColor } from "$lib/color";
   import { untrack } from "svelte";
   import Icon from "$lib/Icon.svelte";
-  import Modal from "$lib/components/Modal.svelte";
-  import SDCardImportModal from "$lib/components/SDCardImportModal.svelte";
+  import Sheet from "$lib/components/Sheet.svelte";
+  import SDCardImportSheet from "$lib/components/SDCardImportSheet.svelte";
   import PidList from "$lib/components/telemetry/PidList.svelte";
   import PidEditorForm from "$lib/components/telemetry/PidEditorForm.svelte";
   import ChartCell from "$lib/components/telemetry/ChartCell.svelte";
@@ -99,7 +99,7 @@
   const cellCount = $derived(telemetryStore.chartRows * telemetryStore.chartCols);
 </script>
 
-<SDCardImportModal isOpen={showSdImportModal} onClose={() => (showSdImportModal = false)} />
+<SDCardImportSheet isOpen={showSdImportModal} onClose={() => (showSdImportModal = false)} />
 
 {#snippet syncSwitch()}
   <span class="sync">
@@ -217,17 +217,13 @@
   </div>
 </section>
 
-<Modal open={pidSheetOpen} title="PIDs" variant="sheet" onClose={() => (pidSheetOpen = false)}>
-  {#snippet children()}
-    <PidList onImport={handleImport} onNew={newPid} onEdit={editPid} />
-  {/snippet}
-</Modal>
+<Sheet open={pidSheetOpen} title="PIDs" onClose={() => (pidSheetOpen = false)}>
+  <PidList onImport={handleImport} onNew={newPid} onEdit={editPid} />
+</Sheet>
 
-<Modal open={editorOpen} title={editorTitle} variant="sheet" onClose={() => (editorOpen = false)}>
-  {#snippet children()}
-    <PidEditorForm onDone={() => (editorOpen = false)} />
-  {/snippet}
-</Modal>
+<Sheet open={editorOpen} title={editorTitle} onClose={() => (editorOpen = false)}>
+  <PidEditorForm onDone={() => (editorOpen = false)} />
+</Sheet>
 
 <style>
   .tel {

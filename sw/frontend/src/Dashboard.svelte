@@ -8,7 +8,7 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
   import { fade } from "svelte/transition";
 
   import DashboardCardWrapper from "$lib/components/DashboardCardWrapper.svelte";
-  import PIDSettingsModal from "$lib/components/PIDSettingsModal.svelte";
+  import PIDSettingsSheet from "$lib/components/PIDSettingsSheet.svelte";
 
   import { dashboardStore } from "$lib/dashboardStore.svelte.ts";
   import { createResizeHandler } from "$lib/resizeLogic.svelte";
@@ -265,7 +265,7 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
   </div>
 {/if}
 
-<PIDSettingsModal
+<PIDSettingsSheet
   isOpen={isModalOpen}
   item={modalTargetItem}
   isNewCard={modalIsNewCard}

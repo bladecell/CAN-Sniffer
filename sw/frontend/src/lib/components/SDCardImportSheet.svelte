@@ -6,7 +6,7 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
   import { parseJsonResponse } from "$lib/api";
   import { firmwareApi } from "$lib/firmwareApi.svelte";
   import FileTree from "./FileTree.svelte";
-  import Modal from "./Modal.svelte";
+  import Sheet from "./Sheet.svelte";
   import type { SdTreeNode } from "$lib/types";
 
   interface Props {
@@ -73,7 +73,7 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
   }
 </script>
 
-<Modal open={isOpen} title="Select PID Configuration File" size="lg" onClose={onClose}>
+<Sheet open={isOpen} title="Select PID Configuration File" onClose={onClose}>
   {#if !vehicleStore.sdInfo?.is_mounted}
     <div class="alert-box warning">
       SD Card is not mounted or present.
@@ -92,7 +92,7 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
   {:else}
     <div class="alert-box error">Failed to load directory tree.</div>
   {/if}
-</Modal>
+</Sheet>
 
 <style>
   .alert-box {

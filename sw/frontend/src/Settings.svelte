@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { auth } from "$lib/auth.svelte";
+  import { alertStore } from "$lib/alertStore.svelte";
   import { errorText, isPin, PIN_PATTERN, type AuthError } from "$lib/auth";
   import SelectMenu from "$lib/components/SelectMenu.svelte";
   import Icon from "$lib/Icon.svelte";
@@ -121,7 +122,7 @@
       { value: "250 kbps", label: "250 kbps" },
     ]}
   />
-  <button onclick={() => alert("Saved!")}>Apply Changes</button>
+  <button onclick={() => alertStore.add("Saved", "success")}>Apply Changes</button>
 </section>
 
 <section class="access">

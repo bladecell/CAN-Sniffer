@@ -7,7 +7,7 @@
   import { formatBytes, sidecarName, tripRows, type TripRow } from "$lib/recorderView";
   import Icon from "$lib/Icon.svelte";
   import Switch from "$lib/components/Switch.svelte";
-  import Modal from "$lib/components/Modal.svelte";
+  import Dialog from "$lib/components/Dialog.svelte";
   import ViewHeader from "$lib/components/listDetail/ViewHeader.svelte";
   import StatusLine from "$lib/components/listDetail/StatusLine.svelte";
   import StateNote from "$lib/components/listDetail/StateNote.svelte";
@@ -210,18 +210,12 @@
   {/if}
 </section>
 
-<Modal
+<Dialog
   open={pendingDelete !== null}
   title={pendingDelete ? `Delete ${pendingDelete.name}?` : ""}
-  onClose={() => (pendingDelete = null)}
->
-  <p class="rv-muted">
-    {pendingDelete?.sidecar ? "Removes the CSV and its summary file from the SD card for good." : "Removes the CSV from the SD card for good."}
-  </p>
-  {#snippet footer()}
-    <div class="rv-acts">
-      <button type="button" class="rv-btn" onclick={() => (pendingDelete = null)}>Cancel</button>
-      <button type="button" class="rv-btn fill-crit" onclick={confirmDelete}>Delete trip</button>
-    </div>
-  {/snippet}
-</Modal>
+  message={pendingDelete?.sidecar ? "Removes the CSV and its summary file from the SD card for good." : "Removes the CSV from the SD card for good."}
+  confirmLabel="Delete trip"
+  danger
+  onConfirm={confirmDelete}
+  onCancel={() => (pendingDelete = null)}
+/>

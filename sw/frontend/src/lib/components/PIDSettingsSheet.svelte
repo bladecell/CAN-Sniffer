@@ -3,7 +3,7 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
 
   import TelemetryStepper from "./TelemetryStepper.svelte";
   import SelectMenu from "./SelectMenu.svelte";
-  import Modal from "./Modal.svelte";
+  import Sheet from "./Sheet.svelte";
   import type {
     DashboardItem,
     PidGridItem,
@@ -192,10 +192,10 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
   }
 </script>
 
-<Modal
+<Sheet
   open={isOpen}
   title={isNewCard ? "Create System Component" : "Configure Component Parameters"}
-  size="lg"
+
   onClose={handleCancel}
 >
   <form id="pid-settings-form" onsubmit={handleSubmit}>
@@ -397,7 +397,7 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
   {#snippet footer()}
     <button type="submit" form="pid-settings-form" class="btn pri">Apply</button>
   {/snippet}
-</Modal>
+</Sheet>
 
 <style>
   .field-heading {

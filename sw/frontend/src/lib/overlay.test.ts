@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { returnFocusTarget, trapTarget } from "./modal";
+import { returnFocusTarget, trapTarget } from "./overlay";
 
 describe("trapTarget", () => {
   test("returns -1 when the dialog has nothing to focus", () => {
