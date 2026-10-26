@@ -216,6 +216,12 @@
 	--pico-font-family-monospace: var(--mono);
 	--pico-background-color: var(--bg);
 	--pico-color: var(--text);
+	--pico-h1-color: var(--text);
+	--pico-h2-color: var(--text);
+	--pico-h3-color: var(--text);
+	--pico-h4-color: var(--text);
+	--pico-h5-color: var(--text);
+	--pico-h6-color: var(--text);
 	--pico-muted-color: var(--muted);
 	--pico-border-color: transparent;
 	--pico-muted-border-color: transparent;
