@@ -10,6 +10,7 @@ import { createStreamRefCount } from "./streamRefCount";
 import { createThrottle } from "./throttle";
 import { livePids } from "./livePidStore.svelte";
 import { notifyConnectionOpen } from "./connectionEvents";
+import { recordingStore } from "./recordingStore.svelte";
 
 export const COMMANDS = { START_LOG: 0xa0, STOP_LOG: 0xa1, PING_REQUEST: 0xa2, PING_RESPONSE: 0xa3 };
 export type MessageListener = (update: { pid: number; value: number; timestamp: number }) => void;
@@ -218,6 +219,9 @@ export class ConnectionStore {
                 break;
             case "canStatus":
                 this.applyCanStatusFrame(frame);
+                break;
+            case "recorder":
+                recordingStore.applyFrame(frame);
                 break;
             case "pong":
                 this.heartbeat.pong();

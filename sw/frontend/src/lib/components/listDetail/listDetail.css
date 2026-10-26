@@ -1,0 +1,493 @@
+/* Shared vocabulary for the list-and-detail views (Diagnostics, Recorder). DESIGN.md, Layout and Components.
+   Global, prefixed rv-, imported once by MasterDetail.svelte. Tokens come from app.css. */
+
+.rv-wrap {
+  --row-h: 72px;
+  --row-gap: 8px;
+  --pad-list: 12px;
+  display: grid;
+  gap: 20px;
+  align-content: start;
+  max-width: 1200px;
+  margin: 0 auto;
+  min-width: 0;
+}
+.rv-wrap > * {
+  min-width: 0;
+}
+.rv-wrap h1 {
+  margin: 0;
+  color: var(--text);
+  font-size: 2.1rem;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+.rv-wrap h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.rv-wrap p {
+  margin: 0;
+}
+
+.rv-num {
+  font-variant-numeric: tabular-nums;
+}
+.rv-muted {
+  color: var(--muted);
+}
+.rv-t-ok {
+  color: var(--ok);
+}
+.rv-t-warn {
+  color: var(--warn);
+}
+.rv-t-crit {
+  color: var(--crit);
+}
+.rv-t-perm {
+  color: var(--perm);
+}
+
+/* Header card: title, status line, meta row, primary actions. */
+.rv-head {
+  display: grid;
+  gap: 20px;
+  padding: var(--pad-card);
+  background: var(--card);
+  border-radius: var(--r-card);
+}
+.rv-head-main {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.rv-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  margin-top: 6px;
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+.rv-status .rv-rest {
+  font-weight: 500;
+  color: var(--muted);
+}
+.rv-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 10px;
+  color: var(--muted);
+}
+.rv-vin {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+  font-weight: 800;
+  color: var(--text);
+  word-break: break-all;
+}
+.rv-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.rv-actions > .rv-btn {
+  flex: 1 1 140px;
+}
+.rv-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (min-width: 700px) {
+  .rv-head {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+  }
+  .rv-actions {
+    justify-content: flex-end;
+  }
+}
+
+/* Status, chip and tag vocabulary. */
+.rv-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 11px 2px 9px;
+  border-radius: 99px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  line-height: 1.5;
+  white-space: nowrap;
+  background: var(--ctl);
+  color: var(--ctl-sub);
+}
+.rv-chip .ic {
+  width: 1em;
+  height: 1em;
+}
+.rv-chip.c-crit {
+  background: var(--crit-f);
+  color: var(--crit);
+}
+.rv-chip.c-warn {
+  background: var(--warn-f);
+  color: var(--warn);
+}
+.rv-chip.c-ok {
+  background: var(--ok-f);
+  color: var(--ok);
+}
+.rv-chip.c-perm {
+  background: var(--perm-f);
+  color: var(--perm);
+}
+
+/* Buttons: fill, no border. Text is --ctl-text; the accent is only the primary fill. */
+button.rv-btn,
+a.rv-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-sizing: border-box;
+  min-height: var(--ctl-h);
+  margin: 0;
+  padding: 0 22px;
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: var(--ctl);
+  color: var(--ctl-text);
+  font: 700 1rem/1.2 var(--font);
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+@media (hover: hover) {
+  button.rv-btn:hover {
+    background: var(--ctl-h2);
+  }
+}
+button.rv-btn:active {
+  filter: brightness(0.94);
+}
+.rv-btn.pri {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 800;
+}
+.rv-btn.danger {
+  color: var(--ctl-crit);
+}
+.rv-btn.fill-crit {
+  background: var(--crit-solid);
+  color: var(--on-crit);
+  font-weight: 800;
+}
+.rv-btn.sm {
+  min-height: calc(var(--ctl-h) - 8px);
+  padding: 0 12px;
+  font-size: 0.9rem;
+}
+.rv-btn[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: not-allowed;
+  filter: none;
+}
+.rv-btn svg {
+  flex: none;
+}
+button.rv-btn:focus-visible,
+button.rv-row:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+button.rv-row:focus-visible {
+  outline-offset: -3px;
+}
+@media (pointer: coarse) {
+  button.rv-btn {
+    min-height: 44px;
+  }
+}
+
+/* Two-column master-detail from 860px; phone shows the accordion instead. */
+.rv-split {
+  display: grid;
+  gap: 20px;
+}
+.rv-list {
+  padding: var(--pad-list);
+  background: var(--card);
+  border-radius: var(--r-card);
+}
+.rv-list-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 10px 10px;
+}
+.rv-list-head span {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+.rv-list li {
+  list-style: none;
+}
+.rv-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--row-gap);
+}
+button.rv-row {
+  all: unset;
+  box-sizing: border-box;
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 2px 12px;
+  align-items: center;
+  width: 100%;
+  min-height: var(--row-h);
+  padding: 10px 14px 10px 16px;
+  border-radius: var(--r-ctl);
+  background: var(--row);
+  cursor: pointer;
+}
+@media (hover: hover) {
+  button.rv-row:hover {
+    background: var(--hov);
+  }
+}
+.rv-row::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 24%;
+  bottom: 24%;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--accent);
+  transform: scaleY(0);
+  transition: transform 0.2s var(--ease-out);
+}
+.rv-row[aria-current='true']::before,
+.rv-row[aria-expanded='true']::before {
+  transform: scaleY(1);
+}
+.rv-row[aria-current='true'] .rv-row-code,
+.rv-row[aria-expanded='true'] .rv-row-code {
+  color: var(--accent-text);
+}
+.rv-row[aria-expanded='true'] {
+  background: var(--hov);
+}
+.rv-row-lead {
+  width: 1.4em;
+  height: 1.4em;
+}
+.rv-row-main {
+  display: grid;
+  min-width: 0;
+}
+.rv-row-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 8px;
+}
+.rv-row-code {
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.rv-row-state {
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+.rv-row-sub {
+  color: var(--muted);
+  font-size: 0.88rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rv-row-trail {
+  color: var(--muted);
+  font-size: 0.88rem;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.rv-row-chev {
+  display: none;
+  width: 1.1em;
+  height: 1.1em;
+  color: var(--muted);
+  transition: transform 0.2s var(--ease-out);
+}
+.rv-row[aria-expanded='true'] .rv-row-chev {
+  transform: rotate(0deg);
+}
+.rv-row[aria-expanded='false'] .rv-row-chev {
+  transform: rotate(-90deg);
+}
+
+/* Detail pane (wide) and inline panel (phone). */
+.rv-pane {
+  display: none;
+  gap: 20px;
+  align-content: start;
+  padding: var(--pad-card);
+  background: var(--card);
+  border-radius: var(--r-card);
+}
+.rv-pane h2 {
+  color: var(--text);
+  font-size: 1.9rem;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+.rv-inline {
+  display: grid;
+  gap: 12px;
+  margin: 4px 0 6px;
+  padding: 10px 14px 14px;
+  background: var(--card2);
+  border-radius: var(--r-ctl);
+}
+.rv-lede {
+  font-size: 1.15rem;
+}
+.rv-facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px 20px;
+}
+.rv-facts dt {
+  color: var(--muted);
+}
+.rv-facts dd {
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.rv-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+/* State notes: empty, error, loading. Flat card, icon, one action. */
+.rv-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: var(--pad-card);
+  background: var(--card);
+  border-radius: var(--r-card);
+}
+.rv-note-body {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.rv-note-body .rv-acts {
+  margin-top: 12px;
+}
+.rv-spin {
+  width: 22px;
+  height: 22px;
+  margin-top: 3px;
+  flex: none;
+  border-radius: 50%;
+  border: 3px solid var(--ctl);
+  border-top-color: var(--accent);
+  animation: rv-spin 1s linear infinite;
+}
+@keyframes rv-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (min-width: 860px) {
+  .rv-split {
+    grid-template-columns: minmax(300px, 390px) minmax(0, 1fr);
+    align-items: start;
+  }
+  .rv-pane {
+    display: grid;
+  }
+  .rv-row-chev {
+    display: none;
+  }
+  .rv-inline {
+    display: none;
+  }
+}
+@media (max-width: 859px) {
+  .rv-wrap {
+    gap: 14px;
+  }
+  .rv-wrap h1 {
+    font-size: 1.7rem;
+  }
+  .rv-head,
+  .rv-note,
+  .rv-list {
+    padding: 20px;
+    border-radius: 24px;
+  }
+  .rv-split {
+    gap: 14px;
+  }
+  .rv-row-chev {
+    display: block;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rv-spin {
+    animation: none;
+  }
+  .rv-row::before,
+  .rv-row-chev,
+  button.rv-btn {
+    transition: none;
+  }
+}
+
+.rv-t-muted {
+  color: var(--muted);
+}
+
+/* Visually hidden, still read by screen readers (the selection status line). */
+.rv-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.rv-inline:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
