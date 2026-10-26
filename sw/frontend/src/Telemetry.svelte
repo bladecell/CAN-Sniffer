@@ -292,7 +292,7 @@
       --gap: 20px;
     }
     .wb {
-      grid-template-columns: 340px minmax(0, 1fr);
+      grid-template-columns: clamp(340px, 24vw, 480px) minmax(0, 1fr);
     }
     .side {
       display: flex;

@@ -29,8 +29,6 @@ export const PID_FIELDS: [PidField, string][] = [
 ];
 
 export const DEFAULT_PID_FIELDS: ReadonlySet<PidField> = new Set<PidField>([
-  "mode",
-  "interval",
   "supported",
   "valid",
   "pending",

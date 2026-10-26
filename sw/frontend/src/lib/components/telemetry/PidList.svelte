@@ -503,6 +503,17 @@
     background: transparent;
     margin-right: 2px;
   }
+  /* Edit shows on hover, keyboard focus and for the active row; touch has no hover, so it stays visible there. */
+  @media (hover: hover) and (pointer: fine) {
+    .pedit {
+      opacity: 0;
+    }
+    .tel-prow:hover .pedit,
+    .tel-prow:focus-within .pedit,
+    .tel-prow[aria-current="true"] .pedit {
+      opacity: 1;
+    }
+  }
   .empty {
     padding: 12px;
     color: var(--muted);

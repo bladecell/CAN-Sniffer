@@ -42,7 +42,7 @@ describe("pidStatusChips", () => {
   });
 
   test("default fields match the design defaults", () => {
-    expect([...DEFAULT_PID_FIELDS].sort()).toEqual(["interval", "mode", "pending", "supported", "valid"]);
+    expect([...DEFAULT_PID_FIELDS].sort()).toEqual(["pending", "supported", "valid"]);
   });
 });
 
