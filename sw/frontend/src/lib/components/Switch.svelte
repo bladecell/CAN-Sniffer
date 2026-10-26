@@ -54,61 +54,45 @@
 {/if}
 
 <style>
-  /* --- LAYOUT & TEXT (only with a label) --- */
   .toggle-container {
     display: flex;
     align-items: center;
     justify-content: space-between;
     width: 100%;
-    gap: 1rem;
+    gap: 8px 16px;
+    min-height: var(--ctl-h);
   }
 
   .toggle-text-group {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
+    min-width: 0;
   }
 
   .toggle-label {
     margin: 0;
-    letter-spacing: 0.05em;
-    font-weight: 500;
+    font-weight: 700;
   }
 
   .toggle-sub-label {
     margin: 0;
-    color: #a1a1aa;
-    font-size: 0.7rem;
-    letter-spacing: 0.05em;
-    font-weight: 300;
+    color: var(--muted);
+    font-size: 0.85rem;
+    line-height: 1.35;
   }
 
-  /* --- CUSTOM TOGGLE SWITCH --- */
+  /* Mockup switch: 52x32 track, 24px knob, accent when on. */
   .switch {
-    /* Colors */
-    --secondary-container: #3a4b39;
-    --primary: #84da89;
-
-    /* Master Dimensions (Change these to scale the whole switch) */
-    --toggle-width: 3.25em;
-    --toggle-height: 1.75em;
-    --toggle-padding: 0.1875em;
-
-    /* Automatic Math (Do not touch) */
-    --knob-size: calc(var(--toggle-height) - (var(--toggle-padding) * 2));
-    --travel-distance: calc(
-      var(--toggle-width) - var(--knob-size) - (var(--toggle-padding) * 2)
-    );
-
     position: relative;
     display: inline-block;
-    width: var(--toggle-width);
-    height: var(--toggle-height);
-    flex-shrink: 0;
+    flex: none;
+    width: 52px;
+    height: 32px;
   }
 
   .switch.disabled {
-    opacity: 0.5;
+    opacity: 0.55;
     cursor: not-allowed;
   }
 
@@ -124,44 +108,52 @@
 
   .slider {
     position: absolute;
-    cursor: pointer;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: #313033;
-    transition: 0.3s ease;
-    border-radius: 34px;
+    inset: 0;
     box-sizing: border-box;
+    cursor: pointer;
+    border: 1px solid var(--ctl-bd);
+    border-radius: 99px;
+    background: var(--track);
+    transition: background-color 0.2s;
   }
 
   .switch.disabled .slider {
     cursor: not-allowed;
   }
 
-  .slider:before {
-    position: absolute;
+  .slider::after {
     content: "";
-    height: var(--knob-size);
-    width: var(--knob-size);
-    left: var(--toggle-padding);
-    bottom: var(--toggle-padding);
-    background-color: #aeaaae;
-    transition: 0.3s ease;
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 24px;
+    height: 24px;
     border-radius: 50%;
-    box-sizing: border-box;
+    background: var(--float-solid);
+    transition:
+      transform 0.2s var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+      background-color 0.2s;
   }
 
   input:checked + .slider {
-    background-color: var(--secondary-container);
+    background: var(--accent);
+    border-color: var(--accent);
   }
 
-  input:checked + .slider:before {
-    background-color: var(--primary);
-    transform: translateX(var(--travel-distance));
+  input:checked + .slider::after {
+    transform: translateX(20px);
+    background: var(--on-accent);
   }
 
   input:focus-visible + .slider {
-    box-shadow: 0 0 0 2px var(--primary);
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .slider,
+    .slider::after {
+      transition-duration: 0.01ms;
+    }
   }
 </style>
