@@ -382,9 +382,9 @@
     cursor: pointer;
   }
   .tel-plist {
-    display: grid;
+    display: flex;
+    flex-direction: column;
     gap: 8px;
-    align-content: start;
     min-height: 120px;
     flex: 1 1 auto;
     overflow: auto;
@@ -392,6 +392,7 @@
   }
   .tel-prow {
     display: flex;
+    flex: none;
     align-items: stretch;
     gap: 2px;
     min-height: 72px;
@@ -421,6 +422,9 @@
     padding: 8px 4px;
     cursor: pointer;
   }
+  .pmain > * {
+    flex: none;
+  }
   .pmain:focus-visible {
     outline: 3px solid var(--focus);
     outline-offset: -3px;
@@ -445,9 +449,14 @@
     color: var(--accent-text);
   }
   .psub {
+    display: block;
+    min-width: 0;
     color: var(--muted);
     font-size: 0.8rem;
     line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .mono {
     font-family: var(--mono);
