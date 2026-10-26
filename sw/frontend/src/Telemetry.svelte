@@ -93,6 +93,32 @@
     else telemetryStore.activeIndex = -1;
   }
 
+  // Long-press on a phone chip opens that PID's editor; the click that follows is swallowed.
+  let pressTimer: ReturnType<typeof setTimeout> | undefined;
+  let pressFired = false;
+  let pressX = 0;
+  let pressY = 0;
+  function pressStart(e: PointerEvent, row: (typeof telemetryStore.local_piddef)[number]) {
+    pressFired = false;
+    pressX = e.clientX;
+    pressY = e.clientY;
+    clearTimeout(pressTimer);
+    pressTimer = setTimeout(() => {
+      pressFired = true;
+      editPid(telemetryStore.local_piddef.indexOf(row));
+    }, 500);
+  }
+  function pressMove(e: PointerEvent) {
+    if (Math.hypot(e.clientX - pressX, e.clientY - pressY) > 8) clearTimeout(pressTimer);
+  }
+  function pressEnd() {
+    clearTimeout(pressTimer);
+  }
+  function chipClick(pid: number, on: boolean) {
+    if (pressFired) pressFired = false;
+    else toggleChip(pid, on);
+  }
+
   const editorTitle = $derived(
     selectedRow && telemetryStore.activeIndex >= 0 ? `Edit ${selectedRow.name} (${selectedRow.pid})` : "New PID",
   );
@@ -197,7 +223,21 @@
         {#each telemetryStore.local_piddef.filter((r) => r.loaded) as row (row)}
           {@const pid = parseInt(row.pid, 16)}
           {@const on = activeChartPids.includes(pid)}
-          <button type="button" class="tel-pchip" aria-pressed={on} onclick={() => toggleChip(pid, on)}>
+          <button
+            type="button"
+            class="tel-pchip"
+            aria-pressed={on}
+            aria-keyshortcuts="Shift+F10"
+            title="Tap to show or hide. Hold to edit."
+            onclick={() => chipClick(pid, on)}
+            onpointerdown={(e) => pressStart(e, row)}
+            onpointermove={pressMove}
+            onpointerup={pressEnd}
+            onpointercancel={pressEnd}
+            onpointerleave={pressEnd}
+            oncontextmenu={(e) => e.preventDefault()}
+            onkeydown={(e) => (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) && (e.preventDefault(), editPid(telemetryStore.local_piddef.indexOf(row)))}
+          >
             <i style="--sw: {safeHexColor('#' + Number(row.def.color).toString(16).padStart(6, '0'))}"></i>{row.name}
           </button>
         {/each}
@@ -337,8 +377,13 @@
     display: flex;
     gap: 8px;
     overflow-x: auto;
+    overscroll-behavior-x: contain;
+    touch-action: pan-x;
+    -webkit-overflow-scrolling: touch;
     padding: 2px 2px 6px;
     scrollbar-width: none;
+    /* Fade the right edge: there is more to scroll to. */
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
   }
   .chips::-webkit-scrollbar {
     display: none;
@@ -350,6 +395,8 @@
   }
   .tel-pchip {
     position: relative;
+    user-select: none;
+    -webkit-touch-callout: none;
     flex: none;
     display: inline-flex;
     align-items: center;
