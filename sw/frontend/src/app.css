@@ -209,6 +209,8 @@
 
 /* Pico variables point at the new tokens, so components that still use Pico follow the theme. */
 :root[data-theme] {
+	/* Fixed 16px root, as in the mockup (--fs). Pico scales this per viewport width (106% to 131%); that made every rem size grow. */
+	--pico-font-size: 16px;
 	--pico-font-family: var(--font);
 	--pico-font-family-sans-serif: var(--font);
 	--pico-font-family-monospace: var(--mono);

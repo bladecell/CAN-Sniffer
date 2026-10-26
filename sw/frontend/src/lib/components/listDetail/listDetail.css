@@ -8,7 +8,7 @@
   display: grid;
   gap: 20px;
   align-content: start;
-  max-width: 1200px;
+  max-width: 1152px; /* mockup main.page: 1200px outer, 24px padding inside */
   margin: 0 auto;
   min-width: 0;
 }
@@ -451,9 +451,12 @@ button.rv-row {
     font-size: 1.7rem;
   }
   .rv-head,
-  .rv-note,
-  .rv-list {
+  .rv-note {
     padding: 20px;
+    border-radius: 24px;
+  }
+  .rv-list {
+    padding: var(--pad-list);
     border-radius: 24px;
   }
   .rv-split {
