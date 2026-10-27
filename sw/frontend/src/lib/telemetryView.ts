@@ -1,112 +1,55 @@
-import { filterRows, sortRows, type FilterRule } from "$lib/tableRows";
-
-/** Row fields the user can show or hide in the PID list (View menu). */
-export type PidField =
-  | "mode"
-  | "interval"
-  | "supported"
-  | "valid"
-  | "pending"
-  | "loaded"
-  | "age"
-  | "length"
-  | "formula"
-  | "priority"
-  | "range";
-
-export const PID_FIELDS: [PidField, string][] = [
-  ["mode", "Mode"],
-  ["interval", "Update interval"],
-  ["supported", "Supported"],
-  ["valid", "Valid"],
-  ["pending", "Pending sync"],
-  ["loaded", "Loaded"],
-  ["age", "Value age"],
-  ["length", "Length"],
-  ["formula", "Formula"],
-  ["priority", "Priority"],
-  ["range", "Min and max"],
-];
-
-export const DEFAULT_PID_FIELDS: ReadonlySet<PidField> = new Set<PidField>([
-  "supported",
-  "valid",
-  "pending",
-]);
-
-export interface PidStatusInput {
+/** What the PID list needs to know about one row to place it in a group. */
+export interface PidGroupInput {
   loaded: boolean;
   supported: boolean;
-  valid: boolean;
-  pending: boolean;
+  /** A numeric value has arrived. N/A is not a value. */
+  hasValue: boolean;
+  mode: number;
+  modeLabel: string;
 }
 
-export interface PidChip {
-  kind: "ok" | "warn" | "crit" | "plain";
-  label: string;
-  icon?: "check" | "warn" | "clock";
+export interface PidGroup<T> {
+  key: string;
+  title: string;
+  items: T[];
 }
 
-/** Status chips for one PID row. Not-loaded is always shown; the other states follow the visible fields. */
-export function pidStatusChips(s: PidStatusInput, fields: ReadonlySet<PidField>): PidChip[] {
-  const chips: PidChip[] = [];
-  if (fields.has("supported")) {
-    chips.push(
-      s.supported
-        ? { kind: "ok", label: "Supported", icon: "check" }
-        : { kind: "warn", label: "Not supported", icon: "warn" },
-    );
+/**
+ * Groups PID rows by state, in display order: not supported, supported without data,
+ * available (one group per mode, ascending), then rows that are not on the device.
+ * Empty groups are left out. Item order inside a group is the input order.
+ */
+export function groupPids<T>(items: T[], describe: (item: T) => PidGroupInput): PidGroup<T>[] {
+  const unsupported: PidGroup<T> = { key: "unsupported", title: "Not supported", items: [] };
+  const noData: PidGroup<T> = { key: "nodata", title: "Supported, no data", items: [] };
+  const notOnDevice: PidGroup<T> = { key: "notondevice", title: "Not on device", items: [] };
+  const available = new Map<number, PidGroup<T>>();
+
+  for (const item of items) {
+    const s = describe(item);
+    if (!s.loaded) notOnDevice.items.push(item);
+    else if (!s.supported) unsupported.items.push(item);
+    else if (!s.hasValue) noData.items.push(item);
+    else {
+      let group = available.get(s.mode);
+      if (!group) {
+        group = { key: `available:${s.mode}`, title: `Available · ${s.modeLabel}`, items: [] };
+        available.set(s.mode, group);
+      }
+      group.items.push(item);
+    }
   }
-  if (fields.has("valid")) {
-    chips.push(
-      s.valid ? { kind: "ok", label: "Valid", icon: "check" } : { kind: "crit", label: "Invalid", icon: "warn" },
-    );
-  }
-  if (fields.has("pending") && s.pending) {
-    chips.push({ kind: "warn", label: "Pending sync", icon: "clock" });
-  }
-  if (!s.loaded) chips.push({ kind: "plain", label: "Not loaded" });
-  return chips;
+
+  const modes = [...available.entries()].sort(([a], [b]) => a - b).map(([, g]) => g);
+  return [unsupported, noData, ...modes, notOnDevice].filter((g) => g.items.length > 0);
 }
 
-/** "seen N s ago" from the frontend receipt time. Null means no frame has arrived since the page loaded. */
-export function seenLabel(ageMs: number | null): string {
-  if (ageMs === null) return "never seen";
-  const s = Math.max(0, ageMs) / 1000;
-  if (s < 60) return `seen ${s.toFixed(1)} s ago`;
-  return `seen ${Math.floor(s / 60)} min ago`;
-}
+export type PendingKind = "added" | "modified" | "removed";
 
-export const PID_SORT_KEYS: [string, string][] = [
-  ["name", "Name"],
-  ["pid", "PID"],
-  ["mode", "Mode"],
-  ["value", "Value"],
-  ["interval", "Update interval"],
-  ["priority", "Priority"],
-  ["supported", "Supported"],
-  ["valid", "Valid"],
-];
-
-const NUMERIC_KEYS = new Set(["pid", "value", "interval", "priority"]);
-
-export interface PidViewItem<T> {
-  row: T;
-  cells: Record<string, string | number | null>;
-}
-
-/** Filters, then sorts, view items by their cells. Returns the original row objects. */
-export function applyPidView<T>(
-  items: PidViewItem<T>[],
-  rules: FilterRule[],
-  sort: { key: string; dir: 1 | -1 } | null,
-): T[] {
-  let view: Record<string, unknown>[] = items.map((i) => ({ ...i.cells, __row: i.row }));
-  view = filterRows(view, rules) as Record<string, unknown>[];
-  if (sort) {
-    view = sortRows(view, sort.key, sort.dir === 1 ? "asc" : "desc", NUMERIC_KEYS.has(sort.key));
-  }
-  return view.map((v) => v.__row as T);
+/** How a row with pending changes differs from the device. Callers pass only rows that have changes. */
+export function pendingKind(loaded: boolean, onDevice: boolean): PendingKind {
+  if (!loaded) return "removed";
+  return onDevice ? "modified" : "added";
 }
 
 /** PIDs the active chart shows: the ticked PIDs, or the active row when nothing is ticked. */

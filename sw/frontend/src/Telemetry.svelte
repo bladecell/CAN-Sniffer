@@ -10,8 +10,9 @@
   import Icon from "$lib/Icon.svelte";
   import Sheet from "$lib/components/Sheet.svelte";
   import SDCardImportSheet from "$lib/components/SDCardImportSheet.svelte";
-  import PidList from "$lib/components/telemetry/PidList.svelte";
+  import PidSidebar from "$lib/components/telemetry/PidSidebar.svelte";
   import PidEditorForm from "$lib/components/telemetry/PidEditorForm.svelte";
+  import PidEditorActions from "$lib/components/telemetry/editor/PidEditorActions.svelte";
   import ChartCell from "$lib/components/telemetry/ChartCell.svelte";
   import FloatPanel from "$lib/components/telemetry/FloatPanel.svelte";
   import LayoutGrid from "$lib/components/telemetry/LayoutGrid.svelte";
@@ -144,7 +145,7 @@
 <section class="tel">
   <div class="wb">
     <aside class="card side" aria-label="PID list">
-      <PidList onImport={handleImport} onNew={newPid} onEdit={editPid} />
+      <PidSidebar variant="rail" onImport={handleImport} onNew={newPid} onEdit={editPid} />
     </aside>
 
     <div class="main">
@@ -258,11 +259,14 @@
 </section>
 
 <Sheet open={pidSheetOpen} title="PIDs" onClose={() => (pidSheetOpen = false)}>
-  <PidList onImport={handleImport} onNew={newPid} onEdit={editPid} />
+  <PidSidebar variant="bar" onImport={handleImport} onNew={newPid} onEdit={editPid} />
 </Sheet>
 
-<Sheet open={editorOpen} title={editorTitle} onClose={() => (editorOpen = false)}>
+<Sheet open={editorOpen} title={editorTitle} onClose={() => (editorOpen = false)} resizable>
   <PidEditorForm onDone={() => (editorOpen = false)} />
+  {#snippet footer()}
+    <PidEditorActions formId="pid-editor" />
+  {/snippet}
 </Sheet>
 
 <style>

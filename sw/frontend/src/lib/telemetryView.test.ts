@@ -1,93 +1,69 @@
 import { describe, expect, test } from "bun:test";
-import {
-  applyPidView,
-  chartPidsFor,
-  chipAction,
-  pidStatusChips,
-  seenLabel,
-  DEFAULT_PID_FIELDS,
-} from "./telemetryView";
+import { chartPidsFor, chipAction, groupPids, pendingKind, type PidGroupInput } from "./telemetryView";
 
-describe("pidStatusChips", () => {
-  const all = new Set(["mode", "interval", "supported", "valid", "pending", "loaded"] as const);
+const base: PidGroupInput = { loaded: true, supported: true, hasValue: true, mode: 0x01, modeLabel: "Current Data" };
+const item = (id: string, over: Partial<PidGroupInput> = {}) => ({ id, input: { ...base, ...over } });
+const titles = (items: ReturnType<typeof item>[]) =>
+  groupPids(items, (i) => i.input).map((g) => `${g.title}:${g.items.map((i) => i.id).join(",")}`);
 
-  test("supported and valid PID shows ok chips", () => {
-    const chips = pidStatusChips({ loaded: true, supported: true, valid: true, pending: false }, all);
-    expect(chips.map((c) => c.label)).toEqual(["Supported", "Valid"]);
-    expect(chips.every((c) => c.kind === "ok")).toBe(true);
-  });
-
-  test("unsupported and invalid PID shows warn and crit chips", () => {
-    const chips = pidStatusChips({ loaded: true, supported: false, valid: false, pending: false }, all);
-    expect(chips).toEqual([
-      { kind: "warn", label: "Not supported", icon: "warn" },
-      { kind: "crit", label: "Invalid", icon: "warn" },
+describe("groupPids", () => {
+  test("orders not supported, supported without data, then available by mode", () => {
+    const out = titles([
+      item("avail-rpm"),
+      item("nodata", { hasValue: false }),
+      item("unsupported", { supported: false, hasValue: false }),
+    ]);
+    expect(out).toEqual([
+      "Not supported:unsupported",
+      "Supported, no data:nodata",
+      "Available · Current Data:avail-rpm",
     ]);
   });
 
-  test("pending sync only when the field is visible and the PID is pending", () => {
-    const pending = { loaded: true, supported: true, valid: true, pending: true };
-    expect(pidStatusChips(pending, all).map((c) => c.label)).toContain("Pending sync");
-    expect(pidStatusChips(pending, new Set(["supported"])).map((c) => c.label)).not.toContain("Pending sync");
+  test("available PIDs are sub-grouped by mode in ascending mode order", () => {
+    const out = titles([
+      item("derived", { mode: 0x45, modeLabel: "Derived Data" }),
+      item("rbi", { mode: 0x22, modeLabel: "Read Data By Identifier" }),
+      item("cur", { mode: 0x01, modeLabel: "Current Data" }),
+      item("cur2"),
+    ]);
+    expect(out).toEqual([
+      "Available · Current Data:cur,cur2",
+      "Available · Read Data By Identifier:rbi",
+      "Available · Derived Data:derived",
+    ]);
   });
 
-  test("hidden fields produce no supported or valid chips", () => {
-    const chips = pidStatusChips({ loaded: true, supported: false, valid: false, pending: false }, new Set());
-    expect(chips).toEqual([]);
+  test("rows not on the device go last, whatever their support state", () => {
+    const out = titles([item("off", { loaded: false, supported: false, hasValue: false }), item("avail")]);
+    expect(out).toEqual(["Available · Current Data:avail", "Not on device:off"]);
   });
 
-  test("not loaded is always shown", () => {
-    const chips = pidStatusChips({ loaded: false, supported: true, valid: true, pending: false }, new Set());
-    expect(chips).toEqual([{ kind: "plain", label: "Not loaded" }]);
+  test("empty groups are omitted and keys are unique", () => {
+    const groups = groupPids([item("a"), item("b", { mode: 0x22, modeLabel: "RBI" })], (i) => i.input);
+    expect(groups.map((g) => g.key)).toEqual(["available:1", "available:34"]);
+    expect(groupPids([] as ReturnType<typeof item>[], (i) => i.input)).toEqual([]);
   });
 
-  test("default fields match the design defaults", () => {
-    expect([...DEFAULT_PID_FIELDS].sort()).toEqual(["pending", "supported", "valid"]);
-  });
-});
-
-describe("seenLabel", () => {
-  test("never seen when there is no receipt time", () => {
-    expect(seenLabel(null)).toBe("never seen");
-  });
-
-  test("seconds with one decimal under a minute", () => {
-    expect(seenLabel(2400)).toBe("seen 2.4 s ago");
-    expect(seenLabel(0)).toBe("seen 0.0 s ago");
-  });
-
-  test("clamps negative ages from clock jumps to zero", () => {
-    expect(seenLabel(-500)).toBe("seen 0.0 s ago");
-  });
-
-  test("whole minutes from one minute", () => {
-    expect(seenLabel(125_000)).toBe("seen 2 min ago");
+  test("keeps the original item objects and their order within a group", () => {
+    const a = item("a");
+    const groups = groupPids([a, item("b")], (i) => i.input);
+    expect(groups[0].items[0]).toBe(a);
+    expect(groups[0].items.map((i) => i.id)).toEqual(["a", "b"]);
   });
 });
 
-describe("applyPidView", () => {
-  type Row = { id: string };
-  const item = (id: string, cells: Record<string, string | number | null>) => ({ row: { id } as Row, cells });
-
-  const items = [
-    item("a", { name: "Speed", pid: 0x0d, value: 40, interval: 200 }),
-    item("b", { name: "Engine RPM", pid: 0x0c, value: null, interval: 100 }),
-    item("c", { name: "Coolant", pid: 0x05, value: 90, interval: 1000 }),
-  ];
-
-  test("returns the same rows in order with no rules and no sort", () => {
-    expect(applyPidView(items, [], null).map((r) => r.id)).toEqual(["a", "b", "c"]);
+describe("pendingKind", () => {
+  test("loaded and not on the device is added", () => {
+    expect(pendingKind(true, false)).toBe("added");
   });
 
-  test("filters by a rule and keeps original row objects", () => {
-    const out = applyPidView(items, [{ id: "1", column: "name", operator: "contains", value: "eng" }], null);
-    expect(out).toEqual([{ id: "b" }]);
-    expect(out[0]).toBe(items[1].row);
+  test("loaded and on the device is modified", () => {
+    expect(pendingKind(true, true)).toBe("modified");
   });
 
-  test("sorts numeric columns numerically and puts empty values last", () => {
-    expect(applyPidView(items, [], { key: "pid", dir: 1 }).map((r) => r.id)).toEqual(["c", "b", "a"]);
-    expect(applyPidView(items, [], { key: "value", dir: -1 }).map((r) => r.id)).toEqual(["c", "a", "b"]);
+  test("not loaded is removed", () => {
+    expect(pendingKind(false, true)).toBe("removed");
   });
 });
 
