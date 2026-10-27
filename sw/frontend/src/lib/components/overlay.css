@@ -25,11 +25,7 @@ dialog.overlay {
   padding: 0;
   border: 0;
   border-radius: var(--r-float);
-  background: var(--float);
   color: var(--text);
-  box-shadow: var(--shadow-float);
-  -webkit-backdrop-filter: blur(var(--blur)) saturate(1.35);
-  backdrop-filter: blur(var(--blur)) saturate(1.35);
 }
 dialog.overlay[open] {
   display: flex;
@@ -40,12 +36,6 @@ dialog.overlay[open] {
 dialog.overlay::backdrop {
   background: var(--scrim);
 }
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  dialog.overlay {
-    background: var(--float-solid);
-  }
-}
-
 /* Dialog: small centred confirmation. */
 dialog.overlay.dialog {
   width: min(440px, calc(100% - 32px));
@@ -120,8 +110,25 @@ dialog.overlay.sheet[open] {
   overscroll-behavior: contain;
   padding: 4px 22px 22px;
 }
+/* The sheet scrolls as one surface: header and footer stick over the content, which shows through their blur. */
+dialog.overlay.sheet {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.sheet > header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
 .sheet > .body {
+  flex: none;
+  overflow: visible;
   padding-bottom: calc(22px + env(safe-area-inset-bottom));
+}
+.sheet > footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
 }
 .overlay footer {
   flex: none;

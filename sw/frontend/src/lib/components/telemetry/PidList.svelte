@@ -49,28 +49,30 @@
 </script>
 
 <div class="pl">
-  <header class="pl-head">
-    <h2>PIDs</h2>
-    <button type="button" class="tel-btn pri sm" onclick={onNew}>
-      <Icon name="plus" size={16} />New PID
-    </button>
-  </header>
+  <div class="pl-top float-layer">
+    <header class="pl-head">
+      <h2>PIDs</h2>
+      <button type="button" class="tel-btn pri sm" onclick={onNew}>
+        <Icon name="plus" size={16} />New PID
+      </button>
+    </header>
 
-  <div class="pl-bar">
-    <label class="selall">
-      <input
-        class="tel-check"
-        type="checkbox"
-        checked={allSelected}
-        onchange={(e) => toggleSelectAll(e.currentTarget.checked)}
-        aria-label="Select all PIDs"
-        {@attach (el) => {
-          el.indeterminate = selectedCount > 0 && !allSelected;
-        }}
-      />
-      Select all
-    </label>
-    <span class="num counts">{loadedCount} loaded &middot; {supportedCount} supported &middot; {dirtyCount} pending</span>
+    <div class="pl-bar">
+      <label class="selall">
+        <input
+          class="tel-check"
+          type="checkbox"
+          checked={allSelected}
+          onchange={(e) => toggleSelectAll(e.currentTarget.checked)}
+          aria-label="Select all PIDs"
+          {@attach (el) => {
+            el.indeterminate = selectedCount > 0 && !allSelected;
+          }}
+        />
+        Select all
+      </label>
+      <span class="num counts">{loadedCount} loaded &middot; {supportedCount} supported &middot; {dirtyCount} pending</span>
+    </div>
   </div>
 
   <div class="pl-groups">
@@ -149,8 +151,17 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
-    min-height: 0;
-    flex: 1 1 auto;
+    flex: none;
+  }
+  .pl-top {
+    position: sticky;
+    top: var(--sheet-head, 0px);
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: var(--r-ctl);
   }
   .pl-head {
     display: flex;
@@ -186,9 +197,6 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
-    min-height: 0;
-    flex: 1 1 auto;
-    overflow: auto;
     padding: 2px;
   }
   .gh {
@@ -340,9 +348,11 @@
     color: var(--muted);
     font-size: 0.72rem;
   }
-  .pedit {
+  .tel-btn.pedit {
     align-self: center;
     width: 44px;
+    min-width: 44px;
+    min-height: 44px;
     background: transparent;
     margin-right: 2px;
   }

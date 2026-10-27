@@ -76,7 +76,18 @@
   {:else}
     <div class="grab" aria-hidden="true"></div>
   {/if}
-  <header>
+  <!-- The header sticks to the top of the scrolling sheet. Sticky rows under it (editor tabs) read --sheet-head. -->
+  <header
+    class="float-layer"
+    {@attach (el) => {
+      const dialog = el.closest("dialog");
+      const sync = () => dialog?.style.setProperty("--sheet-head", `${el.offsetHeight}px`);
+      const ro = new ResizeObserver(sync);
+      ro.observe(el);
+      sync();
+      return () => ro.disconnect();
+    }}
+  >
     <h2 id={titleId}>{title}</h2>
     {#if dismissible}
       <button type="button" class="close" aria-label="Close" onclick={() => onClose?.()}>
@@ -87,7 +98,7 @@
   {#if open}
     <div class="body">{@render children()}</div>
     {#if footer}
-      <footer>{@render footer()}</footer>
+      <footer class="float-layer">{@render footer()}</footer>
     {/if}
   {/if}
 </dialog>

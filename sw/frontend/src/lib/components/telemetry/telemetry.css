@@ -40,6 +40,11 @@
   padding: 0 12px;
   font-size: 0.9rem;
 }
+@media (pointer: coarse) {
+  .tel-btn.sm {
+    min-height: 44px;
+  }
+}
 .tel-btn.icon {
   width: var(--ctl-h);
   padding: 0;
@@ -118,19 +123,10 @@
   white-space: nowrap;
 }
 
-/* Floating layers only: popovers, dialogs, sheets, tooltip. Never in-flow controls. */
+/* Floating layers only (shared style in app.css): popovers, tray. Never in-flow controls. */
 .tel-float {
-  background: var(--float);
   color: var(--text);
-  -webkit-backdrop-filter: blur(var(--blur)) saturate(1.35);
-  backdrop-filter: blur(var(--blur)) saturate(1.35);
-  box-shadow: var(--shadow-float);
   border-radius: var(--r-float);
-}
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .tel-float {
-    background: var(--float-solid);
-  }
 }
 
 /* Segmented control: selected is bold with a 3px accent bar, text stays plain. */

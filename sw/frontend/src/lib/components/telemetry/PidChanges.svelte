@@ -94,54 +94,56 @@
 </script>
 
 <div class="ch">
-  <header class="ch-head">
-    <h2>Changes</h2>
-    <p class="num">{pendingCount === 0 ? "Matches the device" : `${pendingCount} not on the device`}</p>
-  </header>
+  <div class="ch-top float-layer">
+    <header class="ch-head">
+      <h2>Changes</h2>
+      <p class="num">{pendingCount === 0 ? "Matches the device" : `${pendingCount} not on the device`}</p>
+    </header>
 
-  <div class="ch-bar" bind:this={barEl}>
-  <div class="ch-actions">
-    <button type="button" class="tel-btn pri" aria-disabled={updateDisabled} onclick={update}>
-      <Icon name="reload" size={16} />{updateText}
-    </button>
-    <button
-      type="button"
-      class="tel-btn"
-      onclick={() => vehicleStore.savePids(telemetryStore.local_piddef)}
-      title="Save the PID map to the SD card"
-    >
-      <Icon name="save" size={16} />Save to SD card
-    </button>
-    <button type="button" class="tel-btn danger" aria-disabled={selectedCount === 0} onclick={requestRemove}>
-      <Icon name="trash" size={16} />Remove{selectedCount > 0 ? ` ${selectedCount}` : ""}
-    </button>
-    <button
-      bind:this={trayBtn}
-      type="button"
-      class="tel-btn"
-      aria-expanded={trayOpen}
-      aria-controls="ch-tray"
-      onclick={() => (trayOpen = !trayOpen)}
-    >
-      <Icon name="import" size={16} />Import / Export
-    </button>
-  </div>
-
-  {#if trayOpen}
-    <div class="tray tel-float" id="ch-tray" role="group" aria-label="Import and export PIDs">
-      <button type="button" class="tcard" onclick={onImport}>
-        <Icon name="import" size={18} />
-        <b>Import PIDs</b>
-        <small>Add PIDs from a JSON file</small>
+    <div class="ch-bar" bind:this={barEl}>
+    <div class="ch-actions">
+      <button type="button" class="tel-btn pri" aria-disabled={updateDisabled} onclick={update}>
+        <Icon name="reload" size={16} />{updateText}
       </button>
-      <button type="button" class="tcard" onclick={exportDefinitions}>
-        <Icon name="export" size={18} />
-        <b>Export PIDs</b>
-        <small>Download the current set as JSON</small>
+      <button
+        type="button"
+        class="tel-btn"
+        onclick={() => vehicleStore.savePids(telemetryStore.local_piddef)}
+        title="Save the PID map to the SD card"
+      >
+        <Icon name="save" size={16} />Save to SD card
       </button>
-      <p class="thint">Changes stay on this page until you update the device.</p>
+      <button type="button" class="tel-btn danger" aria-disabled={selectedCount === 0} onclick={requestRemove}>
+        <Icon name="trash" size={16} />Remove{selectedCount > 0 ? ` ${selectedCount}` : ""}
+      </button>
+      <button
+        bind:this={trayBtn}
+        type="button"
+        class="tel-btn"
+        aria-expanded={trayOpen}
+        aria-controls="ch-tray"
+        onclick={() => (trayOpen = !trayOpen)}
+      >
+        <Icon name="import" size={16} />Import / Export
+      </button>
     </div>
-  {/if}
+
+    {#if trayOpen}
+      <div class="tray tel-float" id="ch-tray" role="group" aria-label="Import and export PIDs">
+        <button type="button" class="tcard" onclick={onImport}>
+          <Icon name="import" size={18} />
+          <b>Import PIDs</b>
+          <small>Add PIDs from a JSON file</small>
+        </button>
+        <button type="button" class="tcard" onclick={exportDefinitions}>
+          <Icon name="export" size={18} />
+          <b>Export PIDs</b>
+          <small>Download the current set as JSON</small>
+        </button>
+        <p class="thint">Changes stay on this page until you update the device.</p>
+      </div>
+    {/if}
+    </div>
   </div>
 
   <ul class="ch-list">
@@ -174,8 +176,17 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
-    min-height: 0;
-    flex: 1 1 auto;
+    flex: none;
+  }
+  .ch-top {
+    position: sticky;
+    top: var(--sheet-head, 0px);
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: var(--r-ctl);
   }
   .ch-head {
     display: flex;
@@ -252,9 +263,6 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
-    min-height: 120px;
-    flex: 1 1 auto;
-    overflow: auto;
     margin: 0;
     padding: 2px;
     list-style: none;

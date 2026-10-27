@@ -94,17 +94,7 @@
     margin: 0;
     padding: 8px 10px;
     border-radius: 28px;
-    background: var(--float);
-    -webkit-backdrop-filter: blur(var(--blur)) saturate(1.35);
-    backdrop-filter: blur(var(--blur)) saturate(1.35);
-    box-shadow: var(--shadow-float);
     color: var(--text);
-  }
-
-  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    .dock {
-      background: var(--float-solid);
-    }
   }
 
   .tabs {

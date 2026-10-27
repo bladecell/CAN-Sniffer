@@ -86,17 +86,8 @@
     max-width: min(480px, calc(100vw - 24px));
     padding: 8px 8px 8px 16px;
     border-radius: var(--r-float);
-    background: var(--float);
     color: var(--text);
-    -webkit-backdrop-filter: blur(var(--blur)) saturate(1.35);
-    backdrop-filter: blur(var(--blur)) saturate(1.35);
-    box-shadow: var(--shadow-float);
     font-weight: 700;
-  }
-  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    .toast {
-      background: var(--float-solid);
-    }
   }
   .ic {
     display: inline-flex;

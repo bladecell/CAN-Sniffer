@@ -158,7 +158,7 @@
 </script>
 
 <div class="ed" bind:this={root}>
-  <nav class="tabs" aria-label="Editor sections">
+  <nav class="tabs float-layer" aria-label="Editor sections">
     {#each sections as s, i (s.id)}
       <button type="button" class="tab" aria-current={active === i ? "true" : undefined} onclick={() => goTo(i)}>{s.label}</button>
     {/each}
@@ -339,13 +339,12 @@
   }
   .tabs {
     position: sticky;
-    top: -4px;
+    top: var(--sheet-head, 0px);
     z-index: 2;
     display: flex;
     gap: 4px;
     margin: 0 -22px;
     padding: 6px 22px;
-    background: var(--float-solid);
     overflow-x: auto;
     scrollbar-width: none;
   }

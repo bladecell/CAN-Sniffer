@@ -233,7 +233,7 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
 </div>
 
 {#if isBgMenuOpen}
-  <div class="bg-context-menu" style="top: {bgMenu.y}px; left: {bgMenu.x}px;">
+  <div class="bg-context-menu float-layer" style="top: {bgMenu.y}px; left: {bgMenu.x}px;">
     <button
       class={vehicleStore.obd2Status?.auto_poll
         ? "stop-action"
@@ -356,12 +356,8 @@ import { vehicleStore } from "$lib/vehicleStore.svelte";
   .bg-context-menu {
     position: fixed;
     z-index: 11000;
-    background: var(--pico-card-background);
     border: 1px solid var(--pico-card-border-color);
     border-radius: var(--pico-border-radius);
-    box-shadow: var(--pico-card-box-shadow);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
     padding: 6px;
     min-width: 210px;
     display: flex;

@@ -75,6 +75,11 @@
     min-height: 0;
     flex: 1 1 auto;
   }
+  /* Rail: the panel scrolls, so the sticky header and Changes bar sit over the list. Bar (phone): the sheet scrolls. */
+  .sb.rail .panel {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
 
   .switch {
     display: flex;

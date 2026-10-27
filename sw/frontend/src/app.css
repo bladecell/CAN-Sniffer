@@ -812,6 +812,32 @@ body:has(.scroll) {
   font-family: var(--pico-font-family-monospace);
 }
 
+/* Layering rule (DESIGN.md): every surface that sits above other content gets this one floating style.
+   Sticky or fixed bars, popovers, toasts, dialogs, the nav dock. Cards and rows in page flow never use it. */
+.float-layer,
+.tel-float,
+.dock,
+.toast,
+dialog.overlay,
+.selpop,
+.tip {
+  background: var(--float);
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(1.35);
+  backdrop-filter: blur(var(--blur)) saturate(1.35);
+  box-shadow: var(--shadow-float);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .float-layer,
+  .tel-float,
+  .dock,
+  .toast,
+  dialog.overlay,
+  .selpop,
+  .tip {
+    background: var(--float-solid);
+  }
+}
+
 /* Floating overlays only (nav, toast, popover, modal, tooltip). In-flow cards use a translucent fill with no blur (DESIGN.md). */
 .blur-background {
 	backdrop-filter: var(
