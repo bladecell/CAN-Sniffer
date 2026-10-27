@@ -98,7 +98,7 @@
   {#if open}
     <div class="body">{@render children()}</div>
     {#if footer}
-      <footer class="float-layer">{@render footer()}</footer>
+      <footer>{@render footer()}</footer>
     {/if}
   {/if}
 </dialog>

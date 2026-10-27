@@ -125,10 +125,30 @@ dialog.overlay.sheet {
   overflow: visible;
   padding-bottom: calc(22px + env(safe-area-inset-bottom));
 }
+/* No container behind the footer: each button is its own translucent blurred layer, the primary keeps its accent fill. */
 .sheet > footer {
   position: sticky;
   bottom: 0;
   z-index: 2;
+  padding-top: 12px;
+  pointer-events: none;
+}
+.sheet > footer :global(button) {
+  pointer-events: auto;
+}
+.sheet > footer :global(button:not(.pri)) {
+  background: var(--float);
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(1.35);
+  backdrop-filter: blur(var(--blur)) saturate(1.35);
+  box-shadow: var(--shadow-float);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .sheet > footer :global(button:not(.pri)) {
+    background: var(--float-solid);
+  }
+}
+.sheet > footer :global(button.pri) {
+  box-shadow: var(--shadow-float);
 }
 .overlay footer {
   flex: none;
