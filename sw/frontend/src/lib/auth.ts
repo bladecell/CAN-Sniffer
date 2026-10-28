@@ -1,6 +1,7 @@
 // Client for the firmware access control (docs/api.md, Authentication).
 // Plain TypeScript so the state machine runs under `bun test`; auth.svelte.ts holds the reactive view.
 // The session token lives in memory only: no cookie, localStorage or sessionStorage.
+// The PIN may be kept between visits, only when the user opts in: see PinStore and auth.svelte.ts.
 
 export const AUTH_ERRORS = [
   "BAD_PIN",
@@ -23,13 +24,15 @@ export type AuthDialog = "none" | "login" | "claim";
 /** idle: nothing running. posting: POST in flight. waiting: our claim, BOOT press pending. other: another client's claim. final: outcome shown, user must retry. */
 export type ClaimPhase = "idle" | "posting" | "waiting" | "other" | "final";
 export type ClaimOutcome = "committed" | "expired" | "conflict" | "failed" | "unknown";
-export type AuthNotice = "session_ended" | "pin_changed";
+export type AuthNotice = "session_ended" | "pin_changed" | "saved_pin_removed";
 
 export interface AuthView {
   state: AuthState;
   apOpen: boolean;
   /** Development firmware only: the device accepts every gated request without a token. */
   devBypass: boolean;
+  /** A PIN is remembered on this device. Never true in dev bypass. */
+  pinSaved: boolean;
   loggedIn: boolean;
   dialog: AuthDialog;
   error: AuthError | null;
@@ -42,11 +45,18 @@ export interface AuthView {
   notice: AuthNotice | null;
 }
 
+/** Where the optional remembered PIN lives. The browser adapter is in auth.svelte.ts. */
+export interface PinStore {
+  load(): string | null;
+  save(pin: string | null): void;
+}
+
 export interface AuthDeps {
   fetch(url: string, init?: RequestInit): Promise<Response>;
   now(): number;
   sleep(ms: number): Promise<void>;
   onChange(view: AuthView): void;
+  savedPin: PinStore;
 }
 
 const API = "/api/v1/auth";
@@ -61,11 +71,12 @@ const DEFAULT_MAX_S = 43200;
 const CLAIM_WINDOW_S = 60;
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
-export function initialAuthView(): AuthView {
+export function initialAuthView(pinSaved = false): AuthView {
   return {
     state: "unknown",
     apOpen: false,
     devBypass: false,
+    pinSaved,
     loggedIn: false,
     dialog: "none",
     error: null,
@@ -147,9 +158,12 @@ function refusedResponse(): Response {
 }
 
 export function createAuth(deps: AuthDeps) {
-  let view = initialAuthView();
+  let view = initialAuthView(deps.savedPin.load() !== null);
   let session: { token: string; loginAt: number; lastActivity: number; idleMs: number; maxMs: number } | null = null;
   let waiters: Array<(ok: boolean) => void> = [];
+  // The saved PIN is tried by itself at most once, until a login succeeds: a rejected or rate-limited PIN is never retried.
+  let silentTried = false;
+  let silentBusy = false;
   // Bumped to stop this client's own claim poll.
   let generation = 0;
   // Auth status is only authoritative for the session state under which its request began.
@@ -168,6 +182,18 @@ export function createAuth(deps: AuthDeps) {
     const t = deps.now();
     session = { token, loginAt: t, lastActivity: t, idleMs: idleS * 1000, maxMs: maxS * 1000 };
     set({ loggedIn: true });
+  }
+
+  function savePin(pin: string | null) {
+    deps.savedPin.save(pin);
+    set({ pinSaved: pin !== null });
+  }
+
+  /** The saved PIN, if it may be tried by itself now. Null when the dialog must ask. */
+  function silentPin(): string | null {
+    if (view.devBypass || silentTried) return null;
+    if (view.state !== "claimed" && view.state !== "unknown") return null;
+    return deps.savedPin.load();
   }
 
   function dropSession(notice: AuthNotice | null = null) {
@@ -217,7 +243,12 @@ export function createAuth(deps: AuthDeps) {
     if (view.devBypass || liveToken()) return Promise.resolve(true);
     return new Promise((resolve) => {
       waiters.push(resolve);
-      if (view.dialog !== "none") return;
+      if (view.dialog !== "none" || silentBusy) return;
+      const saved = silentPin();
+      if (saved !== null) {
+        void silentLogin(saved);
+        return;
+      }
       // Show a prompt from cached state; a slow status request must not hide the gated route's next step.
       set({ dialog: dialogFor(view.state), error: null });
       // Re-read the state because a BOOT hold may have cleared or set the PIN since the last request.
@@ -253,7 +284,10 @@ export function createAuth(deps: AuthDeps) {
     const retryMs = Number.isFinite(retry) && retry > 0 ? retry * 1000 : 0;
     if (retryMs > 0 && (res.status === 429 || code === "BAD_PIN")) set({ loginWaitUntil: deps.now() + retryMs });
     if (code === "AUTH_UNAVAILABLE") set({ state: "unavailable" });
-    if (code === "NOT_CLAIMED") set({ state: "unclaimed", dialog: view.dialog === "login" ? "claim" : view.dialog });
+    if (code === "NOT_CLAIMED") {
+      if (view.pinSaved) savePin(null);
+      set({ state: "unclaimed", dialog: view.dialog === "login" ? "claim" : view.dialog });
+    }
     return (AUTH_ERRORS as readonly string[]).includes(code) ? (code as AuthError) : "UNKNOWN";
   }
 
@@ -279,6 +313,8 @@ export function createAuth(deps: AuthDeps) {
     if (state === "claimed" && dialog === "claim" && phase === "idle") dialog = "login";
     if (state === "unclaimed" && dialog === "login") dialog = "claim";
     if (pending && dialog === "login") dialog = "claim";
+    // A device with no PIN cannot accept the saved one: drop it.
+    if (state === "unclaimed" && view.pinSaved) savePin(null);
 
     const patch: Partial<AuthView> = { state, apOpen: body.ap_open === true, devBypass: body.dev_bypass === true, claimPhase: phase, dialog };
     if (phase === "other" && prevPhase !== "other") patch.claimExpiresAt = deps.now() + num(body.claim_expires_in_s, 0) * 1000;
@@ -397,23 +433,49 @@ export function createAuth(deps: AuthDeps) {
     await refresh();
   }
 
-  async function login(pin: string): Promise<void> {
-    if (!isPin(pin)) return set({ error: "BAD_PIN_FORMAT" });
-    if (deps.now() < view.loginWaitUntil) return set({ error: "LOGIN_BACKOFF" });
+  /** One `POST /auth/login`. Null on success, else the error code. A rejected PIN is forgotten at once. */
+  async function postLogin(pin: string, remember: boolean): Promise<AuthError | null> {
     let res: Response;
     try {
       res = await deps.fetch(`${API}/login`, jsonPost({ pin }));
     } catch {
-      return set({ error: "NETWORK" });
+      return "NETWORK";
     }
-    if (res.ok) {
-      const session = parseSession(await readJson(res));
-      if (!session) return set({ error: "UNKNOWN" });
-      startSession(session.token, session.idleS, session.maxS);
-      finishLogin();
-      return;
+    if (!res.ok) {
+      const error = failure(res, await codeOf(res));
+      if (error === "BAD_PIN") savePin(null);
+      return error;
     }
-    set({ error: failure(res, await codeOf(res)) });
+    const session = parseSession(await readJson(res));
+    if (!session) return "UNKNOWN";
+    startSession(session.token, session.idleS, session.maxS);
+    if (!view.devBypass) savePin(remember ? pin : null);
+    silentTried = false;
+    finishLogin();
+    return null;
+  }
+
+  async function login(pin: string, remember = false): Promise<void> {
+    if (!isPin(pin)) return set({ error: "BAD_PIN_FORMAT" });
+    if (deps.now() < view.loginWaitUntil) return set({ error: "LOGIN_BACKOFF" });
+    const error = await postLogin(pin, remember);
+    if (error) set({ error });
+  }
+
+  /** One automatic login with the saved PIN. On failure the dialog opens and the user decides; nothing retries. */
+  async function silentLogin(pin: string): Promise<void> {
+    silentTried = true;
+    silentBusy = true;
+    const error = await postLogin(pin, true);
+    silentBusy = false;
+    if (error === null) return;
+    if (error === "BAD_PIN") set({ notice: "saved_pin_removed" });
+    set({ error, dialog: dialogFor(view.state) });
+  }
+
+  /** Stops remembering the PIN. The current session, if any, is kept. */
+  function forgetPin() {
+    savePin(null);
   }
 
   /**
@@ -452,7 +514,8 @@ export function createAuth(deps: AuthDeps) {
       return "NETWORK";
     }
     if (res.status === 204) {
-      // The change ends every session, the caller's too.
+      // The change ends every session, the caller's too. The old PIN is gone from the device, so is the saved copy.
+      savePin(null);
       dropSession();
       set({ notice: "pin_changed" });
       void ensureLogin();
@@ -470,6 +533,7 @@ export function createAuth(deps: AuthDeps) {
         // The local session ends either way.
       }
     }
+    savePin(null);
     dropSession();
   }
 
@@ -482,6 +546,7 @@ export function createAuth(deps: AuthDeps) {
     ensureLogin,
     closeDialog,
     login,
+    forgetPin,
     startClaim,
     retryClaim,
     changePin,

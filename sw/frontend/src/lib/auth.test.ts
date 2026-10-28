@@ -13,10 +13,11 @@ const empty = (status: number) => new Response(null, { status });
 const session = (token: string) => ({ status: "ok", token, idle_timeout_s: 1800, max_age_s: 43200 });
 
 /** Fake clock: `sleep` advances time, so claim polls run without real waiting. */
-function harness(route: Route) {
+function harness(route: Route, saved: string | null = null) {
   let t = 1_000_000;
   const calls: Array<{ url: string; method: string; auth: string | null }> = [];
   const views: AuthView[] = [];
+  const stored = { pin: saved as string | null };
   const auth = createAuth({
     fetch: async (url, init) => {
       calls.push({ url, method: init?.method ?? "GET", auth: new Headers(init?.headers).get("Authorization") });
@@ -28,11 +29,18 @@ function harness(route: Route) {
       await Promise.resolve();
     },
     onChange: (v) => views.push(v),
+    savedPin: {
+      load: () => stored.pin,
+      save: (pin) => {
+        stored.pin = pin;
+      },
+    },
   });
   return {
     auth,
     calls,
     views,
+    stored,
     advance: (ms: number) => {
       t += ms;
     },
@@ -540,5 +548,148 @@ describe("development build (dev_bypass)", () => {
     const h = harness(() => json(200, { state: "claimed", authenticated: false, ap_open: false }));
     await h.auth.refresh();
     expect(h.auth.view.devBypass).toBe(false);
+  });
+});
+
+describe("remembered PIN (opt-in, localStorage)", () => {
+  const loginRoute = (status: number, body: unknown, headers: Record<string, string> = {}) =>
+    (url: string) => (url === "/api/v1/auth/login" ? json(status, body, headers) : empty(204));
+  const loginCalls = (h: ReturnType<typeof harness>) => h.calls.filter((c) => c.url === "/api/v1/auth/login").length;
+
+  test("nothing is stored when the box is unchecked", async () => {
+    const h = harness(loginRoute(200, session(TOKEN)));
+    await h.auth.login(PIN);
+    expect(h.stored.pin).toBeNull();
+    expect(h.auth.view.pinSaved).toBe(false);
+  });
+
+  test("a successful login with the box checked stores the PIN", async () => {
+    const h = harness(loginRoute(200, session(TOKEN)));
+    await h.auth.login(PIN, true);
+    expect(h.stored.pin).toBe(PIN);
+    expect(h.auth.view.pinSaved).toBe(true);
+  });
+
+  test("a successful manual login with the box unchecked clears a stored PIN", async () => {
+    const h = harness(loginRoute(200, session(TOKEN)), PIN);
+    await h.auth.login(PIN, false);
+    expect(h.stored.pin).toBeNull();
+    expect(h.auth.view.pinSaved).toBe(false);
+  });
+
+  test("a 401 mid-session logs in once with the stored PIN and retries, without a dialog", async () => {
+    let next = TOKEN;
+    const h = harness((url, init) => {
+      if (url === "/api/v1/auth/login") return json(200, session(next));
+      return new Headers(init?.headers).get("Authorization") === `Bearer ${TOKEN2}` ? empty(204) : json(401, { code: "UNAUTHORIZED" });
+    }, PIN);
+    await h.auth.login(PIN, true);
+    next = TOKEN2;
+    const res = await h.auth.gatedFetch("/api/v1/req/clear_dtc", { method: "POST" });
+    expect(res.status).toBe(204);
+    expect(loginCalls(h)).toBe(2);
+    expect(h.auth.view.dialog).toBe("none");
+    expect(h.auth.view.loggedIn).toBe(true);
+  });
+
+  test("a gated call with no session logs in silently with the stored PIN", async () => {
+    const h = harness(loginRoute(200, session(TOKEN)), PIN);
+    const res = await h.auth.gatedFetch("/api/v1/settings");
+    expect(res.status).toBe(204);
+    expect(loginCalls(h)).toBe(1);
+    expect(h.auth.view.dialog).toBe("none");
+    expect(h.calls.at(-1)?.auth).toBe(`Bearer ${TOKEN}`);
+  });
+
+  test("a wrong stored PIN is deleted at once and the dialog opens with a notice; no retry", async () => {
+    const h = harness(loginRoute(401, { code: "BAD_PIN" }), PIN);
+    const pending = h.auth.gatedFetch("/api/v1/settings");
+    await until(() => h.auth.view.dialog === "login");
+    expect(h.stored.pin).toBeNull();
+    expect(h.auth.view.pinSaved).toBe(false);
+    expect(h.auth.view.notice).toBe("saved_pin_removed");
+    expect(loginCalls(h)).toBe(1);
+    h.auth.closeDialog();
+    expect((await pending).status).toBe(401);
+    void h.auth.ensureLogin();
+    expect(loginCalls(h)).toBe(1);
+    h.auth.closeDialog();
+  });
+
+  test("429 keeps the stored PIN, shows the wait, and is not retried in a loop", async () => {
+    const h = harness(loginRoute(429, { code: "LOGIN_BACKOFF" }, { "Retry-After": "5" }), PIN);
+    const pending = h.auth.gatedFetch("/api/v1/settings");
+    await until(() => h.auth.view.dialog === "login");
+    expect(h.auth.view.error).toBe("LOGIN_BACKOFF");
+    expect(h.auth.view.loginWaitUntil).toBeGreaterThan(0);
+    expect(h.stored.pin).toBe(PIN);
+    h.auth.closeDialog();
+    await pending;
+    h.advance(10_000);
+    void h.auth.ensureLogin();
+    h.auth.closeDialog();
+    expect(loginCalls(h)).toBe(1);
+  });
+
+  test("a stored PIN that the device rejected is not used again until a login succeeds", async () => {
+    let answer = 429;
+    const h = harness((url) => {
+      if (url !== "/api/v1/auth/login") return empty(204);
+      return answer === 429 ? json(429, { code: "LOGIN_BACKOFF" }, { "Retry-After": "1" }) : json(200, session(TOKEN));
+    }, PIN);
+    void h.auth.ensureLogin();
+    await until(() => h.auth.view.dialog === "login");
+    h.auth.closeDialog();
+    h.advance(5_000);
+    answer = 200;
+    void h.auth.ensureLogin();
+    expect(loginCalls(h)).toBe(1);
+    h.auth.closeDialog();
+  });
+
+  test("logout clears the stored PIN", async () => {
+    const h = harness(loginRoute(200, session(TOKEN)));
+    await h.auth.login(PIN, true);
+    await h.auth.logout();
+    expect(h.stored.pin).toBeNull();
+    expect(h.auth.view.pinSaved).toBe(false);
+  });
+
+  test("a PIN change clears the stored PIN and does not log in with the old one", async () => {
+    const h = harness(loginRoute(200, session(TOKEN)));
+    await h.auth.login(PIN, true);
+    expect(await h.auth.changePin(PIN, "654321")).toBeNull();
+    expect(h.stored.pin).toBeNull();
+    await until(() => h.auth.view.dialog === "login");
+    expect(loginCalls(h)).toBe(1);
+    h.auth.closeDialog();
+  });
+
+  test("forgetPin clears the stored PIN and keeps the current session", async () => {
+    const h = harness(loginRoute(200, session(TOKEN)));
+    await h.auth.login(PIN, true);
+    h.auth.forgetPin();
+    expect(h.stored.pin).toBeNull();
+    expect(h.auth.view.pinSaved).toBe(false);
+    expect(h.auth.view.loggedIn).toBe(true);
+  });
+
+  test("a device that reports unclaimed drops the stored PIN", async () => {
+    const h = harness((url) => (url === "/api/v1/auth" ? json(200, { state: "unclaimed" }) : empty(204)), PIN);
+    await h.auth.refresh();
+    expect(h.stored.pin).toBeNull();
+    expect(h.auth.view.pinSaved).toBe(false);
+  });
+
+  test("dev bypass never stores the PIN", async () => {
+    const h = harness((url) =>
+      url === "/api/v1/auth"
+        ? json(200, { state: "claimed", dev_bypass: true })
+        : loginRoute(200, session(TOKEN))(url),
+    );
+    await h.auth.refresh();
+    await h.auth.login(PIN, true);
+    expect(h.stored.pin).toBeNull();
+    expect(h.auth.view.pinSaved).toBe(false);
   });
 });

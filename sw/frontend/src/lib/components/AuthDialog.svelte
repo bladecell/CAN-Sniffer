@@ -15,16 +15,22 @@
   const waitLeft = $derived(Math.max(0, Math.ceil((auth.view.loginWaitUntil - clock) / 1000)));
   const claimLeft = $derived(Math.max(0, Math.ceil((auth.view.claimExpiresAt - clock) / 1000)));
 
-  const notices = { session_ended: "Your session ended. Log in to continue.", pin_changed: "PIN changed. Log in with the new PIN." };
+  const notices = {
+    session_ended: "Your session ended. Log in to continue.",
+    pin_changed: "PIN changed. Log in with the new PIN.",
+    saved_pin_removed: "The saved PIN was rejected and removed. Log in with the PIN.",
+  };
 
   let loginPin = $state("");
+  // null until the user touches the checkbox: then it follows whether a PIN is already remembered.
+  let rememberChoice = $state<boolean | null>(null);
   let newPin = $state("");
   let confirmPin = $state("");
   let claimMismatch = $derived(confirmPin.length === 6 && newPin !== confirmPin);
 
   async function submitLogin(e: SubmitEvent) {
     e.preventDefault();
-    await auth.login(loginPin);
+    await auth.login(loginPin, rememberChoice ?? auth.view.pinSaved);
   }
 
   async function submitClaim(e: SubmitEvent) {
@@ -76,6 +82,15 @@
           aria-describedby="auth-login-msg"
           required
         />
+        <label class="auth-remember">
+          <input
+            type="checkbox"
+            checked={rememberChoice ?? auth.view.pinSaved}
+            onchange={(e) => (rememberChoice = e.currentTarget.checked)}
+          />
+          Remember PIN on this device
+        </label>
+        <p class="auth-hint auth-remember-hint">Stored in this browser only. Forget it in Settings.</p>
         <p id="auth-login-msg" class="auth-error" role="alert">
           {#if auth.view.state === "unavailable"}
             {errorText("AUTH_UNAVAILABLE")}
@@ -158,6 +173,17 @@
     font-size: 0.82rem;
     color: var(--muted);
   }
+  .auth-remember {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0.5rem 0 0;
+    font-weight: 400;
+    cursor: pointer;
+  }
+  .auth-remember-hint {
+    margin: 0.25rem 0 0;
+  }
   .auth-actions {
     display: flex;
     flex-wrap: wrap;
@@ -165,7 +191,7 @@
     gap: 10px;
     margin-top: 8px;
   }
-  input {
+  input[type="password"] {
     letter-spacing: 0.3em;
   }
 </style>

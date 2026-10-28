@@ -147,6 +147,11 @@
     <p>Log in to change settings, manage SD card files, or clear DTCs.</p>
     <button type="button" onclick={() => auth.ensureLogin()}>Log in</button>
   {/if}
+  {#if auth.view.pinSaved}
+    <h3>Saved PIN</h3>
+    <p class="hint">A PIN is saved in this browser, so you are not asked for it again. Forgetting it does not change the PIN on the device.</p>
+    <button type="button" class="secondary" onclick={() => auth.forgetPin()}>Forget saved PIN</button>
+  {/if}
   <p class="hint">Forgot the PIN? Hold the BOOT button on the device for 10 seconds. This clears the PIN, and you can set a new one.</p>
 </section>
 
