@@ -280,3 +280,437 @@
 dialog.overlay .edform input:not([type='checkbox']):not([type='radio']):not([type='color']) {
   margin: 0;
 }
+
+/* PID sidebar (DESIGN.md PID panels, plan/mockups/pid-v7.html). One tab = SidebarPanel: a plain card (no overflow,
+   no blur) holding the scroller and two float layers beside it. The layers must not be inside the scroller (layers.ts). */
+.sb-panel {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border-radius: var(--r-card);
+}
+/* The scroller. It pads past the measured header and footer (--sb-head, --sb-foot), so rows start below the header. */
+.sb-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--sb-head, 0px) 14px calc(var(--sb-foot, 0px) + 12px);
+  border-radius: var(--r-card);
+  /* Scrolls without a visible scrollbar. */
+  scrollbar-width: none;
+}
+.sb-body::-webkit-scrollbar {
+  display: none;
+}
+/* Sticky PIDs header: the shared float layer (blur, translucent float), placed over the top of the tab. Rows scroll under it blurred. */
+.sb-top {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 4;
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 14px 14px 6px;
+  border-radius: var(--r-card) var(--r-card) 0 0;
+  background: var(--float);
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(1.35);
+  backdrop-filter: blur(var(--blur)) saturate(1.35);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .sb-top {
+    background: var(--float-solid);
+  }
+}
+.sb-top h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 800;
+  line-height: 1.25;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+.sb-counts {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+.sb-selrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 44px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+.sb-acts {
+  display: flex;
+  gap: 2px;
+  margin-right: -8px;
+}
+.sb-txt {
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: var(--accent-text);
+  font: 800 0.9rem/1 var(--font);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.sb-txt[aria-disabled='true'] {
+  color: var(--muted);
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+@media (hover: hover) {
+  .sb-txt:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+}
+/* Footer: no container of its own; each button is a blurred layer over the scroller. Rail: 12px above the card's edge. */
+.sb-foot {
+  position: absolute;
+  bottom: 12px;
+  left: 0;
+  right: 0;
+  z-index: 4;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  margin: 0;
+  padding: 10px 14px 10px;
+  pointer-events: none;
+}
+.sb-foot > * {
+  pointer-events: auto;
+}
+.sb-foot > .tel-btn:only-child {
+  grid-column: 1 / -1;
+}
+.sb-foot .tel-btn {
+  min-height: var(--ctl-h);
+  padding: 0 14px;
+  box-shadow: var(--shadow-float);
+  white-space: normal;
+  text-align: center;
+  line-height: 1.2;
+}
+.sb-foot .tel-btn:not(.pri):not(.rm) {
+  background: linear-gradient(var(--ctl), var(--ctl)), var(--float);
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(1.35);
+  backdrop-filter: blur(var(--blur)) saturate(1.35);
+}
+.sb-foot .tel-btn.rm {
+  background: var(--crit);
+  color: var(--bg);
+  font-weight: 800;
+}
+.sb-foot .tel-btn[aria-disabled='true'] {
+  opacity: 0.55;
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .sb-foot .tel-btn:not(.pri):not(.rm) {
+    background: linear-gradient(var(--ctl), var(--ctl)), var(--float-solid);
+  }
+}
+
+.sb-group {
+  display: grid;
+  gap: 4px;
+}
+.sb-gh {
+  background: transparent !important;
+  box-shadow: none !important;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: var(--text);
+  font: 800 0.95rem/1.2 var(--font);
+  text-align: left;
+  cursor: pointer;
+}
+.sb-gh.sub {
+  min-height: 40px;
+  padding-left: 18px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+.sb-gh .chev {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  transition: transform 0.2s var(--ease-out);
+  transform: rotate(-90deg);
+}
+.sb-gh[aria-expanded='true'] .chev {
+  transform: none;
+}
+.sb-gh .gi {
+  display: inline-grid;
+  flex: none;
+}
+.sb-gh .gi svg {
+  width: 18px;
+  height: 18px;
+}
+.sb-gh .cnt {
+  margin-left: auto;
+  color: var(--muted);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.sb-gh:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+/* Headings never fill, tint or shadow, hover included. */
+.sb-gh:hover {
+  background: transparent !important;
+}
+.sb-gl {
+  display: grid;
+  gap: 8px;
+}
+
+.sb-row {
+  /* Pico gives li padding and a bottom margin; the card must fill the list exactly. */
+  padding: 0;
+  margin: 0;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: var(--r-ctl);
+}
+.sb-slide {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  /* Bar to left edge and value to right edge are the same distance. */
+  padding: 0 12px;
+  border-radius: var(--r-ctl);
+  background: var(--row);
+  transition:
+    background-color 0.15s,
+    transform 0.22s var(--ease-out);
+}
+.sb-slide:global(.drag) {
+  transition: none;
+}
+@media (hover: hover) {
+  .sb-row:hover .sb-slide {
+    background: var(--hov);
+  }
+}
+/* Selected: a card tint in the accent, the name in accent text. No ring. */
+.sb-row.sel .sb-slide {
+  background: color-mix(in oklch, var(--accent) 18%, var(--row));
+}
+.sb-row.sel .sb-nl b {
+  color: var(--accent-text);
+}
+.sb-main {
+  all: unset;
+  box-sizing: border-box;
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 6px minmax(7rem, 1fr) minmax(0, max-content);
+  column-gap: 12px;
+  align-items: center;
+  min-height: 80px;
+  padding: 14px 0;
+  cursor: pointer;
+}
+.sb-main:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: -3px;
+  border-radius: var(--r-ctl);
+}
+.sb-sw {
+  width: 6px;
+  height: 30px;
+  border-radius: 3px;
+  background: var(--sw);
+  transition: width 0.15s;
+}
+.sb-row.sel .sb-sw {
+  width: 12px;
+}
+.sb-nm {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.sb-nl {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0 6px;
+  min-width: 0;
+}
+/* One line for the name: it truncates rather than wrapping, so the card keeps its height. */
+.sb-nl b {
+  min-width: 0;
+  font-weight: 700;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sb-hx {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--muted);
+}
+.sb-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.sb-tag .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.sb-tag.k-warn {
+  color: var(--warn);
+}
+.sb-tag.k-crit {
+  color: var(--crit);
+}
+.sb-val {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  min-width: 0;
+  max-width: 100%;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.sb-val .v {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 1.2rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+.sb-val .u {
+  margin-left: 4px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+.sb-val .na {
+  font-weight: 700;
+  color: var(--muted);
+}
+.sb-empty {
+  padding: 22px 14px;
+  text-align: center;
+  color: var(--muted);
+  font-weight: 700;
+}
+.sb-empty b {
+  display: block;
+  color: var(--text);
+  font-size: 1.05rem;
+}
+.sb-note {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--ctl);
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sb-slide,
+  .sb-gh .chev {
+    transition: none;
+  }
+}
+.sb-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.t-ok {
+  color: var(--ok);
+}
+.t-warn {
+  color: var(--warn);
+}
+.t-crit {
+  color: var(--crit);
+}
+.t-muted {
+  color: var(--muted);
+}
+
+/* Sidebar: no outlines or rings (DESIGN.md, no borders). Keyboard focus shows as a background step. */
+.sb :focus-visible,
+.sb-panel :focus-visible {
+  outline: none;
+}
+.sb .switch button:focus-visible,
+.sb-gh:focus-visible,
+.sb-txt:focus-visible,
+.sb-row:has(.sb-main:focus-visible) .sb-slide,
+.sb-row:has(.sra:focus-visible) .sb-slide {
+  background: var(--hov);
+}
+.sb-foot .tel-btn:focus-visible {
+  filter: brightness(0.92);
+}
+/* Sidebar: no outlines, no rings, no focus rings from Pico or the global :focus-visible rule.
+   Keyboard focus is a background step (see the focus rules above). !important is needed because Pico's
+   selectors on role=group and :focus are more specific than this scope. */
+.sb :focus,
+.sb :focus-visible,
+.sb :focus-within,
+.sb-panel :focus,
+.sb-panel :focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+.sb [role='group'],
+.sb-panel [role='group'] {
+  box-shadow: none !important;
+  outline: none !important;
+}

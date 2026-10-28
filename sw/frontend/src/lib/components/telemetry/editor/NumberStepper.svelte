@@ -151,11 +151,15 @@
     background: var(--ctl);
   }
   .step.bad {
-    outline: 2px solid var(--crit);
-    outline-offset: 0;
+    box-shadow: inset 0 0 0 2px var(--crit);
   }
   .step.off {
     opacity: 0.6;
+  }
+  /* The value sits on the stepper's own fill, as in the mockup. */
+  .step .in {
+    background: transparent !important;
+    color: var(--ctl-text);
   }
   .in {
     box-sizing: border-box;
@@ -198,12 +202,9 @@
   .sb:disabled {
     cursor: default;
   }
+  /* Keyboard focus is a background step, not a ring. */
   .step:focus-within {
-    outline: 3px solid var(--focus);
-    outline-offset: 2px;
-  }
-  .step.bad:focus-within {
-    outline-color: var(--crit);
+    background: var(--ctl-h2);
   }
   .in:focus-visible {
     outline: none;

@@ -11,7 +11,7 @@
   const icons: Record<Alert["type"], string> = {
     success: "circle-check",
     error: "circle-xmark",
-    warning: "circle-exclamantion",
+    warning: "circle-exclamation",
     info: "circle-info",
   };
 
@@ -56,9 +56,11 @@
 </div>
 
 <style>
+  /* Centred with auto margins, not a transform: a transformed box would drop the blur of the toasts inside it. */
   .toasts {
     position: fixed;
-    left: 50%;
+    left: 0;
+    right: 0;
     bottom: 30px;
     z-index: 100;
     display: grid;
@@ -66,7 +68,7 @@
     gap: 8px;
     width: max-content;
     max-width: calc(100vw - 24px);
-    transform: translateX(-50%);
+    margin: 0 auto;
     pointer-events: none;
   }
   /* Above the bottom nav bar (DESIGN.md, Toast). */

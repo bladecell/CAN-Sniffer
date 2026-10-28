@@ -9,9 +9,9 @@
   import { untrack } from "svelte";
   import Icon from "$lib/Icon.svelte";
   import Sheet from "$lib/components/Sheet.svelte";
-  import SDCardImportSheet from "$lib/components/SDCardImportSheet.svelte";
-  import PidSidebar from "$lib/components/telemetry/PidSidebar.svelte";
+  import PidSidebar, { type PidPanel } from "$lib/components/telemetry/PidSidebar.svelte";
   import PidEditorForm from "$lib/components/telemetry/PidEditorForm.svelte";
+  import EditorTabs from "$lib/components/telemetry/EditorTabs.svelte";
   import PidEditorActions from "$lib/components/telemetry/editor/PidEditorActions.svelte";
   import ChartCell from "$lib/components/telemetry/ChartCell.svelte";
   import FloatPanel from "$lib/components/telemetry/FloatPanel.svelte";
@@ -21,7 +21,8 @@
   // Ref-counted: the stream stays on while any view needs it.
   $effect(() => connectionStore.acquireStream());
 
-  let showSdImportModal = $state(false);
+  let pidPanel = $state<PidPanel>("pids");
+  const pidPanelTitle: Record<PidPanel, string> = { pids: "PIDs", changes: "Changes", sd: "SD card", settings: "Settings" };
   let pidSheetOpen = $state(false);
   let editorOpen = $state(false);
 
@@ -61,15 +62,6 @@
     for (const item of telemetryStore.local_piddef) {
       item.selected = targetPids.includes(parseInt(item.pid, 16));
     }
-  }
-
-  async function handleImport() {
-    await vehicleStore.requestSDInfo();
-    if (!vehicleStore.sdInfo?.is_mounted) {
-      alertStore.add("SD Card is not mounted or present.", "warning");
-      return;
-    }
-    showSdImportModal = true;
   }
 
   function newPid() {
@@ -123,10 +115,12 @@
   const editorTitle = $derived(
     selectedRow && telemetryStore.activeIndex >= 0 ? `Edit ${selectedRow.name} (${selectedRow.pid})` : "New PID",
   );
+  const editorSubtitle = $derived(
+    telemetryStore.activeIndex >= 0 && selectedRow ? "Change what you need, then save" : "Fill in each section, then save",
+  );
   const cellCount = $derived(telemetryStore.chartRows * telemetryStore.chartCols);
 </script>
 
-<SDCardImportSheet isOpen={showSdImportModal} onClose={() => (showSdImportModal = false)} />
 
 {#snippet syncSwitch()}
   <span class="sync">
@@ -144,8 +138,8 @@
 
 <section class="tel">
   <div class="wb">
-    <aside class="card side" aria-label="PID list">
-      <PidSidebar variant="rail" onImport={handleImport} onNew={newPid} onEdit={editPid} />
+    <aside class="side" aria-label="PID list">
+      <PidSidebar variant="rail" onNew={newPid} onEdit={editPid} />
     </aside>
 
     <div class="main">
@@ -258,11 +252,14 @@
   </div>
 </section>
 
-<Sheet open={pidSheetOpen} title="PIDs" onClose={() => (pidSheetOpen = false)}>
-  <PidSidebar variant="bar" onImport={handleImport} onNew={newPid} onEdit={editPid} />
+<Sheet open={pidSheetOpen} title={pidPanelTitle[pidPanel]} onClose={() => (pidSheetOpen = false)} scrolls={false}>
+  <PidSidebar variant="bar" bind:panel={pidPanel} onNew={newPid} onEdit={editPid} />
 </Sheet>
 
-<Sheet open={editorOpen} title={editorTitle} onClose={() => (editorOpen = false)} resizable>
+<Sheet open={editorOpen} title={editorTitle} subtitle={editorSubtitle} onClose={() => (editorOpen = false)} resizable>
+  {#snippet head()}
+    <EditorTabs />
+  {/snippet}
   <PidEditorForm onDone={() => (editorOpen = false)} />
   {#snippet footer()}
     <PidEditorActions formId="pid-editor" />
@@ -296,16 +293,17 @@
       --gap: 20px;
     }
     .wb {
-      grid-template-columns: clamp(380px, 24vw, 420px) minmax(0, 1fr);
+      grid-template-columns: clamp(380px, 28vw, 400px) minmax(0, 1fr);
     }
     .side {
       display: flex;
       flex-direction: column;
       position: sticky;
       top: var(--stick);
-      max-height: calc(100dvh - var(--stick) - var(--gap));
+      /* The page header and banners sit above the sidebar, so it fits the viewport below them (footer stays on screen). */
+      max-height: calc(100dvh - 200px);
       min-height: 0;
-      padding: 12px;
+      padding: 0;
       box-sizing: border-box;
     }
   }

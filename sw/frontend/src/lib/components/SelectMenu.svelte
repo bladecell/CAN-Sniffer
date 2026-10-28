@@ -5,6 +5,8 @@
 <script lang="ts" generics="T">
   import { tick } from "svelte";
   import Icon from "$lib/Icon.svelte";
+  import { closeOnOutsideScroll, fieldBox } from "$lib/popoverAnchor";
+  import { portal } from "$lib/layers";
   import { defaultIndex, navigate, type SelectMenuOption } from "$lib/selectMenu";
 
   const MENU_MAX_HEIGHT = 250;
@@ -50,13 +52,15 @@
   function place() {
     if (!triggerEl) return;
     const rect = triggerEl.getBoundingClientRect();
+    // Up: above the field's label, so the list never covers it.
+    const field = fieldBox(triggerEl);
     const spaceBelow = window.innerHeight - rect.bottom;
-    const placement = spaceBelow < MENU_MAX_HEIGHT && rect.top > spaceBelow ? "up" : "down";
-    const space = placement === "up" ? rect.top : spaceBelow;
+    const placement = spaceBelow < MENU_MAX_HEIGHT && field.top > spaceBelow ? "up" : "down";
+    const space = placement === "up" ? field.top : spaceBelow;
     const menuMaxHeight = Math.max(80, Math.min(MENU_MAX_HEIGHT, space - 8));
     const edge =
       placement === "up"
-        ? `bottom:${window.innerHeight - rect.top + 4}px`
+        ? `bottom:${window.innerHeight - field.top + 4}px`
         : `top:${rect.bottom + 4}px`;
     menuStyle = `left:${rect.left}px;width:${rect.width}px;max-height:${menuMaxHeight}px;${edge}`;
   }
@@ -67,7 +71,7 @@
     activeIndex = defaultIndex(options, selectedIndex);
     open = true;
     await tick();
-    optionEls[activeIndex]?.focus();
+    optionEls[activeIndex]?.focus({ preventScroll: true });
   }
 
   function closeMenu(restoreFocus: boolean) {
@@ -115,31 +119,26 @@
     optionEls[next]?.focus();
   }
 
+  // The list is portalled out of rootEl (lib/layers.ts), so focus and pointers in it count as inside the menu.
+  const inMenu = (node: EventTarget | null) => !!node && (!!rootEl?.contains(node as Node) || !!listEl?.contains(node as Node));
+
   function onFocusOut(e: FocusEvent) {
-    if (!rootEl?.contains(e.relatedTarget as Node | null)) closeMenu(false);
+    if (!inMenu(e.relatedTarget)) closeMenu(false);
   }
 
   function onWindowPointerDown(e: PointerEvent) {
-    if (open && !rootEl?.contains(e.target as Node)) closeMenu(false);
+    if (open && !inMenu(e.target)) closeMenu(false);
   }
 
-  // Top layer: a fixed box inside the blurred dialog would be positioned against the dialog, not the viewport.
+  // Top layer: showPopover puts the fixed list above the page, not against the dialog it sits in.
   $effect(() => {
     if (listEl?.showPopover && !listEl.matches(":popover-open")) listEl.showPopover();
   });
 
-  // Follow the trigger when the page or a scroll container moves; the list's own scroll is ignored.
+  // Scrolling the page or the sheet closes the list: it never drifts from its field.
   $effect(() => {
     if (!open) return;
-    const onMove = (e: Event) => {
-      if (!(e.target instanceof Node && listEl?.contains(e.target))) place();
-    };
-    window.addEventListener("scroll", onMove, { capture: true, passive: true });
-    window.addEventListener("resize", onMove);
-    return () => {
-      window.removeEventListener("scroll", onMove, { capture: true });
-      window.removeEventListener("resize", onMove);
-    };
+    return closeOnOutsideScroll(listEl, () => closeMenu(false));
   });
 </script>
 
@@ -176,6 +175,7 @@
   {#if open}
     <div
       bind:this={listEl}
+      use:portal
       id={listId}
       popover="manual"
       class="select-menu-list blur-background"
@@ -183,6 +183,7 @@
       tabindex="-1"
       style={menuStyle}
       onkeydown={onListKeydown}
+      onfocusout={onFocusOut}
     >
       {#each options as option, i (i)}
         <button
@@ -261,6 +262,10 @@
     color: var(--pico-muted-color);
   }
 
+  /* The list is portalled out of its field, which resets its controls (Field.svelte). Reset the options here. */
+  .select-menu-list :global(button) {
+    margin: 0 !important;
+  }
   .select-menu-list {
     position: fixed;
     inset: auto;

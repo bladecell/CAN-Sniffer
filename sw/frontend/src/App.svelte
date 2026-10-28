@@ -79,7 +79,6 @@ import { connectionStore } from "$lib/connectionStore.svelte";
     max-width: 100vw;
     margin-left: 0;
     margin-right: 0;
-    overflow-x: clip;
     padding-bottom: 56px;
   }
 

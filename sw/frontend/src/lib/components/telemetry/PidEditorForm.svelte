@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { telemetryStore, handleSavePid, modes, units } from "$lib/telemetryStore.svelte";
+  import { telemetryStore, handleSavePid, modes } from "$lib/telemetryStore.svelte";
   import {
     isValidHex,
     isValidName,
@@ -10,6 +10,7 @@
     isValidFormula,
   } from "$lib/pidInputRules";
   import { activeSectionIndex } from "$lib/editor/scrollSpy";
+  import { EDITOR_SECTIONS, editorNav } from "./editorNav.svelte";
   import Icon from "$lib/Icon.svelte";
   import SelectMenu from "$lib/components/SelectMenu.svelte";
   import Field from "./editor/Field.svelte";
@@ -17,6 +18,8 @@
   import ColorPopover from "./editor/ColorPopover.svelte";
   import IconPicker from "./editor/IconPicker.svelte";
   import FormulaWorkbench from "./editor/FormulaWorkbench.svelte";
+  import GridPicker, { type GridOption } from "./editor/GridPicker.svelte";
+  import { unitsWith } from "./editor/units";
 
   interface Props {
     onDone: () => void;
@@ -48,7 +51,6 @@
   } else {
     telemetryStore.clearForm();
   }
-  const isEdit = telemetryStore.activeIndex >= 0 && !!initial?.def;
 
   // Derived fields: a PID sets its length, and the 0x01 and 0x45 modes fix the CAN ID.
   $effect(() => {
@@ -72,7 +74,10 @@
   });
 
   const modeOptions = modes.map((m) => ({ value: m.value, label: m.label }));
-  const unitOptions = units.map((u) => ({ value: u, label: u }));
+  // Unit tiles: the list in editor/units.ts, symbol only. A unit saved outside the list still shows as a tile.
+  const unitOptions = $derived<GridOption[]>(
+    unitsWith(telemetryStore.unitInput).map((u) => (u === "" ? { value: "", label: "None" } : { value: u, sym: u, label: "" })),
+  );
   const derivedMode = $derived(telemetryStore.modeInput === "0x45");
   const unitStep = $derived(({ rpm: 100, V: 0.1, bar: 0.1 } as Record<string, number>)[telemetryStore.unitInput] ?? 1);
   const minMaxBad = $derived(
@@ -111,18 +116,15 @@
   let testBytes = $state("");
 
   // Section tabs and scroll-spy. The form scrolls inside the sheet body, so the spy listens there.
-  const sections = [
-    { id: "request", label: "Request" },
-    { id: "signal", label: "Signal" },
-    { id: "display", label: "Display" },
-    { id: "polling", label: "Polling" },
-  ];
   const PROBE = 64;
+  const sections = EDITOR_SECTIONS;
   let root: HTMLElement | undefined = $state();
-  let active = $state(0);
+  // Opens on Request. The spy only moves when the user scrolls, so the open sheet cannot read "at end" from its start.
+  editorNav.active = 0;
   let lockUntil = 0;
   const reduceMotion = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+  // The sheet body is the scroller. Its top layer and footer sit beside it (Sheet.svelte), so it pads past them.
   function scroller(): HTMLElement | null {
     return root?.closest<HTMLElement>(".body") ?? null;
   }
@@ -137,37 +139,36 @@
     const box = scroller();
     if (!box || performance.now() < lockUntil) return;
     const atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 2;
-    active = activeSectionIndex(sectionTops(box), box.scrollTop, PROBE, atEnd);
+    editorNav.active = activeSectionIndex(sectionTops(box), box.scrollTop, PROBE, atEnd);
   }
+  /** Scrolls so the section's heading sits just under the sticky top layer. Reduced motion jumps. */
   function goTo(i: number) {
     const box = scroller();
-    active = i;
+    editorNav.active = i;
     if (!box) return;
-    lockUntil = performance.now() + 700;
-    const top = sectionTops(box)[i];
-    box.scrollTo({ top: box.scrollTop + top - 60, behavior: reduceMotion ? "auto" : "smooth" });
+    // The spy ignores scroll events while the smooth scroll runs, so the clicked tab stays active.
+    lockUntil = performance.now() + 1000;
+    const headHeight = parseFloat(root?.closest("dialog")?.style.getPropertyValue("--sheet-head") ?? "") || 0;
+    // sectionTops is already in scroll-content coordinates, so it is the target scrollTop, not an offset from it.
+    const target = sectionTops(box)[i] - headHeight - 12;
+    box.scrollTo({ top: Math.max(0, target), behavior: reduceMotion ? "auto" : "smooth" });
   }
 
   $effect(() => {
     const box = scroller();
     if (!box) return;
     box.addEventListener("scroll", onScroll, { passive: true });
-    onScroll();
     return () => box.removeEventListener("scroll", onScroll);
   });
+
+  editorNav.goTo = goTo;
 </script>
 
 <div class="ed" bind:this={root}>
-  <nav class="tabs float-layer" aria-label="Editor sections">
-    {#each sections as s, i (s.id)}
-      <button type="button" class="tab" aria-current={active === i ? "true" : undefined} onclick={() => goTo(i)}>{s.label}</button>
-    {/each}
-  </nav>
-
   <form id={formId} class="form" onsubmit={(e) => { e.preventDefault(); save(); }} novalidate>
     {#if telemetryStore.validationErrors.length > 0}
       <div class="errsum" role="alert">
-        <strong><Icon name="circle-exclamantion" size={16} />Please fix the following errors</strong>
+        <strong><Icon name="circle-exclamation" size={16} />Please fix the following errors</strong>
         <ul>
           {#each telemetryStore.validationErrors as error, i (i)}
             <li>{error}</li>
@@ -177,9 +178,21 @@
     {/if}
 
     <section id="{formId}-request" class="sec" aria-labelledby="{formId}-request-h">
-      <h3 id="{formId}-request-h" class="sh">Request</h3>
-      <div class="grid">
-        <Field id="ed-id" label="CAN ID" hint="ECU CAN identifier" error={err.id}>
+      <div class="sh"><h3 id="{formId}-request-h">Request</h3><p>What to ask the car</p></div>
+      <div class="grid four">
+        <Field id="ed-mode" label="Mode" hint="Kind of request" error={err.mode}>
+          {#snippet children(labelId, msgId)}
+            <SelectMenu
+              bind:value={telemetryStore.modeInput}
+              options={modeOptions}
+              placeholder="Select a mode..."
+              ariaLabel="Mode"
+              ariaDescribedby={msgId}
+              ariaInvalid={!!err.mode}
+            />
+          {/snippet}
+        </Field>
+        <Field id="ed-id" label="CAN ID" hint="Number the ECU answers to" error={err.id}>
           {#snippet children(labelId, msgId)}
             <input
               id="ed-id"
@@ -194,20 +207,7 @@
             />
           {/snippet}
         </Field>
-        <Field id="ed-mode" label="Mode" hint="OBD2 service mode" error={err.mode}>
-          {#snippet children(labelId, msgId)}
-            <SelectMenu
-              bind:value={telemetryStore.modeInput}
-              options={modeOptions}
-              placeholder="Select a mode..."
-              ariaLabel="Mode"
-             
-              ariaDescribedby={msgId}
-              ariaInvalid={!!err.mode}
-            />
-          {/snippet}
-        </Field>
-        <Field id="ed-pid" label="PID" hint="Parameter ID" error={err.pid}>
+        <Field id="ed-pid" label="PID" hint="Code for this value" error={err.pid}>
           {#snippet children(labelId, msgId)}
             <input
               id="ed-pid"
@@ -238,38 +238,35 @@
         </Field>
       </div>
     </section>
-
     <section id="{formId}-signal" class="sec" aria-labelledby="{formId}-signal-h">
-      <h3 id="{formId}-signal-h" class="sh">Signal</h3>
+      <div class="sh"><h3 id="{formId}-signal-h">Signal</h3><p>Turn the reply into a number</p></div>
       <FormulaWorkbench
         id="ed-fx"
         bind:formula={telemetryStore.formulaInput}
         bind:testBytes
         unit={telemetryStore.unitInput}
         error={err.formula}
-        {isEdit}
       />
-      <div class="grid">
+      <div class="grid three">
         <Field id="ed-unit" label="Unit" hint="Shown after the value">
           {#snippet children(labelId, msgId)}
-            <SelectMenu bind:value={telemetryStore.unitInput} options={unitOptions} placeholder="Select a unit..." ariaLabel="Unit" ariaDescribedby={msgId} />
+            <GridPicker id="ed-unit" {labelId} describedBy={msgId} bind:value={telemetryStore.unitInput} options={unitOptions} columns={6} />
           {/snippet}
         </Field>
-        <Field id="ed-min" label="Min value" hint="Chart floor" error={err.minmax}>
+        <Field id="ed-min" label="Min" hint="Bottom of the chart" error={err.minmax}>
           {#snippet children(labelId, msgId)}
             <NumberStepper id="ed-min" labelId={labelId} describedBy={msgId} bind:value={telemetryStore.minInput} step={unitStep} invalid={minMaxBad} />
           {/snippet}
         </Field>
-        <Field id="ed-max" label="Max value" hint="Chart ceiling" error={err.minmax}>
+        <Field id="ed-max" label="Max" hint="Top of the chart" error={err.minmax}>
           {#snippet children(labelId, msgId)}
             <NumberStepper id="ed-max" labelId={labelId} describedBy={msgId} bind:value={telemetryStore.maxInput} step={unitStep} invalid={minMaxBad} />
           {/snippet}
         </Field>
       </div>
     </section>
-
     <section id="{formId}-display" class="sec" aria-labelledby="{formId}-display-h">
-      <h3 id="{formId}-display-h" class="sh">Display</h3>
+      <div class="sh"><h3 id="{formId}-display-h">Display</h3><p>How it looks in lists and charts</p></div>
       <div class="grid">
         <Field id="ed-name" label="Name" hint="Shown in lists and charts" error={err.name}>
           {#snippet children(labelId, msgId)}
@@ -285,7 +282,7 @@
             />
           {/snippet}
         </Field>
-        <Field id="ed-desc" label="Description" hint="Optional" error={err.desc}>
+        <Field id="ed-desc" label="Description" hint="Optional note" error={err.desc}>
           {#snippet children(labelId, msgId)}
             <input
               id="ed-desc"
@@ -299,23 +296,22 @@
             />
           {/snippet}
         </Field>
-        <Field id="ed-color" label="Color" hint="Line and swatch">
+        <Field id="ed-color" label="Color" hint="Used for the chart line">
           {#snippet children(labelId, msgId)}
             <ColorPopover id="ed-color" labelId={labelId} describedBy={msgId} bind:value={telemetryStore.colorInput} />
           {/snippet}
         </Field>
-        <Field id="ed-icon" label="Icon" hint="Shown on the row">
+        <Field id="ed-icon" label="Icon" hint="Shown next to the name">
           {#snippet children(labelId, msgId)}
             <IconPicker id="ed-icon" labelId={labelId} describedBy={msgId} bind:value={telemetryStore.iconInput} />
           {/snippet}
         </Field>
       </div>
     </section>
-
     <section id="{formId}-polling" class="sec" aria-labelledby="{formId}-polling-h">
-      <h3 id="{formId}-polling-h" class="sh">Polling</h3>
+      <div class="sh"><h3 id="{formId}-polling-h">Polling</h3><p>How often to ask</p></div>
       <div class="grid">
-        <Field id="ed-interval" label="Update interval (ms)" hint={telemetryStore.updateIntervalInput === 0 ? "Polling disabled" : "Milliseconds between polls"} error={err.interval}>
+        <Field id="ed-interval" label="Update interval" hint={telemetryStore.updateIntervalInput === 0 ? "Static reads once, never polled." : "Milliseconds between polls"} error={err.interval}>
           {#snippet children(labelId, msgId)}
             <NumberStepper id="ed-interval" labelId={labelId} describedBy={msgId} bind:value={telemetryStore.updateIntervalInput} step={10} min={0} max={65535} invalid={intervalBad} />
           {/snippet}
@@ -337,84 +333,59 @@
     min-width: 0;
     container-type: inline-size;
   }
-  .tabs {
-    position: sticky;
-    top: var(--sheet-head, 0px);
-    z-index: 2;
-    display: flex;
-    gap: 4px;
-    margin: 0 -22px;
-    padding: 6px 22px;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-  .tab {
-    flex: 1 0 auto;
-    min-height: 44px;
-    padding: 0 12px;
-    border: 0;
-    border-radius: var(--r-ctl);
-    background: transparent;
-    color: var(--muted);
-    font: inherit;
-    font-weight: 700;
-    white-space: nowrap;
-    cursor: pointer;
-    position: relative;
-  }
-  .tab:hover {
-    color: var(--text);
-    background: var(--hov);
-  }
-  .tab[aria-current="true"] {
-    color: var(--accent-text);
-    font-weight: 800;
-  }
-  .tab::after {
-    content: "";
-    position: absolute;
-    left: 22%;
-    right: 22%;
-    bottom: 4px;
-    height: 3px;
-    border-radius: 3px;
-    background: var(--accent);
-    transform: scaleX(0);
-    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  .tab[aria-current="true"]::after {
-    transform: scaleX(1);
-  }
-  .tab:focus-visible {
-    outline: 3px solid var(--focus);
-    outline-offset: -3px;
-  }
   .form {
     display: grid;
-    gap: 6px;
+    gap: 0;
     min-width: 0;
   }
   .sec {
     display: grid;
-    gap: 12px;
-    padding: 14px 0 6px;
+    gap: 14px;
+    margin: 0;
+    padding: 16px 0 28px;
     scroll-margin-top: 0;
   }
   .sh {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    margin-bottom: 0;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--hair);
+  }
+  .sh h3 {
     margin: 0;
-    font-size: 0.95rem;
+    font-size: 1.2rem;
     font-weight: 800;
+    line-height: 1.3;
+  }
+  .sh p {
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--muted);
   }
   .grid {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: 6px 12px;
+    gap: 4px 16px;
+  }
+  /* Phone: Mode and CAN ID, then PID and Length, as in the mockup. */
+  .grid.four {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  /* The hint row is always reserved, so fields in one row line up. */
+  .grid :global(.msg) {
+    min-height: 22px;
+    padding-top: 6px;
+    font-size: 0.8125rem;
+    line-height: 1.35;
   }
   .in {
     box-sizing: border-box;
     width: 100%;
     min-height: var(--ctl-h);
-    padding: 0 12px;
+    padding: 0 14px;
     border: 0;
     border-radius: var(--r-ctl);
     background: var(--ctl);
@@ -457,10 +428,16 @@
     .grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
-  }
-  @media (hover: hover) and (min-width: 600px) {
-    .ed {
-      --ctl-h: 40px;
+    /* Unit, Min and Max share one row, as in the mockup. */
+    .grid.three {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
     }
   }
+  @container (min-width: 640px) {
+    /* Mode, CAN ID, PID and Length share one row, as in the mockup. */
+    .grid.four {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+  }
+  /* Controls are 48px everywhere, as in the mockup. */
 </style>

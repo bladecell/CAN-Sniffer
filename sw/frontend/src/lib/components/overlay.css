@@ -1,6 +1,6 @@
 /* Shared by Sheet.svelte and Dialog.svelte. Both render a native <dialog class="overlay ..."> with the overlay action. */
 
-:global(body.overlay-lock) {
+body.overlay-lock {
   overflow: hidden;
   touch-action: none;
 }
@@ -45,7 +45,11 @@ dialog.overlay.dialog[open] {
   animation: overlay-dialog-in 0.4s var(--ease-out);
 }
 
-/* Sheet: bottom sheet, centred on wide screens, full width on phones. The body scrolls. */
+/*
+ * Sheet: bottom sheet, centred on wide screens, full width on phones. Three parts, each a sibling of the others:
+ * a float top layer, the body and a float footer. The dialog is not a scroller and not blurred (DESIGN.md layering
+ * rule, lib/layers.ts): its blur comes from ::before, a sibling-level glass, so the layers above it keep their blur.
+ */
 dialog.overlay.sheet {
   top: auto;
   bottom: 0;
@@ -56,9 +60,30 @@ dialog.overlay.sheet {
   max-height: 85dvh;
   margin: 0 auto;
   border-radius: var(--r-float) var(--r-float) 0 0;
+  /* Pico makes every dialog a scroller. The sheet is not one: its body scrolls, its layers sit beside it. */
+  overflow: visible;
+  background: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: var(--shadow-float);
 }
 dialog.overlay.sheet[open] {
   animation: overlay-sheet-in 0.5s var(--ease-out);
+}
+dialog.overlay.sheet::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--float);
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(1.35);
+  backdrop-filter: blur(var(--blur)) saturate(1.35);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  dialog.overlay.sheet::before {
+    background: var(--float-solid);
+  }
 }
 
 .overlay .grab {
@@ -110,44 +135,47 @@ dialog.overlay.sheet[open] {
   overscroll-behavior: contain;
   padding: 4px 22px 22px;
 }
-/* The sheet scrolls as one surface: header and footer stick over the content, which shows through their blur. */
-dialog.overlay.sheet {
+/* The body scrolls beneath the top layer and above the footer. It pads past both, measured as --sheet-head and --sheet-foot. */
+dialog.overlay.sheet > .body {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+  padding: calc(var(--sheet-head, 0px) + 4px) 22px var(--sheet-foot, calc(22px + env(safe-area-inset-bottom)));
 }
-.sheet > header {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-}
-.sheet > .body {
-  flex: none;
+/* A body that scrolls itself (the phone PID sidebar): the sheet does not scroll, the child fills the body. */
+dialog.overlay.sheet.flat > .body {
   overflow: visible;
+  display: flex;
+  flex-direction: column;
   padding-bottom: calc(22px + env(safe-area-inset-bottom));
 }
 /* No container behind the footer: each button is its own translucent blurred layer, the primary keeps its accent fill. */
-.sheet > footer {
-  position: sticky;
+dialog.overlay.sheet > footer {
+  position: absolute;
+  left: 0;
+  right: 0;
   bottom: 0;
-  z-index: 2;
+  z-index: 5;
   padding-top: 12px;
   pointer-events: none;
 }
-.sheet > footer :global(button) {
+.sheet > footer button {
   pointer-events: auto;
 }
-.sheet > footer :global(button:not(.pri)) {
-  background: var(--float);
+.sheet > footer button:not(.pri) {
+  /* Control fill over the float layer: the blur shows through the fill (DESIGN.md, layering rule). */
+  background: linear-gradient(var(--ctl), var(--ctl)), var(--float);
   -webkit-backdrop-filter: blur(var(--blur)) saturate(1.35);
   backdrop-filter: blur(var(--blur)) saturate(1.35);
   box-shadow: var(--shadow-float);
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .sheet > footer :global(button:not(.pri)) {
-    background: var(--float-solid);
+  .sheet > footer button:not(.pri) {
+    background: linear-gradient(var(--ctl), var(--ctl)), var(--float-solid);
   }
 }
-.sheet > footer :global(button.pri) {
+.sheet > footer button.pri {
   box-shadow: var(--shadow-float);
 }
 .overlay footer {
@@ -160,14 +188,14 @@ dialog.overlay.sheet {
 }
 
 /* Form content for every overlay: fills, no borders (DESIGN.md Controls). */
-.overlay :global(label) {
+.overlay label {
   display: block;
   margin: 0 0 6px;
   color: var(--muted);
   font-size: 0.85rem;
   font-weight: 700;
 }
-.overlay :global(input:not([type="checkbox"]):not([type="radio"]):not([type="color"])) {
+.overlay input:not([type="checkbox"]):not([type="radio"]):not([type="color"]) {
   box-sizing: border-box;
   width: 100%;
   min-height: var(--ctl-h);
@@ -180,10 +208,10 @@ dialog.overlay.sheet {
   font: inherit;
   box-shadow: none;
 }
-.overlay :global(input::placeholder) {
+.overlay input::placeholder {
   color: var(--ctl-sub);
 }
-.overlay :global(.btn) {
+.overlay .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -201,26 +229,26 @@ dialog.overlay.sheet {
   cursor: pointer;
   transition: background-color 0.15s;
 }
-.overlay :global(.btn:hover) {
+.overlay .btn:hover {
   background: var(--ctl-h2);
 }
-.overlay :global(.btn:active) {
+.overlay .btn:active {
   filter: brightness(0.94);
 }
-.overlay :global(.btn.pri) {
+.overlay .btn.pri {
   background: var(--accent);
   color: var(--on-accent);
   font-weight: 800;
 }
-.overlay :global(.btn.pri:hover) {
+.overlay .btn.pri:hover {
   filter: brightness(1.06);
 }
-.overlay :global(.btn.danger) {
+.overlay .btn.danger {
   background: var(--crit-solid);
   color: var(--on-crit);
   font-weight: 800;
 }
-.overlay :global(.btn:disabled) {
+.overlay .btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }

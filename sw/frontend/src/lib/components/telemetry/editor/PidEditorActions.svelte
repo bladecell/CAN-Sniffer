@@ -1,7 +1,7 @@
 <script lang="ts">
   import { telemetryStore } from "$lib/telemetryStore.svelte";
 
-  /** Pinned sheet footer. Save submits the editor form by id, so it works from outside the form. */
+  /** Pinned sheet footer (mockup: status at left, Clear and Save PID at right). Save submits the form by id. */
   interface Props {
     formId: string;
   }
@@ -9,47 +9,39 @@
   let { formId }: Props = $props();
 </script>
 
-<div class="acts">
-  <button type="button" class="btn" onclick={() => telemetryStore.clearForm()}>Clear form</button>
-  <button type="submit" form={formId} class="btn pri" disabled={!telemetryStore.isFormValid} aria-disabled={!telemetryStore.isFormValid}>
-    {telemetryStore.activeIndex === -1 ? "Add PID definition" : "Save changes"}
-  </button>
-</div>
+<span class="st" aria-live="polite">{telemetryStore.activeIndex === -1 ? "New PID, not saved" : "Changes not saved yet"}</span>
+<button type="button" class="btn" onclick={() => telemetryStore.clearForm()}>Clear</button>
+<button type="submit" form={formId} class="btn pri">Save PID</button>
 
 <style>
-  .acts {
-    display: flex;
-    flex: 1 1 auto;
-    gap: 10px;
-    justify-content: flex-end;
+  /* Status: a small blurred layer that fits its text, so content under it stays readable (mockup). */
+  .st {
+    flex: 0 1 auto;
     min-width: 0;
-  }
-  .acts .btn {
-    flex: 1 1 0;
-    min-width: 0;
-    min-height: 44px;
-    padding: 0 12px;
-  }
-  @media (hover: hover) and (min-width: 600px) {
-    .acts .btn {
-      flex: 0 1 auto;
-      min-height: 40px;
-    }
-  }
-  .btn {
     display: inline-flex;
     align-items: center;
-    justify-content: center;
     box-sizing: border-box;
+    min-height: 48px;
+    padding: 0 16px;
+    line-height: 1;
+    border-radius: 14px;
+    font-size: 0.875rem;
+    color: var(--muted);
+    background: var(--float);
+    -webkit-backdrop-filter: blur(var(--blur)) saturate(1.35);
+    backdrop-filter: blur(var(--blur)) saturate(1.35);
+    box-shadow: var(--shadow-float);
+  }
+  .btn {
+    flex: none;
+    min-height: 48px;
+    padding: 0 24px;
     border: 0;
-    border-radius: var(--r-ctl);
+    border-radius: 14px;
     background: var(--ctl);
     color: var(--ctl-text);
-    font: 700 1rem/1 var(--font);
+    font: 750 1rem/1 var(--font);
     cursor: pointer;
-  }
-  .btn:hover {
-    background: var(--ctl-h2);
   }
   .btn.pri {
     background: var(--accent);
@@ -59,5 +51,21 @@
   .btn:disabled {
     opacity: 0.55;
     cursor: not-allowed;
+  }
+  /* A disabled primary stays solid: a translucent button would show the fields under it. */
+  .btn.pri:disabled {
+    opacity: 1;
+    background: var(--ctl);
+    color: var(--ctl-sub);
+  }
+  /* Phone: the status line goes and the two buttons share the width. */
+  @media (max-width: 640px) {
+    .st {
+      display: none;
+    }
+    .btn {
+      flex: 1 1 0;
+      padding: 0 12px;
+    }
   }
 </style>

@@ -20,6 +20,7 @@ export class TelemetryStore {
       $effect(() => {
         const piddef = vehicleStore.pidDefinitions;
         if (piddef && piddef !== this.lastPidDef) {
+          const onDeviceBefore = new Set((this.lastPidDef ?? []).map((def) => Number(def.pid)));
           this.lastPidDef = piddef;
 
           const newDefMap = new Map();
@@ -41,8 +42,8 @@ export class TelemetryStore {
               );
               newDefMap.delete(rawPid);
             } else {
-              // PID was removed from CAN store. Keep it, but set loaded to false.
-              existing.loaded = false;
+              // A PID the device had is now gone, so it is not loaded. A PID never sent to the device stays as an addition.
+              if (onDeviceBefore.has(rawPid)) existing.loaded = false;
               updatedPids.push(existing);
             }
           }
@@ -302,7 +303,7 @@ export function handleSavePid() {
   } else {
     telemetryStore.local_piddef = [
       ...telemetryStore.local_piddef,
-      createRowObject(newDef, false, false),
+      createRowObject(newDef, true, false),
     ];
   }
 
@@ -316,23 +317,4 @@ export const modes = [
   { label: "Derived Data", value: "0x45" },
 ];
 
-export const units = [
-  "%",
-  "kPa",
-  "Pa",
-  "rpm",
-  "km/h",
-  "° before TDC",
-  "grams/sec",
-  "seconds",
-  "ratio",
-  "count",
-  "km",
-  "V",
-  "minutes",
-  "g/s",
-  "°",
-  "°C",
-  "L/h",
-  "L",
-];
+

@@ -4,8 +4,8 @@
   import { evaluateFormula, parseTestBytes } from "$lib/editor/formulaTest";
 
   /**
-   * Formula workbench: variable tokens A to D (square tiles), function tokens getBit and getPID (wide tiles),
-   * a live test with hex bytes, and one explanatory line for the token that is hovered, focused or last inserted.
+   * Formula workbench (plan/mockups/pid-v7.html, Signal): Bytes A to D as outlined square tiles, Functions getBit and
+   * getPID as outlined pills, the help box, the formula and test bytes full width, and the result row.
    */
   interface Props {
     id: string;
@@ -13,10 +13,9 @@
     testBytes: string;
     unit: string;
     error?: string;
-    isEdit: boolean;
   }
 
-  let { id, formula = $bindable(), testBytes = $bindable(), unit, error, isEdit }: Props = $props();
+  let { id, formula = $bindable(), testBytes = $bindable(), unit, error }: Props = $props();
 
   type Token = { key: string; insert: string; kind: "var" | "fn"; help: string };
   const tokens: Token[] = [
@@ -37,7 +36,7 @@
       help: "getPID(pid): the last stored value of another PID, looked up by its pid, not its CAN ID. Undefined PID gives NaN. Example: getPID(0x0C) / 4",
     },
   ];
-  const defaultHelp = "Tap A to D for a response byte, or getBit and getPID for logic. Hover or focus a token to read what it does.";
+  const defaultHelp = "A to D are bytes of the reply. getBit and getPID are functions. Hover or focus a tile to see what it does.";
 
   let input: HTMLInputElement | undefined = $state();
   let hovered = $state<string | null>(null);
@@ -69,180 +68,233 @@
 
 <div class="bench">
   <div class="tokens" role="group" aria-label="Insert into formula">
-    {#each tokens as t (t.key)}
-      <button
-        type="button"
-        class="tok {t.kind}"
-        aria-label={t.kind === "var" ? `Byte ${t.key}` : `Function ${t.key}`}
-        aria-describedby={`${id}-help`}
-        onpointerenter={() => (hovered = t.key)}
-        onpointerleave={() => (hovered = null)}
-        onfocus={() => (focused = t.key)}
-        onblur={() => (focused = null)}
-        onclick={() => insert(t)}
-      >
-        {#if t.kind === "var"}{t.key}{:else}<span class="fx">fx</span>{t.key}{/if}
-      </button>
-    {/each}
+    <div class="tg">
+      <span>Bytes</span>
+      {#each tokens.filter((t) => t.kind === "var") as t (t.key)}
+        <button
+          type="button"
+          class="tok var"
+          class:on={activeKey === t.key}
+          aria-label={`Byte ${t.key}`}
+          aria-describedby={`${id}-help`}
+          onpointerenter={() => (hovered = t.key)}
+          onpointerleave={() => (hovered = null)}
+          onfocus={() => (focused = t.key)}
+          onblur={() => (focused = null)}
+          onclick={() => insert(t)}
+        >{t.key}</button>
+      {/each}
+    </div>
+    <div class="tg">
+      <span>Functions</span>
+      {#each tokens.filter((t) => t.kind === "fn") as t (t.key)}
+        <button
+          type="button"
+          class="tok fn"
+          class:on={activeKey === t.key}
+          aria-label={`Function ${t.key}`}
+          aria-describedby={`${id}-help`}
+          onpointerenter={() => (hovered = t.key)}
+          onpointerleave={() => (hovered = null)}
+          onfocus={() => (focused = t.key)}
+          onblur={() => (focused = null)}
+          onclick={() => insert(t)}
+        ><span class="fx">fx</span>{t.key}</button>
+      {/each}
+    </div>
   </div>
   <p class="help" id={`${id}-help`} aria-live="polite">{helpText}</p>
 
-  <div class="pair">
-    <Field id={`${id}-f`} label="Formula" hint="Uses A to D, getBit and getPID" error={error}>
-      {#snippet children(labelId, msgId)}
-        <input
-          bind:this={input}
-          id={`${id}-f`}
-          class="in mono"
-          type="text"
-          autocomplete="off"
-          spellcheck="false"
-          aria-labelledby={labelId}
-          aria-describedby={msgId}
-          aria-invalid={error ? "true" : undefined}
-          bind:value={formula}
-        />
-      {/snippet}
-    </Field>
+  <Field id={`${id}-f`} label="Formula" hint="Use A to D, getBit and getPID" error={error}>
+    {#snippet children(labelId, msgId)}
+      <input
+        bind:this={input}
+        id={`${id}-f`}
+        class="in mono"
+        type="text"
+        autocomplete="off"
+        spellcheck="false"
+        aria-labelledby={labelId}
+        aria-describedby={msgId}
+        aria-invalid={error ? "true" : undefined}
+        bind:value={formula}
+      />
+    {/snippet}
+  </Field>
 
-    <Field
-      id={`${id}-t`}
-      label="Test bytes"
-      hint={isEdit && !testBytes.trim() ? "Raw bytes are not sent to the browser yet, type them here" : "Hex, first byte is A"}
-      error={testError}
-    >
-      {#snippet children(labelId, msgId)}
-        <input
-          id={`${id}-t`}
-          class="in mono"
-          type="text"
-          placeholder="0A 3C"
-          autocomplete="off"
-          spellcheck="false"
-          autocapitalize="off"
-          aria-labelledby={labelId}
-          aria-describedby={msgId}
-          aria-invalid={testError ? "true" : undefined}
-          bind:value={testBytes}
-        />
-      {/snippet}
-    </Field>
-  </div>
+  <Field id={`${id}-t`} label="Test bytes" hint="Hex bytes, the first is A..." error={testError}>
+    {#snippet children(labelId, msgId)}
+      <input
+        id={`${id}-t`}
+        class="in mono"
+        type="text"
+        placeholder="0A 3C"
+        autocomplete="off"
+        spellcheck="false"
+        autocapitalize="off"
+        aria-labelledby={labelId}
+        aria-describedby={msgId}
+        aria-invalid={testError ? "true" : undefined}
+        bind:value={testBytes}
+      />
+    {/snippet}
+  </Field>
 
   <div class="res" class:bad={!!testError} aria-live="polite">
     <span class="rl">Result</span>
-    <span class="rv">{shown || (testError ? "Not computed" : "Enter test bytes")}</span>
+    <span class="rv">{shown || (testError ? "Not computed" : "Add test bytes")}</span>
   </div>
 </div>
 
 <style>
   .bench {
     display: grid;
-    gap: 6px;
+    gap: 16px;
     min-width: 0;
   }
   .tokens {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px 18px;
+  }
+  .tg {
+    flex: none;
+    display: flex;
+    align-items: center;
     gap: 8px;
   }
+  .tg > span {
+    margin-right: 2px;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: var(--muted);
+  }
+  /* Byte tiles: outlined squares. Function pills: outlined in the accent with an fx circle. */
   .tok {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 4px;
-    min-width: 44px;
+    gap: 6px;
     min-height: 44px;
-    padding: 0;
     border: 0;
-    font: inherit;
+    font-family: var(--mono);
+    font-weight: 800;
     cursor: pointer;
   }
-  /* Variables: square tiles in the accent tint, monospace letter. */
   .tok.var {
-    width: 44px;
+    width: 48px;
+    height: 48px;
     border-radius: 10px;
-    background: color-mix(in srgb, var(--accent) 22%, transparent);
-    color: var(--accent-text);
-    font-family: var(--mono);
-    font-size: 1.05rem;
-    font-weight: 800;
+    background: #dde4f6;
+    color: #27345c;
+    box-shadow: inset 0 0 0 2px #6d7fb8;
+    font-size: 1.1rem;
   }
-  /* Functions: wide tiles with a dashed outline and an fx mark, neutral fill. */
   .tok.fn {
-    padding: 0 14px;
-    border-radius: 6px;
-    background: var(--ctl);
-    color: var(--ctl-text);
-    box-shadow: inset 0 0 0 1.5px var(--ctl-sub);
-    font-family: var(--mono);
-    font-size: 0.95rem;
+    height: 48px;
+    padding: 0 16px 0 12px;
+    border-radius: 24px;
+    background: transparent;
+    color: var(--accent-text);
+    box-shadow: inset 0 0 0 2px var(--accent);
+    font-size: 0.9375rem;
+  }
+  .tok.fn .fx {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-size: 0.8rem;
+    font-style: italic;
     font-weight: 700;
   }
-  .fx {
-    font-family: var(--font);
-    font-size: 0.72rem;
-    font-style: italic;
-    color: var(--ctl-sub);
+  .tok.on.var {
+    background: #27345c;
+    color: #dde4f6;
   }
-  .tok:hover {
-    filter: brightness(1.08);
+  .tok.on.fn {
+    background: color-mix(in oklch, var(--accent) 17%, transparent);
+  }
+  @media (prefers-color-scheme: dark) {
+    :global(html:not([data-theme='light'])) .tok.var {
+      background: #2d3550;
+      color: #dbe2fa;
+      box-shadow: inset 0 0 0 2px #7f90cc;
+    }
+  }
+  :global(html[data-theme='dark']) .tok.var {
+    background: #2d3550;
+    color: #dbe2fa;
+    box-shadow: inset 0 0 0 2px #7f90cc;
   }
   .tok:focus-visible {
-    outline: 3px solid var(--focus);
-    outline-offset: 2px;
+    outline: none;
+    background: var(--hov);
   }
   .help {
-    min-height: 2.6em;
+    min-height: 3.6em;
     margin: 0;
-    color: var(--muted);
-    font-size: 0.84rem;
-    line-height: 1.3;
-    overflow-wrap: anywhere;
-  }
-  .pair {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 0 12px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: var(--ctl);
+    font-size: 0.875rem;
+    line-height: 1.45;
   }
   .in {
     box-sizing: border-box;
     width: 100%;
     min-height: var(--ctl-h);
-    padding: 0 12px;
+    padding: 0 14px;
     border: 0;
     border-radius: var(--r-ctl);
     background: var(--ctl);
     color: var(--ctl-text);
     font: inherit;
   }
+  .in::placeholder {
+    color: var(--ctl-sub);
+    opacity: 1;
+  }
+  .in[aria-invalid='true'] {
+    box-shadow: inset 0 0 0 2px var(--crit);
+  }
+  .in:focus-visible {
+    outline: none;
+    background: var(--ctl-h2);
+  }
   .mono {
     font-family: var(--mono);
   }
+  /* Result: a tinted row. The value is monospace in the accent text; an error turns the row red. */
   .res {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    min-height: var(--ctl-h);
-    padding: 0 14px;
-    border-radius: var(--r-ctl);
-    background: var(--card2);
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
+    align-items: baseline;
+    gap: 12px;
+    min-height: 56px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: color-mix(in oklch, var(--accent) 17%, transparent);
   }
   .res.bad {
-    color: var(--crit);
+    background: var(--crit-f);
+  }
+  .rl {
+    font-size: 0.875rem;
+    font-weight: 700;
   }
   .rv {
-    font-size: 1.15rem;
+    font-family: var(--mono);
+    font-size: 1.4rem;
     font-weight: 800;
-    overflow-wrap: anywhere;
-    text-align: right;
+    color: var(--accent-text);
   }
-  @media (min-width: 560px) {
-    .pair {
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    }
+  .res.bad .rv {
+    color: var(--crit);
+    font-size: 1rem;
   }
 </style>

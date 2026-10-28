@@ -8,9 +8,9 @@
     { id: "dashboard", icon: "gauge", label: "Dashboard" },
     { id: "diagnostics", icon: "engine", label: "Diagnostics" },
     { id: "recorder", icon: "route", label: "Recorder" },
-    { id: "telemetry", icon: "chart", label: "Telemetry" },
-    { id: "can-logging", icon: "timeline-arrow", label: "CAN Bus" },
-    { id: "settings", icon: "gear", label: "Settings" },
+    { id: "telemetry", icon: "chart-fft", label: "Telemetry" },
+    { id: "can-logging", icon: "waves-sine", label: "CAN Bus" },
+    { id: "settings", icon: "sliders", label: "Settings" },
   ];
 
   let tabList: HTMLUListElement | undefined = $state();

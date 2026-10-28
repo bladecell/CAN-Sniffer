@@ -20,7 +20,7 @@
   <div class="ctl">
     {@render children(labelId, msgId)}
   </div>
-  <p class="msg" id={msgId}>{error ?? hint}</p>
+  <p class="msg" id={msgId}>{error || hint}</p>
 </div>
 
 <style>
@@ -33,9 +33,9 @@
   }
   .lab {
     display: block;
-    height: 24px;
-    padding-bottom: 3px;
-    font-size: 0.82rem;
+    height: 18px;
+    margin-bottom: 6px;
+    font-size: 0.875rem;
     font-weight: 700;
     line-height: 1.3;
   }
@@ -54,9 +54,9 @@
     padding-bottom: 0 !important;
   }
   .msg {
-    min-height: calc(0.78rem * 1.3 + 4px);
+    min-height: 22px;
     margin: 0;
-    padding-top: 4px;
+    padding-top: 6px;
     color: var(--muted);
     font-size: 0.78rem;
     line-height: 1.3;
