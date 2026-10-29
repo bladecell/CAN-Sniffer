@@ -1948,6 +1948,7 @@ static void WSDataStreamTask(void* pvParameters)
             else
             {
                 xSemaphoreTake(WSDataStreamSemaphore, portMAX_DELAY);
+                xLastWakeTime = xTaskGetTickCount();  // else vTaskDelayUntil replays every missed period back to back
             }
         }
     }
