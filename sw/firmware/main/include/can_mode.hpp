@@ -8,7 +8,8 @@
 // controller, the REST route and the revert paths do not change.
 //
 // Env: bool supervisorRunning(); bool recorderBusy(); bool autoPoll(); bool setAutoPoll(bool on) (true = done);
-//      void fcDisarm().
+//      void fcDisarm(); bool obdRequestInFlight() (a REST OBD request is on the bus); void setObdParsing(bool on) (tell the
+//      receive task whether to parse OBD frames).
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -94,6 +95,10 @@ Status enterRaw(Env& env, Saved& saved)
   {
     return Status::recording;
   }
+  if (env.obdRequestInFlight())
+  {
+    return Status::busy;  // a DTC/VIN/PID request from REST is still running; Raw starts after it
+  }
   if (!saved.restorePending)
   {
     saved.autoPoll = env.autoPoll();  // a restore still pending from the last session keeps the original "on"
@@ -146,6 +151,7 @@ public:
 
   const char* name() const { return modeTable<Env>()[cur_].name; }
   bool        fc() const { return fc_; }
+  bool        parsing() const { return parsing_; }
   bool        allows(uint8_t op) const { return (modeTable<Env>()[cur_].ops & op) != 0; }
   bool        isDefault() const { return cur_ == 0; }
 
@@ -168,8 +174,11 @@ public:
     }
   }
 
-  // `name` is compared exactly. `fc` only means something in a mode that allows raw sends.
-  Status set(const char* name, bool fc, uint32_t nowMs)
+  // `name` is compared exactly. `fc` (ISO-TP flow control) and `parsing` (OBD parsing of received frames) are independent
+  // switches that only mean something in a mode that allows raw sends; leaving that mode resets both to false (parsing is
+  // then on again in the receive task: Monitor always parses). Without `parsing` it is false.
+  Status set(const char* name, bool fc, uint32_t nowMs) { return set(name, fc, false, nowMs); }
+  Status set(const char* name, bool fc, bool parsing, uint32_t nowMs)
   {
     applyDeferred();
     size_t target = count();
@@ -200,7 +209,9 @@ public:
       cur_ = target;
     }
     fc_           = allows(kOpRawSend) && fc;
+    parsing_      = allows(kOpRawSend) && parsing;
     lastActivity_ = nowMs;
+    publishParsing();
     return Status::ok;
   }
 
@@ -259,13 +270,19 @@ private:
       env_.fcDisarm();
       saved_ = Saved{};
     }
-    cur_ = 0;
-    fc_  = false;
+    cur_     = 0;
+    fc_      = false;
+    parsing_ = false;
+    publishParsing();
   }
+
+  // The receive task parses unless a mode that does not parse is on (only Raw without the option).
+  void publishParsing() { env_.setObdParsing(cur_ == 0 || parsing_); }
 
   Env&     env_;
   size_t   cur_          = 0;
   bool     fc_           = false;
+  bool     parsing_      = false;
   uint32_t lastActivity_ = 0;
   Saved    saved_;
   std::atomic<int> deferred_{0};  // 0 none, 1 reset with restore, 2 reset without

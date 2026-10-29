@@ -62,7 +62,7 @@ MiddlewareJsonResult m_vin_request();
 MiddlewareJsonResult m_dtc_request(int mode);
 // Sends OBD mode 0x04 (clears codes on a real vehicle). The route is gated by a Bearer session; there is no other check.
 MiddlewareJsonResult m_clear_dtc_request();
-cJSON* m_static_pid_request();
+MiddlewareJsonResult m_static_pid_request();
 
 MiddlewareJsonResult m_pid_def_set(cJSON* payload);
 MiddlewareJsonResult m_pid_def_save(cJSON* payload);

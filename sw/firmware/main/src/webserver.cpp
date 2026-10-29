@@ -1088,7 +1088,7 @@ esp_err_t patch_obd2_index_handler(httpd_req_t* req, void* arg)
 
 esp_err_t p_static_pid_index_handler(httpd_req_t* req, void* arg)
 {
-    return send_json_response(req, {m_static_pid_request(), 200});
+    return send_json_response(req, m_static_pid_request());
 }
 
 // ============================================================================

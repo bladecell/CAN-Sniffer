@@ -19,6 +19,15 @@ struct FakeEnv
   bool failSet  = false;
   std::vector<bool> sets;
   int  fcDisarms = 0;
+  bool inflight  = false;                 // a REST OBD request is on the bus
+  bool parsing   = true;                  // what the rx task was last told
+  std::vector<bool> parsingLog;
+  bool obdRequestInFlight() { return inflight; }
+  void setObdParsing(bool on)
+  {
+    parsing = on;
+    parsingLog.push_back(on);
+  }
   bool recorderStartsWhenPollingStops = false;  // models Recorder::start finishing between the check and the switch
 
 
@@ -81,6 +90,105 @@ static void test_raw_mode_does_not_allow_turning_polling_on(void)
   c.set("monitor", false, 1);
   TEST_ASSERT_TRUE(c.allows(kOpPollOn));
   TEST_ASSERT_FALSE(c.allows(kOpRawSend));
+}
+
+// ---- OBD parsing switch (published to the rx task through Env::setObdParsing) ----
+
+static void test_raw_does_not_parse_unless_asked(void)
+{
+  FakeEnv env;
+  Ctl     c(env);
+  TEST_ASSERT_TRUE(env.parsing);
+  TEST_ASSERT_EQUAL(st(Status::ok), st(c.set("raw", false, false, 0)));
+  TEST_ASSERT_FALSE(env.parsing);
+  TEST_ASSERT_FALSE(c.parsing());
+  TEST_ASSERT_EQUAL(st(Status::ok), st(c.set("raw", false, true, 1)));  // changed while staying in Raw: immediate
+  TEST_ASSERT_TRUE(env.parsing);
+  TEST_ASSERT_TRUE(c.parsing());
+  c.set("raw", false, false, 2);
+  TEST_ASSERT_FALSE(env.parsing);
+}
+
+static void test_the_three_argument_set_means_no_parsing(void)
+{
+  FakeEnv env;
+  Ctl     c(env);
+  c.set("raw", true, 0);
+  TEST_ASSERT_FALSE(env.parsing);
+  TEST_ASSERT_TRUE(c.fc());  // flow control is its own switch
+}
+
+static void test_leaving_raw_turns_parsing_back_on_and_forgets_the_option(void)
+{
+  FakeEnv env;
+  Ctl     c(env);
+  c.set("raw", true, true, 0);
+  c.set("monitor", false, false, 1);
+  TEST_ASSERT_TRUE(env.parsing);
+  TEST_ASSERT_FALSE(c.parsing());
+  c.set("raw", false, 2);
+  TEST_ASSERT_FALSE(c.parsing());  // not remembered from the earlier session
+  c.set("monitor", true, true, 3);  // parsing is meaningless in Monitor: stored false, rx parses anyway
+  TEST_ASSERT_TRUE(env.parsing);
+  TEST_ASSERT_FALSE(c.parsing());
+}
+
+static void test_every_revert_path_publishes_parsing_on(void)
+{
+  FakeEnv env;
+  Ctl     c(env);
+  c.set("raw", false, 0);
+  c.reset(true);
+  TEST_ASSERT_TRUE(env.parsing);
+  c.set("raw", false, 0);
+  c.reset(false);
+  TEST_ASSERT_TRUE(env.parsing);
+  c.set("raw", false, 0);
+  c.deferReset(true);
+  c.tick(1);
+  TEST_ASSERT_TRUE(env.parsing);
+  c.set("raw", false, 0);
+  env.running = false;
+  c.tick(2);
+  TEST_ASSERT_TRUE(env.parsing);
+  env.running = true;
+  c.set("raw", false, 0);
+  c.tick(kIdleTimeoutMs);
+  TEST_ASSERT_TRUE(env.parsing);
+}
+
+static void test_a_refused_raw_entry_never_stops_the_parser(void)
+{
+  FakeEnv env;
+  env.running = false;
+  Ctl c(env);
+  c.set("raw", false, 0);
+  env.running  = true;
+  env.recorder = true;
+  c.set("raw", false, 0);
+  env.recorder = false;
+  env.poll     = true;
+  env.failSet  = true;
+  c.set("raw", false, 0);
+  env.failSet = false;
+  env.recorderStartsWhenPollingStops = true;
+  c.set("raw", false, 0);
+  for (const bool on : env.parsingLog) { TEST_ASSERT_TRUE(on); }
+  TEST_ASSERT_TRUE(env.parsing);
+}
+
+static void test_raw_is_refused_while_a_rest_obd_request_is_on_the_bus(void)
+{
+  FakeEnv env;
+  env.poll     = true;
+  env.inflight = true;
+  Ctl c(env);
+  TEST_ASSERT_EQUAL(st(Status::busy), st(c.set("raw", false, 0)));
+  TEST_ASSERT_EQUAL_STRING("monitor", c.name());
+  TEST_ASSERT_TRUE(env.sets.empty());
+  TEST_ASSERT_TRUE(env.parsing);
+  env.inflight = false;
+  TEST_ASSERT_EQUAL(st(Status::ok), st(c.set("raw", false, 1)));
 }
 
 static void test_polling_that_was_off_stays_off_and_is_never_touched(void)
@@ -401,13 +509,15 @@ static void test_pending_restore_is_dropped_when_the_supervisor_is_not_running(v
 
 namespace
 {
-bool body(const char* json, const char*& mode, bool& fc)
+bool body(const char* json, const char*& mode, bool& fc, bool* parsingOut = nullptr)
 {
   cJSON* root = cJSON_Parse(json);
   static char keep[16];
   const char* m = nullptr;
   bool        f = true;
-  const bool  ok = can_mode_http::parseBody(root, m, f);
+  bool        p = true;
+  const bool  ok = can_mode_http::parseBody(root, m, f, p);
+  if (parsingOut != nullptr) { *parsingOut = p; }
   if (ok && m != nullptr) { std::strncpy(keep, m, sizeof(keep) - 1); keep[sizeof(keep) - 1] = 0; mode = keep; } else { mode = nullptr; }
   fc = f;
   cJSON_Delete(root);
@@ -439,7 +549,28 @@ static void test_mode_body_rejects_everything_else(void)
   {
     TEST_ASSERT_FALSE_MESSAGE(body(b, m, fc), b);
   }
-  TEST_ASSERT_FALSE(can_mode_http::parseBody(nullptr, m, fc));
+  bool p = false;
+  TEST_ASSERT_FALSE(can_mode_http::parseBody(nullptr, m, fc, p));
+}
+
+static void test_mode_body_obd_parsing_option(void)
+{
+  const char* m  = nullptr;
+  bool        fc = true, parsing = true;
+  TEST_ASSERT_TRUE(body("{\"mode\":\"raw\"}", m, fc, &parsing));
+  TEST_ASSERT_FALSE(parsing);  // default off
+  TEST_ASSERT_TRUE(body("{\"mode\":\"raw\",\"obd_parsing\":true}", m, fc, &parsing));
+  TEST_ASSERT_TRUE(parsing);
+  TEST_ASSERT_FALSE(fc);  // the two switches are independent
+  TEST_ASSERT_TRUE(body("{\"obd_parsing\":true,\"isotp_flow_control\":true,\"mode\":\"raw\"}", m, fc, &parsing));
+  TEST_ASSERT_TRUE(parsing && fc);
+  const char* bad[] = {"{\"mode\":\"raw\",\"obd_parsing\":1}", "{\"mode\":\"raw\",\"obd_parsing\":\"true\"}",
+                       "{\"mode\":\"raw\",\"obd_parsing\":null}", "{\"mode\":\"raw\",\"obd_parsing\":true,\"obd_parsing\":false}",
+                       "{\"mode\":\"raw\",\"parsing\":true}"};
+  for (const char* b : bad)
+  {
+    TEST_ASSERT_FALSE_MESSAGE(body(b, m, fc, &parsing), b);
+  }
 }
 
 static void test_status_mapping(void)
@@ -460,6 +591,12 @@ extern "C" void run_can_mode_tests(void)
   RUN_TEST(test_starts_in_monitor_and_allows_no_raw_send);
   RUN_TEST(test_raw_turns_polling_off_and_leaving_restores_it);
   RUN_TEST(test_raw_mode_does_not_allow_turning_polling_on);
+  RUN_TEST(test_raw_does_not_parse_unless_asked);
+  RUN_TEST(test_the_three_argument_set_means_no_parsing);
+  RUN_TEST(test_leaving_raw_turns_parsing_back_on_and_forgets_the_option);
+  RUN_TEST(test_every_revert_path_publishes_parsing_on);
+  RUN_TEST(test_a_refused_raw_entry_never_stops_the_parser);
+  RUN_TEST(test_raw_is_refused_while_a_rest_obd_request_is_on_the_bus);
   RUN_TEST(test_polling_that_was_off_stays_off_and_is_never_touched);
   RUN_TEST(test_raw_is_refused_unless_the_supervisor_runs);
   RUN_TEST(test_raw_is_refused_while_recording);
@@ -483,5 +620,6 @@ extern "C" void run_can_mode_tests(void)
   RUN_TEST(test_pending_restore_is_dropped_when_the_supervisor_is_not_running);
   RUN_TEST(test_mode_body_accepts_mode_and_optional_fc);
   RUN_TEST(test_mode_body_rejects_everything_else);
+  RUN_TEST(test_mode_body_obd_parsing_option);
   RUN_TEST(test_status_mapping);
 }

@@ -252,3 +252,8 @@ Decided by the user.
 - Flow control answers only the ECUs the send addressed.
 - Held for the user: refusing `PATCH /obd2 auto_poll:true` while in Raw mode (today Raw sends answer 409 `POLLING_ACTIVE` instead).
 - **Polling in Raw mode (user decision 2026-10-29):** `PATCH /obd2 {"auto_poll":true}` answers 409 `RAW_MODE` while in Raw mode, like `POST /recorder/start`, checked under the mode lock; `false` stays allowed. The send route keeps its `POLLING_ACTIVE` check as a defensive one: today only those two paths (and the recorder, which cannot start in Raw) switch polling on.
+
+## 2026-10-30: Raw mode does not parse; request routes refused outside Monitor (P4.C4)
+User correction of P4.C4: the original brief was a mode that stops polling and OBD parsing, with an option to turn parsing on.
+- Raw mode does not parse received frames unless `obd_parsing` is true (separate switch from `isotp_flow_control`; both default false and reset when Raw ends). The raw stream and the flow-control responder sit before the parser and are unaffected.
+- Every REST route that transmits OBD requests or arms the collectors (`POST /req/static_pid`, `/req/vin`, `/req/dtc`, `/req/clear_dtc`) answers 409 `RAW_MODE` outside Monitor, like `POST /recorder/start` and `PATCH /obd2` auto_poll true. The check runs under the mode lock and a running request blocks Raw entry (503 BUSY), instead of holding the lock for the up to 11 s a DTC request takes.

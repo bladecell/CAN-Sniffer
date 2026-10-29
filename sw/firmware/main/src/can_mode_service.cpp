@@ -1,9 +1,13 @@
 #include "can_mode_service.hpp"
 
+#include <atomic>
+
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include <cstring>
+
 #include "obd2.hpp"
 #include "recorder.hpp"
 #include "supervisor.hpp"
@@ -25,7 +29,18 @@ struct ProdEnv
   bool autoPoll() { return OBD2::getInstance().isAutoPoll(); }
   bool setAutoPoll(bool on) { return OBD2::getInstance().setAutoPoll(on) == ESP_OK; }
   void fcDisarm() { OBD2::getInstance().disarmRawFlowControl(); }
+  bool obdRequestInFlight();
+  void setObdParsing(bool on) { OBD2::getInstance().setParsingEnabled(on); }
 };
+
+std::atomic<uint32_t> gObdRequests{0};  // REST OBD requests running; changed under the mutex (increment) or freely (decrement)
+bool ProdEnv::obdRequestInFlight()
+{
+  return gObdRequests.load() != 0;
+}
+
+// The published state: mode index | flow control << 8 | parsing << 9. Written under the mutex, read without it.
+std::atomic<uint32_t> gPublished{0};
 
 ProdEnv                       gEnv;
 can_mode::Controller<ProdEnv> gController(gEnv);
@@ -84,6 +99,16 @@ void ensureCheckTask()
   }
 }
 
+void publish()
+{
+  uint32_t v = 0;
+  for (size_t i = 0; i < can_mode::Controller<ProdEnv>::count(); ++i)
+  {
+    if (std::strcmp(gController.name(), can_mode::Controller<ProdEnv>::nameAt(i)) == 0) { v = static_cast<uint32_t>(i); }
+  }
+  gPublished.store(v | (gController.fc() ? 0x100u : 0u) | (gController.parsing() ? 0x200u : 0u));
+}
+
 struct Lock
 {
   bool held;
@@ -96,6 +121,7 @@ struct Lock
     if (held)
     {
       ensureCheckTask();
+      publish();
       xSemaphoreGive(mutex());
     }
   }
@@ -114,14 +140,14 @@ const char* modeName(size_t i)
   return can_mode::Controller<ProdEnv>::nameAt(i);
 }
 
-can_mode::Status set(const char* name, bool fc)
+can_mode::Status set(const char* name, bool fc, bool parsing)
 {
   Lock l(1000);
   if (!l.held)
   {
     return can_mode::Status::busy;
   }
-  const can_mode::Status s = gController.set(name, fc, nowMs());
+  const can_mode::Status s = gController.set(name, fc, parsing, nowMs());
   if (s == can_mode::Status::ok)
   {
     ESP_LOGI(TAG, "Mode %s (fc %d)", gController.name(), gController.fc() ? 1 : 0);
@@ -131,8 +157,33 @@ can_mode::Status set(const char* name, bool fc)
 
 Snapshot get()
 {
-  Lock l(200);
-  return l.held ? Snapshot{gController.name(), gController.fc()} : Snapshot{"monitor", false};
+  const uint32_t v = gPublished.load();
+  const size_t   i = v & 0xFF;
+  return Snapshot{i < modeCount() ? modeName(i) : modeName(0), (v & 0x100) != 0, (v & 0x200) != 0};
+}
+
+ObdRequestGuard::ObdRequestGuard() : state_(State::busy)
+{
+  Lock l(1000);
+  if (!l.held)
+  {
+    return;  // fail closed
+  }
+  if (!gController.isDefault())
+  {
+    state_ = State::rawMode;
+    return;
+  }
+  gObdRequests.fetch_add(1);  // under the mutex: Raw entry checks it under the same mutex
+  state_ = State::allowed;
+}
+
+ObdRequestGuard::~ObdRequestGuard()
+{
+  if (state_ == State::allowed)
+  {
+    gObdRequests.fetch_sub(1);
+  }
 }
 
 Run runImpl(Requirement need, bool (*action)(void*, bool), void* ctx)

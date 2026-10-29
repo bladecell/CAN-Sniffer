@@ -14,15 +14,38 @@ namespace can_mode_service
 struct Snapshot
 {
   const char* name;
-  bool        fc;
+  bool        fc;       // isotp_flow_control
+  bool        parsing;  // obd_parsing
 };
 
 // The mode table, for GET /can/mode.
 size_t      modeCount();
 const char* modeName(size_t i);
 
-can_mode::Status set(const char* name, bool fc);
-Snapshot         get();
+can_mode::Status set(const char* name, bool fc, bool parsing);
+// Lock-free: the last state published under the lock, so it is also right while a long action holds the lock.
+Snapshot get();
+
+// Around a REST request that puts OBD frames on the bus or arms the DTC/VIN collectors. Allowed only in Monitor mode; while
+// it lives Raw mode cannot start (it answers busy). Takes the mode lock for the check only, not for the request.
+class ObdRequestGuard
+{
+public:
+  enum class State
+  {
+    allowed,
+    rawMode,  // 409 RAW_MODE
+    busy      // 503 BUSY: the lock was not obtained
+  };
+  ObdRequestGuard();
+  ~ObdRequestGuard();
+  ObdRequestGuard(const ObdRequestGuard&)            = delete;
+  ObdRequestGuard& operator=(const ObdRequestGuard&) = delete;
+  State state() const { return state_; }
+
+private:
+  State state_;
+};
 
 enum class Requirement
 {

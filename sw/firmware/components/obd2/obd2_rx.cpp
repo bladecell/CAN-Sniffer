@@ -82,7 +82,9 @@ void OBD2::receiveTask()
         {
             syncDiagRequest();  // the request may have gone out while this task waited for the frame
             serviceRawFlowControl(f);
-            ret = handleDiagFrame(f) ? ESP_OK : parseRecFrame(f);
+            // Raw mode without obd_parsing: the frame was tapped and may have been answered (flow control) above; nothing
+            // below may touch PID data, collectors or discovery.
+            ret = !parsingEnabled_.load(std::memory_order_relaxed) ? ESP_OK : (handleDiagFrame(f) ? ESP_OK : parseRecFrame(f));
 
             if (ret != ESP_OK)
             {
@@ -125,11 +127,15 @@ void OBD2::receiveTask()
             esp_err_t enqueueResult = req(r);
             if (enqueueResult == ESP_OK)
             {
-                awaiting_response = true;
+                awaiting_response = parsingEnabled_.load();  // without parsing nobody reads the reply; the TX itself still probes the bus
                 response_deadline = now + pdMS_TO_TICKS(HEALTHCHECK_RESPONSE_TIMEOUT_MS);
             }
         }
 
+        if (!parsingEnabled_.load())
+        {
+            awaiting_response = false;  // switched off meanwhile: do not count the unread reply as a missed ping
+        }
         if (awaiting_response)
         {
             if (xSemaphoreTake(healthCheckSemaphore, 0) == pdTRUE)

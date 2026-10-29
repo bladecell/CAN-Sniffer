@@ -8,13 +8,16 @@
 
 namespace can_mode_http
 {
-// {"mode": "<name>", "isotp_flow_control": bool?} and nothing else (unknown keys, the old "fc" included, are rejected). `mode` points into `body`.
-inline bool parseBody(const cJSON* body, const char*& mode, bool& fc)
+// {"mode": "<name>", "isotp_flow_control": bool?, "obd_parsing": bool?} and nothing else (unknown keys, the old "fc"
+// included, are rejected). Both options default to false. `mode` points into `body`.
+inline bool parseBody(const cJSON* body, const char*& mode, bool& fc, bool& parsing)
 {
-  mode = nullptr;
-  fc   = false;
+  mode    = nullptr;
+  fc      = false;
+  parsing = false;
   if (!cJSON_IsObject(body)) { return false; }
-  bool haveFc = false;
+  bool haveFc      = false;
+  bool haveParsing = false;
   for (const cJSON* k = body->child; k != nullptr; k = k->next)
   {
     if (k->string == nullptr) { return false; }
@@ -28,6 +31,12 @@ inline bool parseBody(const cJSON* body, const char*& mode, bool& fc)
       if (!cJSON_IsBool(k)) { return false; }
       fc     = cJSON_IsTrue(k);
       haveFc = true;
+    }
+    else if (std::strcmp(k->string, "obd_parsing") == 0 && !haveParsing)
+    {
+      if (!cJSON_IsBool(k)) { return false; }
+      parsing     = cJSON_IsTrue(k);
+      haveParsing = true;
     }
     else { return false; }
   }
@@ -60,7 +69,7 @@ inline const char* reason(can_mode::Status s)
 {
   switch (s)
   {
-    case can_mode::Status::unknownMode: return "mode must be \"monitor\" or \"raw\"; body {\"mode\":\"raw\",\"isotp_flow_control\":true}";
+    case can_mode::Status::unknownMode: return "mode must be \"monitor\" or \"raw\"; body {\"mode\":\"raw\",\"isotp_flow_control\":true,\"obd_parsing\":true}";
     case can_mode::Status::notRunning: return "The device is not in RUNNING state";
     case can_mode::Status::recording: return "The recorder is recording; stop it first";
     default: return "Polling could not be stopped";

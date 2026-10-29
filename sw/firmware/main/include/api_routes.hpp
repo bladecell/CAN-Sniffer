@@ -62,3 +62,15 @@
   X("/api/v1/settings",             GET,    g_settings_index_handler,        1)                \
   X("/api/v1/settings",             PATCH,  patch_settings_index_handler,    1)
 // clang-format on
+
+// Routes that put an OBD request on the bus or arm the DTC/VIN collectors. They answer 409 RAW_MODE outside Monitor mode
+// (checked under the mode lock; see can_mode_service::ObdRequestGuard), 503 BUSY if the lock is not obtained. Everything under
+// /api/v1/req/ belongs here; test_api_routes.cpp pins the list. Not here, guarded on their own: POST /can/send (needs Raw),
+// POST /recorder/start and PATCH /obd2 auto_poll true (refused in Raw). Read-only GETs of stored data are not requests.
+// clang-format off
+#define OBD_REQUEST_ROUTES(X)                \
+  X("/api/v1/req/static_pid", POST)          \
+  X("/api/v1/req/vin",        POST)          \
+  X("/api/v1/req/dtc",        POST)          \
+  X("/api/v1/req/clear_dtc",  POST)
+// clang-format on

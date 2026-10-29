@@ -142,6 +142,7 @@ esp_err_t OBD2::stopInternal(bool)
         lifecycleState_ = LifecycleState::Stopping;
         stopRequested_ = true;
         rawFc_.disarm();
+        parsingEnabled_.store(true);  // Raw mode without parsing never outlives OBD2
         autoPoll = false;
         recoveryNeeded_ = false;
         pendingDiscover_ = false;

@@ -984,8 +984,31 @@ MiddlewareJsonResult m_dtc_description_get(const char* target_codes[], size_t co
     return json_result(root);
 }
 
+// REST routes that put OBD requests on the bus (OBD_REQUEST_ROUTES in api_routes.hpp) run only in Monitor mode. The guard
+// checks the mode under the mode lock and, while it lives, keeps Raw mode from starting; it is held for the whole request.
+static bool obd_request_refused(const can_mode_service::ObdRequestGuard& guard, MiddlewareJsonResult& out)
+{
+    switch (guard.state())
+    {
+        case can_mode_service::ObdRequestGuard::State::allowed:
+            return false;
+        case can_mode_service::ObdRequestGuard::State::rawMode:
+            out = json_result(json_error_body("Raw CAN mode is active; leave it first", "RAW_MODE"), 409);
+            return true;
+        default:
+            out = json_result(json_error_body("A CAN mode change is in progress", "BUSY"), 503);
+            return true;
+    }
+}
+
 MiddlewareJsonResult m_vin_request()
 {
+    const can_mode_service::ObdRequestGuard modeGuard;
+    MiddlewareJsonResult                    refused = json_result(nullptr, 500);
+    if (obd_request_refused(modeGuard, refused))
+    {
+        return refused;
+    }
     cJSON* root = cJSON_CreateObject();
     if (root == nullptr)
     {
@@ -1008,6 +1031,12 @@ MiddlewareJsonResult m_vin_request()
 
 MiddlewareJsonResult m_dtc_request(int mode)
 {
+    const can_mode_service::ObdRequestGuard modeGuard;
+    MiddlewareJsonResult                    refused = json_result(nullptr, 500);
+    if (obd_request_refused(modeGuard, refused))
+    {
+        return refused;
+    }
     const bool supported_mode = mode == MODE_DTCS || mode == MODE_PENDING_DTCS || mode == MODE_PERMANENT_DTCS;
     if (mode != -1 && !supported_mode)
     {
@@ -1139,6 +1168,12 @@ MiddlewareJsonResult m_dtc_request(int mode)
 
 MiddlewareJsonResult m_clear_dtc_request()
 {
+    const can_mode_service::ObdRequestGuard modeGuard;
+    MiddlewareJsonResult                    refused = json_result(nullptr, 500);
+    if (obd_request_refused(modeGuard, refused))
+    {
+        return refused;
+    }
     cJSON* root = cJSON_CreateObject();
     if (root == nullptr)
     {
@@ -1161,14 +1196,24 @@ MiddlewareJsonResult m_clear_dtc_request()
     return json_result(root, err == ESP_OK ? 200 : status_for_error(err, 503, Fault::Bus));
 }
 
-cJSON* m_static_pid_request()
+MiddlewareJsonResult m_static_pid_request()
 {
+    const can_mode_service::ObdRequestGuard modeGuard;
+    MiddlewareJsonResult                    refused = json_result(nullptr, 500);
+    if (obd_request_refused(modeGuard, refused))
+    {
+        return refused;
+    }
     cJSON* root = cJSON_CreateObject();
+    if (root == nullptr)
+    {
+        return json_result(nullptr, 500);
+    }
     OBD2::getInstance().pollRequestStaticPids();
 
     cJSON_AddStringToObject(root, "status", "success");
 
-    return root;
+    return json_result(root, 200);
 }
 
 esp_err_t pid_stream_packet_get(uint16_t pid, uint8_t* out_packet)
@@ -2120,6 +2165,7 @@ static MiddlewareJsonResult can_mode_state_result()
     const can_mode_service::Snapshot snap = can_mode_service::get();
     cJSON_AddStringToObject(root, "mode", snap.name);
     cJSON_AddBoolToObject(root, "isotp_flow_control", snap.fc);
+    cJSON_AddBoolToObject(root, "obd_parsing", snap.parsing);
     for (size_t i = 0; i < can_mode_service::modeCount(); ++i)
     {
         cJSON* name = cJSON_CreateString(can_mode_service::modeName(i));
@@ -2147,13 +2193,14 @@ MiddlewareJsonResult m_can_mode_get()
 
 MiddlewareJsonResult m_can_mode_set(const cJSON* payload)
 {
-    const char* mode = nullptr;
-    bool        fc   = false;
-    if (!can_mode_http::parseBody(payload, mode, fc))
+    const char* mode    = nullptr;
+    bool        fc      = false;
+    bool        parsing = false;
+    if (!can_mode_http::parseBody(payload, mode, fc, parsing))
     {
         return json_result(json_error_body(can_mode_http::reason(can_mode::Status::unknownMode), "BAD_JSON"), 422);
     }
-    const can_mode::Status status = can_mode_service::set(mode, fc);
+    const can_mode::Status status = can_mode_service::set(mode, fc, parsing);
     if (status != can_mode::Status::ok)
     {
         return json_result(json_error_body(can_mode_http::reason(status), can_mode_http::code(status)),

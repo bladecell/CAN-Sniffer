@@ -71,6 +71,12 @@ public:
     // it is disarmed on any failure.
     esp_err_t sendRawFrame(uint32_t id, const uint8_t* data, uint8_t len, bool armFlowControl);
     void      disarmRawFlowControl() { rawFc_.disarm(); }
+
+    // Raw CAN mode without OBD parsing: while false the receive task still reads and taps every frame (the raw stream, the
+    // ISO-TP flow-control responder) but does not parse it, so PID values, DTC/VIN collectors and discovery see nothing.
+    // A relaxed atomic read per frame, no lock. Default true; OBD2 stop sets it back.
+    void      setParsingEnabled(bool on) { parsingEnabled_.store(on); }
+    bool      isParsingEnabled() const { return parsingEnabled_.load(); }
     esp_err_t requestPID(uint16_t pid);
 
     void      requestSuppPids();
@@ -164,6 +170,7 @@ private:
     std::atomic<uint32_t>    rawTxLo_{0};
     std::atomic<uint32_t>    rawTxHi_{0};
     obd2frame::RawFlowControl rawFc_;
+    std::atomic<bool>        parsingEnabled_{true};
     void      serviceRawFlowControl(const CanDriver::CanFrame& f);
     void      resetDiagCollection();
     void      releaseDiagBus();
