@@ -254,10 +254,7 @@ esp_err_t OBD2::sendRawFrame(uint32_t id, const uint8_t* data, uint8_t len, bool
         rawTxLo_.store(lo);
         rawTxHi_.store(hi);
         rawTxState_.store(kRawTxWaiting);
-        if (armFlowControl)
-        {
-            rawFc_.arm(pdTICKS_TO_MS(xTaskGetTickCount()), obd2frame::RawFlowControl::kDefaultWindowMs, id);
-        }
+        rawFc_.apply(armFlowControl, pdTICKS_TO_MS(xTaskGetTickCount()), obd2frame::RawFlowControl::kDefaultWindowMs, id);
         result = queryMsg(r, false);
         if (result == ESP_OK)
         {

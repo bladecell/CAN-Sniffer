@@ -49,23 +49,76 @@ static void test_each_ecu_is_answered_once_per_arming(void)
 
 static void test_only_first_frames_of_real_multiframe_messages_count(void)
 {
-  RawFlowControl fc;
-  fc.arm(0, 1500, 0x7DF);
   uint32_t      id;
   const uint8_t sf[8]  = {0x06, 0x41, 0x00, 0xBE, 0x3F, 0xA8, 0x13, 0x00};
   const uint8_t cf[8]  = {0x21, 1, 2, 3, 4, 5, 6, 7};
   const uint8_t fcf[8] = {0x30, 0, 0, 0, 0, 0, 0, 0};
   const uint8_t tiny[8] = {0x10, 0x05, 1, 2, 3, 4, 5, 6};  // a "first frame" claiming 5 bytes: not multi-frame
   const uint8_t zero[8] = {0x10, 0x00, 1, 2, 3, 4, 5, 6};
-  TEST_ASSERT_FALSE(feed(fc, 1, 0x7E8, sf, 8, id));
-  TEST_ASSERT_FALSE(feed(fc, 1, 0x7E8, cf, 8, id));
-  TEST_ASSERT_FALSE(feed(fc, 1, 0x7E8, fcf, 8, id));
-  TEST_ASSERT_FALSE(feed(fc, 1, 0x7E8, tiny, 8, id));
-  TEST_ASSERT_FALSE(feed(fc, 1, 0x7E8, zero, 8, id));
-  TEST_ASSERT_FALSE(feed(fc, 1, 0x7E8, kFirstFrame, 1, id));  // truncated frame
-  TEST_ASSERT_FALSE(feed(fc, 1, 0x7E8, nullptr, 8, id));
   const uint8_t min8[8] = {0x10, 0x08, 1, 2, 3, 4, 5, 6};
+  const uint8_t* never[] = {sf, cf, fcf, tiny, zero};
+  for (const uint8_t* d : never)
+  {
+    RawFlowControl fc;
+    fc.arm(0, 1500, 0x7DF);
+    TEST_ASSERT_FALSE(feed(fc, 1, 0x7E8, d, 8, id));
+  }
+  RawFlowControl fc;
+  fc.arm(0, 1500, 0x7DF);
+  TEST_ASSERT_FALSE(feed(fc, 1, 0x7E8, nullptr, 8, id));  // no data: not even counted
   TEST_ASSERT_TRUE(feed(fc, 1, 0x7E8, min8, 8, id));
+  RawFlowControl cut;
+  cut.arm(0, 1500, 0x7DF);
+  TEST_ASSERT_FALSE(feed(cut, 1, 0x7E8, kFirstFrame, 1, id));  // truncated frame
+}
+
+static void test_a_single_frame_reply_consumes_that_ecus_arming(void)
+{
+  // Bench finding: 7DF 02 01 00 with fc armed, both ECUs answer with single frames; a VIN request < 1.5 s later must not
+  // get flow control from the leftover arming.
+  RawFlowControl fc;
+  uint32_t       id;
+  const uint8_t  sf[8] = {0x06, 0x41, 0x00, 0xBE, 0x3F, 0xA8, 0x13, 0x00};
+  fc.arm(0, 1500, 0x7DF);
+  TEST_ASSERT_FALSE(feed(fc, 10, 0x7E8, sf, 8, id));
+  TEST_ASSERT_FALSE(feed(fc, 11, 0x7E9, sf, 8, id));
+  TEST_ASSERT_FALSE(feed(fc, 200, 0x7E8, kFirstFrame, 8, id));
+  TEST_ASSERT_FALSE(feed(fc, 201, 0x7E9, kFirstFrame, 8, id));
+  TEST_ASSERT_TRUE(feed(fc, 202, 0x7EA, kFirstFrame, 8, id));  // an ECU that has not answered yet is still covered
+  TEST_ASSERT_EQUAL_UINT32(0x7E2, id);
+}
+
+static void test_the_responder_stands_down_once_every_addressed_ecu_has_answered(void)
+{
+  RawFlowControl fc;
+  uint32_t       id;
+  fc.arm(0, 1500, 0x7E1);
+  TEST_ASSERT_TRUE(fc.armed());
+  TEST_ASSERT_TRUE(feed(fc, 1, 0x7E9, kFirstFrame, 8, id));
+  TEST_ASSERT_FALSE(fc.armed());
+}
+
+static void test_an_extended_id_frame_does_not_consume_the_arming(void)
+{
+  RawFlowControl fc;
+  uint32_t       id;
+  const uint8_t  sf[8] = {0x06, 0x41, 0x00, 0, 0, 0, 0, 0};
+  fc.arm(0, 1500, 0x7DF);
+  TEST_ASSERT_FALSE(feed(fc, 1, 0x7E8, sf, 8, id, true));
+  TEST_ASSERT_TRUE(feed(fc, 2, 0x7E8, kFirstFrame, 8, id));
+}
+
+static void test_a_send_without_fc_never_leaves_an_older_arming_active(void)
+{
+  RawFlowControl fc;
+  uint32_t       id;
+  fc.apply(true, 0, 1500, 0x7DF);
+  TEST_ASSERT_TRUE(fc.armed());
+  fc.apply(false, 100, 1500, 0x7E0);  // the next raw send has fc off
+  TEST_ASSERT_FALSE(fc.armed());
+  TEST_ASSERT_FALSE(feed(fc, 101, 0x7E8, kFirstFrame, 8, id));
+  fc.apply(true, 200, 1500, 0x7E0);
+  TEST_ASSERT_TRUE(feed(fc, 201, 0x7E8, kFirstFrame, 8, id));
 }
 
 static void test_only_ecu_response_ids_are_answered(void)
@@ -164,6 +217,10 @@ extern "C" void run_raw_flow_control_tests(void)
   RUN_TEST(test_first_frame_from_an_ecu_gets_flow_control_to_the_physical_id);
   RUN_TEST(test_each_ecu_is_answered_once_per_arming);
   RUN_TEST(test_only_first_frames_of_real_multiframe_messages_count);
+  RUN_TEST(test_a_single_frame_reply_consumes_that_ecus_arming);
+  RUN_TEST(test_the_responder_stands_down_once_every_addressed_ecu_has_answered);
+  RUN_TEST(test_an_extended_id_frame_does_not_consume_the_arming);
+  RUN_TEST(test_a_send_without_fc_never_leaves_an_older_arming_active);
   RUN_TEST(test_only_ecu_response_ids_are_answered);
   RUN_TEST(test_window_expires_and_disarm_stops_it);
   RUN_TEST(test_window_is_clock_wrap_safe);

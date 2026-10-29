@@ -184,6 +184,10 @@ public:
     {
       return Status::unknownMode;
     }
+    if (target == cur_ && fc_ && !fc)
+    {
+      env_.fcDisarm();  // staying in the mode but turning flow control off: an arming from an earlier send must not linger
+    }
     if (target != cur_)
     {
       leave(true);

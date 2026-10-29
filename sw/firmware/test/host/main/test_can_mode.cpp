@@ -140,6 +140,21 @@ static void test_raw_again_only_updates_fc_and_keeps_the_saved_polling(void)
   TEST_ASSERT_TRUE(env.poll);
 }
 
+static void test_turning_fc_off_while_staying_in_raw_disarms_the_responder(void)
+{
+  FakeEnv env;
+  Ctl     c(env);
+  c.set("raw", true, 0);
+  TEST_ASSERT_EQUAL(0, env.fcDisarms);
+  c.set("raw", true, 1);  // unchanged: stays armed
+  TEST_ASSERT_EQUAL(0, env.fcDisarms);
+  c.set("raw", false, 2);
+  TEST_ASSERT_EQUAL(1, env.fcDisarms);
+  TEST_ASSERT_FALSE(c.fc());
+  c.set("raw", false, 3);  // already off: nothing more to disarm
+  TEST_ASSERT_EQUAL(1, env.fcDisarms);
+}
+
 static void test_polling_turned_on_by_someone_else_in_raw_is_left_alone(void)
 {
   FakeEnv env;
@@ -437,6 +452,7 @@ extern "C" void run_can_mode_tests(void)
   RUN_TEST(test_polling_that_cannot_be_stopped_keeps_monitor);
   RUN_TEST(test_hostile_mode_names_are_refused);
   RUN_TEST(test_raw_again_only_updates_fc_and_keeps_the_saved_polling);
+  RUN_TEST(test_turning_fc_off_while_staying_in_raw_disarms_the_responder);
   RUN_TEST(test_polling_turned_on_by_someone_else_in_raw_is_left_alone);
   RUN_TEST(test_idle_timeout_reverts_and_activity_extends_it);
   RUN_TEST(test_idle_timeout_is_clock_wrap_safe);
