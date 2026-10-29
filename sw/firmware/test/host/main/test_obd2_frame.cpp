@@ -482,6 +482,24 @@ static void test_clear_dtc_request_is_one_byte_after_the_pci(void)
     expectBytes({0x01, 0x04}, b);  // mode 04 has no parameters: PCI length 1 (the SID only)
 }
 
+
+static void test_health_ping_frame_is_recognised(void)
+{
+    RequestBytes ping = {};
+    buildCurrentDataRequest(0x00, ping);
+    TEST_ASSERT_TRUE(isHealthPingFrame(0x7DF, ping, 8));
+    TEST_ASSERT_FALSE(isHealthPingFrame(0x7E0, ping, 8));  // physical request: not the ping
+    TEST_ASSERT_FALSE(isHealthPingFrame(0x7DF, ping, 3));  // a short "02 01 00" differs in length on the bus
+    TEST_ASSERT_FALSE(isHealthPingFrame(0x7DF, nullptr, 8));
+    RequestBytes other;
+    memcpy(other, ping, sizeof(other));
+    other[2] = 0x0C;
+    TEST_ASSERT_FALSE(isHealthPingFrame(0x7DF, other, 8));
+    memcpy(other, ping, sizeof(other));
+    other[7] ^= 0xFF;
+    TEST_ASSERT_FALSE(isHealthPingFrame(0x7DF, other, 8));
+}
+
 extern "C" void run_obd2_frame_tests(void)
 {
     RUN_TEST(test_single_frame_mode01);
@@ -513,4 +531,5 @@ extern "C" void run_obd2_frame_tests(void)
     RUN_TEST(test_discovery_backoff_doubles_and_caps);
     RUN_TEST(test_exhaustive_first_bytes_and_lengths);
     RUN_TEST(test_random_payloads_never_overrun);
+    RUN_TEST(test_health_ping_frame_is_recognised);
 }

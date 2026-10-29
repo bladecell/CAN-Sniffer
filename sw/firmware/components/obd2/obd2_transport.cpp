@@ -218,9 +218,22 @@ esp_err_t OBD2::sendRawFrame(uint32_t id, const uint8_t* data, uint8_t len, bool
     {
         return ESP_ERR_NOT_FINISHED;
     }
+    // The bus mutex keeps the poll task (and with it the health ping) off the bus for the send, and fails with BUSY while the
+    // receive task holds it for an open ISO-TP session, so a raw frame cannot land inside someone else's exchange.
     esp_err_t result = ESP_ERR_NOT_FINISHED;
+    if (!xBusArbitrationMutex || xSemaphoreTake(xBusArbitrationMutex, pdMS_TO_TICKS(50)) != pdTRUE)
+    {
+        xSemaphoreGive(diagnosticRequestMtx_);
+        return ESP_ERR_NOT_FINISHED;
+    }
     if ((diagRequest_.load() & 0xFF) == 0 && rawTxState_.load() == kRawTxIdle)
     {
+        if (obd2frame::isHealthPingFrame(id, data, len))
+        {
+            // This frame is byte for byte the health ping, so the TX-done of a ping that was queued just before we took the
+            // mutex would confirm it. Give such a ping time to leave (TX task spacing is 4 ms per frame).
+            vTaskDelay(pdMS_TO_TICKS(20));
+        }
         PollRequest r         = {};
         r.id                  = id;
         r.isRaw               = true;
@@ -243,7 +256,7 @@ esp_err_t OBD2::sendRawFrame(uint32_t id, const uint8_t* data, uint8_t len, bool
         rawTxState_.store(kRawTxWaiting);
         if (armFlowControl)
         {
-            rawFc_.arm(pdTICKS_TO_MS(xTaskGetTickCount()), obd2frame::RawFlowControl::kDefaultWindowMs);
+            rawFc_.arm(pdTICKS_TO_MS(xTaskGetTickCount()), obd2frame::RawFlowControl::kDefaultWindowMs, id);
         }
         result = queryMsg(r, false);
         if (result == ESP_OK)
@@ -251,7 +264,7 @@ esp_err_t OBD2::sendRawFrame(uint32_t id, const uint8_t* data, uint8_t len, bool
             result = ESP_ERR_TIMEOUT;
             for (int waited = 0; waited < 250 && !stopRequested_; waited += 2)
             {
-                const uint8_t state = rawTxState_.load();
+                const uint32_t state = rawTxState_.load();
                 if (state == kRawTxSent) { result = ESP_OK; break; }
                 if (state == kRawTxFailed) { result = ESP_FAIL; break; }
                 vTaskDelay(pdMS_TO_TICKS(2) > 0 ? pdMS_TO_TICKS(2) : 1);
@@ -263,6 +276,7 @@ esp_err_t OBD2::sendRawFrame(uint32_t id, const uint8_t* data, uint8_t len, bool
             rawFc_.disarm();
         }
     }
+    xSemaphoreGive(xBusArbitrationMutex);
     xSemaphoreGive(diagnosticRequestMtx_);
     return result;
 }

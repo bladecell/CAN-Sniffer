@@ -164,6 +164,17 @@ void buildCurrentDataRequest(uint8_t pid, RequestBytes& out)
     clearRequest(out, {0x02, MODE_CURRENT_DATA, pid});
 }
 
+bool isHealthPingFrame(uint32_t id, const uint8_t* data, size_t length)
+{
+    if (id != 0x7DF || data == nullptr || length != CAN_DATA_MAX)
+    {
+        return false;
+    }
+    RequestBytes ping;
+    buildCurrentDataRequest(0x00, ping);  // PID_PIDS_SUPPORTED_01_20, as the receive task sends it
+    return memcmp(ping, data, CAN_DATA_MAX) == 0;
+}
+
 void buildFlowControl(RequestBytes& out)
 {
     clearRequest(out, {0x30});

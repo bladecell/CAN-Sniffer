@@ -9,6 +9,7 @@
 //
 // Env: bool supervisorRunning(); bool recorderBusy(); bool autoPoll(); bool setAutoPoll(bool on) (true = done);
 //      void fcDisarm().
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -62,6 +63,25 @@ bool exitMonitor(Env&, Saved&)
   return true;
 }
 
+// Switch polling back on, but only if it is off now: if someone turned it on meanwhile there is nothing to undo.
+template <typename Env>
+bool restorePolling(Env& env, Saved& saved)
+{
+  if (!saved.autoPoll)
+  {
+    saved.restorePending = false;
+    return true;
+  }
+  if (env.autoPoll() || env.setAutoPoll(true))
+  {
+    saved.restorePending = false;
+    saved.autoPoll       = false;
+    return true;
+  }
+  saved.restorePending = true;
+  return false;
+}
+
 template <typename Env>
 Status enterRaw(Env& env, Saved& saved)
 {
@@ -81,26 +101,13 @@ Status enterRaw(Env& env, Saved& saved)
   {
     return Status::busy;
   }
+  if (env.recorderBusy())
+  {
+    // A recording started between the check and the switch: it owns polling, give it back and stay in Monitor.
+    restorePolling(env, saved);
+    return Status::recording;
+  }
   return Status::ok;
-}
-
-// Switch polling back on, but only if it is off now: if someone turned it on meanwhile there is nothing to undo.
-template <typename Env>
-bool restorePolling(Env& env, Saved& saved)
-{
-  if (!saved.autoPoll)
-  {
-    saved.restorePending = false;
-    return true;
-  }
-  if (env.autoPoll() || env.setAutoPoll(true))
-  {
-    saved.restorePending = false;
-    saved.autoPoll       = false;
-    return true;
-  }
-  saved.restorePending = true;
-  return false;
 }
 
 template <typename Env>
@@ -141,9 +148,29 @@ public:
   bool        allows(uint8_t op) const { return (modeTable<Env>()[cur_].ops & op) != 0; }
   bool        isDefault() const { return cur_ == 0; }
 
+  // Work for tick() while this is true: Raw mode (idle timeout, supervisor state), a failed restore, a deferred reset.
+  bool needsTick() const { return cur_ != 0 || saved_.restorePending || deferred_.load() != 0; }
+
+  // For a caller that could not get the lock that serialises this controller: the reset is remembered (lock-free) and
+  // applied by the next set() or tick().
+  void deferReset(bool restore)
+  {
+    int expected = 0;
+    deferred_.compare_exchange_strong(expected, restore ? 1 : 2);
+  }
+  void applyDeferred()
+  {
+    const int pending = deferred_.exchange(0);
+    if (pending != 0)
+    {
+      reset(pending == 1);
+    }
+  }
+
   // `name` is compared exactly. `fc` only means something in a mode that allows raw sends.
   Status set(const char* name, bool fc, uint32_t nowMs)
   {
+    applyDeferred();
     size_t target = count();
     for (size_t i = 0; name != nullptr && i < count(); i++)
     {
@@ -177,14 +204,13 @@ public:
   // About once a second. Reverts an idle Raw mode, or one that outlived RUNNING, and retries a failed restore.
   void tick(uint32_t nowMs)
   {
+    applyDeferred();
     const bool running = env_.supervisorRunning();
     if (cur_ != 0)
     {
-      if (!running)
-      {
-        reset(false);  // OBD2 is going down; its own stop clears the polling flag
-      }
-      else if (static_cast<uint32_t>(nowMs - lastActivity_) >= kIdleTimeoutMs)
+      // Not RUNNING: the bus dropped (OBD2 stays up and polling must come back) or OBD2 is stopping (the restore is refused
+      // and dropped below). Idle: nobody has used Raw mode for kIdleTimeoutMs. Either way: best-effort restore.
+      if (!running || static_cast<uint32_t>(nowMs - lastActivity_) >= kIdleTimeoutMs)
       {
         reset(true);
       }
@@ -202,7 +228,7 @@ public:
     }
   }
 
-  // Back to Monitor (last WebSocket client closed, idle, sleep, stop). restore = false when the polling flag must not be
+  // Back to Monitor (last WebSocket client closed, idle, bus drop, stop). restore = false when the polling flag must not be
   // touched because OBD2 is stopping.
   void reset(bool restore)
   {
@@ -237,5 +263,6 @@ private:
   bool     fc_           = false;
   uint32_t lastActivity_ = 0;
   Saved    saved_;
+  std::atomic<int> deferred_{0};  // 0 none, 1 reset with restore, 2 reset without
 };
 }  // namespace can_mode

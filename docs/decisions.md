@@ -244,3 +244,10 @@ Decided by the user.
 - **Modes:** a table-driven mode controller outside the supervisor (Monitor, Raw; more later: sniffer, ELM327 and SavvyCAN bridges), `POST/GET /api/v1/can/mode`, one mode for the whole device. Raw needs the supervisor in RUNNING, refuses with 409 while the recorder is recording (the recorder is **not** paused: this replaces the D4 line "recorder paused in raw modes"), saves auto-poll and turns it off, and `POST /recorder/start` is refused with 409 in Raw mode. Reverts to Monitor on the last WebSocket close, after 300 s without activity, when the supervisor leaves RUNNING, and when OBD2 or the web server stops.
 - **Flow control option:** `fc` (default false). With it, a raw send arms a 1.5 s responder that answers the first frame of an ECU reply with `30 00 00`; no payload is kept and the DTC/VIN collector is not involved. The page reassembles from the stream.
 - **Health ping:** kept in Raw mode (it is the only liveness probe with polling off); it shows as a TX frame.
+
+## 2026-10-29: CAN raw send, review fixes (P4.C4)
+- The mode lock covers the actions that depend on the mode (`POST /can/send` checks and send, `POST /recorder/start`), and a lock that cannot be had fails closed with 503 `BUSY`. Reason: Raw entry and a recorder start could interleave and leave a recording with polling off.
+- Leaving RUNNING (bus drop) restores polling best-effort; only a stopping OBD2 skips it. The idle timeout and restore retry run in their own small task, not in the WebSocket stream task, so they work without any client. Refusing Raw without a WebSocket client was rejected.
+- A raw send takes the bus mutex (50 ms wait): no interleaving with polls or open ISO-TP exchanges, and the health ping is held off. Alternative considered: only the mode lock. Rejected because it does not stop the poll task. After `TX_TIMEOUT` the frame may still be sent.
+- Flow control answers only the ECUs the send addressed.
+- Held for the user: refusing `PATCH /obd2 auto_poll:true` while in Raw mode (today Raw sends answer 409 `POLLING_ACTIVE` instead).

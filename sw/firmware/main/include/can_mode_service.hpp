@@ -1,7 +1,9 @@
 #pragma once
 
 // The device-wide CAN view mode (can_mode.hpp wired to the supervisor, the recorder and OBD2). One mode for the whole
-// device. Callable from REST workers, the HTTP task and the 1 Hz stream task; a mutex serialises them.
+// device. Callable from REST workers and the HTTP task; one mutex serialises every mode change and every action that
+// depends on the mode (run()), and a small task (started with Raw mode, gone when there is nothing left to watch) does
+// the periodic work, whether or not any WebSocket is open.
 #include <cstddef>
 #include <cstdint>
 
@@ -21,16 +23,31 @@ const char* modeName(size_t i);
 
 can_mode::Status set(const char* name, bool fc);
 Snapshot         get();
-// Raw sends are allowed now (Raw mode), and the fc option of the current mode.
-bool allowsRawSend();
-bool fcEnabled();
-// A raw send happened: restarts the idle timeout.
-void touch();
-// True in any mode other than the default. POST /recorder/start is refused then.
-bool isRaw();
-// 1 Hz: idle timeout, supervisor left RUNNING, failed restore retry.
-void tick();
+
+enum class Requirement
+{
+  monitor,  // the default mode (POST /recorder/start)
+  rawSend   // a mode that allows raw sends (POST /can/send)
+};
+enum class Run
+{
+  ran,         // the action ran
+  notAllowed,  // the mode does not fit; nothing ran
+  busy         // the mode lock could not be had in time; nothing ran
+};
+
+// Runs `action(fc)` with the mode lock held, if the current mode fits `need`, so the mode cannot change while it runs and a
+// mode switch cannot slip in between the mode check and the action. fc is the mode's flow-control option. The action must
+// not call back into this service. It returns true if it counts as activity (restarts the idle timeout).
+Run runImpl(Requirement need, bool (*action)(void* ctx, bool fc), void* ctx);
+template <typename F>
+Run run(Requirement need, F&& action)
+{
+  return runImpl(
+      need, [](void* ctx, bool fc) { return (*static_cast<F*>(ctx))(fc); }, &action);
+}
+
 // Back to Monitor: last WebSocket client closed (restore = true), or a component stopping (restore = false when OBD2 goes
-// down with it). If the mutex is busy the request is remembered and applied by the next call or tick.
+// down with it). If the lock is busy the request is remembered and applied by the next set() or periodic check.
 void reset(bool restore);
 }  // namespace can_mode_service

@@ -1975,7 +1975,6 @@ static void WSDataStreamTask(void* pvParameters)
             }
             if (wsStreamingEnabled.load())
             {
-                can_mode_service::tick();  // idle timeout of Raw mode, supervisor left RUNNING
                 ws_send_can_status();
                 ws_send_recorder_state();
             }

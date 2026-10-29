@@ -1,7 +1,5 @@
 #include "can_mode_service.hpp"
 
-#include <atomic>
-
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -13,6 +11,8 @@
 namespace
 {
 const char* const TAG = "CAN_MODE";
+
+constexpr uint32_t kCheckPeriodMs = 1000;
 
 struct ProdEnv
 {
@@ -27,8 +27,10 @@ struct ProdEnv
   void fcDisarm() { OBD2::getInstance().disarmRawFlowControl(); }
 };
 
-ProdEnv                          gEnv;
-can_mode::Controller<ProdEnv>    gController(gEnv);
+ProdEnv                       gEnv;
+can_mode::Controller<ProdEnv> gController(gEnv);
+bool                          gCheckTaskRunning = false;  // changed with the mutex held only
+
 // Created on first use, from static storage: no allocation that could fail.
 SemaphoreHandle_t mutex()
 {
@@ -36,20 +38,49 @@ SemaphoreHandle_t mutex()
   static SemaphoreHandle_t handle = xSemaphoreCreateMutexStatic(&buf);
   return handle;
 }
-std::atomic<int>                 gRevertPending{0};  // 0 none, 1 revert and restore, 2 revert without restore
 
 uint32_t nowMs()
 {
   return static_cast<uint32_t>(pdTICKS_TO_MS(xTaskGetTickCount()));
 }
 
-// Caller holds the mutex.
-void applyPendingRevert()
+// Once a second while there is something to watch: the idle timeout of Raw mode, the supervisor leaving RUNNING, a restore
+// that failed, a reset that could not take the lock. Leaves by itself when the controller needs nothing, so Monitor mode
+// costs no task, and it needs no WebSocket. Holds nothing across its delay, so a stop or sleep never waits for it.
+void checkTask(void*)
 {
-  const int pending = gRevertPending.exchange(0);
-  if (pending != 0)
+  for (;;)
   {
-    gController.reset(pending == 1);
+    vTaskDelay(pdMS_TO_TICKS(kCheckPeriodMs));
+    if (xSemaphoreTake(mutex(), pdMS_TO_TICKS(500)) != pdTRUE)
+    {
+      continue;
+    }
+    gController.tick(nowMs());
+    if (!gController.needsTick())
+    {
+      gCheckTaskRunning = false;
+      xSemaphoreGive(mutex());
+      vTaskDelete(nullptr);
+    }
+    xSemaphoreGive(mutex());
+  }
+}
+
+// Mutex held.
+void ensureCheckTask()
+{
+  if (gCheckTaskRunning || !gController.needsTick())
+  {
+    return;
+  }
+  if (xTaskCreate(checkTask, "can_mode", 3072, nullptr, tskIDLE_PRIORITY + 1, nullptr) == pdPASS)
+  {
+    gCheckTaskRunning = true;
+  }
+  else
+  {
+    ESP_LOGW(TAG, "No task for the Raw mode idle timeout");
   }
 }
 
@@ -58,11 +89,15 @@ struct Lock
   bool held;
   explicit Lock(uint32_t waitMs) : held(xSemaphoreTake(mutex(), pdMS_TO_TICKS(waitMs)) == pdTRUE)
   {
-    if (held) { applyPendingRevert(); }
+    if (held) { gController.applyDeferred(); }
   }
   ~Lock()
   {
-    if (held) { xSemaphoreGive(mutex()); }
+    if (held)
+    {
+      ensureCheckTask();
+      xSemaphoreGive(mutex());
+    }
   }
 };
 }  // namespace
@@ -100,46 +135,35 @@ Snapshot get()
   return l.held ? Snapshot{gController.name(), gController.fc()} : Snapshot{"monitor", false};
 }
 
-bool allowsRawSend()
+Run runImpl(Requirement need, bool (*action)(void*, bool), void* ctx)
 {
-  Lock l(200);
-  return l.held && gController.allows(can_mode::kOpRawSend);
-}
-
-bool fcEnabled()
-{
-  Lock l(200);
-  return l.held && gController.fc();
-}
-
-void touch()
-{
-  Lock l(200);
-  if (l.held) { gController.touch(nowMs()); }
-}
-
-bool isRaw()
-{
-  Lock l(200);
-  return l.held && !gController.isDefault();
-}
-
-void tick()
-{
-  Lock l(50);
-  if (l.held) { gController.tick(nowMs()); }
+  Lock l(1000);
+  if (!l.held)
+  {
+    return Run::busy;  // fail closed: the caller refuses instead of guessing the mode
+  }
+  const bool fits = need == Requirement::monitor ? gController.isDefault() : gController.allows(can_mode::kOpRawSend);
+  if (!fits)
+  {
+    return Run::notAllowed;
+  }
+  if (action(ctx, gController.fc()) && need == Requirement::rawSend)
+  {
+    gController.touch(nowMs());
+  }
+  return Run::ran;
 }
 
 void reset(bool restore)
 {
   if (xSemaphoreTake(mutex(), pdMS_TO_TICKS(150)) == pdTRUE)
   {
-    gRevertPending.store(0);
+    gController.applyDeferred();
     gController.reset(restore);
+    ensureCheckTask();
     xSemaphoreGive(mutex());
     return;
   }
-  int expected = 0;
-  gRevertPending.compare_exchange_strong(expected, restore ? 1 : 2);  // applied by whoever takes the mutex next
+  gController.deferReset(restore);  // applied by whoever takes the mutex next; the check task is running in Raw mode
 }
 }  // namespace can_mode_service

@@ -64,8 +64,11 @@ public:
     // the frame as given (1 to 8 bytes) and returns once the TX-done hook saw that very frame leave the controller, at most
     // 250 ms. Takes the diagnostic request slot without waiting, so it never runs alongside a DTC or VIN request.
     // ESP_ERR_INVALID_STATE: stopped or bus down. ESP_ERR_NOT_FINISHED: slot busy. ESP_ERR_INVALID_ARG: length.
-    // ESP_FAIL: the TX path refused or failed the frame. ESP_ERR_TIMEOUT: not confirmed in time. With armFlowControl the
-    // receive task answers the first frame of a multi-frame reply for 1.5 s (RawFlowControl); it is disarmed on any failure.
+    // ESP_FAIL: the TX path refused or failed the frame. ESP_ERR_TIMEOUT: not confirmed in time; the frame was queued and may
+    // still go out later (a queued frame cannot be withdrawn). Also takes the bus mutex (50 ms wait, NOT_FINISHED on failure),
+    // so it never interleaves with a poll or an open ISO-TP session. With armFlowControl the receive task answers the first
+    // frame of a multi-frame reply for 1.5 s (RawFlowControl; only the ECU a physical send addressed, every ECU after 0x7DF);
+    // it is disarmed on any failure.
     esp_err_t sendRawFrame(uint32_t id, const uint8_t* data, uint8_t len, bool armFlowControl);
     void      disarmRawFlowControl() { rawFc_.disarm(); }
     esp_err_t requestPID(uint16_t pid);
@@ -154,10 +157,10 @@ private:
     uint32_t                 diagGen_         = 0;  // requester side, under diagnosticRequestMtx_
     uint32_t                 diagSeenRequest_ = 0;
     // Raw send (sendRawFrame): the TX-done ISR matches the frame it is waiting for by id, length and bytes.
-    static constexpr uint8_t kRawTxIdle = 0, kRawTxWaiting = 1, kRawTxSent = 2, kRawTxFailed = 3;
-    std::atomic<uint8_t>     rawTxState_{kRawTxIdle};
+    static constexpr uint32_t kRawTxIdle = 0, kRawTxWaiting = 1, kRawTxSent = 2, kRawTxFailed = 3;
+    std::atomic<uint32_t>    rawTxState_{kRawTxIdle};  // 32-bit like every atomic the TX-done ISR touches (no library call for 8-bit ones)
     std::atomic<uint32_t>    rawTxId_{0};
-    std::atomic<uint8_t>     rawTxLen_{0};
+    std::atomic<uint32_t>    rawTxLen_{0};
     std::atomic<uint32_t>    rawTxLo_{0};
     std::atomic<uint32_t>    rawTxHi_{0};
     obd2frame::RawFlowControl rawFc_;

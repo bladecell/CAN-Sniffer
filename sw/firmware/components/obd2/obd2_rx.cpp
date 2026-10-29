@@ -101,7 +101,8 @@ void OBD2::receiveTask()
         // poll queue if the ECU stops responding (e.g. ignition turned off).
         TickType_t now = xTaskGetTickCount();
 
-        if (now - last_ping_ms >= pdMS_TO_TICKS(OBD2_HEALTHCHECK_PING_PERIOD_MS))
+        // Not while a raw send waits for its TX-done: the ping can be byte for byte the user's frame.
+        if (now - last_ping_ms >= pdMS_TO_TICKS(OBD2_HEALTHCHECK_PING_PERIOD_MS) && rawTxState_.load() == kRawTxIdle)
         {
             last_ping_ms = now;
 

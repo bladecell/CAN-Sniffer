@@ -2023,12 +2023,8 @@ MiddlewareJsonResult m_recorder_get()
     return json_result(root, root != nullptr ? 200 : 500);
 }
 
-MiddlewareJsonResult m_recorder_start(const recorder_core::PidSel* pids, size_t n)
+static MiddlewareJsonResult recorder_start_unchecked(const recorder_core::PidSel* pids, size_t n)
 {
-    if (can_mode_service::isRaw())
-    {
-        return json_result(json_error_body("Raw CAN mode is active; leave it first", "RAW_MODE"), 409);
-    }
     Recorder::Config config;
     if (n > recorder_core::kMaxPids || (n > 0 && pids == nullptr))
     {
@@ -2059,6 +2055,28 @@ MiddlewareJsonResult m_recorder_start(const recorder_core::PidSel* pids, size_t 
     if (err == ESP_ERR_NOT_ALLOWED)
     {
         result.retry_after_s = (Recorder::getInstance().startRetryAfterMs() + 999) / 1000;  // whole seconds, rounded up
+    }
+    return result;
+}
+
+// Runs under the mode lock, so a switch to Raw cannot slip in between the mode check and the start (Recorder::start turns
+// polling on before its state shows Recording; Raw entry would otherwise see an idle recorder and switch polling off).
+MiddlewareJsonResult m_recorder_start(const recorder_core::PidSel* pids, size_t n)
+{
+    MiddlewareJsonResult result = json_result(nullptr, 500);
+    const auto           gate   = can_mode_service::run(can_mode_service::Requirement::monitor,
+                                                  [&](bool)
+                                                  {
+                                                      result = recorder_start_unchecked(pids, n);
+                                                      return false;
+                                                  });
+    if (gate == can_mode_service::Run::notAllowed)
+    {
+        return json_result(json_error_body("Raw CAN mode is active; leave it first", "RAW_MODE"), 409);
+    }
+    if (gate == can_mode_service::Run::busy)
+    {
+        return json_result(json_error_body("A CAN mode change is in progress", "BUSY"), 503);
     }
     return result;
 }
@@ -2128,51 +2146,69 @@ MiddlewareJsonResult m_can_send(const cJSON* payload)
     {
         return json_result(json_error_body(raw_tx::reason(parsed), raw_tx::code(parsed)), raw_tx::httpStatus(parsed));
     }
-    if (!can_mode_service::allowsRawSend())
+
+    // The mode check, the recorder and polling checks and the send all run under the mode lock: Raw mode cannot end, and a
+    // recording or polling cannot start, between the checks and the frame.
+    MiddlewareJsonResult result = json_result(nullptr, 500);
+    const auto           gate   = can_mode_service::run(
+        can_mode_service::Requirement::rawSend,
+        [&](bool fc)
+        {
+            const Recorder::State recorderState = Recorder::getInstance().getState();
+            if (recorderState == Recorder::State::Recording || recorderState == Recorder::State::Stopping)
+            {
+                result = json_result(json_error_body("The recorder is recording; stop it first", "RECORDING"), 409);
+                return false;
+            }
+            if (OBD2::getInstance().isAutoPoll())
+            {
+                result = json_result(json_error_body("Polling is on; Raw mode needs it off", "POLLING_ACTIVE"), 409);
+                return false;
+            }
+            uint32_t suppressed = 0;
+            if (!sendGate.allow(static_cast<uint32_t>(esp_timer_get_time() / 1000), suppressed))
+            {
+                result               = json_result(json_error_body("One raw send per 250 ms", "RATE_LIMITED"), 429);
+                result.retry_after_s = 1;
+                return false;
+            }
+            const esp_err_t err = OBD2::getInstance().sendRawFrame(req.id, req.data, req.len, fc);
+            if (err != ESP_OK)
+            {
+                // TX_TIMEOUT: the frame was queued and may still go out later; it cannot be withdrawn.
+                const char* reason = err == ESP_ERR_NOT_FINISHED  ? "A diagnostic request or the bus is busy"
+                                     : err == ESP_ERR_TIMEOUT     ? "The frame was not confirmed in time and may still be sent"
+                                     : err == ESP_FAIL            ? "The frame could not be sent"
+                                     : err == ESP_ERR_INVALID_ARG ? "Invalid frame"
+                                                                  : "CAN bus is down";
+                const char* code   = err == ESP_ERR_NOT_FINISHED  ? "BUSY"
+                                     : err == ESP_ERR_TIMEOUT     ? "TX_TIMEOUT"
+                                     : err == ESP_FAIL            ? "TX_FAILED"
+                                     : err == ESP_ERR_INVALID_ARG ? "BAD_DATA"
+                                                                  : "BUS_DOWN";
+                result               = json_result(json_error_body(reason, code), err == ESP_ERR_INVALID_ARG ? 422 : 503);
+                result.retry_after_s = err == ESP_ERR_NOT_FINISHED ? 1 : 0;
+                return false;
+            }
+            cJSON* root = cJSON_CreateObject();
+            if (root == nullptr)
+            {
+                result = json_result(nullptr, 500);
+                return true;
+            }
+            cJSON_AddStringToObject(root, "status", "sent");
+            result = json_result(root, 200);
+            return true;  // counts as activity for the idle timeout
+        });
+    if (gate == can_mode_service::Run::notAllowed)
     {
         return json_result(json_error_body("Enter Raw mode first (POST /api/v1/can/mode)", "NOT_RAW_MODE"), 409);
     }
-    const Recorder::State recorderState = Recorder::getInstance().getState();
-    if (recorderState == Recorder::State::Recording || recorderState == Recorder::State::Stopping)
+    if (gate == can_mode_service::Run::busy)
     {
-        return json_result(json_error_body("The recorder is recording; stop it first", "RECORDING"), 409);
+        return json_result(json_error_body("A CAN mode change is in progress", "BUSY"), 503);
     }
-    if (OBD2::getInstance().isAutoPoll())
-    {
-        return json_result(json_error_body("Polling is on; Raw mode needs it off", "POLLING_ACTIVE"), 409);
-    }
-    uint32_t suppressed = 0;
-    if (!sendGate.allow(static_cast<uint32_t>(esp_timer_get_time() / 1000), suppressed))
-    {
-        MiddlewareJsonResult limited = json_result(json_error_body("One raw send per 250 ms", "RATE_LIMITED"), 429);
-        limited.retry_after_s        = 1;
-        return limited;
-    }
-    const esp_err_t err = OBD2::getInstance().sendRawFrame(req.id, req.data, req.len, can_mode_service::fcEnabled());
-    if (err != ESP_OK)
-    {
-        const char* reason = err == ESP_ERR_NOT_FINISHED  ? "A diagnostic request is running"
-                             : err == ESP_ERR_TIMEOUT     ? "The frame was not sent in time"
-                             : err == ESP_FAIL            ? "The frame could not be sent"
-                             : err == ESP_ERR_INVALID_ARG ? "Invalid frame"
-                                                          : "CAN bus is down";
-        const char* code   = err == ESP_ERR_NOT_FINISHED  ? "BUSY"
-                             : err == ESP_ERR_TIMEOUT     ? "TX_TIMEOUT"
-                             : err == ESP_FAIL            ? "TX_FAILED"
-                             : err == ESP_ERR_INVALID_ARG ? "BAD_DATA"
-                                                          : "BUS_DOWN";
-        MiddlewareJsonResult failed = json_result(json_error_body(reason, code), err == ESP_ERR_INVALID_ARG ? 422 : 503);
-        failed.retry_after_s        = err == ESP_ERR_NOT_FINISHED ? 1 : 0;
-        return failed;
-    }
-    can_mode_service::touch();
-    cJSON* root = cJSON_CreateObject();
-    if (root == nullptr)
-    {
-        return json_result(nullptr, 500);
-    }
-    cJSON_AddStringToObject(root, "status", "sent");
-    return json_result(root, 200);
+    return result;
 }
 
 MiddlewareJsonResult m_recorder_stop()

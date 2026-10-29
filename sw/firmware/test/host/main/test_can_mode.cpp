@@ -19,6 +19,8 @@ struct FakeEnv
   bool failSet  = false;
   std::vector<bool> sets;
   int  fcDisarms = 0;
+  bool recorderStartsWhenPollingStops = false;  // models Recorder::start finishing between the check and the switch
+
 
   bool supervisorRunning() { return running; }
   bool recorderBusy() { return recorder; }
@@ -28,6 +30,7 @@ struct FakeEnv
     sets.push_back(on);
     if (failSet) { return false; }
     poll = on;
+    if (!on && recorderStartsWhenPollingStops) { recorder = true; }
     return true;
   }
   void fcDisarm() { fcDisarms++; }
@@ -176,8 +179,9 @@ static void test_idle_timeout_is_clock_wrap_safe(void)
   TEST_ASSERT_EQUAL_STRING("monitor", c.name());
 }
 
-static void test_supervisor_leaving_running_reverts_without_touching_polling(void)
+static void test_supervisor_leaving_running_reverts_and_restores_polling_best_effort(void)
 {
+  // RUNNING -> NOT_CONNECTED (bus drop) keeps OBD2 alive: polling must come back.
   FakeEnv env;
   env.poll = true;
   Ctl c(env);
@@ -186,9 +190,117 @@ static void test_supervisor_leaving_running_reverts_without_touching_polling(voi
   env.running = false;
   c.tick(10);
   TEST_ASSERT_EQUAL_STRING("monitor", c.name());
-  TEST_ASSERT_TRUE(env.sets.empty());  // OBD2 is going down, nothing to restore on
+  TEST_ASSERT_EQUAL(1, env.sets.size());
+  TEST_ASSERT_TRUE(env.sets[0]);
+  TEST_ASSERT_TRUE(env.poll);
   TEST_ASSERT_EQUAL(1, env.fcDisarms);
   TEST_ASSERT_FALSE(c.fc());
+}
+
+static void test_supervisor_leaving_running_with_obd_down_leaves_no_pending_work(void)
+{
+  FakeEnv env;
+  env.poll = true;
+  Ctl c(env);
+  c.set("raw", false, 0);
+  env.running = false;
+  env.failSet = true;  // OBD2 stopped: the restore is refused
+  c.tick(10);
+  TEST_ASSERT_EQUAL_STRING("monitor", c.name());
+  TEST_ASSERT_FALSE(c.needsTick());  // the refused restore is forgotten, not applied later behind OBD2's back
+  env.running = true;
+  env.failSet = false;
+  env.sets.clear();
+  c.tick(2000);
+  TEST_ASSERT_TRUE(env.sets.empty());
+}
+
+static void test_recording_that_starts_during_the_switch_rolls_raw_back(void)
+{
+  FakeEnv env;
+  env.poll                          = true;
+  env.recorderStartsWhenPollingStops = true;
+  Ctl c(env);
+  TEST_ASSERT_EQUAL(st(Status::recording), st(c.set("raw", false, 0)));
+  TEST_ASSERT_EQUAL_STRING("monitor", c.name());
+  TEST_ASSERT_TRUE(env.poll);  // the recording keeps its polling
+  TEST_ASSERT_FALSE(c.needsTick());
+}
+
+static void test_needs_tick_while_raw_or_a_restore_is_pending(void)
+{
+  FakeEnv env;
+  env.poll = true;
+  Ctl c(env);
+  TEST_ASSERT_FALSE(c.needsTick());
+  c.set("raw", false, 0);
+  TEST_ASSERT_TRUE(c.needsTick());
+  env.failSet = true;
+  c.reset(true);
+  TEST_ASSERT_TRUE(c.needsTick());  // restore pending
+  env.failSet = false;
+  c.tick(5);
+  TEST_ASSERT_FALSE(c.needsTick());
+  TEST_ASSERT_TRUE(env.poll);
+}
+
+static void test_idle_timeout_needs_nothing_but_tick(void)
+{
+  // No WebSocket anywhere in this model: the periodic tick alone ends an idle Raw mode.
+  FakeEnv env;
+  env.poll = true;
+  Ctl c(env);
+  c.set("raw", true, 0);
+  for (uint32_t t = 1000; t < kIdleTimeoutMs; t += 1000) { c.tick(t); }
+  TEST_ASSERT_EQUAL_STRING("raw", c.name());
+  c.tick(kIdleTimeoutMs);
+  TEST_ASSERT_EQUAL_STRING("monitor", c.name());
+  TEST_ASSERT_TRUE(env.poll);
+  TEST_ASSERT_FALSE(c.needsTick());
+}
+
+static void test_deferred_reset_is_applied_by_the_next_tick(void)
+{
+  FakeEnv env;
+  env.poll = true;
+  Ctl c(env);
+  c.set("raw", false, 0);
+  c.deferReset(true);  // the caller could not get the lock
+  TEST_ASSERT_EQUAL_STRING("raw", c.name());
+  c.tick(10);
+  TEST_ASSERT_EQUAL_STRING("monitor", c.name());
+  TEST_ASSERT_TRUE(env.poll);
+}
+
+static void test_deferred_reset_runs_before_the_next_mode_change(void)
+{
+  FakeEnv env;
+  env.poll = true;
+  Ctl c(env);
+  c.set("raw", true, 0);
+  c.deferReset(true);
+  TEST_ASSERT_EQUAL(st(Status::ok), st(c.set("raw", false, 5)));  // reverted first, then entered again
+  TEST_ASSERT_EQUAL_STRING("raw", c.name());
+  TEST_ASSERT_FALSE(c.fc());
+  TEST_ASSERT_FALSE(env.poll);
+  c.set("monitor", false, 6);
+  TEST_ASSERT_TRUE(env.poll);
+}
+
+static void test_deferred_reset_without_restore_leaves_polling_alone(void)
+{
+  FakeEnv env;
+  env.poll = true;
+  Ctl c(env);
+  c.set("raw", false, 0);
+  env.sets.clear();
+  c.deferReset(false);
+  c.tick(10);
+  TEST_ASSERT_EQUAL_STRING("monitor", c.name());
+  TEST_ASSERT_TRUE(env.sets.empty());
+  c.deferReset(true);  // nothing to revert: harmless
+  c.tick(20);
+  TEST_ASSERT_EQUAL_STRING("monitor", c.name());
 }
 
 static void test_reset_with_and_without_restore(void)
@@ -328,7 +440,14 @@ extern "C" void run_can_mode_tests(void)
   RUN_TEST(test_polling_turned_on_by_someone_else_in_raw_is_left_alone);
   RUN_TEST(test_idle_timeout_reverts_and_activity_extends_it);
   RUN_TEST(test_idle_timeout_is_clock_wrap_safe);
-  RUN_TEST(test_supervisor_leaving_running_reverts_without_touching_polling);
+  RUN_TEST(test_supervisor_leaving_running_reverts_and_restores_polling_best_effort);
+  RUN_TEST(test_supervisor_leaving_running_with_obd_down_leaves_no_pending_work);
+  RUN_TEST(test_recording_that_starts_during_the_switch_rolls_raw_back);
+  RUN_TEST(test_needs_tick_while_raw_or_a_restore_is_pending);
+  RUN_TEST(test_idle_timeout_needs_nothing_but_tick);
+  RUN_TEST(test_deferred_reset_is_applied_by_the_next_tick);
+  RUN_TEST(test_deferred_reset_runs_before_the_next_mode_change);
+  RUN_TEST(test_deferred_reset_without_restore_leaves_polling_alone);
   RUN_TEST(test_reset_with_and_without_restore);
   RUN_TEST(test_failed_restore_is_retried_by_tick_and_survives_a_new_raw_entry);
   RUN_TEST(test_pending_restore_is_dropped_when_the_supervisor_is_not_running);

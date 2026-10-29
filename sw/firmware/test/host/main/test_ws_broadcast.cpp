@@ -1,4 +1,6 @@
+#include <atomic>
 #include <cstdlib>
+#include <thread>
 #include <vector>
 #include "../../../components/async_web_server/include/log_gate.hpp"
 #include "../../../components/async_web_server/include/ws_broadcast_dispatch.hpp"
@@ -454,6 +456,28 @@ static void test_only_unwritable_subscribers_count_as_skipped(void)
     TEST_ASSERT_EQUAL(6, d.takeBulkSkipped());
 }
 
+static void test_log_gate_lets_exactly_one_of_many_racing_callers_through(void)
+{
+    for (int round = 0; round < 200; ++round)
+    {
+        LogGate gate(1000);
+        std::atomic<int> allowed{0};
+        std::atomic<bool> go{false};
+        std::thread threads[4];
+        for (auto& t : threads)
+        {
+            t = std::thread([&] {
+                while (!go.load()) {}
+                uint32_t suppressed = 0;
+                if (gate.allow(5000, suppressed)) { allowed.fetch_add(1); }
+            });
+        }
+        go.store(true);
+        for (auto& t : threads) { t.join(); }
+        TEST_ASSERT_EQUAL(1, allowed.load());
+    }
+}
+
 extern "C" void run_ws_broadcast_tests(void)
 {
     RUN_TEST(test_reused_http_fd_does_not_receive_frame);
@@ -480,4 +504,5 @@ extern "C" void run_ws_broadcast_tests(void)
     RUN_TEST(test_targeted_bulk_reaches_only_the_requester);
     RUN_TEST(test_targeted_bulk_to_a_closed_socket_is_dropped);
     RUN_TEST(test_only_unwritable_subscribers_count_as_skipped);
+    RUN_TEST(test_log_gate_lets_exactly_one_of_many_racing_callers_through);
 }
