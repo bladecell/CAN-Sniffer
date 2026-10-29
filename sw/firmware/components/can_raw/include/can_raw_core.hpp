@@ -7,7 +7,8 @@
 // Wire formats (little-endian, see docs/api.md):
 //   0x10 batch: [0x10][payloadLen u8][dropped u16][baseTs u32] then records
 //               {dt i16, id u32 (bit31 ext, bit30 rtr), ctl u8 (bit7 TX, bits0-3 data bytes 0..8), data[len]}
-//   0x11 stats: [0x11][21][flags u8][streamed u32][isrDropped u32][ringDropped u32][wsDropped u32][capacity u16][peak u16]
+//   0x11 stats: [0x11][23][flags u8][streamed u32][isrDropped u32][ringDropped u32][wsDropped u32][capacity u16][peak u16]
+//               [loadPermille u16]
 #include <cstddef>
 #include <cstdint>
 
@@ -36,7 +37,8 @@ constexpr uint8_t kFlagHwFilter = 0x02;  // the controller's acceptance filter i
 constexpr size_t kBatchHeaderBytes = 8;
 constexpr size_t kRecordMinBytes   = 7;
 constexpr size_t kMaxBatchBytes    = 257;  // 2-byte header + 255-byte payload (the length byte is a u8)
-constexpr size_t kStatsBytes       = 23;
+constexpr size_t kStatsBytes       = 25;
+constexpr uint16_t kLoadUnknown    = 0xFFFF;  // loadPermille when the bit rate or the window is not known
 constexpr size_t kRingCapacity     = 256;
 constexpr size_t kPumpPeek         = 24;  // frames copied out per lock hold
 
@@ -67,6 +69,22 @@ CAN_RAW_INLINE Frame makeFrame(uint32_t id, bool ext, bool rtr, size_t len, cons
   }
   f.ctl = static_cast<uint8_t>(static_cast<uint8_t>(len) | (tx ? kCtlTx : 0));
   return f;
+}
+
+// Nominal bits one frame occupies on the bus, interframe gap included, without stuff bits (those can add up to about 20%):
+// standard 47 + 8n, extended 67 + 8n, a remote frame has no data bits. Error frames are not counted.
+CAN_RAW_INLINE uint32_t frameBits(const Frame& f)
+{
+  uint32_t n = f.ctl & kCtlLenMask;
+  if (n > 8)
+  {
+    n = 8;
+  }
+  if (f.id & kIdRtr)
+  {
+    n = 0;
+  }
+  return ((f.id & kIdExt) ? 67u : 47u) + 8u * n;
 }
 
 // Fixed-capacity FIFO over storage the caller owns. Not thread-safe: the Core's lock covers it.
@@ -153,6 +171,10 @@ private:
 
 namespace detail
 {
+CAN_RAW_INLINE uint32_t satAdd32(uint32_t a, uint32_t b)
+{
+  return a + b < a ? 0xFFFFFFFFu : a + b;
+}
 inline void put16(uint8_t* p, uint16_t v)
 {
   p[0] = static_cast<uint8_t>(v);
@@ -228,6 +250,7 @@ struct Stats
   uint32_t wsDropped;
   uint16_t capacity;
   uint16_t peak;
+  uint16_t loadPermille;  // bus load in 1/1000 of the bit rate over the window since the previous stats, or kLoadUnknown
 };
 
 inline size_t encodeStats(const Stats& s, uint8_t* out, size_t cap)
@@ -237,7 +260,7 @@ inline size_t encodeStats(const Stats& s, uint8_t* out, size_t cap)
     return 0;
   }
   out[0] = kMsgStats;
-  out[1] = kStatsBytes - 2;
+  out[1] = static_cast<uint8_t>(kStatsBytes - 2);
   out[2] = s.flags;
   detail::put32(out + 3, s.streamed);
   detail::put32(out + 7, s.isrDropped);
@@ -245,6 +268,7 @@ inline size_t encodeStats(const Stats& s, uint8_t* out, size_t cap)
   detail::put32(out + 15, s.wsDropped);
   detail::put16(out + 19, s.capacity);
   detail::put16(out + 21, s.peak);
+  detail::put16(out + 23, s.loadPermille);
   return kStatsBytes;
 }
 
@@ -288,7 +312,7 @@ enum class Status
 
 // init/deinit/start/stop sequencing of the stream, separated from FreeRTOS so it can be tested with a fake Env. The caller
 // serialises the calls (CanRaw holds a mutex). Env provides: createTask(), shutdownTask(), installTap(), removeTap(),
-// allocRing(frames), freeRing(ptr), isrNow() (driver RX-drop counter) and wake() (nudge the idle task).
+// allocRing(frames), freeRing(ptr), isrNow() (driver RX-drop counter), nowMs() and wake() (nudge the idle task).
 template <typename CoreT, typename Env>
 class Lifecycle
 {
@@ -363,7 +387,7 @@ public:
     {
       return Status::noMemory;
     }
-    if (!core_.start(ring, kRingCapacity, env_.isrNow()))
+    if (!core_.start(ring, kRingCapacity, env_.isrNow(), env_.nowMs()))
     {
       env_.freeRing(ring);
       return Status::ok;
@@ -525,7 +549,7 @@ public:
   // False if already active or the storage is unusable. The storage stays the caller's property: stop() hands it back.
   // `isrBase` is the driver's cumulative RX-drop counter now; later `isrTotal` arguments are measured from it. It is
   // stored under the same lock the pump reads it under.
-  bool start(Frame* storage, size_t capacity, uint32_t isrBase = 0)
+  bool start(Frame* storage, size_t capacity, uint32_t isrBase = 0, uint32_t nowMs = 0)
   {
     typename Lock::Guard g(lock_);
     if (active_ || storage == nullptr || capacity == 0)
@@ -535,6 +559,8 @@ public:
     ring_.attach(storage, capacity);
     ringDropped_ = wsDropped_ = streamed_ = reported_ = 0;
     isrBase_ = isrBase;
+    bits_ = 0;
+    windowStartMs_ = nowMs;
     gen_++;
     active_         = true;
     activeHintFlag_ = true;
@@ -568,6 +594,7 @@ public:
     {
       return;
     }
+    bits_ = detail::satAdd32(bits_, frameBits(f));  // counted before the ring can refuse the frame
     if (!ring_.push(f))
     {
       ringDropped_++;
@@ -653,7 +680,8 @@ public:
     return delivered;
   }
 
-  Stats snapshot(uint32_t isrTotal, uint8_t flags)
+  // `bitrate` in bit/s (0 = unknown) and `nowMs` close the bus-load window, which then restarts. Integer maths only.
+  Stats snapshot(uint32_t isrTotal, uint8_t flags, uint32_t bitrate = 0, uint32_t nowMs = 0)
   {
     typename Lock::Guard g(lock_);
     Stats                s{};
@@ -665,6 +693,18 @@ public:
     s.capacity    = static_cast<uint16_t>(ring_.capacity());
     s.peak        = static_cast<uint16_t>(ring_.peak());
     ring_.resetPeak();
+    const uint32_t elapsedMs = nowMs - windowStartMs_;
+    if (bitrate == 0 || elapsedMs == 0)
+    {
+      s.loadPermille = kLoadUnknown;
+    }
+    else
+    {
+      const uint64_t permille = static_cast<uint64_t>(bits_) * 1000000ull / (static_cast<uint64_t>(bitrate) * elapsedMs);
+      s.loadPermille          = permille > 1000 ? 1000 : static_cast<uint16_t>(permille);
+    }
+    bits_          = 0;
+    windowStartMs_ = nowMs;
     return s;
   }
 
@@ -680,6 +720,8 @@ private:
   uint32_t      streamed_       = 0;
   uint32_t      reported_       = 0;
   uint32_t      isrBase_        = 0;
+  uint32_t      bits_           = 0;  // nominal bits of every frame tapped in the current window
+  uint32_t      windowStartMs_  = 0;
   volatile bool activeHintFlag_ = false;
 };
 }  // namespace can_raw

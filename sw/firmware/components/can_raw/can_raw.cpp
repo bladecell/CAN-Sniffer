@@ -111,6 +111,7 @@ struct CanRawEnv
   }
   void     freeRing(can_raw::Frame* ring) { heap_caps_free(ring); }
   uint32_t isrNow() { return CanDriver::getInstance().getRxDropped(); }
+  uint32_t nowMs() { return static_cast<uint32_t>(pdTICKS_TO_MS(xTaskGetTickCount())); }
   void     wake() { xTaskNotifyGive(static_cast<TaskHandle_t>(self->task_)); }
 };
 
@@ -197,7 +198,11 @@ bool CanRaw::sendStats()
 {
   const uint8_t flags = CanDriver::getInstance().getConfig().filter ? can_raw::kFlagHwFilter : 0;
   uint8_t       buf[can_raw::kStatsBytes];
-  const size_t  n = can_raw::encodeStats(gCore.snapshot(CanDriver::getInstance().getRxDropped(), flags), buf, sizeof(buf));
+  // The nominal bit rate comes from the running CAN config; unknown while the driver is down.
+  const CanDriver& can     = CanDriver::getInstance();
+  const uint32_t   bitrate = can.isInitialized() ? static_cast<uint32_t>(can.getConfig().bitrate) : 0;
+  const uint32_t   nowMs   = static_cast<uint32_t>(pdTICKS_TO_MS(xTaskGetTickCount()));
+  const size_t     n = can_raw::encodeStats(gCore.snapshot(can.getRxDropped(), flags, bitrate, nowMs), buf, sizeof(buf));
   return n != 0 && sink_ != nullptr && sink_(sinkArg_, buf, n, 0, -1) == can_raw::SinkResult::accepted;
 }
 
@@ -208,6 +213,7 @@ void CanRaw::sendInactiveStats(int fd)
     return;
   }
   can_raw::Stats s{};
+  s.loadPermille = can_raw::kLoadUnknown;
   uint8_t        buf[can_raw::kStatsBytes];
   const size_t   n = can_raw::encodeStats(s, buf, sizeof(buf));
   if (n != 0)

@@ -256,9 +256,10 @@ static void test_stats_exact_bytes(void)
   s.wsDropped   = 7;
   s.capacity    = 256;
   s.peak        = 17;
+  s.loadPermille = 0x0123;
   uint8_t out[kStatsBytes] = {};
   TEST_ASSERT_EQUAL(kStatsBytes, encodeStats(s, out, sizeof(out)));
-  const uint8_t expect[] = {0x11, 21, 0x03, 4, 3, 2, 1, 5, 0, 0, 0, 6, 0, 0, 0, 7, 0, 0, 0, 0x00, 0x01, 17, 0};
+  const uint8_t expect[] = {0x11, 23, 0x03, 4, 3, 2, 1, 5, 0, 0, 0, 6, 0, 0, 0, 7, 0, 0, 0, 0x00, 0x01, 17, 0, 0x23, 0x01};
   TEST_ASSERT_EQUAL(sizeof(expect), kStatsBytes);
   TEST_ASSERT_EQUAL_UINT8_ARRAY(expect, out, sizeof(expect));
   TEST_ASSERT_EQUAL(0, encodeStats(s, out, kStatsBytes - 1));
@@ -568,6 +569,7 @@ struct FakeEnv
   Frame* allocRing(size_t) { if (failAlloc) return nullptr; allocs++; return storage; }
   void freeRing(Frame*) { frees++; }
   uint32_t isrNow() { return 0; }
+  uint32_t nowMs() { return 0; }
   void wake() { wakes++; }
 };
 
@@ -889,6 +891,98 @@ static void test_stats_schedule_period_and_clock_wrap(void)
   TEST_ASSERT_TRUE(s.due(0xFFFFFF10u));
 }
 
+// ---- bus load (counted in the tap, reported in 0x11) ----
+
+static void test_frame_bits_estimate(void)
+{
+  TEST_ASSERT_EQUAL(47 + 64, frameBits(mk(0x7E8, 0, {1, 2, 3, 4, 5, 6, 7, 8})));
+  TEST_ASSERT_EQUAL(47, frameBits(mk(0x7E8, 0, {})));
+  TEST_ASSERT_EQUAL(67 + 8, frameBits(mk(0x18DB33F1, 0, {1}, false, true)));
+  TEST_ASSERT_EQUAL(47, frameBits(makeFrame(0x55, false, true, 8, nullptr, 0, false)));   // remote frame: no data bits
+  TEST_ASSERT_EQUAL(67, frameBits(makeFrame(0x55, true, true, 0, nullptr, 0, true)));
+  Frame bad = mk(1, 0, {});
+  bad.ctl   = 0x0F;  // corrupt length nibble
+  TEST_ASSERT_EQUAL(47 + 64, frameBits(bad));
+}
+
+static void test_sat_add_never_wraps(void)
+{
+  TEST_ASSERT_EQUAL_UINT32(15, detail::satAdd32(10, 5));
+  TEST_ASSERT_EQUAL_UINT32(0xFFFFFFFFu, detail::satAdd32(0xFFFFFFF0u, 100));
+  TEST_ASSERT_EQUAL_UINT32(0xFFFFFFFFu, detail::satAdd32(0xFFFFFFFFu, 1));
+}
+
+static void test_load_counts_every_tapped_frame_even_when_the_ring_drops_it(void)
+{
+  Rig r;  // ring of 8
+  for (uint32_t i = 0; i < 100; i++)
+  {
+    r.core.tap(mk(0x7E8, i, {1, 2, 3, 4, 5, 6, 7, 8}));  // 111 bits each
+  }
+  Stats s = r.core.snapshot(0, 0, 500000, 1000);  // window started at 0: 11100 bits in 1 s of 500 kbit/s
+  TEST_ASSERT_EQUAL(92, s.ringDropped);
+  TEST_ASSERT_EQUAL(22, s.loadPermille);
+}
+
+static void test_load_window_restarts_at_each_snapshot(void)
+{
+  Rig r;
+  for (uint32_t i = 0; i < 8; i++)
+  {
+    r.core.tap(mk(1, i, {1, 2, 3, 4, 5, 6, 7, 8}));
+  }
+  r.core.snapshot(0, 0, 500000, 1000);
+  TEST_ASSERT_EQUAL(0, r.core.snapshot(0, 0, 500000, 2000).loadPermille);
+  r.core.tap(mk(1, 9, {1, 2, 3, 4, 5, 6, 7, 8}));
+  TEST_ASSERT_EQUAL(0, r.core.snapshot(0, 0, 500000, 4000).loadPermille);  // 111 bits / 1 Mbit = 0.01 %: rounds to 0
+}
+
+static void test_load_unknown_without_bitrate_or_window(void)
+{
+  Rig r;
+  r.core.tap(mk(1, 1, {1}));
+  TEST_ASSERT_EQUAL_UINT16(kLoadUnknown, r.core.snapshot(0, 0, 0, 1000).loadPermille);      // bit rate not known
+  r.core.tap(mk(1, 1, {1}));
+  TEST_ASSERT_EQUAL_UINT16(kLoadUnknown, r.core.snapshot(0, 0, 500000, 1000).loadPermille);  // no time passed since the last
+}
+
+static void test_load_clamps_to_full_scale(void)
+{
+  Core<FakeLock> c;
+  Frame          st[2];
+  c.start(st, 2, 0, 0);
+  for (int i = 0; i < 100; i++)
+  {
+    c.tap(mk(1, 0, {1, 2, 3, 4, 5, 6, 7, 8}));
+  }
+  TEST_ASSERT_EQUAL(1000, c.snapshot(0, 0, 1000, 1000).loadPermille);  // 11100 bits in 1 s at 1 kbit/s
+}
+
+static void test_load_window_is_wrap_safe_and_starts_at_start(void)
+{
+  Core<FakeLock> c;
+  Frame          st[2];
+  c.start(st, 2, 0, 0xFFFFFF00u);
+  c.tap(mk(1, 0, {}));  // 47 bits
+  // 0x100 - 0xFFFFFF00 = 0x200 = 512 ms; 47 bits / (500000 * 0.512 s) = 0.018 % -> 0, use a big frame count instead
+  for (int i = 0; i < 4600; i++)
+  {
+    c.tap(mk(1, 0, {}));  // 4601 x 47 = 216247 bits in 0.512 s of 1 Mbit/s = 422 permille
+  }
+  Stats s = c.snapshot(0, 0, 1000000, 0x100u);
+  TEST_ASSERT_EQUAL(422, s.loadPermille);
+}
+
+static void test_load_starts_from_zero_on_a_new_session(void)
+{
+  Rig r;
+  r.core.tap(mk(1, 1, {1, 2, 3, 4, 5, 6, 7, 8}));
+  r.core.stop();
+  Frame s2[4];
+  r.core.start(s2, 4, 0, 5000);
+  TEST_ASSERT_EQUAL(0, r.core.snapshot(0, 0, 500000, 6000).loadPermille);
+}
+
 extern "C" void run_can_raw_tests(void)
 {
   RUN_TEST(test_make_frame_clamps_and_masks);
@@ -945,4 +1039,12 @@ extern "C" void run_can_raw_tests(void)
   RUN_TEST(test_stats_are_sent_at_1hz_while_batches_keep_the_slot_busy);
   RUN_TEST(test_a_busy_slot_at_stats_time_holds_the_batches_back_until_stats_go_out);
   RUN_TEST(test_stats_schedule_period_and_clock_wrap);
+  RUN_TEST(test_frame_bits_estimate);
+  RUN_TEST(test_sat_add_never_wraps);
+  RUN_TEST(test_load_counts_every_tapped_frame_even_when_the_ring_drops_it);
+  RUN_TEST(test_load_window_restarts_at_each_snapshot);
+  RUN_TEST(test_load_unknown_without_bitrate_or_window);
+  RUN_TEST(test_load_clamps_to_full_scale);
+  RUN_TEST(test_load_window_is_wrap_safe_and_starts_at_start);
+  RUN_TEST(test_load_starts_from_zero_on_a_new_session);
 }
