@@ -8,7 +8,7 @@
 
 namespace can_mode_http
 {
-// {"mode": "<name>", "fc": bool?} and nothing else. `mode` points into `body`.
+// {"mode": "<name>", "isotp_flow_control": bool?} and nothing else (unknown keys, the old "fc" included, are rejected). `mode` points into `body`.
 inline bool parseBody(const cJSON* body, const char*& mode, bool& fc)
 {
   mode = nullptr;
@@ -23,7 +23,7 @@ inline bool parseBody(const cJSON* body, const char*& mode, bool& fc)
       if (!cJSON_IsString(k) || k->valuestring == nullptr) { return false; }
       mode = k->valuestring;
     }
-    else if (std::strcmp(k->string, "fc") == 0 && !haveFc)
+    else if (std::strcmp(k->string, "isotp_flow_control") == 0 && !haveFc)
     {
       if (!cJSON_IsBool(k)) { return false; }
       fc     = cJSON_IsTrue(k);
@@ -60,7 +60,7 @@ inline const char* reason(can_mode::Status s)
 {
   switch (s)
   {
-    case can_mode::Status::unknownMode: return "mode must be \"monitor\" or \"raw\"; body {\"mode\":\"raw\",\"fc\":true}";
+    case can_mode::Status::unknownMode: return "mode must be \"monitor\" or \"raw\"; body {\"mode\":\"raw\",\"isotp_flow_control\":true}";
     case can_mode::Status::notRunning: return "The device is not in RUNNING state";
     case can_mode::Status::recording: return "The recorder is recording; stop it first";
     default: return "Polling could not be stopped";

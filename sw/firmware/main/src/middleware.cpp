@@ -2093,7 +2093,7 @@ static MiddlewareJsonResult can_mode_state_result()
     }
     const can_mode_service::Snapshot snap = can_mode_service::get();
     cJSON_AddStringToObject(root, "mode", snap.name);
-    cJSON_AddBoolToObject(root, "fc", snap.fc);
+    cJSON_AddBoolToObject(root, "isotp_flow_control", snap.fc);
     for (size_t i = 0; i < can_mode_service::modeCount(); ++i)
     {
         cJSON* name = cJSON_CreateString(can_mode_service::modeName(i));

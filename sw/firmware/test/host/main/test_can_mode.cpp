@@ -409,9 +409,9 @@ static void test_mode_body_accepts_mode_and_optional_fc(void)
   TEST_ASSERT_TRUE(body("{\"mode\":\"raw\"}", m, fc));
   TEST_ASSERT_EQUAL_STRING("raw", m);
   TEST_ASSERT_FALSE(fc);  // default
-  TEST_ASSERT_TRUE(body("{\"mode\":\"raw\",\"fc\":true}", m, fc));
+  TEST_ASSERT_TRUE(body("{\"mode\":\"raw\",\"isotp_flow_control\":true}", m, fc));
   TEST_ASSERT_TRUE(fc);
-  TEST_ASSERT_TRUE(body("{\"fc\":false,\"mode\":\"monitor\"}", m, fc));
+  TEST_ASSERT_TRUE(body("{\"isotp_flow_control\":false,\"mode\":\"monitor\"}", m, fc));
   TEST_ASSERT_EQUAL_STRING("monitor", m);
 }
 
@@ -419,8 +419,8 @@ static void test_mode_body_rejects_everything_else(void)
 {
   const char* m = nullptr;
   bool        fc = false;
-  const char* bad[] = {"[]", "null", "\"raw\"", "{}", "{\"fc\":true}", "{\"mode\":1}", "{\"mode\":null}",
-                       "{\"mode\":\"raw\",\"fc\":1}", "{\"mode\":\"raw\",\"fc\":\"true\"}",
+  const char* bad[] = {"[]", "null", "\"raw\"", "{}", "{\"isotp_flow_control\":true}", "{\"mode\":1}", "{\"mode\":null}",
+                       "{\"mode\":\"raw\",\"isotp_flow_control\":1}", "{\"mode\":\"raw\",\"fc\":true}", "{\"mode\":\"raw\",\"fc\":false}", "{\"mode\":\"raw\",\"isotp_flow_control\":\"true\"}",
                        "{\"mode\":\"raw\",\"extra\":1}", "{\"mode\":\"raw\",\"mode\":\"monitor\"}"};
   for (const char* b : bad)
   {
