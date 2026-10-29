@@ -251,3 +251,4 @@ Decided by the user.
 - A raw send takes the bus mutex (50 ms wait): no interleaving with polls or open ISO-TP exchanges, and the health ping is held off. Alternative considered: only the mode lock. Rejected because it does not stop the poll task. After `TX_TIMEOUT` the frame may still be sent.
 - Flow control answers only the ECUs the send addressed.
 - Held for the user: refusing `PATCH /obd2 auto_poll:true` while in Raw mode (today Raw sends answer 409 `POLLING_ACTIVE` instead).
+- **Polling in Raw mode (user decision 2026-10-29):** `PATCH /obd2 {"auto_poll":true}` answers 409 `RAW_MODE` while in Raw mode, like `POST /recorder/start`, checked under the mode lock; `false` stays allowed. The send route keeps its `POLLING_ACTIVE` check as a defensive one: today only those two paths (and the recorder, which cannot start in Raw) switch polling on.

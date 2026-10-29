@@ -19,6 +19,7 @@ namespace can_mode
 enum Op : uint8_t
 {
   kOpRawSend = 1u << 0,  // POST /can/send
+  kOpPollOn  = 1u << 1,  // PATCH /obd2 {"auto_poll":true}
 };
 
 // A client that stops using Raw mode without leaving (page open, nothing sent) is put back after this long without a mode
@@ -123,7 +124,7 @@ template <typename Env>
 const ModeDef<Env>* modeTable()
 {
   static const ModeDef<Env> kTable[] = {
-      {"monitor", &detail::enterMonitor<Env>, &detail::exitMonitor<Env>, 0},
+      {"monitor", &detail::enterMonitor<Env>, &detail::exitMonitor<Env>, kOpPollOn},
       {"raw", &detail::enterRaw<Env>, &detail::exitRaw<Env>, kOpRawSend},
   };
   return kTable;

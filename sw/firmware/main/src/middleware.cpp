@@ -404,7 +404,7 @@ static void add_auto_poll_state(cJSON* root)
     cJSON_AddBoolToObject(root, "polling", OBD2::getInstance().isPolling());
 }
 
-MiddlewareJsonResult m_auto_poll_set(bool on)
+static MiddlewareJsonResult auto_poll_set_unchecked(bool on)
 {
     const esp_err_t err = OBD2::getInstance().setAutoPoll(on);
     if (err != ESP_OK)
@@ -418,6 +418,32 @@ MiddlewareJsonResult m_auto_poll_set(bool on)
     }
     add_auto_poll_state(root);
     return json_result(root, 200);
+}
+
+// Turning polling on is refused in Raw mode (like POST /recorder/start) and runs under the mode lock, so a switch to Raw
+// cannot slip in between. Turning it off is always allowed.
+MiddlewareJsonResult m_auto_poll_set(bool on)
+{
+    if (!on)
+    {
+        return auto_poll_set_unchecked(false);
+    }
+    MiddlewareJsonResult result = json_result(nullptr, 500);
+    const auto           gate   = can_mode_service::run(can_mode_service::Requirement::pollOn,
+                                                  [&](bool)
+                                                  {
+                                                      result = auto_poll_set_unchecked(true);
+                                                      return false;
+                                                  });
+    if (gate == can_mode_service::Run::notAllowed)
+    {
+        return json_result(json_error_body("Raw CAN mode is active; leave it first", "RAW_MODE"), 409);
+    }
+    if (gate == can_mode_service::Run::busy)
+    {
+        return json_result(json_error_body("A CAN mode change is in progress", "BUSY"), 503);
+    }
+    return result;
 }
 
 MiddlewareJsonResult m_can_bus_get()

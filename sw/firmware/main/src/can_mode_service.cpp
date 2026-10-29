@@ -142,7 +142,9 @@ Run runImpl(Requirement need, bool (*action)(void*, bool), void* ctx)
   {
     return Run::busy;  // fail closed: the caller refuses instead of guessing the mode
   }
-  const bool fits = need == Requirement::monitor ? gController.isDefault() : gController.allows(can_mode::kOpRawSend);
+  const bool fits = need == Requirement::monitor  ? gController.isDefault()
+                    : need == Requirement::rawSend ? gController.allows(can_mode::kOpRawSend)
+                                                   : gController.allows(can_mode::kOpPollOn);
   if (!fits)
   {
     return Run::notAllowed;

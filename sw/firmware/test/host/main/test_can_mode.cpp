@@ -46,6 +46,7 @@ static void test_starts_in_monitor_and_allows_no_raw_send(void)
   Ctl     c(env);
   TEST_ASSERT_EQUAL_STRING("monitor", c.name());
   TEST_ASSERT_FALSE(c.allows(kOpRawSend));
+  TEST_ASSERT_TRUE(c.allows(kOpPollOn));
   TEST_ASSERT_FALSE(c.fc());
   TEST_ASSERT_EQUAL(2, Ctl::count());
   TEST_ASSERT_EQUAL_STRING("monitor", Ctl::nameAt(0));
@@ -68,6 +69,18 @@ static void test_raw_turns_polling_off_and_leaving_restores_it(void)
   TEST_ASSERT_FALSE(c.allows(kOpRawSend));
   TEST_ASSERT_FALSE(c.fc());
   TEST_ASSERT_EQUAL(1, env.fcDisarms);
+}
+
+static void test_raw_mode_does_not_allow_turning_polling_on(void)
+{
+  FakeEnv env;
+  Ctl     c(env);
+  c.set("raw", false, 0);
+  TEST_ASSERT_FALSE(c.allows(kOpPollOn));
+  TEST_ASSERT_TRUE(c.allows(kOpRawSend));
+  c.set("monitor", false, 1);
+  TEST_ASSERT_TRUE(c.allows(kOpPollOn));
+  TEST_ASSERT_FALSE(c.allows(kOpRawSend));
 }
 
 static void test_polling_that_was_off_stays_off_and_is_never_touched(void)
@@ -446,6 +459,7 @@ extern "C" void run_can_mode_tests(void)
 {
   RUN_TEST(test_starts_in_monitor_and_allows_no_raw_send);
   RUN_TEST(test_raw_turns_polling_off_and_leaving_restores_it);
+  RUN_TEST(test_raw_mode_does_not_allow_turning_polling_on);
   RUN_TEST(test_polling_that_was_off_stays_off_and_is_never_touched);
   RUN_TEST(test_raw_is_refused_unless_the_supervisor_runs);
   RUN_TEST(test_raw_is_refused_while_recording);

@@ -27,7 +27,8 @@ Snapshot         get();
 enum class Requirement
 {
   monitor,  // the default mode (POST /recorder/start)
-  rawSend   // a mode that allows raw sends (POST /can/send)
+  rawSend,  // a mode that allows raw sends (POST /can/send)
+  pollOn    // a mode that allows turning polling on (PATCH /obd2 auto_poll true)
 };
 enum class Run
 {
