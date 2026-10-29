@@ -23,7 +23,8 @@ size_t      modeCount();
 const char* modeName(size_t i);
 
 can_mode::Status set(const char* name, bool fc, bool parsing);
-// Lock-free: the last state published under the lock, so it is also right while a long action holds the lock.
+// Lock-free: the controller's own view, refreshed by every transition (never a stale copy), so it is also right while a lock
+// is held.
 Snapshot get();
 
 // Around a REST request that puts OBD frames on the bus or arms the DTC/VIN collectors. Allowed only in Monitor mode; while

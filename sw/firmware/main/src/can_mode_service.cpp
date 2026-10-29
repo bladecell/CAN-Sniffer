@@ -39,9 +39,6 @@ bool ProdEnv::obdRequestInFlight()
   return gObdRequests.load() != 0;
 }
 
-// The published state: mode index | flow control << 8 | parsing << 9. Written under the mutex, read without it.
-std::atomic<uint32_t> gPublished{0};
-
 ProdEnv                       gEnv;
 can_mode::Controller<ProdEnv> gController(gEnv);
 bool                          gCheckTaskRunning = false;  // changed with the mutex held only
@@ -99,16 +96,6 @@ void ensureCheckTask()
   }
 }
 
-void publish()
-{
-  uint32_t v = 0;
-  for (size_t i = 0; i < can_mode::Controller<ProdEnv>::count(); ++i)
-  {
-    if (std::strcmp(gController.name(), can_mode::Controller<ProdEnv>::nameAt(i)) == 0) { v = static_cast<uint32_t>(i); }
-  }
-  gPublished.store(v | (gController.fc() ? 0x100u : 0u) | (gController.parsing() ? 0x200u : 0u));
-}
-
 struct Lock
 {
   bool held;
@@ -121,7 +108,6 @@ struct Lock
     if (held)
     {
       ensureCheckTask();
-      publish();
       xSemaphoreGive(mutex());
     }
   }
@@ -157,9 +143,8 @@ can_mode::Status set(const char* name, bool fc, bool parsing)
 
 Snapshot get()
 {
-  const uint32_t v = gPublished.load();
-  const size_t   i = v & 0xFF;
-  return Snapshot{i < modeCount() ? modeName(i) : modeName(0), (v & 0x100) != 0, (v & 0x200) != 0};
+  const can_mode::Controller<ProdEnv>::View v = gController.view();
+  return Snapshot{can_mode::Controller<ProdEnv>::nameAt(v.mode), v.fc, v.parsing};
 }
 
 ObdRequestGuard::ObdRequestGuard() : state_(State::busy)

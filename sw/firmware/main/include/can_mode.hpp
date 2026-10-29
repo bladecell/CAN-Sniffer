@@ -152,6 +152,20 @@ public:
   const char* name() const { return modeTable<Env>()[cur_].name; }
   bool        fc() const { return fc_; }
   bool        parsing() const { return parsing_; }
+
+  // The state as one lock-free read (GET /can/mode, any task). Refreshed inside the controller by every transition, so no
+  // caller can forget to: set, reset, deferred reset, idle timeout, supervisor leaving RUNNING.
+  struct View
+  {
+    size_t mode;
+    bool   fc;
+    bool   parsing;
+  };
+  View view() const
+  {
+    const uint32_t v = view_.load();
+    return View{static_cast<size_t>(v & 0xFF), (v & 0x100) != 0, (v & 0x200) != 0};
+  }
   bool        allows(uint8_t op) const { return (modeTable<Env>()[cur_].ops & op) != 0; }
   bool        isDefault() const { return cur_ == 0; }
 
@@ -277,7 +291,11 @@ private:
   }
 
   // The receive task parses unless a mode that does not parse is on (only Raw without the option).
-  void publishParsing() { env_.setObdParsing(cur_ == 0 || parsing_); }
+  void publishParsing()
+  {
+    env_.setObdParsing(cur_ == 0 || parsing_);
+    view_.store(static_cast<uint32_t>(cur_) | (fc_ ? 0x100u : 0u) | (parsing_ ? 0x200u : 0u));
+  }
 
   Env&     env_;
   size_t   cur_          = 0;
@@ -285,6 +303,7 @@ private:
   bool     parsing_      = false;
   uint32_t lastActivity_ = 0;
   Saved    saved_;
+  std::atomic<uint32_t> view_{0};
   std::atomic<int> deferred_{0};  // 0 none, 1 reset with restore, 2 reset without
 };
 }  // namespace can_mode

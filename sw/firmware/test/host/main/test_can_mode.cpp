@@ -191,6 +191,74 @@ static void test_raw_is_refused_while_a_rest_obd_request_is_on_the_bus(void)
   TEST_ASSERT_EQUAL(st(Status::ok), st(c.set("raw", false, 1)));
 }
 
+// ---- lock-free view (what GET /can/mode reports) must follow every transition ----
+
+static void test_view_follows_every_transition_and_revert_path(void)
+{
+  // Regression of e0095c2: the view was refreshed only by some paths, so after the last WebSocket closed GET still said "raw".
+  FakeEnv env;
+  Ctl     c(env);
+  TEST_ASSERT_EQUAL(0, c.view().mode);
+  TEST_ASSERT_FALSE(c.view().fc);
+  c.set("raw", true, true, 0);
+  TEST_ASSERT_EQUAL_STRING("raw", Ctl::nameAt(c.view().mode));
+  TEST_ASSERT_TRUE(c.view().fc);
+  TEST_ASSERT_TRUE(c.view().parsing);
+  c.set("raw", false, false, 1);  // changed while staying in Raw
+  TEST_ASSERT_FALSE(c.view().fc);
+  TEST_ASSERT_FALSE(c.view().parsing);
+  c.reset(true);  // last WebSocket client closed
+  TEST_ASSERT_EQUAL(0, c.view().mode);
+  c.set("raw", true, true, 2);
+  c.reset(false);
+  TEST_ASSERT_EQUAL(0, c.view().mode);
+  c.set("raw", true, true, 3);
+  c.deferReset(true);  // close hook could not take the lock
+  c.tick(4);
+  TEST_ASSERT_EQUAL(0, c.view().mode);
+  TEST_ASSERT_FALSE(c.view().fc);
+  c.set("raw", false, 5);
+  c.tick(5 + kIdleTimeoutMs);  // idle timeout
+  TEST_ASSERT_EQUAL(0, c.view().mode);
+  c.set("raw", false, 6);
+  env.running = false;  // supervisor left RUNNING
+  c.tick(7);
+  TEST_ASSERT_EQUAL(0, c.view().mode);
+}
+
+static void test_a_refused_raw_entry_leaves_the_view_in_monitor(void)
+{
+  FakeEnv env;
+  env.recorder = true;
+  Ctl c(env);
+  c.set("raw", false, 0);
+  TEST_ASSERT_EQUAL(0, c.view().mode);
+}
+
+static void test_a_leaked_request_counter_cannot_block_the_revert(void)
+{
+  FakeEnv env;
+  env.poll = true;
+  Ctl c(env);
+  c.set("raw", true, 0);
+  env.inflight = true;  // a counter that was never decremented
+  c.reset(true);
+  TEST_ASSERT_EQUAL(0, c.view().mode);
+  TEST_ASSERT_TRUE(env.poll);
+  c.set("raw", false, 1);  // (entry is refused while it is stuck, but the revert paths do not look at it)
+  TEST_ASSERT_EQUAL(0, c.view().mode);
+  env.inflight = false;
+  c.set("raw", false, 2);
+  env.inflight = true;
+  c.deferReset(true);
+  c.tick(3);
+  TEST_ASSERT_EQUAL(0, c.view().mode);
+  c.set("raw", false, 4);
+  env.inflight = true;
+  c.tick(4 + kIdleTimeoutMs);
+  TEST_ASSERT_EQUAL(0, c.view().mode);
+}
+
 static void test_polling_that_was_off_stays_off_and_is_never_touched(void)
 {
   FakeEnv env;
@@ -597,6 +665,9 @@ extern "C" void run_can_mode_tests(void)
   RUN_TEST(test_every_revert_path_publishes_parsing_on);
   RUN_TEST(test_a_refused_raw_entry_never_stops_the_parser);
   RUN_TEST(test_raw_is_refused_while_a_rest_obd_request_is_on_the_bus);
+  RUN_TEST(test_view_follows_every_transition_and_revert_path);
+  RUN_TEST(test_a_refused_raw_entry_leaves_the_view_in_monitor);
+  RUN_TEST(test_a_leaked_request_counter_cannot_block_the_revert);
   RUN_TEST(test_polling_that_was_off_stays_off_and_is_never_touched);
   RUN_TEST(test_raw_is_refused_unless_the_supervisor_runs);
   RUN_TEST(test_raw_is_refused_while_recording);
