@@ -12,8 +12,9 @@ class CanRaw
 {
 public:
   // Called from the drain task (batches and stats) and, for sendInactiveStats(), from the HTTP task. Never with a CanRaw
-  // lock held; must not block for long. `frames` is the number of frames in `data` (0 for a stats frame).
-  using SinkFn = can_raw::SinkResult (*)(void* arg, const uint8_t* data, size_t len, size_t frames);
+  // lock held; must not block for long. `frames` is the number of frames in `data` (0 for a stats frame). `targetFd` -1:
+  // every subscribed client; >= 0: only that socket.
+  using SinkFn = can_raw::SinkResult (*)(void* arg, const uint8_t* data, size_t len, size_t frames, int targetFd);
 
   static CanRaw& getInstance();
 
@@ -34,9 +35,9 @@ public:
 
   // Frames of an accepted batch that reached no client (see Core::markSkipped).
   void addWsSkipped(uint32_t n);
-  // One stats frame with the active bit clear, through the sink; lets a client learn that start() failed. Runs the sink
-  // on the calling task, which is the HTTP task: the sink must stay non-blocking (a bulk broadcast submit is).
-  void sendInactiveStats();
+  // One stats frame with the active bit clear, sent only to socket `fd`; lets that client learn that its start failed. Runs
+  // the sink on the calling task, which is the HTTP task: the sink must stay non-blocking (a bulk broadcast submit is).
+  void sendInactiveStats(int fd);
 
   CanRaw(const CanRaw&)            = delete;
   CanRaw& operator=(const CanRaw&) = delete;

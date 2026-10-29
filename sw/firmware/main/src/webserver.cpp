@@ -1691,12 +1691,26 @@ static esp_err_t ws_post_handshake(httpd_req_t* req)
     return ESP_OK;
 }
 
-// 0xB0: off by default, any client may turn it on. At most one accepted start per 500 ms (each one allocates the 5 KB ring);
-// a start inside that window is ignored, and a client sees from the stats frame that nothing is running. 0xB1 is never
-// delayed. A failure (no ring memory) is told to the clients with a stats frame whose active bit is clear.
+// The raw CAN stream is per client: 0xB0 subscribes the sending socket, 0xB1 or closing the socket unsubscribes it, and the
+// ring runs while at least one socket is subscribed. All of this runs in the httpd task (handler, socket-closed hook, bulk
+// send), so the set needs no lock. 0xB0 is accepted at most every 500 ms (the first subscriber allocates the 5 KB ring);
+// a start inside that window is ignored, and a client sees from the stats frame that nothing is running for it. 0xB1 is never
+// delayed. A failed start or a full set is answered to the requester only, with a stats frame whose active bit is clear.
 // The on/off lines are logged at most once per 5 s.
-static LogGate canRawStartGate(500);
-static LogGate canRawLogGate(5000);
+struct RawStreamCtl
+{
+    bool start() { return CanRaw::getInstance().start() == ESP_OK; }
+    void stop() { CanRaw::getInstance().stop(); }
+};
+static RawStreamCtl                         rawStreamCtl;
+static can_raw::Subscriptions<RawStreamCtl> rawSubscribers(rawStreamCtl);
+static LogGate                              canRawStartGate(500);
+static LogGate                              canRawLogGate(5000);
+
+static bool can_raw_is_subscribed(int fd)
+{
+    return rawSubscribers.contains(fd);
+}
 
 static void ws_can_raw_log(const char* what)
 {
@@ -1707,26 +1721,33 @@ static void ws_can_raw_log(const char* what)
     }
 }
 
-static void ws_can_raw_start()
+static void ws_can_raw_start(int fd)
 {
     uint32_t ignored = 0;
     if (!canRawStartGate.allow(static_cast<uint32_t>(esp_timer_get_time() / 1000), ignored))
     {
         return;
     }
-    if (CanRaw::getInstance().start() != ESP_OK)
+    switch (rawSubscribers.subscribe(fd))
     {
-        CanRaw::getInstance().sendInactiveStats();  // sink runs here, on the HTTP task: it only submits a broadcast
-        return;
+        case can_raw::SubResult::started:
+            ws_can_raw_log("on");
+            break;
+        case can_raw::SubResult::joined:
+        case can_raw::SubResult::already:
+            break;
+        default:
+            CanRaw::getInstance().sendInactiveStats(fd);  // sink runs here, on the HTTP task: it only submits a broadcast
+            break;
     }
-    ws_can_raw_log("on");
 }
 
-static void ws_can_raw_stop()
+static void ws_can_raw_stop(int fd)
 {
-    if (CanRaw::getInstance().isActive())
+    const bool wasOn = CanRaw::getInstance().isActive();
+    (void)rawSubscribers.unsubscribe(fd);
+    if (wasOn && !CanRaw::getInstance().isActive())
     {
-        CanRaw::getInstance().stop();
         ws_can_raw_log("off");
     }
 }
@@ -1747,11 +1768,12 @@ esp_err_t ws_socket_handler(httpd_req_t* req)
     if (ws_pkt.type == HTTPD_WS_TYPE_CLOSE)
     {
         ESP_LOGI(TAG, "WS Client #%d Closed", sockfd);
+        rawSubscribers.onClose(sockfd);
         if (can_raw::stopOnClose(AsyncWebServer::getInstance().getActiveWSClientCount(sockfd)))
         {
             b_pid_stream_enabled.store(false);
             wsStreamingEnabled.store(false);
-            CanRaw::getInstance().stop();
+            rawSubscribers.clear();
         }
         return httpd_ws_send_frame(req, &ws_pkt);
     }
@@ -1785,11 +1807,11 @@ esp_err_t ws_socket_handler(httpd_req_t* req)
                 const can_raw::Command rawCommand = can_raw::parseCommand(buf, ws_pkt.len);
                 if (rawCommand == can_raw::Command::start)
                 {
-                    ws_can_raw_start();
+                    ws_can_raw_start(sockfd);
                 }
                 else if (rawCommand == can_raw::Command::stop)
                 {
-                    ws_can_raw_stop();
+                    ws_can_raw_stop(sockfd);
                 }
                 else
                 {
@@ -1875,24 +1897,25 @@ void ws_send_recorder_state()
 // Any socket that closes (close frame or not) may have been the last stream client. Runs in the httpd task.
 static void ws_socket_closed(int fd)
 {
+    rawSubscribers.onClose(fd);  // any reason; the fd may be reused by the next client
     if (can_raw::stopOnClose(AsyncWebServer::getInstance().getActiveWSClientCount(fd)))
     {
         b_pid_stream_enabled.store(false);
         wsStreamingEnabled.store(false);
-        CanRaw::getInstance().stop();
+        rawSubscribers.clear();
     }
 }
 
 // Transport for the raw CAN stream: batches and stats both go out as bulk broadcasts (own pending slot, so the stream can
 // never take a PID update's), skipped for a client whose socket has no room. Runs in the can_raw task, below httpd in priority.
-static can_raw::SinkResult can_raw_sink(void*, const uint8_t* data, size_t len, size_t frames)
+static can_raw::SinkResult can_raw_sink(void*, const uint8_t* data, size_t len, size_t frames, int targetFd)
 {
     AsyncWebServer& server = AsyncWebServer::getInstance();
     if (const uint32_t skipped = server.takeBulkSkipped(); skipped != 0)
     {
         CanRaw::getInstance().addWsSkipped(skipped);  // accepted earlier, but no client had room: not "streamed"
     }
-    switch (server.wsBroadcastBulk(data, len, static_cast<uint16_t>(frames)))
+    switch (server.wsBroadcastBulk(data, len, static_cast<uint16_t>(frames), targetFd))
     {
         case AsyncWebServer::WsSend::accepted:
             return can_raw::SinkResult::accepted;
@@ -2007,6 +2030,7 @@ esp_err_t setup_web_server()
     server_config.httpd_config.keep_alive_count    = 3;
     server_config.on_socket_closed               = ws_socket_closed;
     server_config.request_filter                 = request_filter;
+    server_config.bulk_subscribed                = can_raw_is_subscribed;
 
     esp_err_t ret = AsyncWebServer::getInstance().start(server_config);
     if (ret != ESP_OK)
@@ -2115,6 +2139,7 @@ esp_err_t stop_web_server()
     }
     b_pid_stream_enabled.store(false);
     wsStreamingEnabled.store(false);
+    rawSubscribers.clear();  // httpd is gone, so nothing else touches the set; a restart must not inherit old descriptors
     return ESP_OK;
 }
 

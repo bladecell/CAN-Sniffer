@@ -689,6 +689,137 @@ static void test_lifecycle_task_creation_failure_is_reported(void)
   TEST_ASSERT_EQUAL(static_cast<int>(Status::invalidState), static_cast<int>(r.lc.start()));
 }
 
+// ---- per-client subscriptions ----
+
+struct FakeCtl
+{
+  bool failStart = false;
+  int  starts = 0, stops = 0;
+  bool start() { if (failStart) return false; starts++; return true; }
+  void stop() { stops++; }
+};
+
+static void test_subscribe_first_starts_stream_and_last_unsubscribe_stops_it(void)
+{
+  FakeCtl                  ctl;
+  Subscriptions<FakeCtl>   subs(ctl);
+  TEST_ASSERT_EQUAL(static_cast<int>(SubResult::started), static_cast<int>(subs.subscribe(10)));
+  TEST_ASSERT_EQUAL(static_cast<int>(SubResult::joined), static_cast<int>(subs.subscribe(11)));
+  TEST_ASSERT_EQUAL(1, ctl.starts);
+  TEST_ASSERT_TRUE(subs.unsubscribe(10));
+  TEST_ASSERT_EQUAL(0, ctl.stops);  // 11 still wants it
+  TEST_ASSERT_TRUE(subs.unsubscribe(11));
+  TEST_ASSERT_EQUAL(1, ctl.stops);
+  TEST_ASSERT_EQUAL(0, subs.size());
+}
+
+static void test_duplicate_subscribe_is_idempotent(void)
+{
+  FakeCtl                ctl;
+  Subscriptions<FakeCtl> subs(ctl);
+  subs.subscribe(7);
+  TEST_ASSERT_EQUAL(static_cast<int>(SubResult::already), static_cast<int>(subs.subscribe(7)));
+  TEST_ASSERT_EQUAL(1, ctl.starts);
+  TEST_ASSERT_EQUAL(1, subs.size());
+  TEST_ASSERT_TRUE(subs.unsubscribe(7));
+  TEST_ASSERT_EQUAL(1, ctl.stops);  // one unsubscribe is enough, however many 0xB0 came
+}
+
+static void test_unsubscribe_by_a_non_subscriber_is_a_no_op(void)
+{
+  FakeCtl                ctl;
+  Subscriptions<FakeCtl> subs(ctl);
+  TEST_ASSERT_FALSE(subs.unsubscribe(3));  // nothing running
+  subs.subscribe(10);
+  TEST_ASSERT_FALSE(subs.unsubscribe(99));
+  TEST_ASSERT_TRUE(subs.contains(10));
+  TEST_ASSERT_EQUAL(0, ctl.stops);
+}
+
+static void test_socket_close_removes_subscriber_and_stops_when_empty(void)
+{
+  FakeCtl                ctl;
+  Subscriptions<FakeCtl> subs(ctl);
+  subs.subscribe(10);
+  subs.subscribe(11);
+  subs.onClose(10);
+  TEST_ASSERT_FALSE(subs.contains(10));
+  TEST_ASSERT_EQUAL(0, ctl.stops);
+  subs.onClose(55);  // a socket that never subscribed
+  TEST_ASSERT_EQUAL(0, ctl.stops);
+  subs.onClose(11);
+  TEST_ASSERT_EQUAL(1, ctl.stops);
+  subs.onClose(11);  // closing twice
+  TEST_ASSERT_EQUAL(1, ctl.stops);
+  TEST_ASSERT_EQUAL(static_cast<int>(SubResult::started), static_cast<int>(subs.subscribe(10)));  // reused fd is a new client
+  TEST_ASSERT_EQUAL(2, ctl.starts);
+}
+
+static void test_only_the_subscribed_of_two_clients_is_selected(void)
+{
+  FakeCtl                ctl;
+  Subscriptions<FakeCtl> subs(ctl);
+  subs.subscribe(4);
+  TEST_ASSERT_TRUE(subs.contains(4));
+  TEST_ASSERT_FALSE(subs.contains(5));
+}
+
+static void test_subscriber_set_overflow_is_refused_without_side_effects(void)
+{
+  FakeCtl                ctl;
+  Subscriptions<FakeCtl> subs(ctl);
+  for (int fd = 0; fd < static_cast<int>(kMaxSubscribers); fd++)
+  {
+    const SubResult r = subs.subscribe(fd);
+    TEST_ASSERT_TRUE(r == SubResult::started || r == SubResult::joined);
+  }
+  TEST_ASSERT_EQUAL(kMaxSubscribers, subs.size());
+  TEST_ASSERT_EQUAL(static_cast<int>(SubResult::full), static_cast<int>(subs.subscribe(500)));
+  TEST_ASSERT_FALSE(subs.contains(500));
+  TEST_ASSERT_EQUAL(kMaxSubscribers, subs.size());
+  TEST_ASSERT_EQUAL(static_cast<int>(SubResult::already), static_cast<int>(subs.subscribe(3)));  // members still fine
+  TEST_ASSERT_EQUAL(1, ctl.starts);
+}
+
+static void test_invalid_descriptors_are_refused(void)
+{
+  FakeCtl                ctl;
+  Subscriptions<FakeCtl> subs(ctl);
+  TEST_ASSERT_EQUAL(static_cast<int>(SubResult::invalid), static_cast<int>(subs.subscribe(-1)));
+  TEST_ASSERT_EQUAL(static_cast<int>(SubResult::invalid), static_cast<int>(subs.subscribe(-2147483647 - 1)));
+  TEST_ASSERT_FALSE(subs.unsubscribe(-1));
+  TEST_ASSERT_FALSE(subs.contains(-1));
+  subs.onClose(-1);
+  TEST_ASSERT_EQUAL(0, ctl.starts);
+  TEST_ASSERT_EQUAL(0, ctl.stops);
+}
+
+static void test_failed_start_adds_nobody_and_retry_works(void)
+{
+  FakeCtl                ctl;
+  Subscriptions<FakeCtl> subs(ctl);
+  ctl.failStart = true;
+  TEST_ASSERT_EQUAL(static_cast<int>(SubResult::startFailed), static_cast<int>(subs.subscribe(10)));
+  TEST_ASSERT_FALSE(subs.contains(10));  // so the dispatcher sends it nothing, only the requester's inactive reply
+  TEST_ASSERT_EQUAL(0, subs.size());
+  ctl.failStart = false;
+  TEST_ASSERT_EQUAL(static_cast<int>(SubResult::started), static_cast<int>(subs.subscribe(10)));
+}
+
+static void test_clear_stops_once_and_only_when_something_was_on(void)
+{
+  FakeCtl                ctl;
+  Subscriptions<FakeCtl> subs(ctl);
+  subs.clear();
+  TEST_ASSERT_EQUAL(0, ctl.stops);
+  subs.subscribe(1);
+  subs.subscribe(2);
+  subs.clear();
+  TEST_ASSERT_EQUAL(1, ctl.stops);
+  TEST_ASSERT_EQUAL(0, subs.size());
+  TEST_ASSERT_FALSE(subs.contains(1));
+}
+
 extern "C" void run_can_raw_tests(void)
 {
   RUN_TEST(test_make_frame_clamps_and_masks);
@@ -733,4 +864,13 @@ extern "C" void run_can_raw_tests(void)
   RUN_TEST(test_lifecycle_deinit_timeouts_can_be_retried);
   RUN_TEST(test_lifecycle_allocation_failure_keeps_the_stream_off);
   RUN_TEST(test_lifecycle_task_creation_failure_is_reported);
+  RUN_TEST(test_subscribe_first_starts_stream_and_last_unsubscribe_stops_it);
+  RUN_TEST(test_duplicate_subscribe_is_idempotent);
+  RUN_TEST(test_unsubscribe_by_a_non_subscriber_is_a_no_op);
+  RUN_TEST(test_socket_close_removes_subscriber_and_stops_when_empty);
+  RUN_TEST(test_only_the_subscribed_of_two_clients_is_selected);
+  RUN_TEST(test_subscriber_set_overflow_is_refused_without_side_effects);
+  RUN_TEST(test_invalid_descriptors_are_refused);
+  RUN_TEST(test_failed_start_adds_nobody_and_retry_works);
+  RUN_TEST(test_clear_stops_once_and_only_when_something_was_on);
 }

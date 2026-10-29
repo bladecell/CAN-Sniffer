@@ -389,6 +389,99 @@ private:
   bool   tapInstalled_ = false;
 };
 
+constexpr size_t kMaxSubscribers = 20;  // same bound as the WebSocket clients one broadcast considers
+
+enum class SubResult
+{
+  started,      // first subscriber: the stream was switched on
+  joined,       // the stream was already on
+  already,      // this socket is subscribed: nothing changed
+  full,         // no room in the set
+  invalid,      // not a socket descriptor
+  startFailed   // the stream could not start (no memory); the socket is not subscribed
+};
+
+// The sockets that asked for the raw stream (0xB0). The stream runs exactly while the set is not empty. Bounded, no
+// allocation. Not thread-safe: every caller is the HTTP task (WebSocket handler, socket-closed hook, bulk send). Ctl
+// provides bool start() and void stop().
+template <typename Ctl>
+class Subscriptions
+{
+public:
+  explicit Subscriptions(Ctl& ctl) : ctl_(ctl) {}
+
+  SubResult subscribe(int fd)
+  {
+    if (fd < 0)
+    {
+      return SubResult::invalid;
+    }
+    if (contains(fd))
+    {
+      return SubResult::already;
+    }
+    if (n_ >= kMaxSubscribers)
+    {
+      return SubResult::full;
+    }
+    const bool first = n_ == 0;
+    if (first && !ctl_.start())
+    {
+      return SubResult::startFailed;
+    }
+    fds_[n_++] = fd;
+    return first ? SubResult::started : SubResult::joined;
+  }
+
+  // True if the socket was subscribed. The stream stops with the last one.
+  bool unsubscribe(int fd)
+  {
+    for (size_t i = 0; i < n_; i++)
+    {
+      if (fds_[i] == fd)
+      {
+        fds_[i] = fds_[--n_];
+        if (n_ == 0)
+        {
+          ctl_.stop();
+        }
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void onClose(int fd) { (void)unsubscribe(fd); }
+
+  // Everything off (last WebSocket client gone, web server stopping).
+  void clear()
+  {
+    if (n_ != 0)
+    {
+      n_ = 0;
+      ctl_.stop();
+    }
+  }
+
+  bool contains(int fd) const
+  {
+    for (size_t i = 0; i < n_; i++)
+    {
+      if (fds_[i] == fd)
+      {
+        return true;
+      }
+    }
+    return false;
+  }
+  size_t size() const { return n_; }
+
+private:
+  Ctl&   ctl_;
+  int    fds_[kMaxSubscribers] = {};
+  size_t n_                    = 0;
+};
+
 template <typename Lock>
 class Core
 {

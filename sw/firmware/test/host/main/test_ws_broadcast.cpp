@@ -20,6 +20,7 @@ struct FakeHttpd
     bool failList = false;
     bool failSend = false;
     bool unwritable = false;
+    std::vector<int> subscribers{4};  // bulk goes only to these (and to an explicit target)
     size_t lastAlloc = 0;
     unsigned sendErrors = 0;
     void (*duringQueue)(void*) = nullptr;
@@ -69,6 +70,11 @@ struct Backend
         return false;
     }
     bool writable(int) { return !httpd->unwritable; }
+    bool subscribed(int fd)
+    {
+        for (int s : httpd->subscribers) { if (s == fd) { return true; } }
+        return false;
+    }
     void send(int fd, uint8_t* payload, size_t len)
     {
         if (httpd->failSend) { ++httpd->sendErrors; return; }
@@ -381,6 +387,73 @@ static void test_log_gate_first_call_at_time_zero_and_clock_wrap(void)
     TEST_ASSERT_TRUE(w.allow(0x400u, suppressed));   // 1.1 s later
 }
 
+static void test_bulk_goes_only_to_subscribed_clients(void)
+{
+    FakeHttpd h;
+    h.clients = {{4, true}, {5, true}, {6, true}};
+    h.subscribers = {5};
+    Dispatcher d;
+    d.start();
+    d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 3);
+    h.run();
+    TEST_ASSERT_EQUAL(1, h.sent.size());
+    TEST_ASSERT_EQUAL(5, h.sent[0]);
+    h.sent.clear();
+    d.submit({&h}, packet, sizeof(packet));  // normal broadcasts still reach everyone
+    h.run();
+    TEST_ASSERT_EQUAL(3, h.sent.size());
+}
+
+static void test_bulk_with_no_subscriber_sends_nothing_and_skips_nothing(void)
+{
+    FakeHttpd h;
+    h.subscribers.clear();
+    h.unwritable = true;
+    Dispatcher d;
+    d.start();
+    d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 4);
+    h.run();
+    TEST_ASSERT_TRUE(h.sent.empty());
+    TEST_ASSERT_EQUAL(0, d.takeBulkSkipped());
+}
+
+static void test_targeted_bulk_reaches_only_the_requester(void)
+{
+    FakeHttpd h;
+    h.clients = {{4, true}, {5, true}};
+    h.subscribers = {4};  // 5 asked and failed to subscribe: it is not in the set
+    Dispatcher d;
+    d.start();
+    d.submit({&h}, bulkPayload, 23, Dispatcher::Class::bulk, 0, 5);
+    h.run();
+    TEST_ASSERT_EQUAL(1, h.sent.size());
+    TEST_ASSERT_EQUAL(5, h.sent[0]);
+}
+
+static void test_targeted_bulk_to_a_closed_socket_is_dropped(void)
+{
+    FakeHttpd h;
+    Dispatcher d;
+    d.start();
+    d.submit({&h}, bulkPayload, 23, Dispatcher::Class::bulk, 0, 99);
+    h.run();
+    TEST_ASSERT_TRUE(h.sent.empty());
+    TEST_ASSERT_EQUAL(h.allocations, h.frees);
+}
+
+static void test_only_unwritable_subscribers_count_as_skipped(void)
+{
+    FakeHttpd h;
+    h.clients = {{4, true}, {5, true}};
+    h.subscribers = {4};
+    h.unwritable = true;
+    Dispatcher d;
+    d.start();
+    d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 6);
+    h.run();
+    TEST_ASSERT_EQUAL(6, d.takeBulkSkipped());
+}
+
 extern "C" void run_ws_broadcast_tests(void)
 {
     RUN_TEST(test_reused_http_fd_does_not_receive_frame);
@@ -402,4 +475,9 @@ extern "C" void run_ws_broadcast_tests(void)
     RUN_TEST(test_bulk_with_no_clients_is_not_counted_as_skipped);
     RUN_TEST(test_log_gate_limits_and_reports_suppressed);
     RUN_TEST(test_log_gate_first_call_at_time_zero_and_clock_wrap);
+    RUN_TEST(test_bulk_goes_only_to_subscribed_clients);
+    RUN_TEST(test_bulk_with_no_subscriber_sends_nothing_and_skips_nothing);
+    RUN_TEST(test_targeted_bulk_reaches_only_the_requester);
+    RUN_TEST(test_targeted_bulk_to_a_closed_socket_is_dropped);
+    RUN_TEST(test_only_unwritable_subscribers_count_as_skipped);
 }

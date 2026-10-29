@@ -21,6 +21,9 @@ static LogGate& sendFailLogGate()
     return gate;
 }
 
+// Set by start() from Config; read in the httpd task by the backend.
+static bool (*bulkSubscribedFn)(int fd) = nullptr;
+
 struct WsBroadcastBackend
 {
     httpd_handle_t* server;
@@ -38,6 +41,7 @@ struct WsBroadcastBackend
         return err == ESP_OK;
     }
     bool ready(int fd) { return httpd_ws_get_fd_info(*server, fd) == HTTPD_WS_CLIENT_WEBSOCKET; }
+    bool subscribed(int fd) { return bulkSubscribedFn != nullptr && bulkSubscribedFn(fd); }
     // A zero-timeout select: lwIP reports a socket writable only with real room in its send buffer, so a bulk frame
     // does not park the HTTP task in a blocking send behind a slow phone.
     bool writable(int fd)
@@ -70,6 +74,7 @@ struct WsBroadcastBackend
 };
 
 static ws_broadcast::Dispatcher<WsBroadcastBackend> wsDispatcher;
+
 
 // One line per 5 s however many broadcasts are refused; the count of swallowed ones rides on the next line.
 static LogGate wsDropLogGate(5000);
@@ -161,6 +166,7 @@ esp_err_t AsyncWebServer::start(Config config)
     max_requests_per_sec_ = config.max_requests_per_sec;
     socketClosedHook_     = config.on_socket_closed;
     requestFilter_        = config.request_filter;
+    bulkSubscribedFn      = config.bulk_subscribed;
     config.httpd_config.close_fn = &AsyncWebServer::closeSocket;
 
     server_ = NULL;
@@ -550,11 +556,11 @@ void AsyncWebServer::wsBroadcast(httpd_ws_frame_t* ws_pkt)
     }
 }
 
-AsyncWebServer::WsSend AsyncWebServer::wsBroadcastBulk(const uint8_t* data, size_t len, uint16_t units)
+AsyncWebServer::WsSend AsyncWebServer::wsBroadcastBulk(const uint8_t* data, size_t len, uint16_t units, int targetFd)
 {
     using Dispatcher = ws_broadcast::Dispatcher<WsBroadcastBackend>;
     const ws_broadcast::Result result =
-        wsDispatcher.submit(WsBroadcastBackend{&server_}, data, len, Dispatcher::Class::bulk, units);
+        wsDispatcher.submit(WsBroadcastBackend{&server_}, data, len, Dispatcher::Class::bulk, units, targetFd);
     switch (result)
     {
         case ws_broadcast::Result::accepted:

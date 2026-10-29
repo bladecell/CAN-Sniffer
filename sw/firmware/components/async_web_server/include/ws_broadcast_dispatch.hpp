@@ -15,8 +15,8 @@ enum class Result { accepted, stopped, full, invalid, noMemory, queueFailed };
 //
 // Two classes of broadcast, each with its own pending budget. Normal ones (PID updates, status, recorder state, pong) are
 // at most kMaxPayload bytes, at most kMaxPending pending, and go to every upgraded client. Bulk ones (the raw CAN stream:
-// batches and stats) may be larger, at most kMaxBulkPending pending, and go only to clients whose socket has room
-// (Backend::writable), so a slow phone cannot park the HTTPD task in a blocking send. The budgets are independent: a
+// batches and stats) may be larger, at most kMaxBulkPending pending, and go only to subscribed clients (Backend::subscribed;
+// or, with a target descriptor, only to that one) whose socket has room (Backend::writable), so a slow phone cannot park the HTTPD task in a blocking send. The budgets are independent: a
 // saturated stream never makes a normal submit fail. Bulk items that reached no writable client add their `units`
 // (frames) to a counter the producer reads with takeBulkSkipped().
 template <typename Backend>
@@ -47,7 +47,8 @@ public:
     unsigned bulkPending() const { return countOf(state_.load(), true); }
     uint32_t takeBulkSkipped() { return skipped_.exchange(0); }
 
-    Result submit(Backend backend, const uint8_t* payload, size_t len, Class cls = Class::normal, uint16_t units = 0)
+    Result submit(Backend backend, const uint8_t* payload, size_t len, Class cls = Class::normal, uint16_t units = 0,
+                  int target = -1)
     {
         const bool bulk = cls == Class::bulk;
         if (!payload || len == 0 || len > (bulk ? kMaxBulkPayload : kMaxPayload)) { return Result::invalid; }
@@ -65,7 +66,7 @@ public:
             state_.fetch_sub(unit(bulk));
             return Result::noMemory;
         }
-        Work* work = new (storage) Work{this, backend, len, units, bulk};
+        Work* work = new (storage) Work{this, backend, len, units, target, bulk};
         std::memcpy(work->payload(), payload, len);
         if (!backend.queue(&execute, work))
         {
@@ -91,6 +92,7 @@ private:
         Backend backend;
         size_t len;
         uint16_t units;
+        int target;  // bulk only: -1 = every subscribed client, else just this descriptor
         bool bulk;
         uint8_t* payload() { return reinterpret_cast<uint8_t*>(this + 1); }
     };
@@ -120,10 +122,15 @@ private:
             {
                 if (work->backend.ready(fds[i]))
                 {
-                    if (work->bulk && !work->backend.writable(fds[i]))
+                    if (work->bulk)
                     {
-                        skipped = true;
-                        continue;
+                        const bool wanted = work->target >= 0 ? fds[i] == work->target : work->backend.subscribed(fds[i]);
+                        if (!wanted) { continue; }
+                        if (!work->backend.writable(fds[i]))
+                        {
+                            skipped = true;
+                            continue;
+                        }
                     }
                     work->backend.send(fds[i], work->payload(), work->len);
                 }

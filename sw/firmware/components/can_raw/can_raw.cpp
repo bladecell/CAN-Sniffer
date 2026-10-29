@@ -199,10 +199,10 @@ bool CanRaw::sendStats()
   const uint8_t flags = CanDriver::getInstance().getConfig().filter ? can_raw::kFlagHwFilter : 0;
   uint8_t       buf[can_raw::kStatsBytes];
   const size_t  n = can_raw::encodeStats(gCore.snapshot(CanDriver::getInstance().getRxDropped(), flags), buf, sizeof(buf));
-  return n != 0 && sink_ != nullptr && sink_(sinkArg_, buf, n, 0) == can_raw::SinkResult::accepted;
+  return n != 0 && sink_ != nullptr && sink_(sinkArg_, buf, n, 0, -1) == can_raw::SinkResult::accepted;
 }
 
-void CanRaw::sendInactiveStats()
+void CanRaw::sendInactiveStats(int fd)
 {
   if (!initialized_ || sink_ == nullptr)
   {
@@ -213,7 +213,7 @@ void CanRaw::sendInactiveStats()
   const size_t   n = can_raw::encodeStats(s, buf, sizeof(buf));
   if (n != 0)
   {
-    (void)sink_(sinkArg_, buf, n, 0);
+    (void)sink_(sinkArg_, buf, n, 0, fd);
   }
 }
 
@@ -235,7 +235,7 @@ void CanRaw::taskLoop()
       ulTaskNotifyTake(pdTRUE, portMAX_DELAY);  // no polling while the stream is off
       continue;
     }
-    gCore.pump([this](const uint8_t* d, size_t n, size_t frames) { return sink_(sinkArg_, d, n, frames); },
+    gCore.pump([this](const uint8_t* d, size_t n, size_t frames) { return sink_(sinkArg_, d, n, frames, -1); },
                CanDriver::getInstance().getRxDropped(), kBatchesPerWake);
     const TickType_t now = xTaskGetTickCount();
     if ((statsDue || now - lastStats >= pdMS_TO_TICKS(kStatsPeriodMs)) && sendStats())

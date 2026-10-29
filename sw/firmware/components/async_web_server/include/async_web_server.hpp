@@ -34,6 +34,9 @@ public:
         // `routeArg` is the arg given to registerRoute(). Return false after answering the request itself (sendError);
         // the request is then dropped. Must not block: it delays every socket.
         bool (*request_filter)(httpd_req_t* req, void* routeArg) = nullptr;
+        // Bulk broadcasts (wsBroadcastBulk) go only to sockets for which this returns true. Runs in the httpd task, like
+        // on_socket_closed, so state both callbacks share needs no lock. Null: no socket is subscribed.
+        bool (*bulk_subscribed)(int fd) = nullptr;
     };
 
     static AsyncWebServer& getInstance()
@@ -86,11 +89,13 @@ public:
     // when three broadcasts are already pending.
     void wsBroadcast(httpd_ws_frame_t* ws_pkt);
 
-    // Bulk broadcast for the raw CAN stream: up to 257 bytes, at most two pending (so PID updates keep a slot), and a
+    // Bulk broadcast for the raw CAN stream: up to 257 bytes, one pending slot of its own (PID updates keep theirs), and a
     // client whose socket has no room is skipped instead of blocking the HTTP task. `units` (frames in the payload) is
     // added to takeBulkSkipped() when a client was skipped. busy: no slot now, retry later and keep the data.
     enum class WsSend { accepted, busy, dropped };
-    WsSend   wsBroadcastBulk(const uint8_t* data, size_t len, uint16_t units);
+    // `targetFd` >= 0 sends to that socket only (a reply to one requester), whether subscribed or not; -1 sends to every
+    // subscribed socket (Config::bulk_subscribed).
+    WsSend   wsBroadcastBulk(const uint8_t* data, size_t len, uint16_t units, int targetFd = -1);
     // Units of bulk broadcasts that found a client unable to take them, since the last call.
     uint32_t takeBulkSkipped();
 
