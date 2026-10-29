@@ -14,7 +14,6 @@ namespace
 {
 constexpr uint32_t    kPumpPeriodMs   = 20;  // wake period while streaming
 constexpr size_t      kBatchesPerWake = 4;   // 4 x up to 16 frames per 20 ms: 3200 frames/s ceiling
-constexpr uint32_t    kStatsPeriodMs  = 1000;
 constexpr uint32_t    kTaskStackBytes = 4096;
 constexpr UBaseType_t kTaskPriority   = tskIDLE_PRIORITY + 2;  // above the 1 Hz stream task, far below httpd (5) and CAN
 
@@ -225,24 +224,22 @@ void CanRaw::taskEntry(void* arg)
 
 void CanRaw::taskLoop()
 {
-  TickType_t lastStats = 0;
-  bool       statsDue  = true;  // right after a start
+  can_raw::StatsSchedule sched;
   while (!stopRequested_)
   {
     if (!gCore.active())
     {
-      statsDue = true;
+      sched.reset();  // the first stats frame goes out right after a start
       ulTaskNotifyTake(pdTRUE, portMAX_DELAY);  // no polling while the stream is off
       continue;
     }
-    gCore.pump([this](const uint8_t* d, size_t n, size_t frames) { return sink_(sinkArg_, d, n, frames, -1); },
-               CanDriver::getInstance().getRxDropped(), kBatchesPerWake);
-    const TickType_t now = xTaskGetTickCount();
-    if ((statsDue || now - lastStats >= pdMS_TO_TICKS(kStatsPeriodMs)) && sendStats())
-    {
-      statsDue  = false;
-      lastStats = now;  // a refused (busy) stats frame is retried on the next pass
-    }
+    can_raw::drainPass(
+        sched, static_cast<uint32_t>(pdTICKS_TO_MS(xTaskGetTickCount())), [this] { return sendStats(); },
+        [this]
+        {
+          return gCore.pump([this](const uint8_t* d, size_t n, size_t frames) { return sink_(sinkArg_, d, n, frames, -1); },
+                            CanDriver::getInstance().getRxDropped(), kBatchesPerWake);
+        });
     vTaskDelay(pdMS_TO_TICKS(kPumpPeriodMs));
   }
   taskRunning_ = false;  // last access to this object

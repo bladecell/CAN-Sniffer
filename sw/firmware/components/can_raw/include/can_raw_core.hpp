@@ -482,6 +482,42 @@ private:
   size_t n_                    = 0;
 };
 
+// When the 1 Hz stats frame is due. First one right after a start (reset()).
+class StatsSchedule
+{
+public:
+  static constexpr uint32_t kPeriodMs = 1000;
+  void reset() { fresh_ = true; }
+  bool due(uint32_t nowMs) const { return fresh_ || static_cast<uint32_t>(nowMs - last_) >= kPeriodMs; }
+  void sent(uint32_t nowMs)
+  {
+    fresh_ = false;
+    last_  = nowMs;
+  }
+
+private:
+  bool     fresh_ = true;
+  uint32_t last_  = 0;
+};
+
+// One pass of the drain task. Batches and stats share one bulk slot, and a batch sent in a pass is still queued when the
+// next pass starts, so stats tried after the batches lose every time under load (seen on hardware: 2 in 20 s). Stats go
+// first when due; if the slot is busy then, the batches wait this pass (the frames stay in the ring) so nothing retakes
+// the slot ahead of the retry. Costs a batch at most one 20 ms pass per stats frame.
+template <typename SendStats, typename Pump>
+size_t drainPass(StatsSchedule& sched, uint32_t nowMs, SendStats sendStats, Pump pump)
+{
+  if (sched.due(nowMs))
+  {
+    if (!sendStats())
+    {
+      return 0;
+    }
+    sched.sent(nowMs);
+  }
+  return pump();
+}
+
 template <typename Lock>
 class Core
 {

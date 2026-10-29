@@ -820,6 +820,75 @@ static void test_clear_stops_once_and_only_when_something_was_on(void)
   TEST_ASSERT_FALSE(subs.contains(1));
 }
 
+// ---- stats must not starve behind batches (hardware finding: 2 stats frames in 20 s under load) ----
+
+// One bulk slot shared by batches and stats, like the dispatcher: a batch sent in a pass is still queued when the next
+// thing tries, and the HTTP task frees the slot between passes.
+struct OneSlot
+{
+  bool busy    = false;
+  int  batches = 0;
+  int  stats   = 0;
+  bool sendBatch() { if (busy) return false; busy = true; batches++; return true; }
+  bool sendStats() { if (busy) return false; busy = true; stats++; return true; }
+  size_t pump()
+  {
+    size_t n = 0;
+    for (int b = 0; b < 4 && sendBatch(); b++)  // as Core::pump: stops at the first busy answer
+    {
+      n++;
+    }
+    return n;
+  }
+};
+
+static void test_stats_are_sent_at_1hz_while_batches_keep_the_slot_busy(void)
+{
+  OneSlot       slot;
+  StatsSchedule sched;
+  for (uint32_t t = 0; t <= 3000; t += 20)
+  {
+    drainPass(sched, t, [&] { return slot.sendStats(); }, [&] { return slot.pump(); });
+    slot.busy = false;  // the HTTP task ran its work between two passes
+  }
+  TEST_ASSERT_TRUE(slot.stats >= 3);   // t = 0, 1000, 2000, 3000
+  TEST_ASSERT_TRUE(slot.stats <= 4);
+  TEST_ASSERT_TRUE(slot.batches > 100);  // and the stream itself did not stop
+}
+
+static void test_a_busy_slot_at_stats_time_holds_the_batches_back_until_stats_go_out(void)
+{
+  OneSlot       slot;
+  StatsSchedule sched;
+  slot.busy = true;
+  int pumped = 0;
+  for (int i = 0; i < 3; i++)  // slot stays taken for three passes
+  {
+    drainPass(sched, 0 + i * 20, [&] { return slot.sendStats(); }, [&] { pumped++; return slot.pump(); });
+  }
+  TEST_ASSERT_EQUAL(0, pumped);  // nothing may retake the slot ahead of the stats frame
+  slot.busy = false;
+  drainPass(sched, 60, [&] { return slot.sendStats(); }, [&] { pumped++; return slot.pump(); });
+  TEST_ASSERT_EQUAL(1, slot.stats);
+  TEST_ASSERT_EQUAL(0, slot.batches);  // the stats frame took the slot; the batch tried in that pass found it busy
+  slot.busy = false;
+  drainPass(sched, 80, [&] { return slot.sendStats(); }, [&] { pumped++; return slot.pump(); });
+  TEST_ASSERT_TRUE(slot.batches > 0);  // stats done, batches flow again
+  TEST_ASSERT_EQUAL(1, slot.stats);
+}
+
+static void test_stats_schedule_period_and_clock_wrap(void)
+{
+  StatsSchedule s;
+  TEST_ASSERT_TRUE(s.due(5));  // right after a start
+  s.sent(0xFFFFFF00u);
+  TEST_ASSERT_FALSE(s.due(0xFFFFFF10u));
+  TEST_ASSERT_FALSE(s.due(0x100u));  // 512 ms later across the 32-bit wrap
+  TEST_ASSERT_TRUE(s.due(0x300u));   // 1.0 s later
+  s.reset();
+  TEST_ASSERT_TRUE(s.due(0xFFFFFF10u));
+}
+
 extern "C" void run_can_raw_tests(void)
 {
   RUN_TEST(test_make_frame_clamps_and_masks);
@@ -873,4 +942,7 @@ extern "C" void run_can_raw_tests(void)
   RUN_TEST(test_invalid_descriptors_are_refused);
   RUN_TEST(test_failed_start_adds_nobody_and_retry_works);
   RUN_TEST(test_clear_stops_once_and_only_when_something_was_on);
+  RUN_TEST(test_stats_are_sent_at_1hz_while_batches_keep_the_slot_busy);
+  RUN_TEST(test_a_busy_slot_at_stats_time_holds_the_batches_back_until_stats_go_out);
+  RUN_TEST(test_stats_schedule_period_and_clock_wrap);
 }
