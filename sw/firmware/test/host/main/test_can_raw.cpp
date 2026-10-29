@@ -518,6 +518,177 @@ static void test_snapshot_resets_peak_and_zeroes_on_restart(void)
   TEST_ASSERT_EQUAL(0, s.streamed);
 }
 
+// ---- review fixes: skipped frames, ISR baseline, lifecycle ----
+
+static void test_skipped_frames_move_from_streamed_to_ws_dropped(void)
+{
+  Rig r;
+  for (uint32_t i = 0; i < 3; i++)
+  {
+    r.core.tap(mk(1, i, {}));
+  }
+  r.pump(0, 1);
+  TEST_ASSERT_EQUAL(3, r.core.snapshot(0, 0).streamed);
+  r.core.markSkipped(2);  // the batch was accepted, then two of its frames reached no client
+  Stats s = r.core.snapshot(0, 0);
+  TEST_ASSERT_EQUAL(1, s.streamed);
+  TEST_ASSERT_EQUAL(2, s.wsDropped);
+  r.core.markSkipped(50);  // more than streamed: clamps, still counted once as dropped
+  s = r.core.snapshot(0, 0);
+  TEST_ASSERT_EQUAL(0, s.streamed);
+  TEST_ASSERT_EQUAL(52, s.wsDropped);
+}
+
+static void test_isr_baseline_is_taken_at_start_under_the_lock(void)
+{
+  Core<FakeLock> c;
+  Frame          st[4];
+  TEST_ASSERT_TRUE(c.start(st, 4, 100));
+  c.tap(mk(1, 1, {}));
+  std::vector<uint8_t> first;
+  c.pump([&](const uint8_t* d, size_t n, size_t) { first.assign(d, d + n); return SinkResult::accepted; }, 107, 1);
+  TEST_ASSERT_EQUAL(7, first[2]);
+  TEST_ASSERT_EQUAL(7, c.snapshot(107, 0).isrDropped);
+  TEST_ASSERT_EQUAL(0, c.snapshot(100, 0).isrDropped);
+  c.stop();
+  TEST_ASSERT_TRUE(c.start(st, 4, 5000));
+  TEST_ASSERT_EQUAL(3, c.snapshot(5003, 0).isrDropped);
+}
+
+struct FakeEnv
+{
+  Core<FakeLock>* core;
+  Frame           storage[8];
+  bool failCreate = false, failTap = false, failRemove = false, failShutdown = false, failAlloc = false;
+  int  creates = 0, shutdowns = 0, installs = 0, removes = 0, allocs = 0, frees = 0, wakes = 0;
+  bool createTask() { if (failCreate) return false; creates++; return true; }
+  bool shutdownTask() { if (failShutdown) return false; shutdowns++; return true; }
+  bool installTap() { if (failTap) return false; installs++; return true; }
+  bool removeTap() { if (failRemove) return false; removes++; return true; }
+  Frame* allocRing(size_t) { if (failAlloc) return nullptr; allocs++; return storage; }
+  void freeRing(Frame*) { frees++; }
+  uint32_t isrNow() { return 0; }
+  void wake() { wakes++; }
+};
+
+struct LcRig
+{
+  Core<FakeLock>                       core;
+  FakeEnv                              env;
+  Lifecycle<Core<FakeLock>, FakeEnv>   lc;
+  LcRig() : lc(core, env) { env.core = &core; }
+};
+
+static void test_lifecycle_start_before_init_is_refused(void)
+{
+  LcRig r;
+  TEST_ASSERT_EQUAL(static_cast<int>(Status::invalidState), static_cast<int>(r.lc.start()));
+  TEST_ASSERT_EQUAL(0, r.env.allocs);
+}
+
+static void test_lifecycle_repeated_cycles_balance_allocations(void)
+{
+  LcRig r;
+  TEST_ASSERT_EQUAL(static_cast<int>(Status::ok), static_cast<int>(r.lc.init()));
+  TEST_ASSERT_EQUAL(static_cast<int>(Status::ok), static_cast<int>(r.lc.init()));  // twice is a no-op
+  TEST_ASSERT_EQUAL(1, r.env.creates);
+  for (int i = 0; i < 5; i++)
+  {
+    TEST_ASSERT_EQUAL(static_cast<int>(Status::ok), static_cast<int>(r.lc.start()));
+    TEST_ASSERT_EQUAL(static_cast<int>(Status::ok), static_cast<int>(r.lc.start()));  // start while on: no second ring
+    TEST_ASSERT_TRUE(r.core.active());
+    r.lc.stop();
+    r.lc.stop();
+    TEST_ASSERT_FALSE(r.core.active());
+  }
+  TEST_ASSERT_EQUAL(5, r.env.allocs);
+  TEST_ASSERT_EQUAL(5, r.env.frees);
+  TEST_ASSERT_EQUAL(5, r.env.wakes);
+}
+
+static void test_lifecycle_deinit_while_running_releases_everything(void)
+{
+  LcRig r;
+  r.lc.init();
+  r.lc.start();
+  TEST_ASSERT_EQUAL(static_cast<int>(Status::ok), static_cast<int>(r.lc.deinit()));
+  TEST_ASSERT_FALSE(r.core.active());
+  TEST_ASSERT_EQUAL(r.env.allocs, r.env.frees);
+  TEST_ASSERT_EQUAL(1, r.env.removes);
+  TEST_ASSERT_EQUAL(1, r.env.shutdowns);
+  TEST_ASSERT_EQUAL(static_cast<int>(Status::ok), static_cast<int>(r.lc.deinit()));  // idempotent
+  TEST_ASSERT_EQUAL(1, r.env.shutdowns);
+  TEST_ASSERT_EQUAL(static_cast<int>(Status::invalidState), static_cast<int>(r.lc.start()));
+  TEST_ASSERT_EQUAL(static_cast<int>(Status::ok), static_cast<int>(r.lc.init()));  // and can come back
+  TEST_ASSERT_EQUAL(static_cast<int>(Status::ok), static_cast<int>(r.lc.start()));
+}
+
+static void test_lifecycle_failed_tap_install_fails_init_and_leaks_nothing(void)
+{
+  LcRig r;
+  r.env.failTap = true;
+  TEST_ASSERT_EQUAL(static_cast<int>(Status::invalidState), static_cast<int>(r.lc.init()));
+  TEST_ASSERT_EQUAL(1, r.env.creates);
+  TEST_ASSERT_EQUAL(1, r.env.shutdowns);  // the task it created is gone again
+  TEST_ASSERT_EQUAL(static_cast<int>(Status::invalidState), static_cast<int>(r.lc.start()));  // start after a failed tap
+  TEST_ASSERT_EQUAL(0, r.env.allocs);
+  TEST_ASSERT_FALSE(r.core.active());
+  r.env.failTap = false;
+  TEST_ASSERT_EQUAL(static_cast<int>(Status::ok), static_cast<int>(r.lc.init()));
+  TEST_ASSERT_EQUAL(2, r.env.creates);
+  TEST_ASSERT_EQUAL(static_cast<int>(Status::ok), static_cast<int>(r.lc.start()));
+}
+
+static void test_lifecycle_task_that_will_not_exit_is_reused_not_duplicated(void)
+{
+  LcRig r;
+  r.env.failTap      = true;
+  r.env.failShutdown = true;
+  TEST_ASSERT_EQUAL(static_cast<int>(Status::invalidState), static_cast<int>(r.lc.init()));
+  r.env.failTap      = false;
+  r.env.failShutdown = false;
+  TEST_ASSERT_EQUAL(static_cast<int>(Status::ok), static_cast<int>(r.lc.init()));
+  TEST_ASSERT_EQUAL(1, r.env.creates);  // the earlier task is still there: no second one
+}
+
+static void test_lifecycle_deinit_timeouts_can_be_retried(void)
+{
+  LcRig r;
+  r.lc.init();
+  r.lc.start();
+  r.env.failRemove = true;
+  TEST_ASSERT_EQUAL(static_cast<int>(Status::timeout), static_cast<int>(r.lc.deinit()));
+  TEST_ASSERT_FALSE(r.core.active());  // the ring is already gone
+  TEST_ASSERT_EQUAL(0, r.env.shutdowns);
+  r.env.failRemove   = false;
+  r.env.failShutdown = true;
+  TEST_ASSERT_EQUAL(static_cast<int>(Status::timeout), static_cast<int>(r.lc.deinit()));
+  r.env.failShutdown = false;
+  TEST_ASSERT_EQUAL(static_cast<int>(Status::ok), static_cast<int>(r.lc.deinit()));
+  TEST_ASSERT_EQUAL(1, r.env.removes);
+  TEST_ASSERT_EQUAL(1, r.env.shutdowns);
+  TEST_ASSERT_EQUAL(r.env.allocs, r.env.frees);
+}
+
+static void test_lifecycle_allocation_failure_keeps_the_stream_off(void)
+{
+  LcRig r;
+  r.lc.init();
+  r.env.failAlloc = true;
+  TEST_ASSERT_EQUAL(static_cast<int>(Status::noMemory), static_cast<int>(r.lc.start()));
+  TEST_ASSERT_FALSE(r.core.active());
+  r.env.failAlloc = false;
+  TEST_ASSERT_EQUAL(static_cast<int>(Status::ok), static_cast<int>(r.lc.start()));
+}
+
+static void test_lifecycle_task_creation_failure_is_reported(void)
+{
+  LcRig r;
+  r.env.failCreate = true;
+  TEST_ASSERT_EQUAL(static_cast<int>(Status::noMemory), static_cast<int>(r.lc.init()));
+  TEST_ASSERT_EQUAL(static_cast<int>(Status::invalidState), static_cast<int>(r.lc.start()));
+}
+
 extern "C" void run_can_raw_tests(void)
 {
   RUN_TEST(test_make_frame_clamps_and_masks);
@@ -552,4 +723,14 @@ extern "C" void run_can_raw_tests(void)
   RUN_TEST(test_pump_does_not_discard_frames_of_a_newer_session);
   RUN_TEST(test_stop_on_last_client_close_ends_capture);
   RUN_TEST(test_snapshot_resets_peak_and_zeroes_on_restart);
+  RUN_TEST(test_skipped_frames_move_from_streamed_to_ws_dropped);
+  RUN_TEST(test_isr_baseline_is_taken_at_start_under_the_lock);
+  RUN_TEST(test_lifecycle_start_before_init_is_refused);
+  RUN_TEST(test_lifecycle_repeated_cycles_balance_allocations);
+  RUN_TEST(test_lifecycle_deinit_while_running_releases_everything);
+  RUN_TEST(test_lifecycle_failed_tap_install_fails_init_and_leaks_nothing);
+  RUN_TEST(test_lifecycle_task_that_will_not_exit_is_reused_not_duplicated);
+  RUN_TEST(test_lifecycle_deinit_timeouts_can_be_retried);
+  RUN_TEST(test_lifecycle_allocation_failure_keeps_the_stream_off);
+  RUN_TEST(test_lifecycle_task_creation_failure_is_reported);
 }

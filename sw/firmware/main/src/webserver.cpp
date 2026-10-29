@@ -19,6 +19,7 @@
 #include "auth_http.hpp"
 #include "async_web_server.hpp"
 #include "can_raw.hpp"
+#include "log_gate.hpp"
 #include "body_reader.hpp"
 #include "button.h"
 #include "cJSON.h"
@@ -1690,13 +1691,43 @@ static esp_err_t ws_post_handshake(httpd_req_t* req)
     return ESP_OK;
 }
 
-// 0xB0: off by default, any client may turn it on. A failure (no ring memory) is told to the clients with a stats frame
-// whose active bit is clear.
+// 0xB0: off by default, any client may turn it on. At most one accepted start per 500 ms (each one allocates the 5 KB ring);
+// a start inside that window is ignored, and a client sees from the stats frame that nothing is running. 0xB1 is never
+// delayed. A failure (no ring memory) is told to the clients with a stats frame whose active bit is clear.
+// The on/off lines are logged at most once per 5 s.
+static LogGate canRawStartGate(500);
+static LogGate canRawLogGate(5000);
+
+static void ws_can_raw_log(const char* what)
+{
+    uint32_t suppressed = 0;
+    if (canRawLogGate.allow(static_cast<uint32_t>(esp_timer_get_time() / 1000), suppressed))
+    {
+        ESP_LOGI(TAG, "Raw CAN stream %s (%u more commands in the last interval)", what, static_cast<unsigned>(suppressed));
+    }
+}
+
 static void ws_can_raw_start()
 {
+    uint32_t ignored = 0;
+    if (!canRawStartGate.allow(static_cast<uint32_t>(esp_timer_get_time() / 1000), ignored))
+    {
+        return;
+    }
     if (CanRaw::getInstance().start() != ESP_OK)
     {
-        CanRaw::getInstance().sendInactiveStats();
+        CanRaw::getInstance().sendInactiveStats();  // sink runs here, on the HTTP task: it only submits a broadcast
+        return;
+    }
+    ws_can_raw_log("on");
+}
+
+static void ws_can_raw_stop()
+{
+    if (CanRaw::getInstance().isActive())
+    {
+        CanRaw::getInstance().stop();
+        ws_can_raw_log("off");
     }
 }
 
@@ -1716,8 +1747,7 @@ esp_err_t ws_socket_handler(httpd_req_t* req)
     if (ws_pkt.type == HTTPD_WS_TYPE_CLOSE)
     {
         ESP_LOGI(TAG, "WS Client #%d Closed", sockfd);
-        const uint32_t clients = AsyncWebServer::getInstance().getActiveWSClientCount();  // still counts this one
-        if (can_raw::stopOnClose(clients > 0 ? clients - 1 : 0))
+        if (can_raw::stopOnClose(AsyncWebServer::getInstance().getActiveWSClientCount(sockfd)))
         {
             b_pid_stream_enabled.store(false);
             wsStreamingEnabled.store(false);
@@ -1759,7 +1789,7 @@ esp_err_t ws_socket_handler(httpd_req_t* req)
                 }
                 else if (rawCommand == can_raw::Command::stop)
                 {
-                    CanRaw::getInstance().stop();
+                    ws_can_raw_stop();
                 }
                 else
                 {
@@ -1853,25 +1883,14 @@ static void ws_socket_closed(int fd)
     }
 }
 
-// Transport for the raw CAN stream. Batches go out as bulk broadcasts (own pending budget, skipped for a client that cannot
-// take them), stats as normal 23-byte broadcasts. Runs in the can_raw task, below httpd in priority.
-static can_raw::SinkResult can_raw_sink(void*, const uint8_t* data, size_t len, size_t frames, bool bulk)
+// Transport for the raw CAN stream: batches and stats both go out as bulk broadcasts (own pending slot, so the stream can
+// never take a PID update's), skipped for a client whose socket has no room. Runs in the can_raw task, below httpd in priority.
+static can_raw::SinkResult can_raw_sink(void*, const uint8_t* data, size_t len, size_t frames)
 {
     AsyncWebServer& server = AsyncWebServer::getInstance();
-    if (!bulk)
-    {
-        httpd_ws_frame_t ws_frame = {.final      = true,
-                                     .fragmented = false,
-                                     .type       = HTTPD_WS_TYPE_BINARY,
-                                     .payload    = const_cast<uint8_t*>(data),
-                                     .len        = len,
-                                     .left_len   = 0};
-        server.wsBroadcast(&ws_frame);
-        return can_raw::SinkResult::accepted;
-    }
     if (const uint32_t skipped = server.takeBulkSkipped(); skipped != 0)
     {
-        CanRaw::getInstance().addWsDropped(skipped);  // frames that reached no client with socket room
+        CanRaw::getInstance().addWsSkipped(skipped);  // accepted earlier, but no client had room: not "streamed"
     }
     switch (server.wsBroadcastBulk(data, len, static_cast<uint16_t>(frames)))
     {

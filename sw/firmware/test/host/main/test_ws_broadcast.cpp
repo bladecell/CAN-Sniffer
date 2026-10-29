@@ -257,21 +257,49 @@ static void test_allocation_is_sized_to_the_payload(void)
     h.run();
 }
 
-static void test_bulk_cannot_take_the_last_normal_slot(void)
+static void test_bulk_saturation_never_denies_a_normal_submit(void)
 {
     FakeHttpd h;
     Dispatcher d;
     d.start();
     TEST_ASSERT_EQUAL(Result::accepted, d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 1));
-    TEST_ASSERT_EQUAL(Result::accepted, d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 1));
     TEST_ASSERT_EQUAL(Result::full, d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 1));
-    TEST_ASSERT_EQUAL(2, d.bulkPending());
-    TEST_ASSERT_EQUAL(Result::accepted, d.submit({&h}, packet, sizeof(packet)));  // PID update still fits
+    TEST_ASSERT_EQUAL(1, d.bulkPending());
+    for (unsigned i = 0; i < Dispatcher::kMaxPending; ++i)
+    {
+        TEST_ASSERT_EQUAL(Result::accepted, d.submit({&h}, packet, sizeof(packet)));
+    }
     TEST_ASSERT_EQUAL(Result::full, d.submit({&h}, packet, sizeof(packet)));
+    TEST_ASSERT_EQUAL(Dispatcher::kMaxPending + 1, d.pending());
     h.run();
     TEST_ASSERT_EQUAL(0, d.pending());
     TEST_ASSERT_EQUAL(0, d.bulkPending());
     TEST_ASSERT_EQUAL(h.allocations, h.frees);
+}
+
+static void test_normal_saturation_does_not_take_the_bulk_slot(void)
+{
+    FakeHttpd h;
+    Dispatcher d;
+    d.start();
+    for (unsigned i = 0; i < Dispatcher::kMaxPending; ++i) { d.submit({&h}, packet, sizeof(packet)); }
+    TEST_ASSERT_EQUAL(Result::accepted, d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 1));
+    h.run();
+    TEST_ASSERT_EQUAL(0, d.pending());
+}
+
+static void test_bulk_admission_closes_on_stop_and_counts_as_pending(void)
+{
+    FakeHttpd h;
+    Dispatcher d;
+    d.start();
+    d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 1);
+    d.stop();
+    TEST_ASSERT_EQUAL(1, d.pending());  // shutdown waits for it
+    TEST_ASSERT_EQUAL(Result::stopped, d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 1));
+    h.run();
+    TEST_ASSERT_EQUAL(0, d.pending());
+    TEST_ASSERT_TRUE(h.sent.empty());
 }
 
 static void test_failed_bulk_submissions_release_the_bulk_slot(void)
@@ -287,9 +315,7 @@ static void test_failed_bulk_submissions_release_the_bulk_slot(void)
     h.failAllocation = false;
     TEST_ASSERT_EQUAL(0, d.bulkPending());
     TEST_ASSERT_EQUAL(0, d.pending());
-    for (unsigned i = 0; i < Dispatcher::kMaxPending; ++i) { d.submit({&h}, packet, sizeof(packet)); }
-    TEST_ASSERT_EQUAL(Result::full, d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 1));
-    TEST_ASSERT_EQUAL(0, d.bulkPending());  // total limit hit: the bulk counter is given back
+    TEST_ASSERT_EQUAL(Result::accepted, d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 1));
     h.run();
 }
 
@@ -368,7 +394,9 @@ extern "C" void run_ws_broadcast_tests(void)
     RUN_TEST(test_enumeration_and_send_failures_release_ownership);
     RUN_TEST(test_bulk_payload_limit_is_larger_than_normal);
     RUN_TEST(test_allocation_is_sized_to_the_payload);
-    RUN_TEST(test_bulk_cannot_take_the_last_normal_slot);
+    RUN_TEST(test_bulk_saturation_never_denies_a_normal_submit);
+    RUN_TEST(test_normal_saturation_does_not_take_the_bulk_slot);
+    RUN_TEST(test_bulk_admission_closes_on_stop_and_counts_as_pending);
     RUN_TEST(test_failed_bulk_submissions_release_the_bulk_slot);
     RUN_TEST(test_bulk_skips_unwritable_clients_and_counts_units);
     RUN_TEST(test_bulk_with_no_clients_is_not_counted_as_skipped);

@@ -233,3 +233,6 @@ Where the build departs from the D4 wording, and why.
 - **Ring:** 256 frames x 20 bytes of internal RAM, allocated by `0xB0` and freed by `0xB1` or the last socket closing. A full ring drops the new frame and counts it.
 - **Hardware filter:** the stream cannot widen the controller's acceptance filter live (changing it needs the node disabled). With `filter` on, frames the filter rejects never reach the tap; stats flag bit 1 tells the page. The default is off.
 - **Access:** like the PID stream, `0xB0`/`0xB1` are not PIN-gated: Monitor mode sends nothing. Raw send (slice B) is the gated part.
+- **Exposure (user decision 2026-10-25):** the raw stream shows the TX frames this device sends and the replies to PIN-gated actions (for example the answer to `clear_dtc`), so a client without a PIN can see what a gated call did on the bus. Accepted, no PIN on `0xB0`/`0xB1`.
+- **Control rate and logs:** `0xB0` is accepted at most every 500 ms because each start allocates the ring; `0xB1` is not delayed. The on/off lines, the drop warning and the per-client send-failure warning each go through a `LogGate` (one line per 5 s).
+- **Slots (review fix):** normal broadcasts keep three pending slots and the stream gets its own fourth (batches and stats), instead of sharing three. A saturated stream can no longer deny a PID update.

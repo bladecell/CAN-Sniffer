@@ -11,13 +11,14 @@
 class CanRaw
 {
 public:
-  // `bulk` is true for 0x10 batches (frames > 0 says how many frames the bytes carry) and false for 0x11 stats. Called from
-  // the drain task, never with a CanRaw lock held, and must not block for long.
-  using SinkFn = can_raw::SinkResult (*)(void* arg, const uint8_t* data, size_t len, size_t frames, bool bulk);
+  // Called from the drain task (batches and stats) and, for sendInactiveStats(), from the HTTP task. Never with a CanRaw
+  // lock held; must not block for long. `frames` is the number of frames in `data` (0 for a stats frame).
+  using SinkFn = can_raw::SinkResult (*)(void* arg, const uint8_t* data, size_t len, size_t frames);
 
   static CanRaw& getInstance();
 
   // Creates the idle drain task and installs the tap. Safe to call twice. Nothing is captured until start().
+  // ESP_ERR_INVALID_STATE: the tap could not be installed (the task is ended again, nothing is left running).
   esp_err_t init(SinkFn sink, void* arg);
   // Stops the stream, removes the tap and ends the task. ESP_ERR_TIMEOUT: a tap call or the task did not leave in time;
   // nothing is freed that is still in use, call again. Safe to call twice and without init.
@@ -31,27 +32,27 @@ public:
   bool isActive();
   bool isInitialized() const { return initialized_; }
 
-  // Frames the transport lost after taking them from the ring (counted in the stream).
-  void addWsDropped(uint32_t n);
-  // One stats frame with the active bit clear, through the sink; lets a client learn that start() failed.
+  // Frames of an accepted batch that reached no client (see Core::markSkipped).
+  void addWsSkipped(uint32_t n);
+  // One stats frame with the active bit clear, through the sink; lets a client learn that start() failed. Runs the sink
+  // on the calling task, which is the HTTP task: the sink must stay non-blocking (a bulk broadcast submit is).
   void sendInactiveStats();
 
   CanRaw(const CanRaw&)            = delete;
   CanRaw& operator=(const CanRaw&) = delete;
 
 private:
+  friend struct CanRawEnv;
   CanRaw();
   void        taskLoop();
   static void taskEntry(void* arg);
-  void        sendStats();
-  void        freeRing();
+  bool        sendStats();
 
-  void*             lock_         = nullptr;  // SemaphoreHandle_t: serialises init, deinit, start and stop
-  void*             task_         = nullptr;  // TaskHandle_t
-  SinkFn            sink_         = nullptr;
-  void*             sinkArg_      = nullptr;
-  bool              initialized_  = false;
-  volatile bool     taskRunning_  = false;
-  volatile bool     stopRequested_ = false;
-  uint32_t          isrBase_      = 0;
+  void*         lock_          = nullptr;  // SemaphoreHandle_t: serialises init, deinit, start and stop
+  void*         task_          = nullptr;  // TaskHandle_t
+  SinkFn        sink_          = nullptr;
+  void*         sinkArg_       = nullptr;
+  bool          initialized_   = false;
+  volatile bool taskRunning_   = false;
+  volatile bool stopRequested_ = false;
 };

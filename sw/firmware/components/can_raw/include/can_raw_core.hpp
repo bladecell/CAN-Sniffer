@@ -278,12 +278,125 @@ enum class SinkResult
   dropped    // the transport refused them for good; count them as lost
 };
 
+enum class Status
+{
+  ok,
+  invalidState,  // not initialised (or the tap could not be installed)
+  noMemory,
+  timeout  // a tap call or the task did not leave in time: call again
+};
+
+// init/deinit/start/stop sequencing of the stream, separated from FreeRTOS so it can be tested with a fake Env. The caller
+// serialises the calls (CanRaw holds a mutex). Env provides: createTask(), shutdownTask(), installTap(), removeTap(),
+// allocRing(frames), freeRing(ptr), isrNow() (driver RX-drop counter) and wake() (nudge the idle task).
+template <typename CoreT, typename Env>
+class Lifecycle
+{
+public:
+  Lifecycle(CoreT& core, Env& env) : core_(core), env_(env) {}
+
+  bool initialized() const { return tapInstalled_; }
+
+  // A task that failed to leave on a failed init stays in `taskUp_` and is reused by the next init: never two tasks.
+  Status init()
+  {
+    if (tapInstalled_)
+    {
+      return Status::ok;
+    }
+    if (!taskUp_)
+    {
+      if (!env_.createTask())
+      {
+        return Status::noMemory;
+      }
+      taskUp_ = true;
+    }
+    if (!env_.installTap())
+    {
+      if (env_.shutdownTask())
+      {
+        taskUp_ = false;
+      }
+      return Status::invalidState;
+    }
+    tapInstalled_ = true;
+    return Status::ok;
+  }
+
+  // Frees the ring first (a late tap then finds it inactive), then removes the tap, then ends the task. Each step is
+  // skipped once done, so a timeout can simply be retried.
+  Status deinit()
+  {
+    releaseRing();
+    if (tapInstalled_)
+    {
+      if (!env_.removeTap())
+      {
+        return Status::timeout;
+      }
+      tapInstalled_ = false;
+    }
+    if (taskUp_)
+    {
+      if (!env_.shutdownTask())
+      {
+        return Status::timeout;
+      }
+      taskUp_ = false;
+    }
+    return Status::ok;
+  }
+
+  Status start()
+  {
+    if (!tapInstalled_)
+    {
+      return Status::invalidState;
+    }
+    if (core_.active())
+    {
+      return Status::ok;
+    }
+    Frame* ring = env_.allocRing(kRingCapacity);
+    if (ring == nullptr)
+    {
+      return Status::noMemory;
+    }
+    if (!core_.start(ring, kRingCapacity, env_.isrNow()))
+    {
+      env_.freeRing(ring);
+      return Status::ok;
+    }
+    env_.wake();
+    return Status::ok;
+  }
+
+  void stop() { releaseRing(); }
+
+private:
+  void releaseRing()
+  {
+    if (Frame* ring = core_.stop(); ring != nullptr)
+    {
+      env_.freeRing(ring);
+    }
+  }
+
+  CoreT& core_;
+  Env&   env_;
+  bool   taskUp_       = false;
+  bool   tapInstalled_ = false;
+};
+
 template <typename Lock>
 class Core
 {
 public:
   // False if already active or the storage is unusable. The storage stays the caller's property: stop() hands it back.
-  bool start(Frame* storage, size_t capacity)
+  // `isrBase` is the driver's cumulative RX-drop counter now; later `isrTotal` arguments are measured from it. It is
+  // stored under the same lock the pump reads it under.
+  bool start(Frame* storage, size_t capacity, uint32_t isrBase = 0)
   {
     typename Lock::Guard g(lock_);
     if (active_ || storage == nullptr || capacity == 0)
@@ -292,6 +405,7 @@ public:
     }
     ring_.attach(storage, capacity);
     ringDropped_ = wsDropped_ = streamed_ = reported_ = 0;
+    isrBase_ = isrBase;
     gen_++;
     active_         = true;
     activeHintFlag_ = true;
@@ -337,10 +451,19 @@ public:
     wsDropped_ += n;
   }
 
+  // Frames of an already accepted batch that reached no client (the transport found every socket full). They were counted
+  // as streamed when the batch was accepted, so they move from there to the ws drops instead of being counted twice.
+  void markSkipped(uint32_t n)
+  {
+    typename Lock::Guard g(lock_);
+    streamed_ -= n < streamed_ ? n : streamed_;
+    wsDropped_ += n;
+  }
+
   // Sends up to maxBatches batches. Sink: (const uint8_t* data, size_t len, size_t frames) -> SinkResult.
-  // `isrDropped` is the cumulative count of frames the driver lost since start. Returns the frames delivered.
+  // `isrTotal` is the driver's cumulative RX-drop counter. Returns the frames delivered.
   template <typename Sink>
-  size_t pump(Sink&& sink, uint32_t isrDropped, size_t maxBatches)
+  size_t pump(Sink&& sink, uint32_t isrTotal, size_t maxBatches)
   {
     size_t delivered = 0;
     for (size_t b = 0; b < maxBatches; b++)
@@ -354,7 +477,7 @@ public:
         typename Lock::Guard g(lock_);
         n        = ring_.peek(local, kPumpPeek);
         gen      = gen_;
-        total    = isrDropped + ringDropped_ + wsDropped_;
+        total    = (isrTotal - isrBase_) + ringDropped_ + wsDropped_;
         reported = reported_;
       }
       if (n == 0)
@@ -401,13 +524,13 @@ public:
     return delivered;
   }
 
-  Stats snapshot(uint32_t isrDropped, uint8_t flags)
+  Stats snapshot(uint32_t isrTotal, uint8_t flags)
   {
     typename Lock::Guard g(lock_);
     Stats                s{};
     s.flags       = static_cast<uint8_t>(flags | (active_ ? kFlagActive : 0));
     s.streamed    = streamed_;
-    s.isrDropped  = isrDropped;
+    s.isrDropped  = isrTotal - isrBase_;
     s.ringDropped = ringDropped_;
     s.wsDropped   = wsDropped_;
     s.capacity    = static_cast<uint16_t>(ring_.capacity());
@@ -427,6 +550,7 @@ private:
   uint32_t      wsDropped_      = 0;
   uint32_t      streamed_       = 0;
   uint32_t      reported_       = 0;
+  uint32_t      isrBase_        = 0;
   volatile bool activeHintFlag_ = false;
 };
 }  // namespace can_raw

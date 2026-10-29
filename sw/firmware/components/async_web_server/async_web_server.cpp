@@ -14,6 +14,13 @@
 
 static const char* TAG = "ASYNC_WEB_SERVER";
 
+// A peer that went away fails every send until its socket closes: one line per 5 s, not one per frame.
+static LogGate& sendFailLogGate()
+{
+    static LogGate gate(5000);
+    return gate;
+}
+
 struct WsBroadcastBackend
 {
     httpd_handle_t* server;
@@ -50,7 +57,15 @@ struct WsBroadcastBackend
         frame.payload = payload;
         frame.len = len;
         const esp_err_t err = httpd_ws_send_frame_async(*server, fd, &frame);
-        if (err != ESP_OK) { ESP_LOGW(TAG, "WS send to #%d failed: %s", fd, esp_err_to_name(err)); }
+        if (err != ESP_OK)
+        {
+            uint32_t suppressed = 0;
+            if (sendFailLogGate().allow(static_cast<uint32_t>(esp_timer_get_time() / 1000), suppressed))
+            {
+                ESP_LOGW(TAG, "WS send to #%d failed: %s (%u more in the last interval)", fd, esp_err_to_name(err),
+                         static_cast<unsigned>(suppressed));
+            }
+        }
     }
 };
 
