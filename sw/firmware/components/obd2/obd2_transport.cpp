@@ -61,6 +61,18 @@ void IRAM_ATTR OBD2::onTxDone(void* arg, uint32_t id, const uint8_t* data, uint8
         return;
     }
     const uint32_t nowMs = pdTICKS_TO_MS(xTaskGetTickCountFromISR());
+    if (self->rawTxState_.load() == kRawTxWaiting && id == self->rawTxId_.load() && length == self->rawTxLen_.load())
+    {
+        uint32_t lo = 0, hi = 0;
+        for (uint8_t i = 0; i < length && i < 8; i++)
+        {
+            (i < 4 ? lo : hi) |= static_cast<uint32_t>(data[i]) << (8 * (i & 3));
+        }
+        if (lo == self->rawTxLo_.load() && hi == self->rawTxHi_.load())
+        {
+            self->rawTxState_.store(success ? kRawTxSent : kRawTxFailed);
+        }
+    }
     if (obd2frame::isDiagRequestFrame(self->diagRequest_.load() & 0xFF, id, data, length))
     {
         if (success)
@@ -168,6 +180,91 @@ bool OBD2::handleDiagFrame(const CanDriver::CanFrame& f)
         tryHoldDiagBus();
     }
     return r.consumed;
+}
+
+// Receive task: answer the first frame of a multi-frame reply while a raw send armed the responder. Never while a DTC or VIN
+// collection runs: that collector sends its own flow control. Keeps no payload and touches no collector state.
+void OBD2::serviceRawFlowControl(const CanDriver::CanFrame& f)
+{
+    if (!rawFc_.armed() || (diagRequest_.load() & 0xFF) != 0)
+    {
+        return;
+    }
+    const uint32_t rxMs = pdTICKS_TO_MS(xTaskGetTickCount());
+    uint32_t       fcId = 0;
+    if (!rawFc_.onFrame(rxMs, f.header.id, f.header.ide, f.data, f.length, fcId))
+    {
+        return;
+    }
+    fcFirstFrameMs_[f.header.id - obd2frame::DIAG_RESPONSE_ID_FIRST].store(rxMs);  // the TX-done hook measures N_Ar from here
+    if (!stopRequested_ && sendFlowControlFrame(fcId) != ESP_OK)
+    {
+        fcLateCount_.fetch_add(1);
+    }
+}
+
+esp_err_t OBD2::sendRawFrame(uint32_t id, const uint8_t* data, uint8_t len, bool armFlowControl)
+{
+    if (data == nullptr || len < 1 || len > 8)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    OperationGuard operation(this);
+    if (!operation.admitted() || stopRequested_)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (!diagnosticRequestMtx_ || xSemaphoreTake(diagnosticRequestMtx_, 0) != pdTRUE)
+    {
+        return ESP_ERR_NOT_FINISHED;
+    }
+    esp_err_t result = ESP_ERR_NOT_FINISHED;
+    if ((diagRequest_.load() & 0xFF) == 0 && rawTxState_.load() == kRawTxIdle)
+    {
+        PollRequest r         = {};
+        r.id                  = id;
+        r.isRaw               = true;
+        r.payload.raw.dlc     = len;
+        r.interval            = 0;
+        r.nextWake            = xTaskGetTickCount();
+        r.priority            = 0;
+        r.isRecurring         = false;
+        r.retries_left        = 0;
+        uint32_t lo = 0, hi = 0;
+        for (uint8_t i = 0; i < len; i++)
+        {
+            r.payload.raw.data[i] = data[i];
+            (i < 4 ? lo : hi) |= static_cast<uint32_t>(data[i]) << (8 * (i & 3));
+        }
+        rawTxId_.store(id);
+        rawTxLen_.store(len);
+        rawTxLo_.store(lo);
+        rawTxHi_.store(hi);
+        rawTxState_.store(kRawTxWaiting);
+        if (armFlowControl)
+        {
+            rawFc_.arm(pdTICKS_TO_MS(xTaskGetTickCount()), obd2frame::RawFlowControl::kDefaultWindowMs);
+        }
+        result = queryMsg(r, false);
+        if (result == ESP_OK)
+        {
+            result = ESP_ERR_TIMEOUT;
+            for (int waited = 0; waited < 250 && !stopRequested_; waited += 2)
+            {
+                const uint8_t state = rawTxState_.load();
+                if (state == kRawTxSent) { result = ESP_OK; break; }
+                if (state == kRawTxFailed) { result = ESP_FAIL; break; }
+                vTaskDelay(pdMS_TO_TICKS(2) > 0 ? pdMS_TO_TICKS(2) : 1);
+            }
+        }
+        rawTxState_.store(kRawTxIdle);
+        if (result != ESP_OK)
+        {
+            rawFc_.disarm();
+        }
+    }
+    xSemaphoreGive(diagnosticRequestMtx_);
+    return result;
 }
 
 // Receive task, every loop: expire stale sessions and publish the result once all ECUs have answered.

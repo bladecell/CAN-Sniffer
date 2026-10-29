@@ -26,6 +26,7 @@
 #include "obd2_data_model.hpp"
 #include "obd2_common.hpp"
 #include "obd2_frame.hpp"
+#include "raw_flow_control.hpp"
 
 #define POLL_TASK_PERIOD_MS MIN_TRANSMIT_PERIOD_MS
 #define ERR_ACCUMULATE(result, expr) ((result) = (result) ?: (expr))
@@ -58,6 +59,15 @@ public:
     bool      isAutoPoll() const;
     // autoPoll && CAN bus connected && the poll queue holds recurring entries.
     bool      isPolling();
+
+    // Raw CAN send for POST /can/send (Raw mode). The caller has validated id, data and service (raw_tx_policy.hpp). Sends
+    // the frame as given (1 to 8 bytes) and returns once the TX-done hook saw that very frame leave the controller, at most
+    // 250 ms. Takes the diagnostic request slot without waiting, so it never runs alongside a DTC or VIN request.
+    // ESP_ERR_INVALID_STATE: stopped or bus down. ESP_ERR_NOT_FINISHED: slot busy. ESP_ERR_INVALID_ARG: length.
+    // ESP_FAIL: the TX path refused or failed the frame. ESP_ERR_TIMEOUT: not confirmed in time. With armFlowControl the
+    // receive task answers the first frame of a multi-frame reply for 1.5 s (RawFlowControl); it is disarmed on any failure.
+    esp_err_t sendRawFrame(uint32_t id, const uint8_t* data, uint8_t len, bool armFlowControl);
+    void      disarmRawFlowControl() { rawFc_.disarm(); }
     esp_err_t requestPID(uint16_t pid);
 
     void      requestSuppPids();
@@ -143,6 +153,15 @@ private:
     std::atomic<bool>        diagPending_{false};  // an ECU answered NRC 0x78: the requester may wait longer
     uint32_t                 diagGen_         = 0;  // requester side, under diagnosticRequestMtx_
     uint32_t                 diagSeenRequest_ = 0;
+    // Raw send (sendRawFrame): the TX-done ISR matches the frame it is waiting for by id, length and bytes.
+    static constexpr uint8_t kRawTxIdle = 0, kRawTxWaiting = 1, kRawTxSent = 2, kRawTxFailed = 3;
+    std::atomic<uint8_t>     rawTxState_{kRawTxIdle};
+    std::atomic<uint32_t>    rawTxId_{0};
+    std::atomic<uint8_t>     rawTxLen_{0};
+    std::atomic<uint32_t>    rawTxLo_{0};
+    std::atomic<uint32_t>    rawTxHi_{0};
+    obd2frame::RawFlowControl rawFc_;
+    void      serviceRawFlowControl(const CanDriver::CanFrame& f);
     void      resetDiagCollection();
     void      releaseDiagBus();
     void      tryHoldDiagBus();

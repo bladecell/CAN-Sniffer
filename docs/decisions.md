@@ -221,7 +221,7 @@ Decided by the user ("recommended" on all points).
 - Modes: (1) Monitor: polling and OBD parsing run as normal, a raw tap shows every RX and TX frame, read-only; (2) Raw: polling off, ISO-TP reassembly on; (3) Pure sniffer. Polling and parsing are independent switches; raw tap sits before the parser. Raw modes revert to Monitor when the last WebSocket client closes.
 - Tap: RX tap in the OBD2 rx task (ISR timestamp on the frame, larger RX queue while active); move to ISR only if drop counters show real loss. TX tap on actually-transmitted frames (flow control included), flagged TX.
 - Raw TX: standard OBD request IDs only (0x7E0-0x7E7, 0x7DF), PIN-gated only, polling off only. Response IDs taken from received data.
-- Recorder paused in raw modes. Binary batched WebSocket frames, off by default, drop counters in stream. Per-ID analysis in browser first.
+- Recorder paused in raw modes (superseded 2026-10-29, see the P4.C4 entry: Raw mode is refused with 409 while recording, and the recorder cannot start in Raw mode). Binary batched WebSocket frames, off by default, drop counters in stream. Per-ID analysis in browser first.
 - Slices: A Monitor RX-only read-only page; B raw send + ISO-TP reassembly; C pure sniffer + optional listen-only.
 
 ## 2026-10-25: CAN raw stream, slice A implementation choices (P4.C1, P4.C2)
@@ -237,3 +237,10 @@ Where the build departs from the D4 wording, and why.
 - **Control rate and logs:** `0xB0` is accepted at most every 500 ms because each start allocates the ring; `0xB1` is not delayed. The on/off lines, the drop warning and the per-client send-failure warning each go through a `LogGate` (one line per 5 s).
 - **Slots (review fix):** normal broadcasts keep three pending slots and the stream gets its own fourth (batches and stats), instead of sharing three. A saturated stream can no longer deny a PID update.
 - **Per-client stream (user decision 2026-10-29):** the raw stream (`0xB0`, `0xB1`, `0x10`, `0x11`) is per client, replacing the global start/stop above. `0xB0` subscribes the sending socket, `0xB1` or closing it unsubscribes, and capture runs while the set is not empty (max 20). The PID stream (`0xA0`/`0x02`), status and recorder frames stay broadcast to all clients. A failed start is answered to the requester only.
+
+## 2026-10-29: CAN raw send and modes (P4.C4)
+Decided by the user.
+- **Route:** `POST /api/v1/can/send`, gated (PIN session, request filter, global rate limit) plus one send per 250 ms. Body `{"id","data"}`, standard OBD request IDs only (0x7DF, 0x7E0-0x7E7), single-frame requests, fail-closed service allow-list `01 02 03 07 09 0A 19 22` (0x22 allowed; clear DTC stays on its own route). The reply is `{"status":"sent"}` after the TX-done hook confirmed the frame; ECU responses are not in the reply, they are in the `0x10` stream.
+- **Modes:** a table-driven mode controller outside the supervisor (Monitor, Raw; more later: sniffer, ELM327 and SavvyCAN bridges), `POST/GET /api/v1/can/mode`, one mode for the whole device. Raw needs the supervisor in RUNNING, refuses with 409 while the recorder is recording (the recorder is **not** paused: this replaces the D4 line "recorder paused in raw modes"), saves auto-poll and turns it off, and `POST /recorder/start` is refused with 409 in Raw mode. Reverts to Monitor on the last WebSocket close, after 300 s without activity, when the supervisor leaves RUNNING, and when OBD2 or the web server stops.
+- **Flow control option:** `fc` (default false). With it, a raw send arms a 1.5 s responder that answers the first frame of an ECU reply with `30 00 00`; no payload is kept and the DTC/VIN collector is not involved. The page reassembles from the stream.
+- **Health ping:** kept in Raw mode (it is the only liveness probe with polling off); it shows as a TX frame.

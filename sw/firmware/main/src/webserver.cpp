@@ -18,6 +18,7 @@
 #include "auth.hpp"
 #include "auth_http.hpp"
 #include "async_web_server.hpp"
+#include "can_mode_service.hpp"
 #include "can_raw.hpp"
 #include "log_gate.hpp"
 #include "body_reader.hpp"
@@ -825,6 +826,36 @@ esp_err_t p_recorder_stop_handler(httpd_req_t* req, void* arg)
         ws_send_recorder_state();
     }
     return sent;
+}
+
+esp_err_t g_can_mode_handler(httpd_req_t* req, void* arg)
+{
+    return send_json_response(req, m_can_mode_get());
+}
+
+esp_err_t p_can_mode_handler(httpd_req_t* req, void* arg)
+{
+    cJSON* root = get_validated_json_payload(req, 128);
+    if (root == nullptr)
+    {
+        return ESP_OK;  // the helper already answered
+    }
+    MiddlewareJsonResult result = m_can_mode_set(root);
+    cJSON_Delete(root);
+    return send_json_response(req, result);
+}
+
+// Body {"id":2015,"data":"02 01 00"}: at most 128 bytes are read.
+esp_err_t p_can_send_handler(httpd_req_t* req, void* arg)
+{
+    cJSON* root = get_validated_json_payload(req, 128);
+    if (root == nullptr)
+    {
+        return ESP_OK;
+    }
+    MiddlewareJsonResult result = m_can_send(root);
+    cJSON_Delete(root);
+    return send_json_response(req, result);
 }
 
 esp_err_t g_recorder_trips_handler(httpd_req_t* req, void* arg)
@@ -1774,6 +1805,7 @@ esp_err_t ws_socket_handler(httpd_req_t* req)
             b_pid_stream_enabled.store(false);
             wsStreamingEnabled.store(false);
             rawSubscribers.clear();
+            can_mode_service::reset(true);  // Raw mode ends with the last client
         }
         return httpd_ws_send_frame(req, &ws_pkt);
     }
@@ -1903,6 +1935,7 @@ static void ws_socket_closed(int fd)
         b_pid_stream_enabled.store(false);
         wsStreamingEnabled.store(false);
         rawSubscribers.clear();
+        can_mode_service::reset(true);  // Raw mode ends with the last client, whatever closed it
     }
 }
 
@@ -1942,6 +1975,7 @@ static void WSDataStreamTask(void* pvParameters)
             }
             if (wsStreamingEnabled.load())
             {
+                can_mode_service::tick();  // idle timeout of Raw mode, supervisor left RUNNING
                 ws_send_can_status();
                 ws_send_recorder_state();
             }

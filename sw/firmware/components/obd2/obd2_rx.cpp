@@ -81,6 +81,7 @@ void OBD2::receiveTask()
         if (ret == ESP_OK)
         {
             syncDiagRequest();  // the request may have gone out while this task waited for the frame
+            serviceRawFlowControl(f);
             ret = handleDiagFrame(f) ? ESP_OK : parseRecFrame(f);
 
             if (ret != ESP_OK)

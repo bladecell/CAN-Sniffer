@@ -73,6 +73,12 @@ MiddlewareJsonResult m_recorder_get();
 MiddlewareJsonResult m_recorder_start(const recorder_core::PidSel* pids, size_t n);
 MiddlewareJsonResult m_recorder_stop();
 MiddlewareJsonResult m_recorder_trips_get();
+// CAN view mode (can_mode.hpp) and raw send (raw_tx_policy.hpp). Mode: GET 200 {mode, fc, modes}; POST body {mode, fc?}: 422 bad body or
+// mode, 409 recording, 503 not RUNNING or polling busy. Send: 200 {status:sent} once the TX-done hook confirmed the frame; 403, 409, 422,
+// 429, 503 as in api.md. Both take ownership of nothing: the caller deletes `payload`.
+MiddlewareJsonResult m_can_mode_get();
+MiddlewareJsonResult m_can_mode_set(const cJSON* payload);
+MiddlewareJsonResult m_can_send(const cJSON* payload);
 esp_err_t recorder_state_packet_get(uint8_t* out_packet);
 
 MiddlewareJsonResult m_settings_get();

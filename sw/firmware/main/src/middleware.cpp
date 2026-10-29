@@ -29,7 +29,11 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "http_error.hpp"
+#include "can_mode_http.hpp"
+#include "can_mode_service.hpp"
+#include "log_gate.hpp"
 #include "obd2.hpp"
+#include "raw_tx_policy.hpp"
 #include "recorder.hpp"
 #include "recorder_http.hpp"
 #include "pid_json.hpp"
@@ -2021,6 +2025,10 @@ MiddlewareJsonResult m_recorder_get()
 
 MiddlewareJsonResult m_recorder_start(const recorder_core::PidSel* pids, size_t n)
 {
+    if (can_mode_service::isRaw())
+    {
+        return json_result(json_error_body("Raw CAN mode is active; leave it first", "RAW_MODE"), 409);
+    }
     Recorder::Config config;
     if (n > recorder_core::kMaxPids || (n > 0 && pids == nullptr))
     {
@@ -2053,6 +2061,118 @@ MiddlewareJsonResult m_recorder_start(const recorder_core::PidSel* pids, size_t 
         result.retry_after_s = (Recorder::getInstance().startRetryAfterMs() + 999) / 1000;  // whole seconds, rounded up
     }
     return result;
+}
+
+static MiddlewareJsonResult can_mode_state_result()
+{
+    cJSON* root = cJSON_CreateObject();
+    cJSON* list = cJSON_CreateArray();
+    if (root == nullptr || list == nullptr)
+    {
+        cJSON_Delete(root);
+        cJSON_Delete(list);
+        return json_result(nullptr, 500);
+    }
+    const can_mode_service::Snapshot snap = can_mode_service::get();
+    cJSON_AddStringToObject(root, "mode", snap.name);
+    cJSON_AddBoolToObject(root, "fc", snap.fc);
+    for (size_t i = 0; i < can_mode_service::modeCount(); ++i)
+    {
+        cJSON* name = cJSON_CreateString(can_mode_service::modeName(i));
+        if (name == nullptr || !cJSON_AddItemToArray(list, name))
+        {
+            cJSON_Delete(name);
+            cJSON_Delete(list);
+            cJSON_Delete(root);
+            return json_result(nullptr, 500);
+        }
+    }
+    if (!cJSON_AddItemToObject(root, "modes", list))
+    {
+        cJSON_Delete(list);
+        cJSON_Delete(root);
+        return json_result(nullptr, 500);
+    }
+    return json_result(root, 200);
+}
+
+MiddlewareJsonResult m_can_mode_get()
+{
+    return can_mode_state_result();
+}
+
+MiddlewareJsonResult m_can_mode_set(const cJSON* payload)
+{
+    const char* mode = nullptr;
+    bool        fc   = false;
+    if (!can_mode_http::parseBody(payload, mode, fc))
+    {
+        return json_result(json_error_body(can_mode_http::reason(can_mode::Status::unknownMode), "BAD_JSON"), 422);
+    }
+    const can_mode::Status status = can_mode_service::set(mode, fc);
+    if (status != can_mode::Status::ok)
+    {
+        return json_result(json_error_body(can_mode_http::reason(status), can_mode_http::code(status)),
+                           can_mode_http::httpStatus(status));
+    }
+    return can_mode_state_result();
+}
+
+MiddlewareJsonResult m_can_send(const cJSON* payload)
+{
+    static LogGate sendGate(raw_tx::kMinIntervalMs);  // one raw send per 250 ms, device wide
+
+    raw_tx::Request req{};
+    const raw_tx::Error parsed = raw_tx::parse(payload, req);
+    if (parsed != raw_tx::Error::none)
+    {
+        return json_result(json_error_body(raw_tx::reason(parsed), raw_tx::code(parsed)), raw_tx::httpStatus(parsed));
+    }
+    if (!can_mode_service::allowsRawSend())
+    {
+        return json_result(json_error_body("Enter Raw mode first (POST /api/v1/can/mode)", "NOT_RAW_MODE"), 409);
+    }
+    const Recorder::State recorderState = Recorder::getInstance().getState();
+    if (recorderState == Recorder::State::Recording || recorderState == Recorder::State::Stopping)
+    {
+        return json_result(json_error_body("The recorder is recording; stop it first", "RECORDING"), 409);
+    }
+    if (OBD2::getInstance().isAutoPoll())
+    {
+        return json_result(json_error_body("Polling is on; Raw mode needs it off", "POLLING_ACTIVE"), 409);
+    }
+    uint32_t suppressed = 0;
+    if (!sendGate.allow(static_cast<uint32_t>(esp_timer_get_time() / 1000), suppressed))
+    {
+        MiddlewareJsonResult limited = json_result(json_error_body("One raw send per 250 ms", "RATE_LIMITED"), 429);
+        limited.retry_after_s        = 1;
+        return limited;
+    }
+    const esp_err_t err = OBD2::getInstance().sendRawFrame(req.id, req.data, req.len, can_mode_service::fcEnabled());
+    if (err != ESP_OK)
+    {
+        const char* reason = err == ESP_ERR_NOT_FINISHED  ? "A diagnostic request is running"
+                             : err == ESP_ERR_TIMEOUT     ? "The frame was not sent in time"
+                             : err == ESP_FAIL            ? "The frame could not be sent"
+                             : err == ESP_ERR_INVALID_ARG ? "Invalid frame"
+                                                          : "CAN bus is down";
+        const char* code   = err == ESP_ERR_NOT_FINISHED  ? "BUSY"
+                             : err == ESP_ERR_TIMEOUT     ? "TX_TIMEOUT"
+                             : err == ESP_FAIL            ? "TX_FAILED"
+                             : err == ESP_ERR_INVALID_ARG ? "BAD_DATA"
+                                                          : "BUS_DOWN";
+        MiddlewareJsonResult failed = json_result(json_error_body(reason, code), err == ESP_ERR_INVALID_ARG ? 422 : 503);
+        failed.retry_after_s        = err == ESP_ERR_NOT_FINISHED ? 1 : 0;
+        return failed;
+    }
+    can_mode_service::touch();
+    cJSON* root = cJSON_CreateObject();
+    if (root == nullptr)
+    {
+        return json_result(nullptr, 500);
+    }
+    cJSON_AddStringToObject(root, "status", "sent");
+    return json_result(root, 200);
 }
 
 MiddlewareJsonResult m_recorder_stop()
