@@ -2050,7 +2050,8 @@ MiddlewareJsonResult m_settings_set(cJSON* payload)
         return json_result(body, 400);
     }
 
-    settings_patch::Outcome outcomes[settings_patch::kMaxSections] = {};
+    settings_patch::Outcome outcomes[settings_patch::kMaxSections]     = {};
+    bool                    needsRestart[settings_patch::kMaxSections] = {};
     cJSON*                  errors = cJSON_CreateArray();
     cJSON*                  root   = cJSON_CreateObject();
     if (errors == nullptr || root == nullptr)
@@ -2065,6 +2066,22 @@ MiddlewareJsonResult m_settings_set(cJSON* payload)
     {
         FixedText<> reason;
         outcomes[i] = patch_one_section(c->string != nullptr ? c->string : "", c, reason);
+        switch (settings_patch::sectionOf(c->string != nullptr ? c->string : ""))
+        {
+            case settings_patch::Section::System:
+                // The power fields are applied live; only the path fields need a reboot.
+                for (const cJSON* k = c->child; k != nullptr; k = k->next)
+                {
+                    needsRestart[i] = needsRestart[i] || (k->string != nullptr && settings_patch::systemKeyNeedsRestart(k->string));
+                }
+                break;
+            case settings_patch::Section::Wifi:
+            case settings_patch::Section::Can:
+                needsRestart[i] = true;
+                break;
+            default:
+                break;
+        }
         if (outcomes[i] != settings_patch::Outcome::Saved)
         {
             cJSON* e = cJSON_CreateObject();
@@ -2085,7 +2102,7 @@ MiddlewareJsonResult m_settings_set(cJSON* payload)
         const cJSON* why   = first != nullptr ? cJSON_GetObjectItemCaseSensitive(first, "reason") : nullptr;
         cJSON_AddStringToObject(root, "reason", settings_patch::topReason(cJSON_IsString(why) ? why->valuestring : nullptr));
     }
-    cJSON_AddBoolToObject(root, "restart_required", settings_patch::restartRequired(outcomes, n));
+    cJSON_AddBoolToObject(root, "restart_required", settings_patch::restartRequired(outcomes, needsRestart, n));
     if (status != 200)
     {
         cJSON_AddItemToObject(root, "errors", errors);

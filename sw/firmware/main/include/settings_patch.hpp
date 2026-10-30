@@ -59,12 +59,31 @@ inline const char* topReason(const char* firstErrorReason)
   return (firstErrorReason != nullptr && firstErrorReason[0] != '\0') ? firstErrorReason : "settings not saved";
 }
 
-// Saved values reach the drivers only after a reboot.
+// Saved values reach the drivers only after a reboot, except the power fields of the system section
+// (sleep_enabled, stay_awake_voltage_mv, low_battery_voltage_mv), which the running supervisor takes over at once.
+// Every Saved section counts as needing a restart.
 inline bool restartRequired(const Outcome* o, size_t n)
 {
   for (size_t i = 0; i < n; i++)
   {
     if (o[i] == Outcome::Saved) { return true; }
+  }
+  return false;
+}
+
+// A key of the system section that really needs a reboot. Power fields do not; unknown keys are ignored by the parser.
+inline bool systemKeyNeedsRestart(std::string_view key)
+{
+  return key == "pid_def_path" || key == "dtc_desc_path";
+}
+
+// needsRestart[i]: section i contains something that needs a reboot (wifi and can: always; system: systemKeyNeedsRestart).
+// A section that was not saved needs nothing.
+inline bool restartRequired(const Outcome* o, const bool* needsRestart, size_t n)
+{
+  for (size_t i = 0; i < n; i++)
+  {
+    if (o[i] == Outcome::Saved && needsRestart[i]) { return true; }
   }
   return false;
 }
