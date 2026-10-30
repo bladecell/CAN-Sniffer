@@ -2024,13 +2024,29 @@ static esp_err_t register_routes()
     AsyncWebServer& server     = AsyncWebServer::getInstance();
     size_t          num_routes = sizeof(api_routes) / sizeof(api_routes[0]);
 
+    // /ws first: if the handler table ever overflows (the host test keeps that from happening) the live stream is not what is lost.
+    ESP_RETURN_ON_ERROR(server.registerSocketRoute("/ws", ws_socket_handler, NULL, ws_pre_handshake, ws_post_handshake), TAG,
+                        "route /ws");
+    size_t dropped = 0;
     for (size_t i = 0; i < num_routes; i++)
     {
-        ESP_RETURN_ON_ERROR(server.registerRoute(api_routes[i].uri, api_routes[i].method, route_shim,
-                                                  const_cast<RouteDef*>(&api_routes[i])),
-                            TAG, "route %s", api_routes[i].uri);
+        const esp_err_t err = server.registerRoute(api_routes[i].uri, api_routes[i].method, route_shim,
+                                                    const_cast<RouteDef*>(&api_routes[i]));
+        if (err == ESP_ERR_HTTPD_HANDLERS_FULL)
+        {
+            // Capacity only: keep the web server up with the routes that fit rather than none at all.
+            ESP_LOGE(TAG, "Handler table full, route %s %s not registered", AsyncWebServer::get_method_str(api_routes[i].method),
+                     api_routes[i].uri);
+            dropped++;
+            continue;
+        }
+        ESP_RETURN_ON_ERROR(err, TAG, "route %s", api_routes[i].uri);
     }
-    return server.registerSocketRoute("/ws", ws_socket_handler, NULL, ws_pre_handshake, ws_post_handshake);
+    if (dropped != 0)
+    {
+        ESP_LOGE(TAG, "%u routes missing: raise kMaxUriHandlers in api_routes.hpp", static_cast<unsigned>(dropped));
+    }
+    return ESP_OK;
 }
 
 }  // namespace
@@ -2074,7 +2090,7 @@ esp_err_t setup_web_server()
     server_config.async_worker_task_priority    = 5;
     server_config.async_worker_stack_size       = 8192;
     server_config.httpd_config.uri_match_fn     = httpd_uri_match_wildcard;
-    server_config.httpd_config.max_uri_handlers = 48;
+    server_config.httpd_config.max_uri_handlers = kMaxUriHandlers;
     // Keep receive waits below the upload no-progress deadline so an upload
     // worker can enforce it rather than remaining blocked in httpd_req_recv.
     server_config.httpd_config.recv_wait_timeout = 1;

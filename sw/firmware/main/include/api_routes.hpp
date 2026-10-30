@@ -12,6 +12,14 @@
 // The only wildcard patterns are those where the handler validates the whole remainder as a path parameter
 // (<pid> or <path>); anything else would answer typos such as GET /api/v1/dtcs.
 
+// Capacity of the HTTP server's handler table (httpd_config_t::max_uri_handlers). Every (uri, method) pair in API_ROUTES takes a
+// slot, and so does the WebSocket route /ws. When the table is full httpd_register_uri_handler fails and routes are lost
+// (2026-10-30: the 49th handler disabled the whole web server). test_api_routes.cpp keeps the routes plus kExtraUriHandlers
+// under this limit with kUriHandlerHeadroom to spare; raise the limit here when it fails. Cost: one httpd_uri_t (about 32 B) per slot.
+constexpr unsigned kMaxUriHandlers   = 64;  // 48 routes + /ws now (was 48: full at 47 + /ws, broke at the 48th route)
+constexpr unsigned kExtraUriHandlers = 1;  // /ws, registered outside the table
+constexpr unsigned kUriHandlerHeadroom = 8;
+
 // clang-format off
 #define API_ROUTES(X)                                                                          \
   X("/api/v1/wifi/scan",             POST,   p_wifi_scan_handler,              1)                \

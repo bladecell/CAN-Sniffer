@@ -129,6 +129,14 @@ void test_every_req_route_is_an_obd_request_route(void)
   }
 }
 
+// The handler table must hold every route plus /ws, with room to grow. A full table makes httpd refuse the last registrations.
+void test_routes_fit_the_http_handler_table_with_headroom(void)
+{
+  TEST_ASSERT_TRUE_MESSAGE(kCount + kExtraUriHandlers <= kMaxUriHandlers, "handler table too small: raise kMaxUriHandlers");
+  TEST_ASSERT_TRUE_MESSAGE(kCount + kExtraUriHandlers + kUriHandlerHeadroom <= kMaxUriHandlers,
+                           "less than kUriHandlerHeadroom free handler slots: raise kMaxUriHandlers");
+}
+
 void test_route_count_matches_docs(void)
 {
   TEST_ASSERT_EQUAL_UINT32(48, kCount);  // docs/api.md: GET / plus 47 under /api/v1
@@ -238,6 +246,7 @@ void test_open_routes_stay_open(void)
 extern "C" void run_api_routes_tests(void)
 {
   RUN_TEST(test_gated_set_is_exactly_the_decision);
+  RUN_TEST(test_routes_fit_the_http_handler_table_with_headroom);
   RUN_TEST(test_obd_request_routes_are_listed_and_exist);
   RUN_TEST(test_every_req_route_is_an_obd_request_route);
   RUN_TEST(test_manual_sleep_is_an_exact_authenticated_post);
