@@ -260,3 +260,9 @@ User correction of P4.C4: the original brief was a mode that stops polling and O
 
 ## 2026-10-30: no health ping in Raw mode (P4.C4)
 User decision, replacing the earlier "keep the ping in Raw" finding. Raw mode is temporary (last WebSocket close, 300 s idle, supervisor leaving RUNNING), so suspending bus-loss detection there is accepted: the device sends only what the client sends. The ping restarts a full period after Raw ends. The bus state is not re-checked in Raw: it stays the last known one, a raw send without ACK still drops the driver to not connected, and the restarted ping catches the rest. Monitor mode is unchanged.
+
+## 2026-10-30: hot-applied power policy and sleep holds (P4.C9)
+User decisions.
+- `system.sleep_enabled` and both voltage thresholds apply to the running supervisor as soon as `PATCH /settings` has saved them (`Core::setPolicy`), not after a reboot.
+- Two volatile holds stop the automatic inactivity sleep: a user hold (`POST /system/keep_awake`, gated, `{"enabled":bool}`) and a WebSocket hold (a client is connected). Each lasts at most 30 minutes from the moment it was set, is never persisted, and is cleared when the device sleeps.
+- A low battery does not override the holds (kept simple; the drain risk is bounded by the 30 minutes per set). Raw CAN mode sets no hold. Manual `POST /system/sleep` always sleeps.

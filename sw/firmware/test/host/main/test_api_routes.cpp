@@ -131,7 +131,7 @@ void test_every_req_route_is_an_obd_request_route(void)
 
 void test_route_count_matches_docs(void)
 {
-  TEST_ASSERT_EQUAL_UINT32(47, kCount);  // docs/api.md: GET / plus 46 under /api/v1
+  TEST_ASSERT_EQUAL_UINT32(48, kCount);  // docs/api.md: GET / plus 47 under /api/v1
 }
 // The access-control decision (docs/decisions.md 2026-10-18), spelled out. A route is gated if and only if it is listed;
 // adding a route forces a decision here.
@@ -147,7 +147,7 @@ const GatedRoute kGated[] = {
     {"GET", "/api/v1/sd_card/file/*"},    {"PUT", "/api/v1/sd_card/file/*"},
     {"DELETE", "/api/v1/sd_card/file/*"}, {"POST", "/api/v1/sd_card/format"},
     {"POST", "/api/v1/sd_card/copy"}, {"POST", "/api/v1/system/reboot"},
-    {"POST", "/api/v1/system/sleep"},
+    {"POST", "/api/v1/system/sleep"},      {"POST", "/api/v1/system/keep_awake"},
     {"POST", "/api/v1/pid_def"},          {"PUT", "/api/v1/pid_def"},
     {"DELETE", "/api/v1/pid_def/*"},      {"POST", "/api/v1/pid_def/save"},
     {"POST", "/api/v1/pid_def/load"},     {"POST", "/api/v1/req/clear_dtc"},

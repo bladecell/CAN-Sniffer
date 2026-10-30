@@ -77,6 +77,7 @@ struct Fake
   bool stopDuringWebDeinit = false;
   power_settings::Config storedPower{};
   int policyReads = 0;
+  uint32_t clockMs = 0;
   Core core;
 
   template <int I> static esp_err_t init(void*)
@@ -167,7 +168,8 @@ struct Fake
           if (!initializing && error != ESP_OK && std::strcmp(name, Registry::legacyName(i)) == 0)
             static_cast<Fake*>(p)->uncleanReported[i] = true;
       },
-      [](void* p) { auto& f = *static_cast<Fake*>(p); ++f.policyReads; return f.storedPower; }};
+      [](void* p) { auto& f = *static_cast<Fake*>(p); ++f.policyReads; return f.storedPower; },
+      [](void* p) { return static_cast<Fake*>(p)->clockMs; }};
   }
   esp_err_t start() { return core.init({this, init<0>}); }
   void boot()
@@ -1479,10 +1481,220 @@ void test_state_numbers_remain_compatible()
   TEST_ASSERT_EQUAL_INT(3, static_cast<int>(supervisor::State::RUNNING));
   TEST_ASSERT_EQUAL_INT(6, static_cast<int>(supervisor::State::ERROR));
 }
+
+// ---- P4.C9: hot-applied policy and sleep holds ----
+
+void test_setpolicy_sleep_enabled_applies_to_the_running_core()
+{
+  Fake f;
+  f.boot();
+  power_settings::Config off;
+  off.sleep_enabled = false;
+  TEST_ASSERT_EQUAL_INT(ESP_OK, f.core.setPolicy(off));
+  f.idle(200);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(State::NOT_CONNECTED), static_cast<int>(f.core.state()));
+  TEST_ASSERT_FALSE(f.core.powerPolicy().sleep_enabled);
+  TEST_ASSERT_EQUAL_INT(ESP_OK, f.core.setPolicy(power_settings::Config{}));
+  f.idle(60);
+  f.core.step();
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(State::SLEEPING), static_cast<int>(f.core.state()));
+}
+
+void test_setpolicy_stay_awake_threshold_applies_immediately()
+{
+  Fake f;
+  f.volts = 12.0f;
+  f.boot();
+  power_settings::Config high;
+  high.stay_awake_voltage_mv = 11800;  // 12.0 V is now "alternator running": never sleeps
+  high.low_battery_voltage_mv = 10000;
+  TEST_ASSERT_EQUAL_INT(ESP_OK, f.core.setPolicy(high));
+  f.idle(200);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(State::NOT_CONNECTED), static_cast<int>(f.core.state()));
+  power_settings::Config low;
+  low.stay_awake_voltage_mv = 12500;
+  TEST_ASSERT_EQUAL_INT(ESP_OK, f.core.setPolicy(low));
+  f.idle(60);
+  f.core.step();
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(State::SLEEPING), static_cast<int>(f.core.state()));
+}
+
+void test_setpolicy_low_battery_threshold_applies_to_the_next_sleep_cycle()
+{
+  Fake f;
+  f.volts = 12.0f;
+  f.boot();
+  power_settings::Config c;
+  c.stay_awake_voltage_mv = 14000;
+  c.low_battery_voltage_mv = 12500;  // 12.0 V is below it: the long 60 s cycle
+  TEST_ASSERT_EQUAL_INT(ESP_OK, f.core.setPolicy(c));
+  f.idle(60);
+  f.core.step();
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(State::SLEEPING), static_cast<int>(f.core.state()));
+  f.core.step();
+  TEST_ASSERT_EQUAL_UINT64(60000000ULL, f.lightUs);
+}
+
+void test_setpolicy_refuses_invalid_policies_and_keeps_the_old_one()
+{
+  Fake f;
+  f.boot();
+  power_settings::Config bad;
+  bad.low_battery_voltage_mv = bad.stay_awake_voltage_mv;
+  TEST_ASSERT_EQUAL_INT(ESP_ERR_INVALID_ARG, f.core.setPolicy(bad));
+  bad = {};
+  bad.stay_awake_voltage_mv = 0;
+  TEST_ASSERT_EQUAL_INT(ESP_ERR_INVALID_ARG, f.core.setPolicy(bad));
+  bad = {};
+  bad.stay_awake_voltage_mv = 16001;
+  TEST_ASSERT_EQUAL_INT(ESP_ERR_INVALID_ARG, f.core.setPolicy(bad));
+  bad = {};
+  bad.low_battery_voltage_mv = 8999;
+  TEST_ASSERT_EQUAL_INT(ESP_ERR_INVALID_ARG, f.core.setPolicy(bad));
+  TEST_ASSERT_EQUAL_UINT32(13200, f.core.powerPolicy().stay_awake_voltage_mv);
+  TEST_ASSERT_EQUAL_UINT32(11400, f.core.powerPolicy().low_battery_voltage_mv);
+}
+
+void test_setpolicy_before_init_is_refused()
+{
+  Fake f;
+  TEST_ASSERT_EQUAL_INT(ESP_ERR_INVALID_STATE, f.core.setPolicy(power_settings::Config{}));
+}
+
+void test_a_hold_prevents_the_inactivity_sleep_and_releasing_it_restarts_the_count()
+{
+  for (const uint8_t bit : {kHoldUser, kHoldWs})
+  {
+    Fake f;
+    f.boot();
+    f.core.setHold(bit, true);
+    f.idle(300);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(State::NOT_CONNECTED), static_cast<int>(f.core.state()));
+    f.core.setHold(bit, false);
+    f.idle(59);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(State::NOT_CONNECTED), static_cast<int>(f.core.state()));
+    f.core.step();
+    f.core.step();
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(State::SLEEPING), static_cast<int>(f.core.state()));
+  }
+}
+
+void test_holds_are_independent_bits()
+{
+  Fake f;
+  f.boot();
+  f.core.setHold(kHoldUser, true);
+  f.core.setHold(kHoldWs, true);
+  f.core.setHold(kHoldUser, false);
+  f.idle(200);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(State::NOT_CONNECTED), static_cast<int>(f.core.state()));
+  TEST_ASSERT_TRUE(f.core.holdActive(kHoldWs));
+  TEST_ASSERT_FALSE(f.core.holdActive(kHoldUser));
+  f.core.setHold(kHoldWs, false);
+  f.idle(60);
+  f.core.step();
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(State::SLEEPING), static_cast<int>(f.core.state()));
+}
+
+void test_a_low_battery_does_not_override_a_hold()
+{
+  Fake f;
+  f.volts = 10.5f;  // below low_battery_voltage_mv
+  f.boot();
+  f.core.setHold(kHoldUser, true);
+  f.idle(300);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(State::NOT_CONNECTED), static_cast<int>(f.core.state()));
+}
+
+void test_a_hold_expires_after_thirty_minutes_and_sleep_then_works_normally()
+{
+  Fake f;
+  f.boot();
+  f.clockMs = 5000;
+  f.core.setHold(kHoldWs, true);
+  f.clockMs = 5000 + kHoldTimeoutMs - 1;
+  f.idle(100);
+  TEST_ASSERT_TRUE(f.core.holdActive(kHoldWs));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(State::NOT_CONNECTED), static_cast<int>(f.core.state()));
+  f.clockMs = 5000 + kHoldTimeoutMs;
+  TEST_ASSERT_FALSE(f.core.holdActive(kHoldWs));
+  f.idle(60);
+  f.core.step();
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(State::SLEEPING), static_cast<int>(f.core.state()));
+}
+
+void test_hold_expiry_is_clock_wrap_safe()
+{
+  Fake f;
+  f.boot();
+  f.clockMs = 0xFFFFFF00u;
+  f.core.setHold(kHoldUser, true);
+  f.clockMs = 0xFFFFFF00u + kHoldTimeoutMs - 1;  // wrapped past zero
+  TEST_ASSERT_TRUE(f.core.holdActive(kHoldUser));
+  f.clockMs = 0xFFFFFF00u + kHoldTimeoutMs;
+  TEST_ASSERT_FALSE(f.core.holdActive(kHoldUser));
+}
+
+void test_setting_a_hold_again_renews_its_thirty_minutes()
+{
+  Fake f;
+  f.boot();
+  f.clockMs = 0;
+  f.core.setHold(kHoldUser, true);
+  f.clockMs = kHoldTimeoutMs - 10;
+  f.core.setHold(kHoldUser, true);
+  f.clockMs = kHoldTimeoutMs + 100;
+  TEST_ASSERT_TRUE(f.core.holdActive(kHoldUser));
+  f.clockMs = 2 * kHoldTimeoutMs - 10;
+  TEST_ASSERT_FALSE(f.core.holdActive(kHoldUser));
+}
+
+void test_manual_stop_ignores_holds_and_the_stop_clears_them()
+{
+  Fake f;
+  f.boot();
+  f.core.setHold(kHoldUser, true);
+  f.core.setHold(kHoldWs, true);
+  TEST_ASSERT_TRUE(f.core.requestStop());
+  f.core.step();
+  f.core.step();
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(State::SLEEPING), static_cast<int>(f.core.state()));
+  TEST_ASSERT_FALSE(f.core.holdActive(kHoldUser));  // volatile: gone once the device sleeps
+  TEST_ASSERT_FALSE(f.core.holdActive(kHoldWs));
+}
+
+void test_hostile_hold_bits_are_ignored()
+{
+  Fake f;
+  f.boot();
+  f.core.setHold(0, true);
+  f.core.setHold(0x80, true);
+  f.core.setHold(kHoldUser | kHoldWs, true);  // one bit at a time only
+  TEST_ASSERT_FALSE(f.core.holdActive(kHoldUser));
+  TEST_ASSERT_FALSE(f.core.holdActive(kHoldWs));
+  TEST_ASSERT_FALSE(f.core.holdActive(0));
+  TEST_ASSERT_FALSE(f.core.holdActive(0xFF));
+  f.idle(60);
+  f.core.step();
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(State::SLEEPING), static_cast<int>(f.core.state()));
+}
 }
 
 extern "C" void run_supervisor_core_tests()
 {
+  RUN_TEST(test_setpolicy_sleep_enabled_applies_to_the_running_core);
+  RUN_TEST(test_setpolicy_stay_awake_threshold_applies_immediately);
+  RUN_TEST(test_setpolicy_low_battery_threshold_applies_to_the_next_sleep_cycle);
+  RUN_TEST(test_setpolicy_refuses_invalid_policies_and_keeps_the_old_one);
+  RUN_TEST(test_setpolicy_before_init_is_refused);
+  RUN_TEST(test_a_hold_prevents_the_inactivity_sleep_and_releasing_it_restarts_the_count);
+  RUN_TEST(test_holds_are_independent_bits);
+  RUN_TEST(test_a_low_battery_does_not_override_a_hold);
+  RUN_TEST(test_a_hold_expires_after_thirty_minutes_and_sleep_then_works_normally);
+  RUN_TEST(test_hold_expiry_is_clock_wrap_safe);
+  RUN_TEST(test_setting_a_hold_again_renews_its_thirty_minutes);
+  RUN_TEST(test_manual_stop_ignores_holds_and_the_stop_clears_them);
+  RUN_TEST(test_hostile_hold_bits_are_ignored);
   RUN_TEST(test_state_numbers_remain_compatible);
   RUN_TEST(test_boot_order_and_optional_failures);
   RUN_TEST(test_settings_id_is_bootstrap_infrastructure_not_an_ordinary_registration);

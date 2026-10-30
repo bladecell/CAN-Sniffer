@@ -20,6 +20,7 @@
 #include "async_web_server.hpp"
 #include "can_mode_service.hpp"
 #include "can_raw.hpp"
+#include "supervisor.hpp"
 #include "log_gate.hpp"
 #include "body_reader.hpp"
 #include "button.h"
@@ -722,6 +723,18 @@ esp_err_t p_wifi_scan_handler(httpd_req_t* req, void* arg)
 esp_err_t p_system_reboot_index_handler(httpd_req_t* req, void* arg)
 {
     return send_json_response(req, m_system_reboot());
+}
+
+esp_err_t p_system_keep_awake_handler(httpd_req_t* req, void* arg)
+{
+    cJSON* root = get_validated_json_payload(req, 64);
+    if (root == nullptr)
+    {
+        return ESP_OK;  // the helper already answered
+    }
+    MiddlewareJsonResult result = m_keep_awake_set(root);
+    cJSON_Delete(root);
+    return send_json_response(req, result);
 }
 
 esp_err_t p_system_sleep_index_handler(httpd_req_t* req, void* arg)
@@ -1714,6 +1727,12 @@ static esp_err_t ws_pre_handshake(httpd_req_t* req)
 static esp_err_t ws_post_handshake(httpd_req_t* req)
 {
     ESP_LOGI(TAG, "WS Connect: Client #%d", httpd_req_to_sockfd(req));
+    // A client is connected: no automatic inactivity sleep (30 min cap from the first client). Handshake and close hooks both
+    // run in the httpd task, so the "count went to 0" decision below cannot race this.
+    if (!SUPERVISOR::getInstance().sleep_hold_active(supervisor::kHoldWs))
+    {
+        SUPERVISOR::getInstance().set_sleep_hold(supervisor::kHoldWs, true);
+    }
     wsStreamingEnabled.store(true);
     if (WSDataStreamSemaphore != nullptr)
     {
@@ -1806,6 +1825,7 @@ esp_err_t ws_socket_handler(httpd_req_t* req)
             wsStreamingEnabled.store(false);
             rawSubscribers.clear();
             can_mode_service::reset(true);  // Raw mode ends with the last client
+            SUPERVISOR::getInstance().set_sleep_hold(supervisor::kHoldWs, false);
         }
         return httpd_ws_send_frame(req, &ws_pkt);
     }
@@ -1936,6 +1956,7 @@ static void ws_socket_closed(int fd)
         wsStreamingEnabled.store(false);
         rawSubscribers.clear();
         can_mode_service::reset(true);  // Raw mode ends with the last client, whatever closed it
+        SUPERVISOR::getInstance().set_sleep_hold(supervisor::kHoldWs, false);
     }
 }
 
@@ -2174,6 +2195,7 @@ esp_err_t stop_web_server()
     b_pid_stream_enabled.store(false);
     wsStreamingEnabled.store(false);
     rawSubscribers.clear();  // httpd is gone, so nothing else touches the set; a restart must not inherit old descriptors
+    SUPERVISOR::getInstance().set_sleep_hold(supervisor::kHoldWs, false);
     return ESP_OK;
 }
 

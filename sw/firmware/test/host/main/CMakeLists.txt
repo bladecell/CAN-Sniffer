@@ -22,4 +22,4 @@ target_include_directories(${COMPONENT_LIB} PRIVATE "${CMAKE_CURRENT_LIST_DIR}/.
 target_sources(${COMPONENT_LIB} PRIVATE "test_recorder_http.cpp")
 target_sources(${COMPONENT_LIB} PRIVATE "test_can_raw.cpp")
 target_include_directories(${COMPONENT_LIB} PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../../components/can_raw/include")
-target_sources(${COMPONENT_LIB} PRIVATE "test_can_mode.cpp" "test_raw_tx_policy.cpp" "test_raw_flow_control.cpp")
+target_sources(${COMPONENT_LIB} PRIVATE "test_can_mode.cpp" "test_raw_tx_policy.cpp" "test_raw_flow_control.cpp" "test_keep_awake_http.cpp")

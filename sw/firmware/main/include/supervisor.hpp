@@ -62,6 +62,12 @@ public:
     uint32_t reserve_sleep_request();
     void     finish_sleep_request(uint32_t token, bool responseSent);
 
+    // Power policy and sleep holds, applied to the running supervisor (docs/power.md). The policy is validated here; the caller
+    // has already stored it. Holds are volatile (supervisor_core.hpp kHold*).
+    esp_err_t apply_power_policy(const power_settings::Config& policy) { return core_.setPolicy(policy); }
+    void      set_sleep_hold(uint8_t bit, bool on) { core_.setHold(bit, on); }
+    bool      sleep_hold_active(uint8_t bit) const { return core_.holdActive(bit); }
+
     uint32_t          get_uptime_seconds() const;
     const char*       get_restart_reason() const;
     void              get_MAC_address(char (&out)[18]) const;

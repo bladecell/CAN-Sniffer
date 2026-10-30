@@ -46,6 +46,8 @@ MiddlewareJsonResult m_obdii_get();
 MiddlewareJsonResult m_obdii_set(cJSON* payload);
 MiddlewareJsonResult m_system_get();
 MiddlewareJsonResult m_system_reboot();
+// Volatile user hold on automatic inactivity sleep. Body {"enabled":bool}; 200 {keep_awake}, 422 bad body.
+MiddlewareJsonResult m_keep_awake_set(const cJSON* payload);
 // Fixed-capacity admission; finish must run after the response attempt, including a failed send.
 uint32_t m_system_sleep_reserve();
 void m_system_sleep_finish(uint32_t token, bool responseSent);

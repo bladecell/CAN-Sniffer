@@ -103,6 +103,73 @@ power_settings::Config Core::powerPolicy() const
     return result;
 }
 
+esp_err_t Core::setPolicy(const power_settings::Config& policy)
+{
+    if (state() == State::UNINITIALIZED)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (power_settings::check(policy) != nullptr)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    ops_.lock(ops_.context);
+    policy_ = policy;
+    ops_.unlock(ops_.context);
+    return ESP_OK;
+}
+
+bool Core::holdActiveLocked(int index, uint32_t now) const
+{
+    return index >= 0 && (holdMask_ & (1u << index)) != 0 && static_cast<uint32_t>(now - holdSinceMs_[index]) < kHoldTimeoutMs;
+}
+
+void Core::setHold(uint8_t bit, bool on)
+{
+    const int index = holdIndex(bit);
+    if (index < 0)
+    {
+        return;
+    }
+    const uint32_t now = holdNowMs();
+    ops_.lock(ops_.context);
+    if (on)
+    {
+        holdMask_ = static_cast<uint8_t>(holdMask_ | bit);
+        holdSinceMs_[index] = now;
+    }
+    else
+    {
+        holdMask_ = static_cast<uint8_t>(holdMask_ & ~bit);
+    }
+    ops_.unlock(ops_.context);
+}
+
+bool Core::holdActive(uint8_t bit) const
+{
+    const uint32_t now = holdNowMs();
+    ops_.lock(ops_.context);
+    const bool active = holdActiveLocked(holdIndex(bit), now);
+    ops_.unlock(ops_.context);
+    return active;
+}
+
+bool Core::anyHold() const
+{
+    const uint32_t now = holdNowMs();
+    ops_.lock(ops_.context);
+    const bool active = holdActiveLocked(0, now) || holdActiveLocked(1, now);
+    ops_.unlock(ops_.context);
+    return active;
+}
+
+void Core::clearHolds()
+{
+    ops_.lock(ops_.context);
+    holdMask_ = 0;
+    ops_.unlock(ops_.context);
+}
+
 uint32_t Core::reserveSleepRequest()
 {
     ops_.lock(ops_.context);
@@ -305,7 +372,7 @@ void Core::recover()
 void Core::sleepCycle()
 {
     const float    voltage    = ops_.voltage(ops_.context);
-    const float    lowVoltage = static_cast<float>(policy_.low_battery_voltage_mv) / 1000.0f;
+    const float    lowVoltage = static_cast<float>(powerPolicy().low_battery_voltage_mv) / 1000.0f;
     const uint64_t us         = voltage < lowVoltage ? 60000000ULL : 10000000ULL;
     const esp_err_t prepareError = ops_.prepareSleep(ops_.context, us);
     if (prepareError != ESP_OK)
@@ -421,8 +488,9 @@ void Core::step()
                 inactiveTicks_ = 0;
                 state_.store(State::RUNNING);
             }
-            else if (!policy_.sleep_enabled ||
-                     ops_.voltage(ops_.context) > static_cast<float>(policy_.stay_awake_voltage_mv) / 1000.0f)
+            else if (const power_settings::Config policy = powerPolicy();
+                     !policy.sleep_enabled || anyHold() ||
+                     ops_.voltage(ops_.context) > static_cast<float>(policy.stay_awake_voltage_mv) / 1000.0f)
             {
                 inactiveTicks_ = 0;
             }
@@ -447,6 +515,7 @@ void Core::step()
             if (shutdown())
             {
                 invalidateSleepReservation();
+                clearHolds();  // volatile: a hold never carries into the next awake period
                 ops_.writeFailures(ops_.context, 0);
                 stopAttempts_ = 0;
                 state_.store(State::SLEEPING);

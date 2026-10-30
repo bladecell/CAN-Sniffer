@@ -31,6 +31,7 @@
 #include "http_error.hpp"
 #include "can_mode_http.hpp"
 #include "can_mode_service.hpp"
+#include "keep_awake_http.hpp"
 #include "log_gate.hpp"
 #include "obd2.hpp"
 #include "raw_tx_policy.hpp"
@@ -527,6 +528,7 @@ MiddlewareJsonResult m_system_get()
     }
 
     cJSON_AddNumberToObject(root, "api_version", API_VERSION);
+    cJSON_AddBoolToObject(root, "keep_awake", SUPERVISOR::getInstance().sleep_hold_active(supervisor::kHoldUser));
     cJSON_AddStringToObject(root, "app_version", APP_VERSION_STRING);
     cJSON_AddNumberToObject(root, "uptime_s", SUPERVISOR::getInstance().get_uptime_seconds());
     cJSON_AddStringToObject(root, "restart_reason", SUPERVISOR::getInstance().get_restart_reason());
@@ -594,6 +596,24 @@ uint32_t m_system_sleep_reserve()
 void m_system_sleep_finish(uint32_t token, bool responseSent)
 {
     SUPERVISOR::getInstance().finish_sleep_request(token, responseSent);
+}
+
+// POST /system/keep_awake: the volatile user hold on the automatic inactivity sleep (30 min cap, not persisted).
+MiddlewareJsonResult m_keep_awake_set(const cJSON* payload)
+{
+    bool enabled = false;
+    if (!keep_awake_http::parseBody(payload, enabled))
+    {
+        return json_result(json_error_body("Body must be {\"enabled\": true|false}", "BAD_JSON"), 422);
+    }
+    SUPERVISOR::getInstance().set_sleep_hold(supervisor::kHoldUser, enabled);
+    cJSON* root = cJSON_CreateObject();
+    if (root == nullptr)
+    {
+        return json_result(nullptr, 500);
+    }
+    cJSON_AddBoolToObject(root, "keep_awake", SUPERVISOR::getInstance().sleep_hold_active(supervisor::kHoldUser));
+    return json_result(root, 200);
 }
 
 MiddlewareJsonResult m_system_reboot()
@@ -1955,8 +1975,24 @@ static settings_patch::Outcome patch_one_section(const char* name, cJSON* fields
             return patch_section<CanDriver::Config>(fields, &Settings::getCanConfig, &Settings::setCanConfig, apply_can_settings,
                                                     Settings::checkCanConfig, reason);
         case Section::System:
-            return patch_section<SUPERVISOR::Config>(fields, &Settings::getSupervisorConfig, &Settings::setSupervisorConfig,
-                                                     apply_system_settings, Settings::checkSupervisorConfig, reason);
+        {
+            const Outcome outcome = patch_section<SUPERVISOR::Config>(fields, &Settings::getSupervisorConfig, &Settings::setSupervisorConfig,
+                                                                      apply_system_settings, Settings::checkSupervisorConfig, reason);
+            if (outcome == Outcome::Saved)
+            {
+                // Saved: now the running supervisor uses the new sleep_enabled and voltage thresholds too, without a reboot.
+                SUPERVISOR::Config stored;
+                if (Settings::getInstance().getSupervisorConfig(stored) == ESP_OK)
+                {
+                    const esp_err_t applied = SUPERVISOR::getInstance().apply_power_policy(stored.power);
+                    if (applied != ESP_OK)
+                    {
+                        ESP_LOGW(TAG, "Power policy saved but not applied live: %s", esp_err_to_name(applied));
+                    }
+                }
+            }
+            return outcome;
+        }
         case Section::Unknown:
             break;
     }

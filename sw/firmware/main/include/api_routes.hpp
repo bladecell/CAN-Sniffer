@@ -46,6 +46,7 @@
   X("/api/v1/system",               GET,    g_system_index_handler,          0)                \
   X("/api/v1/system/reboot",        POST,   p_system_reboot_index_handler,   1)                \
   X("/api/v1/system/sleep",         POST,   p_system_sleep_index_handler,    1)                \
+  X("/api/v1/system/keep_awake",    POST,   p_system_keep_awake_handler,     1)                \
   X("/api/v1/sd_card/info",         GET,    g_sd_card_info_handler,          0)                \
   X("/api/v1/sd_card/copy",         POST,   p_sd_card_copy_handler,          1)                \
   X("/api/v1/sd_card/format",       POST,   p_sd_card_format_handler,        1)                \
