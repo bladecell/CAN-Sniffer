@@ -77,6 +77,9 @@ public:
     // A relaxed atomic read per frame, no lock. Default true; OBD2 stop sets it back.
     void      setParsingEnabled(bool on) { parsingEnabled_.store(on); }
     bool      isParsingEnabled() const { return parsingEnabled_.load(); }
+    // The receive task's health-check ping (02 01 00 to 0x7DF every ~4 s). Off in Raw mode: that mode sends only what the user
+    // sends. Default true; OBD2 stop sets it back; it restarts a full period after being switched on again.
+    void      setHealthPingEnabled(bool on) { healthPingEnabled_.store(on); }
     esp_err_t requestPID(uint16_t pid);
 
     void      requestSuppPids();
@@ -171,6 +174,7 @@ private:
     std::atomic<uint32_t>    rawTxHi_{0};
     obd2frame::RawFlowControl rawFc_;
     std::atomic<bool>        parsingEnabled_{true};
+    std::atomic<bool>        healthPingEnabled_{true};
     void      serviceRawFlowControl(const CanDriver::CanFrame& f);
     void      resetDiagCollection();
     void      releaseDiagBus();

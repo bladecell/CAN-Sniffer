@@ -103,8 +103,17 @@ void OBD2::receiveTask()
         // poll queue if the ECU stops responding (e.g. ignition turned off).
         TickType_t now = xTaskGetTickCount();
 
-        // Not while a raw send waits for its TX-done: the ping can be byte for byte the user's frame.
-        if (now - last_ping_ms >= pdMS_TO_TICKS(OBD2_HEALTHCHECK_PING_PERIOD_MS) && rawTxState_.load() == kRawTxIdle)
+        // Not in Raw mode (the user sends everything there), and not while a raw send waits for its TX-done (the ping can be byte
+        // for byte the user's frame). Switched off: the schedule restarts, so the first ping after Raw comes a full period later.
+        const bool pingEnabled = healthPingEnabled_.load();
+        if (!pingEnabled)
+        {
+            last_ping_ms      = now;
+            failed_pings      = 0;
+            awaiting_response = false;
+        }
+        if (obd2frame::healthPingDue(pingEnabled, now, last_ping_ms, pdMS_TO_TICKS(OBD2_HEALTHCHECK_PING_PERIOD_MS),
+                                     rawTxState_.load() != kRawTxIdle))
         {
             last_ping_ms = now;
 

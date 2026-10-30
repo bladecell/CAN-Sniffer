@@ -67,6 +67,13 @@ void buildDiagSessionRequest(uint8_t session, RequestBytes& out);  // 02 10 sess
 void buildCurrentDataRequest(uint8_t pid, RequestBytes& out);      // 02 01 pid
 // True for the OBD2 health-check ping (functional id 0x7DF, 8 bytes, 02 01 00 padded): raw sends of that exact frame need care.
 bool isHealthPingFrame(uint32_t id, const uint8_t* data, size_t length);
+
+// When the receive task sends the health ping: enabled (off in Raw mode), no raw send waiting for its TX-done, and a full
+// period since the last one. All times in one unit, 32-bit wrap safe.
+inline bool healthPingDue(bool enabled, uint32_t now, uint32_t last, uint32_t period, bool rawSendWaiting)
+{
+    return enabled && !rawSendWaiting && static_cast<uint32_t>(now - last) >= period;
+}
 void buildFlowControl(RequestBytes& out);                          // 30 00 00         (continue to send, no block limit, no separation time)
 // A configured PID. The PCI length comes from the mode, never from the caller: mode 01 -> `02 01 pid` (PID 1..0xFF),
 // mode 0x22 -> `03 22 didHi didLo`. Any other mode (including derived) or a PID out of range builds nothing: returns false

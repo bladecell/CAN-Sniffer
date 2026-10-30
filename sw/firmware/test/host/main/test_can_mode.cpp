@@ -1,5 +1,6 @@
 // can_mode: the mode table and its controller (no ESP-IDF, fake environment).
 #include <cstring>
+#include <string>
 #include <vector>
 
 #include "../../../../main/include/can_mode.hpp"
@@ -21,6 +22,8 @@ struct FakeEnv
   int  fcDisarms = 0;
   bool inflight  = false;                 // a REST OBD request is on the bus
   bool parsing   = true;                  // what the rx task was last told
+  bool healthPing = true;                 // whether OBD2 may send its health-check ping
+  void setHealthPing(bool on) { healthPing = on; }
   std::vector<bool> parsingLog;
   bool obdRequestInFlight() { return inflight; }
   void setObdParsing(bool on)
@@ -155,6 +158,46 @@ static void test_every_revert_path_publishes_parsing_on(void)
   c.set("raw", false, 0);
   c.tick(kIdleTimeoutMs);
   TEST_ASSERT_TRUE(env.parsing);
+}
+
+static void test_raw_suspends_the_health_ping_and_every_revert_resumes_it(void)
+{
+  FakeEnv env;
+  Ctl     c(env);
+  TEST_ASSERT_TRUE(env.healthPing);
+  c.set("raw", false, 0);
+  TEST_ASSERT_FALSE(env.healthPing);
+  c.set("raw", true, true, 1);  // options change inside Raw: still no ping
+  TEST_ASSERT_FALSE(env.healthPing);
+  c.set("monitor", false, 2);
+  TEST_ASSERT_TRUE(env.healthPing);
+  const char* paths[] = {"reset", "resetNoRestore", "deferred", "supervisor", "idle"};
+  for (const char* path : paths)
+  {
+    env.running = true;
+    c.set("raw", false, 10);
+    TEST_ASSERT_FALSE_MESSAGE(env.healthPing, path);
+    const std::string p(path);
+    if (p == "reset") { c.reset(true); }
+    else if (p == "resetNoRestore") { c.reset(false); }
+    else if (p == "deferred") { c.deferReset(true); c.tick(11); }
+    else if (p == "supervisor") { env.running = false; c.tick(11); }
+    else { c.tick(10 + kIdleTimeoutMs); }
+    TEST_ASSERT_TRUE_MESSAGE(env.healthPing, path);
+  }
+}
+
+static void test_a_refused_raw_entry_keeps_the_health_ping(void)
+{
+  FakeEnv env;
+  env.recorder = true;
+  Ctl c(env);
+  c.set("raw", false, 0);
+  TEST_ASSERT_TRUE(env.healthPing);
+  env.recorder = false;
+  env.inflight = true;
+  c.set("raw", false, 0);
+  TEST_ASSERT_TRUE(env.healthPing);
 }
 
 static void test_a_refused_raw_entry_never_stops_the_parser(void)
@@ -663,6 +706,8 @@ extern "C" void run_can_mode_tests(void)
   RUN_TEST(test_the_three_argument_set_means_no_parsing);
   RUN_TEST(test_leaving_raw_turns_parsing_back_on_and_forgets_the_option);
   RUN_TEST(test_every_revert_path_publishes_parsing_on);
+  RUN_TEST(test_raw_suspends_the_health_ping_and_every_revert_resumes_it);
+  RUN_TEST(test_a_refused_raw_entry_keeps_the_health_ping);
   RUN_TEST(test_a_refused_raw_entry_never_stops_the_parser);
   RUN_TEST(test_raw_is_refused_while_a_rest_obd_request_is_on_the_bus);
   RUN_TEST(test_view_follows_every_transition_and_revert_path);

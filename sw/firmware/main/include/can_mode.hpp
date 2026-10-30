@@ -9,7 +9,7 @@
 //
 // Env: bool supervisorRunning(); bool recorderBusy(); bool autoPoll(); bool setAutoPoll(bool on) (true = done);
 //      void fcDisarm(); bool obdRequestInFlight() (a REST OBD request is on the bus); void setObdParsing(bool on) (tell the
-//      receive task whether to parse OBD frames).
+//      receive task whether to parse OBD frames); void setHealthPing(bool on) (the OBD2 health-check ping; off in Raw).
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -294,6 +294,7 @@ private:
   void publishParsing()
   {
     env_.setObdParsing(cur_ == 0 || parsing_);
+    env_.setHealthPing(cur_ == 0);  // Raw sends only what the user sends
     view_.store(static_cast<uint32_t>(cur_) | (fc_ ? 0x100u : 0u) | (parsing_ ? 0x200u : 0u));
   }
 

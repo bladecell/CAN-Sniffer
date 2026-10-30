@@ -483,6 +483,17 @@ static void test_clear_dtc_request_is_one_byte_after_the_pci(void)
 }
 
 
+static void test_health_ping_schedule(void)
+{
+    // enabled, nowMs, lastMs, periodMs, rawSendWaiting
+    TEST_ASSERT_FALSE(healthPingDue(true, 3999, 0, 4000, false));
+    TEST_ASSERT_TRUE(healthPingDue(true, 4000, 0, 4000, false));
+    TEST_ASSERT_FALSE(healthPingDue(false, 400000, 0, 4000, false));  // Raw mode: no pings, however late
+    TEST_ASSERT_FALSE(healthPingDue(true, 4000, 0, 4000, true));      // a raw send is waiting for its TX-done
+    TEST_ASSERT_TRUE(healthPingDue(true, 0x100u, 0xFFFFF000u, 4000, false));  // 32-bit clock wrap: 4352 ms
+    TEST_ASSERT_FALSE(healthPingDue(true, 0x10u, 0xFFFFFF00u, 4000, false));
+}
+
 static void test_health_ping_frame_is_recognised(void)
 {
     RequestBytes ping = {};
@@ -531,5 +542,6 @@ extern "C" void run_obd2_frame_tests(void)
     RUN_TEST(test_discovery_backoff_doubles_and_caps);
     RUN_TEST(test_exhaustive_first_bytes_and_lengths);
     RUN_TEST(test_random_payloads_never_overrun);
+    RUN_TEST(test_health_ping_schedule);
     RUN_TEST(test_health_ping_frame_is_recognised);
 }

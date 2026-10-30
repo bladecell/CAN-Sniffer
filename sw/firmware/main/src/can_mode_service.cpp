@@ -31,6 +31,7 @@ struct ProdEnv
   void fcDisarm() { OBD2::getInstance().disarmRawFlowControl(); }
   bool obdRequestInFlight();
   void setObdParsing(bool on) { OBD2::getInstance().setParsingEnabled(on); }
+  void setHealthPing(bool on) { OBD2::getInstance().setHealthPingEnabled(on); }
 };
 
 std::atomic<uint32_t> gObdRequests{0};  // REST OBD requests running; changed under the mutex (increment) or freely (decrement)
