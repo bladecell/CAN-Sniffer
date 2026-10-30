@@ -1663,6 +1663,66 @@ void test_manual_stop_ignores_holds_and_the_stop_clears_them()
   TEST_ASSERT_FALSE(f.core.holdActive(kHoldWs));
 }
 
+void test_the_ws_hold_is_armed_once_per_wake_period()
+{
+  // An unauthenticated client must not be able to keep the device awake forever by reconnecting.
+  Fake f;
+  f.boot();
+  f.clockMs = 1000;
+  f.core.setHold(kHoldWs, true);
+  f.clockMs = 1000 + kHoldTimeoutMs;  // expired
+  TEST_ASSERT_FALSE(f.core.holdActive(kHoldWs));
+  f.core.setHold(kHoldWs, true);  // the same client (or another) reconnects
+  TEST_ASSERT_FALSE(f.core.holdActive(kHoldWs));
+  f.core.setHold(kHoldWs, false);  // the last client closes, a new one opens
+  f.core.setHold(kHoldWs, true);
+  TEST_ASSERT_FALSE(f.core.holdActive(kHoldWs));
+  f.idle(60);
+  f.core.step();
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(State::SLEEPING), static_cast<int>(f.core.state()));
+}
+
+void test_the_ws_hold_can_be_armed_again_after_the_device_has_slept()
+{
+  Fake f;
+  f.boot();
+  f.core.setHold(kHoldWs, true);
+  TEST_ASSERT_TRUE(f.core.requestStop());
+  f.core.step();
+  f.core.step();
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(State::SLEEPING), static_cast<int>(f.core.state()));
+  f.core.setHold(kHoldWs, true);  // next wake period
+  TEST_ASSERT_TRUE(f.core.holdActive(kHoldWs));
+}
+
+void test_the_user_hold_can_be_renewed_after_it_expired()
+{
+  Fake f;
+  f.boot();
+  f.core.setHold(kHoldUser, true);
+  f.clockMs = kHoldTimeoutMs + 5;
+  TEST_ASSERT_FALSE(f.core.holdActive(kHoldUser));
+  f.core.setHold(kHoldUser, true);  // an authenticated request
+  TEST_ASSERT_TRUE(f.core.holdActive(kHoldUser));
+}
+
+void test_an_expired_hold_stays_expired_when_the_clock_wraps_around()
+{
+  Fake f;
+  f.boot();
+  f.clockMs = 100;
+  f.core.setHold(kHoldUser, true);
+  f.clockMs = 100 + kHoldTimeoutMs;
+  TEST_ASSERT_FALSE(f.core.holdActive(kHoldUser));  // expiry seen: the bit is cleared
+  f.clockMs = 100;                                  // 2^32 ms later the low 32 bits are the same again
+  TEST_ASSERT_FALSE(f.core.holdActive(kHoldUser));
+  f.clockMs = 100 + kHoldTimeoutMs / 2;
+  TEST_ASSERT_FALSE(f.core.holdActive(kHoldUser));
+  f.idle(60);
+  f.core.step();
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(State::SLEEPING), static_cast<int>(f.core.state()));
+}
+
 void test_hostile_hold_bits_are_ignored()
 {
   Fake f;
@@ -1694,6 +1754,10 @@ extern "C" void run_supervisor_core_tests()
   RUN_TEST(test_hold_expiry_is_clock_wrap_safe);
   RUN_TEST(test_setting_a_hold_again_renews_its_thirty_minutes);
   RUN_TEST(test_manual_stop_ignores_holds_and_the_stop_clears_them);
+  RUN_TEST(test_the_ws_hold_is_armed_once_per_wake_period);
+  RUN_TEST(test_the_ws_hold_can_be_armed_again_after_the_device_has_slept);
+  RUN_TEST(test_the_user_hold_can_be_renewed_after_it_expired);
+  RUN_TEST(test_an_expired_hold_stays_expired_when_the_clock_wraps_around);
   RUN_TEST(test_hostile_hold_bits_are_ignored);
   RUN_TEST(test_state_numbers_remain_compatible);
   RUN_TEST(test_boot_order_and_optional_failures);

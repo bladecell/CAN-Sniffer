@@ -90,7 +90,9 @@ public:
   // from a copy taken under the lock each iteration, so a change is seen at the next step and never half-applied.
   // ESP_ERR_INVALID_ARG: power_settings::check refuses it (the old policy stays). ESP_ERR_INVALID_STATE: before init.
   esp_err_t setPolicy(const power_settings::Config& policy);
-  // `bit` is exactly kHoldUser or kHoldWs (anything else is ignored). Setting an active hold renews its timeout.
+  // `bit` is exactly kHoldUser or kHoldWs (anything else is ignored). Setting the user hold again renews its timeout. The
+  // WebSocket hold arms at most once per wake period (cleared only when the core reaches SLEEPING): it is requested by
+  // unauthenticated clients, so reconnecting must not re-arm it after expiry or after the last client closed.
   void setHold(uint8_t bit, bool on);
   // True while the hold is set and younger than kHoldTimeoutMs.
   bool holdActive(uint8_t bit) const;
@@ -121,7 +123,8 @@ private:
   std::atomic<State> state_{State::UNINITIALIZED};
   std::atomic<StopAck> stopAck_{StopAck::NONE};
   uint32_t inactiveTicks_ = 0;
-  uint8_t holdMask_ = 0;          // under ops_.lock
+  mutable uint8_t holdMask_ = 0;  // under ops_.lock; an expired bit is cleared when expiry is first seen
+  bool wsHoldArmedThisWake_ = false;  // under ops_.lock; the WebSocket hold arms once per wake period
   uint32_t holdSinceMs_[2] = {};  // under ops_.lock
   uint32_t errorTicks_ = 0;
   uint8_t stopAttempts_ = 0;

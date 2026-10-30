@@ -121,7 +121,16 @@ esp_err_t Core::setPolicy(const power_settings::Config& policy)
 
 bool Core::holdActiveLocked(int index, uint32_t now) const
 {
-    return index >= 0 && (holdMask_ & (1u << index)) != 0 && static_cast<uint32_t>(now - holdSinceMs_[index]) < kHoldTimeoutMs;
+    if (index < 0 || (holdMask_ & (1u << index)) == 0)
+    {
+        return false;
+    }
+    if (static_cast<uint32_t>(now - holdSinceMs_[index]) < kHoldTimeoutMs)
+    {
+        return true;
+    }
+    holdMask_ = static_cast<uint8_t>(holdMask_ & ~(1u << index));  // expired for good: it must not come back when the 32-bit clock wraps
+    return false;
 }
 
 void Core::setHold(uint8_t bit, bool on)
@@ -135,6 +144,15 @@ void Core::setHold(uint8_t bit, bool on)
     ops_.lock(ops_.context);
     if (on)
     {
+        if (bit == kHoldWs)
+        {
+            if (wsHoldArmedThisWake_)
+            {
+                ops_.unlock(ops_.context);
+                return;
+            }
+            wsHoldArmedThisWake_ = true;
+        }
         holdMask_ = static_cast<uint8_t>(holdMask_ | bit);
         holdSinceMs_[index] = now;
     }
@@ -166,7 +184,8 @@ bool Core::anyHold() const
 void Core::clearHolds()
 {
     ops_.lock(ops_.context);
-    holdMask_ = 0;
+    holdMask_            = 0;
+    wsHoldArmedThisWake_ = false;
     ops_.unlock(ops_.context);
 }
 

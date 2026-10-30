@@ -1729,10 +1729,7 @@ static esp_err_t ws_post_handshake(httpd_req_t* req)
     ESP_LOGI(TAG, "WS Connect: Client #%d", httpd_req_to_sockfd(req));
     // A client is connected: no automatic inactivity sleep (30 min cap from the first client). Handshake and close hooks both
     // run in the httpd task, so the "count went to 0" decision below cannot race this.
-    if (!SUPERVISOR::getInstance().sleep_hold_active(supervisor::kHoldWs))
-    {
-        SUPERVISOR::getInstance().set_sleep_hold(supervisor::kHoldWs, true);
-    }
+    SUPERVISOR::getInstance().set_sleep_hold(supervisor::kHoldWs, true);  // the core arms it once per wake period
     wsStreamingEnabled.store(true);
     if (WSDataStreamSemaphore != nullptr)
     {

@@ -1957,7 +1957,9 @@ static settings_patch::Outcome patch_section(cJSON* fields, esp_err_t (Settings:
     return Outcome::Saved;
 }
 
-static settings_patch::Outcome patch_one_section(const char* name, cJSON* fields, FixedText<>& reason)
+// `liveApplyFailed` is set when a saved system section could not be applied to the running supervisor: the values are in NVS
+// and take effect after a reboot, so the response says restart_required.
+static settings_patch::Outcome patch_one_section(const char* name, cJSON* fields, FixedText<>& reason, bool& liveApplyFailed)
 {
     using settings_patch::Outcome;
     using settings_patch::Section;
@@ -1988,7 +1990,12 @@ static settings_patch::Outcome patch_one_section(const char* name, cJSON* fields
                     if (applied != ESP_OK)
                     {
                         ESP_LOGW(TAG, "Power policy saved but not applied live: %s", esp_err_to_name(applied));
+                        liveApplyFailed = true;
                     }
+                }
+                else
+                {
+                    liveApplyFailed = true;
                 }
             }
             return outcome;
@@ -2065,7 +2072,8 @@ MiddlewareJsonResult m_settings_set(cJSON* payload)
     for (cJSON* c = payload->child; c != nullptr && i < n; c = c->next, i++)
     {
         FixedText<> reason;
-        outcomes[i] = patch_one_section(c->string != nullptr ? c->string : "", c, reason);
+        bool liveApplyFailed = false;
+        outcomes[i]          = patch_one_section(c->string != nullptr ? c->string : "", c, reason, liveApplyFailed);
         switch (settings_patch::sectionOf(c->string != nullptr ? c->string : ""))
         {
             case settings_patch::Section::System:
@@ -2074,6 +2082,7 @@ MiddlewareJsonResult m_settings_set(cJSON* payload)
                 {
                     needsRestart[i] = needsRestart[i] || (k->string != nullptr && settings_patch::systemKeyNeedsRestart(k->string));
                 }
+                needsRestart[i] = needsRestart[i] || liveApplyFailed;
                 break;
             case settings_patch::Section::Wifi:
             case settings_patch::Section::Can:
