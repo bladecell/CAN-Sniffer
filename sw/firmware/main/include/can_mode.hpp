@@ -9,7 +9,8 @@
 //
 // Env: bool supervisorRunning(); bool recorderBusy(); bool autoPoll(); bool setAutoPoll(bool on) (true = done);
 //      void fcDisarm(); bool obdRequestInFlight() (a REST OBD request is on the bus); void setObdParsing(bool on) (tell the
-//      receive task whether to parse OBD frames); void setHealthPing(bool on) (the OBD2 health-check ping; off in Raw).
+//      receive task whether to parse OBD frames); void setHealthPing(bool on) (the OBD2 health-check ping; off in Raw);
+//      void setRawActive(bool on) (OBD2 refuses and drops every request that is not the client's own raw frame).
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -41,6 +42,28 @@ struct Saved
 {
   bool autoPoll       = false;  // polling was on when Raw was entered
   bool restorePending = false;  // switching it back on failed; retried by tick()
+};
+
+// REST OBD requests running right now, so Raw entry can wait for them. enter() is the mode check and the increment in one step
+// (the caller holds the mode lock); leave() never underflows.
+class RequestCounter
+{
+public:
+  bool enter(bool monitor)
+  {
+    if (!monitor) { return false; }
+    n_.fetch_add(1);
+    return true;
+  }
+  void leave()
+  {
+    uint32_t n = n_.load();
+    while (n != 0 && !n_.compare_exchange_weak(n, n - 1)) {}
+  }
+  bool busy() const { return n_.load() != 0; }
+
+private:
+  std::atomic<uint32_t> n_{0};
 };
 
 template <typename Env>
@@ -275,19 +298,22 @@ private:
     {
       return;
     }
+    // Monitor's flags first (OBD2 requests allowed, parsing, ping), then the undo: restoring polling refills the poll queue,
+    // which OBD2 would drop while it still believed Raw was active.
+    const size_t was = cur_;
+    cur_             = 0;
+    fc_              = false;
+    parsing_         = false;
+    publishParsing();
     if (restore)
     {
-      modeTable<Env>()[cur_].exit(env_, saved_);
+      modeTable<Env>()[was].exit(env_, saved_);
     }
     else
     {
       env_.fcDisarm();
       saved_ = Saved{};
     }
-    cur_     = 0;
-    fc_      = false;
-    parsing_ = false;
-    publishParsing();
   }
 
   // The receive task parses unless a mode that does not parse is on (only Raw without the option).
@@ -295,6 +321,7 @@ private:
   {
     env_.setObdParsing(cur_ == 0 || parsing_);
     env_.setHealthPing(cur_ == 0);  // Raw sends only what the user sends
+    env_.setRawActive(cur_ != 0);
     view_.store(static_cast<uint32_t>(cur_) | (fc_ ? 0x100u : 0u) | (parsing_ ? 0x200u : 0u));
   }
 

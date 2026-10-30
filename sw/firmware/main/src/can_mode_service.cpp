@@ -32,12 +32,13 @@ struct ProdEnv
   bool obdRequestInFlight();
   void setObdParsing(bool on) { OBD2::getInstance().setParsingEnabled(on); }
   void setHealthPing(bool on) { OBD2::getInstance().setHealthPingEnabled(on); }
+  void setRawActive(bool on) { OBD2::getInstance().setRawActive(on); }
 };
 
-std::atomic<uint32_t> gObdRequests{0};  // REST OBD requests running; changed under the mutex (increment) or freely (decrement)
+can_mode::RequestCounter gObdRequests;  // REST OBD requests running; entered under the mutex, left freely
 bool ProdEnv::obdRequestInFlight()
 {
-  return gObdRequests.load() != 0;
+  return gObdRequests.busy();
 }
 
 ProdEnv                       gEnv;
@@ -155,12 +156,11 @@ ObdRequestGuard::ObdRequestGuard() : state_(State::busy)
   {
     return;  // fail closed
   }
-  if (!gController.isDefault())
+  if (!gObdRequests.enter(gController.isDefault()))  // under the mutex: Raw entry checks it under the same mutex
   {
     state_ = State::rawMode;
     return;
   }
-  gObdRequests.fetch_add(1);  // under the mutex: Raw entry checks it under the same mutex
   state_ = State::allowed;
 }
 
@@ -168,7 +168,7 @@ ObdRequestGuard::~ObdRequestGuard()
 {
   if (state_ == State::allowed)
   {
-    gObdRequests.fetch_sub(1);
+    gObdRequests.leave();
   }
 }
 

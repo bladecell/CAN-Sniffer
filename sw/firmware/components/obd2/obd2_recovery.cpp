@@ -36,17 +36,20 @@ void OBD2::handleCanConnected()
     recoveryNeeded_ = false;
     recoveryBackoffMs_ = 0;
     pendingDiscover_ = false;
-    if (autoPoll)
+    switch (obd2frame::planConnectWork(rawActive_.load(), autoPoll, pidsInitialized))
     {
-        if (!recoverOnce())
-        {
-            armRecovery();
-        }
-    }
-    else if (!pidsInitialized)
-    {
-        ESP_LOGI(TAG, "Retrieving supported PIDs...");
-        requestSuppPidsInternal();
+        case obd2frame::ConnectWork::Recover:
+            if (!recoverOnce())
+            {
+                armRecovery();
+            }
+            break;
+        case obd2frame::ConnectWork::Discover:
+            ESP_LOGI(TAG, "Retrieving supported PIDs...");
+            requestSuppPidsInternal();
+            break;
+        case obd2frame::ConnectWork::None:
+            break;
     }
 
     if (!stopRequested_ && canDriver.isBusConnected())
@@ -140,6 +143,12 @@ void OBD2::recoveryTick()
     {
         return;
     }
+    if (rawActive_.load())
+    {
+        recoveryNeeded_  = false;  // Raw mode sends no recovery or discovery requests
+        pendingDiscover_ = false;
+        return;
+    }
     if (!canDriver.isBusConnected())
     {
         recoveryNeeded_ = false;
@@ -219,6 +228,17 @@ void OBD2::handleCanDisconnected()
     memset(pendingVin_, 0, sizeof(pendingVin_));
     runOBDIIConnectedCallbacks(false);
     xSemaphoreGive(discoveryMtx_);
+}
+
+void OBD2::setRawActive(bool on)
+{
+    rawActive_.store(on);
+    if (on)
+    {
+        recoveryNeeded_  = false;  // flags only, like setAutoPoll(false): discoveryMtx_ is not taken here
+        pendingDiscover_ = false;
+        pollQueue.clear();         // one-shot VIN/DTC/discovery/ping entries that were already queued
+    }
 }
 
 bool OBD2::isAutoPoll() const

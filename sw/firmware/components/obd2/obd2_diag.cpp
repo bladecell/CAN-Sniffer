@@ -27,6 +27,10 @@ void OBD2::onVinConfirmed()
                 }
                 break;
             case obd2frame::VinAction::Discover:
+                if (rawActive_.load())
+                {
+                    break;  // Raw mode: no discovery on the bus
+                }
                 strncpy(pendingVin_, vin.c_str(), VIN_LENGTH);
                 pendingVin_[VIN_LENGTH] = '\0';
                 pendingDiscover_        = true;

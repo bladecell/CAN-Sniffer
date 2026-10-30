@@ -21,6 +21,9 @@ struct FakeEnv
   std::vector<bool> sets;
   int  fcDisarms = 0;
   bool inflight  = false;                 // a REST OBD request is on the bus
+  bool rawActive = false;                 // what OBD2 was last told (its non-raw requests stop while true)
+  bool rawActiveAtLastPollSwitch = false;
+  void setRawActive(bool on) { rawActive = on; }
   bool parsing   = true;                  // what the rx task was last told
   bool healthPing = true;                 // whether OBD2 may send its health-check ping
   void setHealthPing(bool on) { healthPing = on; }
@@ -40,6 +43,7 @@ struct FakeEnv
   bool setAutoPoll(bool on)
   {
     sets.push_back(on);
+    rawActiveAtLastPollSwitch = rawActive;
     if (failSet) { return false; }
     poll = on;
     if (!on && recorderStartsWhenPollingStops) { recorder = true; }
@@ -185,6 +189,79 @@ static void test_raw_suspends_the_health_ping_and_every_revert_resumes_it(void)
     else { c.tick(10 + kIdleTimeoutMs); }
     TEST_ASSERT_TRUE_MESSAGE(env.healthPing, path);
   }
+}
+
+static void test_raw_active_is_published_on_entry_and_every_revert_path(void)
+{
+  FakeEnv env;
+  Ctl     c(env);
+  TEST_ASSERT_FALSE(env.rawActive);
+  c.set("raw", false, 0);
+  TEST_ASSERT_TRUE(env.rawActive);
+  c.set("raw", true, true, 1);  // options change inside Raw: still active
+  TEST_ASSERT_TRUE(env.rawActive);
+  c.set("monitor", false, 2);
+  TEST_ASSERT_FALSE(env.rawActive);
+  for (int path = 0; path < 5; path++)
+  {
+    env.running = true;
+    c.set("raw", false, 10);
+    TEST_ASSERT_TRUE(env.rawActive);
+    if (path == 0) { c.reset(true); }
+    else if (path == 1) { c.reset(false); }
+    else if (path == 2) { c.deferReset(true); c.tick(11); }
+    else if (path == 3) { env.running = false; c.tick(11); }
+    else { c.tick(10 + kIdleTimeoutMs); }
+    TEST_ASSERT_FALSE(env.rawActive);
+  }
+}
+
+static void test_a_refused_raw_entry_never_marks_raw_active(void)
+{
+  FakeEnv env;
+  env.recorder = true;
+  Ctl c(env);
+  c.set("raw", false, 0);
+  env.recorder = false;
+  env.inflight = true;
+  c.set("raw", false, 0);
+  env.inflight = false;
+  env.running  = false;
+  c.set("raw", false, 0);
+  TEST_ASSERT_FALSE(env.rawActive);
+}
+
+static void test_polling_is_restored_after_raw_is_no_longer_active(void)
+{
+  // The restore refills the poll queue; OBD2 drops queued requests while Raw is active, so Raw must be over first.
+  FakeEnv env;
+  env.poll = true;
+  Ctl c(env);
+  c.set("raw", false, 0);
+  env.sets.clear();
+  c.set("monitor", false, 1);
+  TEST_ASSERT_EQUAL(1, env.sets.size());
+  TEST_ASSERT_TRUE(env.sets[0]);
+  TEST_ASSERT_FALSE(env.rawActiveAtLastPollSwitch);
+}
+
+static void test_request_counter_is_symmetric_and_refuses_outside_monitor(void)
+{
+  RequestCounter n;
+  TEST_ASSERT_FALSE(n.busy());
+  TEST_ASSERT_FALSE(n.enter(false));  // Raw: refused, nothing counted
+  TEST_ASSERT_FALSE(n.busy());
+  TEST_ASSERT_TRUE(n.enter(true));
+  TEST_ASSERT_TRUE(n.enter(true));
+  TEST_ASSERT_TRUE(n.busy());
+  n.leave();
+  TEST_ASSERT_TRUE(n.busy());
+  n.leave();
+  TEST_ASSERT_FALSE(n.busy());
+  n.leave();  // a stray leave cannot wrap the counter into "always busy"
+  TEST_ASSERT_FALSE(n.busy());
+  TEST_ASSERT_TRUE(n.enter(true));
+  TEST_ASSERT_TRUE(n.busy());
 }
 
 static void test_a_refused_raw_entry_keeps_the_health_ping(void)
@@ -707,6 +784,10 @@ extern "C" void run_can_mode_tests(void)
   RUN_TEST(test_leaving_raw_turns_parsing_back_on_and_forgets_the_option);
   RUN_TEST(test_every_revert_path_publishes_parsing_on);
   RUN_TEST(test_raw_suspends_the_health_ping_and_every_revert_resumes_it);
+  RUN_TEST(test_raw_active_is_published_on_entry_and_every_revert_path);
+  RUN_TEST(test_a_refused_raw_entry_never_marks_raw_active);
+  RUN_TEST(test_polling_is_restored_after_raw_is_no_longer_active);
+  RUN_TEST(test_request_counter_is_symmetric_and_refuses_outside_monitor);
   RUN_TEST(test_a_refused_raw_entry_keeps_the_health_ping);
   RUN_TEST(test_a_refused_raw_entry_never_stops_the_parser);
   RUN_TEST(test_raw_is_refused_while_a_rest_obd_request_is_on_the_bus);

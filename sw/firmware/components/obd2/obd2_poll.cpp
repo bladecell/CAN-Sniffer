@@ -293,6 +293,10 @@ esp_err_t OBD2::req(uint32_t id, uint8_t mode, uint32_t pid, uint8_t len, uint32
 
 esp_err_t OBD2::req(PollRequest& req)
 {
+    if (rawActive_.load())
+    {
+        return ESP_ERR_INVALID_STATE;  // Raw mode: only the client's own frame goes out (sendRawFrame does not use the queue)
+    }
     if (!admitOperation())
     {
         return ESP_ERR_INVALID_STATE;
@@ -543,6 +547,10 @@ void OBD2::pollTask()
         if (stopRequested_)
         {
             break;
+        }
+        if (rawActive_.load() && !current.isRecurring)
+        {
+            continue;  // Raw mode: a one-shot request queued before the switch must not go out
         }
         if (!current.isRaw && current.payload.obd.mode == MODE_DERIVED_DATA)
         {

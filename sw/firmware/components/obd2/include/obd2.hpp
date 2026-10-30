@@ -80,6 +80,11 @@ public:
     // The receive task's health-check ping (02 01 00 to 0x7DF every ~4 s). Off in Raw mode: that mode sends only what the user
     // sends. Default true; OBD2 stop sets it back; it restarts a full period after being switched on again.
     void      setHealthPingEnabled(bool on) { healthPingEnabled_.store(on); }
+    // Raw CAN mode is on: every request except the client's own raw frame (and the flow-control answer) is refused in req() and
+    // dropped by the poll task; connect-time recovery and discovery do nothing. Switching it on also forgets pending
+    // recovery/discovery and flushes the poll queue (one-shot VIN/DTC/ping entries). Off again: polling comes back through
+    // setAutoPoll(true) as usual; PID discovery missed meanwhile happens at the next connect or when polling is turned on.
+    void      setRawActive(bool on);
     esp_err_t requestPID(uint16_t pid);
 
     void      requestSuppPids();
@@ -175,6 +180,7 @@ private:
     obd2frame::RawFlowControl rawFc_;
     std::atomic<bool>        parsingEnabled_{true};
     std::atomic<bool>        healthPingEnabled_{true};
+    std::atomic<bool>        rawActive_{false};
     void      serviceRawFlowControl(const CanDriver::CanFrame& f);
     void      resetDiagCollection();
     void      releaseDiagBus();

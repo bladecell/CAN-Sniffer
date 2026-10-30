@@ -483,6 +483,18 @@ static void test_clear_dtc_request_is_one_byte_after_the_pci(void)
 }
 
 
+static void test_connect_work_is_planned_per_mode(void)
+{
+    // handleCanConnected: Raw mode sends nothing of its own; Monitor as before (recover with polling, discover without).
+    TEST_ASSERT_EQUAL(static_cast<int>(ConnectWork::None), static_cast<int>(planConnectWork(true, true, false)));
+    TEST_ASSERT_EQUAL(static_cast<int>(ConnectWork::None), static_cast<int>(planConnectWork(true, false, false)));
+    TEST_ASSERT_EQUAL(static_cast<int>(ConnectWork::None), static_cast<int>(planConnectWork(true, false, true)));
+    TEST_ASSERT_EQUAL(static_cast<int>(ConnectWork::Recover), static_cast<int>(planConnectWork(false, true, false)));
+    TEST_ASSERT_EQUAL(static_cast<int>(ConnectWork::Recover), static_cast<int>(planConnectWork(false, true, true)));
+    TEST_ASSERT_EQUAL(static_cast<int>(ConnectWork::Discover), static_cast<int>(planConnectWork(false, false, false)));
+    TEST_ASSERT_EQUAL(static_cast<int>(ConnectWork::None), static_cast<int>(planConnectWork(false, false, true)));
+}
+
 static void test_health_ping_schedule(void)
 {
     // enabled, nowMs, lastMs, periodMs, rawSendWaiting
@@ -542,6 +554,7 @@ extern "C" void run_obd2_frame_tests(void)
     RUN_TEST(test_discovery_backoff_doubles_and_caps);
     RUN_TEST(test_exhaustive_first_bytes_and_lengths);
     RUN_TEST(test_random_payloads_never_overrun);
+    RUN_TEST(test_connect_work_is_planned_per_mode);
     RUN_TEST(test_health_ping_schedule);
     RUN_TEST(test_health_ping_frame_is_recognised);
 }

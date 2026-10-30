@@ -68,6 +68,15 @@ void buildCurrentDataRequest(uint8_t pid, RequestBytes& out);      // 02 01 pid
 // True for the OBD2 health-check ping (functional id 0x7DF, 8 bytes, 02 01 00 padded): raw sends of that exact frame need care.
 bool isHealthPingFrame(uint32_t id, const uint8_t* data, size_t length);
 
+// What handleCanConnected does when the bus (re)connects. Raw mode (rawActive) sends nothing of its own.
+enum class ConnectWork { None, Recover, Discover };
+inline ConnectWork planConnectWork(bool rawActive, bool autoPoll, bool pidsInitialized)
+{
+    if (rawActive) { return ConnectWork::None; }
+    if (autoPoll) { return ConnectWork::Recover; }
+    return pidsInitialized ? ConnectWork::None : ConnectWork::Discover;
+}
+
 // When the receive task sends the health ping: enabled (off in Raw mode), no raw send waiting for its TX-done, and a full
 // period since the last one. All times in one unit, 32-bit wrap safe.
 inline bool healthPingDue(bool enabled, uint32_t now, uint32_t last, uint32_t period, bool rawSendWaiting)

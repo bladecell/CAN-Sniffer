@@ -61,7 +61,7 @@ inline const char* topReason(const char* firstErrorReason)
 
 // Saved values reach the drivers only after a reboot, except the power fields of the system section
 // (sleep_enabled, stay_awake_voltage_mv, low_battery_voltage_mv), which the running supervisor takes over at once.
-// Every Saved section counts as needing a restart.
+// Conservative form: every Saved section counts as needing a restart. PATCH /settings uses the per-section form below.
 inline bool restartRequired(const Outcome* o, size_t n)
 {
   for (size_t i = 0; i < n; i++)
