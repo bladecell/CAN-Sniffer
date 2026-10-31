@@ -213,19 +213,29 @@
     min-width: 0;
     height: 100%;
     min-height: var(--ctl-h);
-    padding: 0 6px;
+    padding: 0 6px !important;
     border: 0;
-    background: transparent;
+    border-radius: 0 !important;
+    background: transparent !important;
     color: var(--ctl-text);
     font: inherit;
     font-family: var(--mono);
     font-size: 0.9375rem;
     text-transform: uppercase;
   }
+  /* One fill per field: the input never paints its own background. Focus is shown on the field. */
+  .hexin,
+  .hexin:hover,
+  .hexin:focus,
+  .hexin:focus-visible {
+    background: transparent !important;
+  }
   .hexin:focus-visible {
     outline: none;
-    background: var(--ctl-h2);
-    border-radius: var(--r-ctl);
+  }
+  .cfield:has(.hexin:focus-visible) {
+    outline: 3px solid var(--focus);
+    outline-offset: 2px;
   }
   .hexmsg {
     margin: 4px 2px 0;

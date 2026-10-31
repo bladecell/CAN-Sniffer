@@ -1,11 +1,13 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
+  import SidebarHint from "../SidebarHint.svelte";
 
-  /** One form field: label row, control and message row with fixed heights, so every row lines up. */
+  /** One form field: label row, control and message row that shows only an error. */
   interface Props {
     id: string;
     label: string;
-    hint: string;
+    /** Help note, shown in the info button next to the name. */
+    hint?: string;
     error?: string;
     children: Snippet<[labelId: string, msgId: string]>;
   }
@@ -16,11 +18,14 @@
 </script>
 
 <div class="fld" class:bad={!!error} data-field={id}>
-  <span class="lab" id={labelId}>{label}</span>
+  <div class="labrow">
+    <span class="lab" id={labelId}>{label}</span>
+    {#if hint}<SidebarHint inline text={hint} label="About {label}" />{/if}
+  </div>
   <div class="ctl">
     {@render children(labelId, msgId)}
   </div>
-  <p class="msg" id={msgId}>{error || hint}</p>
+  <p class="msg" id={msgId}>{error ?? ""}</p>
 </div>
 
 <style>
@@ -31,10 +36,15 @@
     min-width: 0;
     scroll-margin-bottom: 140px;
   }
+  .labrow {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 24px;
+    margin-bottom: 4px;
+  }
   .lab {
     display: block;
-    height: 18px;
-    margin-bottom: 6px;
     font-size: 0.875rem;
     font-weight: 700;
     line-height: 1.3;
@@ -61,6 +71,10 @@
     font-size: 0.78rem;
     line-height: 1.3;
     overflow-wrap: anywhere;
+  }
+  .msg:empty {
+    min-height: 0;
+    padding-top: 0;
   }
   .fld.bad .msg {
     color: var(--crit);

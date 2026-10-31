@@ -40,4 +40,4 @@
 
 </script>
 
-<GridPicker {id} {labelId} {describedBy} bind:value {options} />
+<GridPicker {id} {labelId} {describedBy} bind:value {options} showLabels={false} />

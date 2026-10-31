@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   isIdValidForMode,
   isLengthValidForPid,
+  lengthError,
   isModeValidForPid,
   isValidDescription,
   isValidFormula,
@@ -72,5 +73,21 @@ describe("isValidFormula", () => {
   });
   test("overlong formulas are rejected", () => {
     expect(isValidFormula("0x01", "A+".repeat(600) + "A")).toBe(false);
+  });
+});
+
+describe("lengthError", () => {
+  test("a blank length asks for one", () => {
+    expect(lengthError("0x0C", undefined, "0x01")).toBe("Enter the length");
+  });
+  test("PIDs up to 0xFF take 2 bytes, others 3", () => {
+    expect(lengthError("0x0C", 2, "0x01")).toBe("");
+    expect(lengthError("0x0C", 3, "0x01")).toBe("PIDs up to 0xFF need 2 bytes, others 3");
+    expect(lengthError("0x0100", 3, "0x22")).toBe("");
+    expect(lengthError("0x0100", 2, "0x22")).toBe("PIDs up to 0xFF need 2 bytes, others 3");
+  });
+  test("derived data takes no length", () => {
+    expect(lengthError("0x0C", undefined, "0x45")).toBe("");
+    expect(lengthError("0x0C", 7, "0x45")).toBe("");
   });
 });

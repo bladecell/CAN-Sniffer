@@ -131,3 +131,10 @@ export function isValidFormula(modeInput: string, formula: string): boolean {
 
   return false;
 }
+
+/** Message for the Length field, or "" when it is valid. Derived PIDs take no length. */
+export function lengthError(pidInput: string, lengthInput: number | undefined, modeInput?: string): string {
+  if (modeInput === "0x45") return "";
+  if (lengthInput === undefined) return "Enter the length";
+  return isLengthValidForPid(pidInput, lengthInput, modeInput) ? "" : "PIDs up to 0xFF need 2 bytes, others 3";
+}

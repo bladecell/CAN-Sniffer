@@ -116,9 +116,6 @@
   const editorTitle = $derived(
     selectedRow && telemetryStore.activeIndex >= 0 ? `Edit ${selectedRow.name} (${selectedRow.pid})` : "New PID",
   );
-  const editorSubtitle = $derived(
-    telemetryStore.activeIndex >= 0 && selectedRow ? "Change what you need, then save" : "Fill in each section, then save",
-  );
   const cellCount = $derived(telemetryStore.chartRows * telemetryStore.chartCols);
 </script>
 
@@ -260,7 +257,7 @@
   <PidSidebar variant="bar" bind:panel={pidPanel} onNew={newPid} onEdit={editPid} />
 </Sheet>
 
-<Sheet open={editorOpen} title={editorTitle} subtitle={editorSubtitle} onClose={() => (editorOpen = false)} resizable>
+<Sheet open={editorOpen} title={editorTitle} onClose={() => (editorOpen = false)} resizable>
   {#snippet head()}
     <EditorTabs />
   {/snippet}

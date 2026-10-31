@@ -1,13 +1,15 @@
 <script lang="ts">
-  import { telemetryStore, handleSavePid, modes } from "$lib/telemetryStore.svelte";
+  import { telemetryStore, handleSavePid } from "$lib/telemetryStore.svelte";
+  import { EDITOR_MODES } from "$lib/pidModes";
+  import { describeInterval, intervalError, savePriority, priorityEnabled } from "$lib/editor/pollRate";
   import {
     isValidHex,
     isValidName,
     isValidDescription,
     isModeValidForPid,
-    isLengthValidForPid,
     isIdValidForMode,
     isValidFormula,
+    lengthError,
   } from "$lib/pidInputRules";
   import { activeSectionIndex } from "$lib/editor/scrollSpy";
   import { EDITOR_SECTIONS, editorNav } from "./editorNav.svelte";
@@ -19,6 +21,8 @@
   import IconPicker from "./editor/IconPicker.svelte";
   import FormulaWorkbench from "./editor/FormulaWorkbench.svelte";
   import GridPicker, { type GridOption } from "./editor/GridPicker.svelte";
+  import PriorityPicker from "./editor/PriorityPicker.svelte";
+  import IntervalSlider from "./editor/IntervalSlider.svelte";
   import { unitsWith } from "./editor/units";
 
   interface Props {
@@ -73,7 +77,7 @@
     }
   });
 
-  const modeOptions = modes.map((m) => ({ value: m.value, label: m.label }));
+  const modeOptions = EDITOR_MODES.map((m) => ({ value: m.value, label: m.label }));
   // Unit tiles: the list in editor/units.ts, symbol only. A unit saved outside the list still shows as a tile.
   const unitOptions = $derived<GridOption[]>(
     unitsWith(telemetryStore.unitInput).map((u) => (u === "" ? { value: "", label: "None" } : { value: u, sym: u, label: "" })),
@@ -83,36 +87,29 @@
   const minMaxBad = $derived(
     telemetryStore.minInput !== undefined && telemetryStore.maxInput !== undefined && telemetryStore.minInput > telemetryStore.maxInput,
   );
-  const priorityBad = $derived(
-    telemetryStore.priorityInput !== undefined && (telemetryStore.priorityInput < 0 || telemetryStore.priorityInput > 255),
-  );
-  const intervalBad = $derived(
-    telemetryStore.updateIntervalInput !== undefined &&
-      telemetryStore.updateIntervalInput !== 0 &&
-      (telemetryStore.updateIntervalInput < 16 || telemetryStore.updateIntervalInput > 65535),
-  );
+  const staticPoll = $derived((telemetryStore.updateIntervalInput ?? 0) === 0);
 
-  // Field messages. A blank field shows its hint; a filled, invalid field shows what to fix.
+  // Field messages. A filled, invalid field shows what to fix.
   const err = $derived({
     id: telemetryStore.idInput && !isIdValidForMode(telemetryStore.modeInput, telemetryStore.idInput) ? "Mode 0x01 and 0x45 use 0x7DF, mode 0x22 uses 0x700 to 0x7FF" : "",
     pid: telemetryStore.pidInput && !isValidHex(telemetryStore.pidInput) ? "Use 0x and up to 4 hex digits" : "",
     mode: telemetryStore.modeInput && !isModeValidForPid(telemetryStore.pidInput, telemetryStore.modeInput) ? "This mode does not fit this PID" : "",
-    length: !derivedMode && telemetryStore.lengthInput !== undefined && !isLengthValidForPid(telemetryStore.pidInput, telemetryStore.lengthInput, telemetryStore.modeInput) ? "PIDs up to 0xFF need 2 bytes, others 3" : "",
+    length: lengthError(telemetryStore.pidInput, telemetryStore.lengthInput, telemetryStore.modeInput),
     name: telemetryStore.nameInput && !isValidName(telemetryStore.nameInput) ? "Letters, digits and - ( ) _ . , / * + or space" : "",
     desc: telemetryStore.descInput && !isValidDescription(telemetryStore.descInput) ? "Same characters as Name, 256 at most" : "",
     minmax: minMaxBad ? "Min must be below max" : "",
-    priority: priorityBad ? "Use a whole number from 0 to 255" : "",
+    interval: intervalError(telemetryStore.updateIntervalInput),
     formula: telemetryStore.formulaInput && !isValidFormula(telemetryStore.modeInput, telemetryStore.formulaInput) ? "Formula does not parse, or uses unknown names" : "",
-    interval: intervalBad ? "Use 0 (polling off) or 16 to 65535" : "",
   });
 
   function save() {
     if (!telemetryStore.isFormValid) return;
+    telemetryStore.priorityInput = savePriority(telemetryStore.priorityInput ?? 4);
     handleSavePid();
     onDone();
   }
 
-  // Test bytes live in the editor only: the browser has no raw bytes for a PID yet (see the Test bytes hint).
+  // Test bytes live in the editor only: the browser has no raw bytes for a PID yet.
   let testBytes = $state("");
 
   // Section tabs and scroll-spy. The form scrolls inside the sheet body, so the spy listens there.
@@ -178,9 +175,9 @@
     {/if}
 
     <section id="{formId}-request" class="sec" aria-labelledby="{formId}-request-h">
-      <div class="sh"><h3 id="{formId}-request-h">Request</h3><p>What to ask the car</p></div>
+      <div class="sh"><h3 id="{formId}-request-h">Request</h3></div>
       <div class="grid four">
-        <Field id="ed-mode" label="Mode" hint="Kind of request" error={err.mode}>
+        <Field id="ed-mode" hint="Request mode" label="Mode" error={err.mode}>
           {#snippet children(labelId, msgId)}
             <SelectMenu
               bind:value={telemetryStore.modeInput}
@@ -192,7 +189,7 @@
             />
           {/snippet}
         </Field>
-        <Field id="ed-id" label="CAN ID" hint="Number the ECU answers to" error={err.id}>
+        <Field id="ed-id" hint="Number the ECU answers to" label="CAN ID" error={err.id}>
           {#snippet children(labelId, msgId)}
             <input
               id="ed-id"
@@ -207,7 +204,7 @@
             />
           {/snippet}
         </Field>
-        <Field id="ed-pid" label="PID" hint="Code for this value" error={err.pid}>
+        <Field id="ed-pid" hint="Code for this value" label="PID" error={err.pid}>
           {#snippet children(labelId, msgId)}
             <input
               id="ed-pid"
@@ -222,7 +219,7 @@
             />
           {/snippet}
         </Field>
-        <Field id="ed-len" label="Length" hint={derivedMode ? "Not used in Derived Data" : "Response bytes"} error={err.length}>
+        <Field id="ed-len" hint={derivedMode ? "Not used in Derived Data" : "Response bytes"} label="Length" error={err.length}>
           {#snippet children(labelId, msgId)}
             <NumberStepper
               id="ed-len"
@@ -239,7 +236,7 @@
       </div>
     </section>
     <section id="{formId}-signal" class="sec" aria-labelledby="{formId}-signal-h">
-      <div class="sh"><h3 id="{formId}-signal-h">Signal</h3><p>Turn the reply into a number</p></div>
+      <div class="sh"><h3 id="{formId}-signal-h">Signal</h3></div>
       <FormulaWorkbench
         id="ed-fx"
         bind:formula={telemetryStore.formulaInput}
@@ -248,17 +245,17 @@
         error={err.formula}
       />
       <div class="grid three">
-        <Field id="ed-unit" label="Unit" hint="Shown after the value">
+        <Field id="ed-unit" hint="Shown after the value" label="Unit">
           {#snippet children(labelId, msgId)}
             <GridPicker id="ed-unit" {labelId} describedBy={msgId} bind:value={telemetryStore.unitInput} options={unitOptions} columns={6} />
           {/snippet}
         </Field>
-        <Field id="ed-min" label="Min" hint="Bottom of the chart" error={err.minmax}>
+        <Field id="ed-min" hint="Bottom of the chart" label="Min" error={err.minmax}>
           {#snippet children(labelId, msgId)}
             <NumberStepper id="ed-min" labelId={labelId} describedBy={msgId} bind:value={telemetryStore.minInput} step={unitStep} invalid={minMaxBad} />
           {/snippet}
         </Field>
-        <Field id="ed-max" label="Max" hint="Top of the chart" error={err.minmax}>
+        <Field id="ed-max" hint="Top of the chart" label="Max" error={err.minmax}>
           {#snippet children(labelId, msgId)}
             <NumberStepper id="ed-max" labelId={labelId} describedBy={msgId} bind:value={telemetryStore.maxInput} step={unitStep} invalid={minMaxBad} />
           {/snippet}
@@ -266,9 +263,9 @@
       </div>
     </section>
     <section id="{formId}-display" class="sec" aria-labelledby="{formId}-display-h">
-      <div class="sh"><h3 id="{formId}-display-h">Display</h3><p>How it looks in lists and charts</p></div>
+      <div class="sh"><h3 id="{formId}-display-h">Display</h3></div>
       <div class="grid">
-        <Field id="ed-name" label="Name" hint="Shown in lists and charts" error={err.name}>
+        <Field id="ed-name" hint="Shown in lists and charts" label="Name" error={err.name}>
           {#snippet children(labelId, msgId)}
             <input
               id="ed-name"
@@ -282,7 +279,7 @@
             />
           {/snippet}
         </Field>
-        <Field id="ed-desc" label="Description" hint="Optional note" error={err.desc}>
+        <Field id="ed-desc" hint="Optional note" label="Description" error={err.desc}>
           {#snippet children(labelId, msgId)}
             <input
               id="ed-desc"
@@ -296,12 +293,12 @@
             />
           {/snippet}
         </Field>
-        <Field id="ed-color" label="Color" hint="Used for the chart line">
+        <Field id="ed-color" hint="Used for the chart line" label="Color">
           {#snippet children(labelId, msgId)}
             <ColorPopover id="ed-color" labelId={labelId} describedBy={msgId} bind:value={telemetryStore.colorInput} />
           {/snippet}
         </Field>
-        <Field id="ed-icon" label="Icon" hint="Shown next to the name">
+        <Field id="ed-icon" hint="Shown next to the name" label="Icon">
           {#snippet children(labelId, msgId)}
             <IconPicker id="ed-icon" labelId={labelId} describedBy={msgId} bind:value={telemetryStore.iconInput} />
           {/snippet}
@@ -309,16 +306,25 @@
       </div>
     </section>
     <section id="{formId}-polling" class="sec" aria-labelledby="{formId}-polling-h">
-      <div class="sh"><h3 id="{formId}-polling-h">Polling</h3><p>How often to ask</p></div>
+      <div class="sh"><h3 id="{formId}-polling-h">Polling</h3></div>
       <div class="grid">
-        <Field id="ed-interval" label="Update interval" hint={telemetryStore.updateIntervalInput === 0 ? "Static reads once, never polled." : "Milliseconds between polls"} error={err.interval}>
+        <Field id="ed-interval" hint={describeInterval(telemetryStore.updateIntervalInput ?? 0)} label="Update interval" error={err.interval}>
           {#snippet children(labelId, msgId)}
-            <NumberStepper id="ed-interval" labelId={labelId} describedBy={msgId} bind:value={telemetryStore.updateIntervalInput} step={10} min={0} max={65535} invalid={intervalBad} />
+            <!-- Keyed on the PID, so the slider forgets its last polled value when another PID is edited. -->
+            {#key telemetryStore.activeIndex}
+              <IntervalSlider
+                id="ed-interval"
+                labelId={labelId}
+                describedBy={msgId}
+                bind:value={telemetryStore.updateIntervalInput}
+                invalid={!!err.interval}
+              />
+            {/key}
           {/snippet}
         </Field>
-        <Field id="ed-prio" label="Priority" hint="0 to 255" error={err.priority}>
+        <Field id="ed-prio" hint={staticPoll ? "Static PIDs are never queued, so priority does not apply" : "Which request goes first when two are due"} label="Priority">
           {#snippet children(labelId, msgId)}
-            <NumberStepper id="ed-prio" labelId={labelId} describedBy={msgId} bind:value={telemetryStore.priorityInput} min={0} max={255} invalid={priorityBad} />
+            <PriorityPicker id="ed-prio" labelId={labelId} describedBy={msgId} bind:value={telemetryStore.priorityInput} disabled={staticPoll} />
           {/snippet}
         </Field>
       </div>
@@ -360,11 +366,6 @@
     font-weight: 800;
     line-height: 1.3;
   }
-  .sh p {
-    margin: 0;
-    font-size: 0.875rem;
-    color: var(--muted);
-  }
   .grid {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -374,9 +375,8 @@
   .grid.four {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  /* The hint row is always reserved, so fields in one row line up. */
-  .grid :global(.msg) {
-    min-height: 22px;
+  /* The message row shows only an error. */
+  .grid :global(.msg:not(:empty)) {
     padding-top: 6px;
     font-size: 0.8125rem;
     line-height: 1.35;
@@ -424,7 +424,8 @@
     padding-left: 22px;
     font-size: 0.9rem;
   }
-  @container (min-width: 560px) {
+  /* Name and Description share a row, as in the mockup. Below 500px they stack. */
+  @container (min-width: 500px) {
     .grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }

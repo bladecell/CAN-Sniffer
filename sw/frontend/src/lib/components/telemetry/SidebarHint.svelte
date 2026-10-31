@@ -6,9 +6,12 @@
   interface Props {
     /** The hint text (from sidebarHints.ts). */
     text: string;
+    /** Sits in a text line (next to a field name) instead of the sidebar's top-right corner. */
+    inline?: boolean;
+    label?: string;
   }
 
-  let { text }: Props = $props();
+  let { text, inline = false, label = "How this page works" }: Props = $props();
 
   const uid = $props.id();
   const popId = `${uid}-hint`;
@@ -64,7 +67,8 @@
   type="button"
   bind:this={trigger}
   class="hint"
-  aria-label="How this page works"
+  class:inline
+  aria-label={label}
   aria-controls={popId}
   aria-describedby={popId}
   aria-expanded="false"
@@ -75,7 +79,7 @@
   onfocus={onFocus}
   onblur={hide}
 >
-  <Icon name="circle-info" size={20} />
+  <Icon name="circle-info" size={inline ? 16 : 20} />
 </button>
 <!-- Portalled out of the blurred header: a blurred ancestor would drop this popover's blur (lib/layers.ts). -->
 <div bind:this={pop} use:portal id={popId} class="pop" popover="auto" role="tooltip" ontoggle={onToggle}>{text}</div>
@@ -96,6 +100,13 @@
     background: none;
     color: var(--muted);
     cursor: pointer;
+  }
+  .hint.inline {
+    position: static;
+    flex: none;
+    width: 24px;
+    height: 24px;
+    border-radius: 8px;
   }
   @media (hover: hover) {
     .hint:hover {

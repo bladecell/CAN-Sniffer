@@ -20,9 +20,11 @@
     options: GridOption[];
     /** Tiles per row. Icons use 4, short unit symbols use 6. */
     columns?: number;
+    /** Show each tile's label under it. Off for icons, which keep the label as their accessible name only. */
+    showLabels?: boolean;
   }
 
-  let { id, labelId, describedBy, value = $bindable(), options, columns = 4 }: Props = $props();
+  let { id, labelId, describedBy, value = $bindable(), options, columns = 4, showLabels = true }: Props = $props();
 
   const selected = $derived(options.find((o) => o.value === value));
   let trigger: HTMLButtonElement | undefined = $state();
@@ -90,6 +92,8 @@
         class="opt"
         aria-checked={value === opt.value}
         class:on={value === opt.value}
+        aria-label={opt.label || undefined}
+        title={opt.label || undefined}
         onclick={() => choose(opt.value)}
       >
         {#if opt.icon}
@@ -97,7 +101,7 @@
         {:else if opt.sym}
           <span class="sym" class:long={opt.sym.length > 7}>{opt.sym}</span>
         {/if}
-        {#if opt.label}<span class="lab">{opt.label}</span>{/if}
+        {#if showLabels && opt.label}<span class="lab">{opt.label}</span>{/if}
       </button>
     {/each}
   </div>

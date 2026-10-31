@@ -1,7 +1,7 @@
 import type { PidDefinition } from "./types";
 import { safeHexColor } from "./color";
 
-export const DEFAULT_PID_PRIORITY = 5;
+export const DEFAULT_PID_PRIORITY = 4;
 export const DEFAULT_PID_COLOR = 0x01aaff;
 
 const isSet = (v: unknown) => v !== undefined && v !== null;

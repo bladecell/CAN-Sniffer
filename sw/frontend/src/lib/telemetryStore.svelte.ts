@@ -102,7 +102,7 @@ export class TelemetryStore {
   idInput = $state("");
   lastValidModeForId = $state<string>("");
   formulaInput = $state("");
-  priorityInput = $state<number | undefined>(5);
+  priorityInput = $state<number | undefined>(4);
   colorInput = $state("#01AAFF");
   updateIntervalInput = $state<number | undefined>(512);
   iconInput = $state("");
@@ -153,7 +153,7 @@ export class TelemetryStore {
     this.formulaInput = "";
     this.lengthInput = undefined;
     this.idInput = "";
-    this.priorityInput = 5;
+    this.priorityInput = 4;
     this.updateIntervalInput = 512;
     this.colorInput = "#01AAFF";
     this.iconInput = "";
@@ -331,11 +331,5 @@ export function handleSavePid() {
   // Force reactivity on the array if needed (though localIndex assignment might suffice, it's safer)
   telemetryStore.local_piddef = [...telemetryStore.local_piddef];
 }
-
-export const modes = [
-  { label: "Current Data", value: "0x01" },
-  { label: "Read Data By Identifier", value: "0x22" },
-  { label: "Derived Data", value: "0x45" },
-];
 
 

@@ -14,7 +14,7 @@ describe("normalizePidDefinition", () => {
     expect(d.unit).toBe("");
     expect(d.description).toBe("");
     expect(d.icon).toBe("");
-    expect(d.priority).toBe(5);
+    expect(d.priority).toBe(4);
     expect(d.color).toBe(0x01aaff);
     expect(Number.isNaN(d.minValue)).toBe(true);
     expect(Number.isNaN(d.maxValue)).toBe(true);
