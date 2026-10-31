@@ -39,7 +39,7 @@
   .labrow {
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: 6px;
     height: 24px;
     margin-bottom: 4px;
   }

@@ -43,7 +43,8 @@
   let focused = $state<string | null>(null);
   let lastInserted = $state<string | null>(null);
   const activeKey = $derived(hovered ?? focused ?? lastInserted);
-  const helpText = $derived(tokens.find((t) => t.key === activeKey)?.help ?? defaultHelp);
+  // Empty when idle: the static guidance lives in the Formula field's info hint, not under the tiles.
+  const helpText = $derived(tokens.find((t) => t.key === activeKey)?.help ?? "");
 
   async function insert(t: Token) {
     const at = input?.selectionStart ?? formula.length;
@@ -105,7 +106,7 @@
   </div>
   <p class="help" id={`${id}-help`} aria-live="polite">{helpText}</p>
 
-  <Field id={`${id}-f`} label="Formula" hint="Use A to D, getBit and getPID" error={error}>
+  <Field id={`${id}-f`} label="Formula" hint={defaultHelp} error={error}>
     {#snippet children(labelId, msgId)}
       <input
         bind:this={input}
@@ -237,13 +238,16 @@
     background: var(--hov);
   }
   .help {
-    min-height: 3.6em;
     margin: 0;
     padding: 10px 14px;
     border-radius: 12px;
     background: var(--ctl);
     font-size: 0.875rem;
     line-height: 1.45;
+  }
+  /* Idle: no text, so no box, no height and no flex gap. The live region stays in the DOM. */
+  .help:empty {
+    display: none;
   }
   .in {
     box-sizing: border-box;

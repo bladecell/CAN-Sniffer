@@ -43,7 +43,7 @@
   let rootEl = $state<HTMLDivElement>();
   let listEl = $state<HTMLDivElement>();
   let triggerEl = $state<HTMLButtonElement>();
-  let optionEls: (HTMLButtonElement | undefined)[] = [];
+  let optionEls = $state<(HTMLButtonElement | undefined)[]>([]);
 
   let selectedIndex = $derived(options.findIndex((o) => o.value === value));
   let selected = $derived(selectedIndex >= 0 ? options[selectedIndex] : undefined);

@@ -17,6 +17,7 @@
   const popId = `${uid}-hint`;
   let trigger: HTMLButtonElement | undefined = $state();
   let pop: HTMLDivElement | undefined = $state();
+  let expanded = $state(false);
   let pointer = "mouse";
   let stopWatch: (() => void) | undefined;
 
@@ -32,15 +33,22 @@
     pop.style.top = `${below + height > window.innerHeight - 8 ? Math.max(8, r.top - height - 8) : below}px`;
   }
 
+  // aria-expanded mirrors the real popover state after every open or close path (focus, hover, tap, light dismiss).
+  function sync() {
+    expanded = !!pop?.matches(":popover-open");
+  }
   function show() {
     if (pop && !pop.matches(":popover-open")) pop.showPopover();
+    sync();
   }
   function hide() {
     if (pop?.matches(":popover-open")) pop.hidePopover();
+    sync();
   }
 
   function onToggle(e: Event) {
-    if ((e as ToggleEvent).newState === "open") {
+    expanded = (e as ToggleEvent).newState === "open";
+    if (expanded) {
       place();
       stopWatch = closeOnOutsideScroll(pop, hide);
     } else {
@@ -71,7 +79,7 @@
   aria-label={label}
   aria-controls={popId}
   aria-describedby={popId}
-  aria-expanded="false"
+  aria-expanded={expanded ? "true" : "false"}
   onpointerdown={onDown}
   onpointerenter={(e) => e.pointerType === "mouse" && show()}
   onpointerleave={(e) => e.pointerType === "mouse" && hide()}
@@ -102,11 +110,19 @@
     cursor: pointer;
   }
   .hint.inline {
-    position: static;
+    position: relative;
     flex: none;
     width: 24px;
     height: 24px;
     border-radius: 8px;
+  }
+  /* Touch: the tap target grows to 44px around the 24px icon. The layout box stays 24px, so the field row does not move. */
+  @media (pointer: coarse) {
+    .hint.inline::after {
+      content: "";
+      position: absolute;
+      inset: -10px;
+    }
   }
   @media (hover: hover) {
     .hint:hover {
@@ -118,8 +134,13 @@
     outline: none;
     box-shadow: none;
   }
-  .hint:focus-visible {
-    background: var(--hov);
+  /* A ring drawn by a pseudo-element: the sidebar's !important outline reset does not reach it. */
+  .hint:focus-visible::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border: 2px solid var(--text);
+    border-radius: inherit;
   }
   .pop {
     inset: auto;

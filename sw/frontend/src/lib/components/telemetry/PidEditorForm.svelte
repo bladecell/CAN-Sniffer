@@ -182,7 +182,7 @@
             <SelectMenu
               bind:value={telemetryStore.modeInput}
               options={modeOptions}
-              placeholder="Select a mode..."
+              placeholder="Select mode"
               ariaLabel="Mode"
               ariaDescribedby={msgId}
               ariaInvalid={!!err.mode}

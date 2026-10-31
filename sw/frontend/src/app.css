@@ -63,6 +63,7 @@
 	--scrim: rgba(40, 22, 8, 0.42);
 	--shadow-float: 0 16px 44px rgba(80, 40, 10, 0.22);
 	--grid: rgba(60, 45, 30, 0.24);
+	--hair: rgba(60, 45, 30, 0.16);
 	--track: #7a7065;
 	--on-accent: #fff;
 	--c2: oklch(0.5 0.13 calc(var(--ah) + 115));
@@ -105,6 +106,7 @@
 		--scrim: rgba(5, 2, 0, 0.6);
 		--shadow-float: 0 18px 50px rgba(0, 0, 0, 0.55);
 		--grid: rgba(255, 240, 225, 0.2);
+		--hair: rgba(255, 240, 225, 0.16);
 		--track: #8f857a;
 		--aL: 0.8;
 		--aT: 0.92;
@@ -147,6 +149,7 @@
 	--scrim: rgba(5, 2, 0, 0.6);
 	--shadow-float: 0 18px 50px rgba(0, 0, 0, 0.55);
 	--grid: rgba(255, 240, 225, 0.2);
+	--hair: rgba(255, 240, 225, 0.16);
 	--track: #8f857a;
 	--aL: 0.8;
 	--aT: 0.92;
@@ -551,34 +554,6 @@ video {
 	.filters {
 		display: flex;
 		gap: 0.5rem;
-	}
-}
-
-.accordion {
-	.accordion-item {
-		&:not(:last-child) {
-			margin-bottom: var(--spacing-24);
-		}
-
-		.accordion-heading {
-			display: flex;
-			gap: 2rem;
-			padding: 0px;
-			background: none;
-			box-shadow: none;
-		}
-
-		.accordion-trigger {
-			transition: rotate 0.2s ease;
-
-			&.open {
-				rotate: -90deg;
-			}
-		}
-
-		.accordion-content {
-			margin-top: 0.5rem;
-		}
 	}
 }
 

@@ -28,15 +28,17 @@
   const pidIcons = ["thermometer", "gauge", "droplet", "battery-full", "gas-pump", "fan", "stopwatch", "bolt", "engine", "dial", "clock", "route", "timeline-arrow", "chart"];
   const available = new Set(Object.keys(iconFiles).map((path) => path.split("/").pop()!.replace(".svg", "")));
   const names = $derived(value && !pidIcons.includes(value) && available.has(value) ? [value, ...pidIcons] : pidIcons);
-  const options = $derived<GridOption[]>(
-    names
+  // The first tile clears the icon: an empty icon saves as "" (docs/pid-config.md).
+  const options = $derived<GridOption[]>([
+    { value: "", label: "None", icon: "x" },
+    ...names
       .filter((name) => available.has(name))
       .map((name) => ({
         value: name,
         icon: name,
         label: friendly[name] ?? name.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" "),
       })),
-  );
+  ]);
 
 </script>
 

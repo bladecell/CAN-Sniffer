@@ -75,7 +75,7 @@
   aria-controls={popId}
   onclick={() => (pop?.matches(":popover-open") ? pop.hidePopover() : pop?.showPopover())}
 >
-  {#if selected?.icon}
+  {#if selected?.icon && value}
     <span class="ico"><Icon name={selected.icon} size={22} /></span>
   {/if}
   <span id={`${id}-v`} class:none={!value}>{selected ? selected.label || selected.sym : value || "None"}</span>

@@ -566,6 +566,10 @@ dialog.overlay .edform input:not([type='checkbox']):not([type='radio']):not([typ
 .sb-row.sel .sb-sw {
   width: 12px;
 }
+/* Unselected: an outline in --muted (about 10:1 on the light and dark sidebar), so the state does not rely on a hairline. */
+.sb-sw.off {
+  box-shadow: inset 0 0 0 2px var(--muted);
+}
 .sb-nm {
   display: grid;
   gap: 2px;
@@ -690,8 +694,8 @@ dialog.overlay .edform input:not([type='checkbox']):not([type='radio']):not([typ
 }
 
 /* Sidebar: no outlines or rings (DESIGN.md, no borders). Keyboard focus shows as a background step. */
-.sb :focus-visible,
-.sb-panel :focus-visible {
+.sb :focus-visible:not(dialog *),
+.sb-panel :focus-visible:not(dialog *) {
   outline: none;
 }
 .sb .switch button:focus-visible,
@@ -707,11 +711,12 @@ dialog.overlay .edform input:not([type='checkbox']):not([type='radio']):not([typ
 /* Sidebar: no outlines, no rings, no focus rings from Pico or the global :focus-visible rule.
    Keyboard focus is a background step (see the focus rules above). !important is needed because Pico's
    selectors on role=group and :focus are more specific than this scope. */
-.sb :focus,
-.sb :focus-visible,
-.sb :focus-within,
-.sb-panel :focus,
-.sb-panel :focus-visible {
+/* Dialogs (Dialog.svelte) sit inside .sb in the DOM but are not sidebar rows: they keep the global focus ring. */
+.sb :focus:not(dialog *),
+.sb :focus-visible:not(dialog *),
+.sb :focus-within:not(dialog *),
+.sb-panel :focus:not(dialog *),
+.sb-panel :focus-visible:not(dialog *) {
   outline: none !important;
   box-shadow: none !important;
 }

@@ -268,7 +268,7 @@
           {/if}
           <div class="sb-slide" {@attach swipeRow({ left: () => swipeOpen(file.name), right: () => swipeDelete(file.name) })}>
             <button type="button" class="sb-main file" aria-pressed={on} onclick={() => pick(file.name)}>
-              <i class="sb-sw" style="--sw: {on ? 'var(--accent)' : 'var(--hair)'}"></i>
+              <i class="sb-sw" class:off={!on} style:--sw={on ? 'var(--accent)' : 'transparent'}></i>
               <span class="sb-nm">
                 <span class="sb-nl"><b class="fname">{file.name}</b></span>
                 <span class="sb-hx">{formatSize(file.size)}</span>
