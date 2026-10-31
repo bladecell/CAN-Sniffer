@@ -9,7 +9,8 @@
   import { untrack } from "svelte";
   import Icon from "$lib/Icon.svelte";
   import Sheet from "$lib/components/Sheet.svelte";
-  import PidSidebar, { type PidPanel } from "$lib/components/telemetry/PidSidebar.svelte";
+  import PidSidebar from "$lib/components/telemetry/PidSidebar.svelte";
+  import PidTabs, { type PidPanel } from "$lib/components/telemetry/PidTabs.svelte";
   import PidEditorForm from "$lib/components/telemetry/PidEditorForm.svelte";
   import EditorTabs from "$lib/components/telemetry/EditorTabs.svelte";
   import PidEditorActions from "$lib/components/telemetry/editor/PidEditorActions.svelte";
@@ -252,7 +253,10 @@
   </div>
 </section>
 
-<Sheet open={pidSheetOpen} title={pidPanelTitle[pidPanel]} onClose={() => (pidSheetOpen = false)} scrolls={false}>
+<Sheet open={pidSheetOpen} title={pidPanelTitle[pidPanel]} onClose={() => (pidSheetOpen = false)} scrolls={false} narrow>
+  {#snippet head()}
+    <PidTabs variant="bar" bind:panel={pidPanel} />
+  {/snippet}
   <PidSidebar variant="bar" bind:panel={pidPanel} onNew={newPid} onEdit={editPid} />
 </Sheet>
 

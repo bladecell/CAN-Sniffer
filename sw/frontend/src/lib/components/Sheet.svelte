@@ -22,9 +22,11 @@
     head?: Snippet;
     /** The body scrolls (default). Set false when the content scrolls itself, as the phone PID sidebar does. */
     scrolls?: boolean;
+    /** A 390px phone frame, centred on wider screens (the mockup's phone view). */
+    narrow?: boolean;
   }
 
-  let { open = false, title, subtitle, onClose, dismissible = true, resizable = false, children, footer, head, scrolls = true }: Props = $props();
+  let { open = false, title, subtitle, onClose, dismissible = true, resizable = false, children, footer, head, scrolls = true, narrow = false }: Props = $props();
   const uid = $props.id();
   const titleId = `${uid}-title`;
 
@@ -61,6 +63,7 @@
   class="overlay sheet"
   class:resizable
   class:flat={!scrolls}
+  class:narrow
   style:height={resizable && height !== undefined ? `${height}px` : undefined}
   aria-labelledby={titleId}
 >
@@ -183,6 +186,13 @@
   .sheet-head {
     flex: 0 0 100%;
     padding: 8px 0;
+  }
+  /* Phone frame: title, close and tabs share a 12px inset, as in the mockup. */
+  .narrow header {
+    padding: 0 12px;
+  }
+  .narrow .sheet-head {
+    padding: 8px 0 0;
   }
   /* The sheet scrolls without a visible scrollbar. */
   :global(dialog.sheet .body) {

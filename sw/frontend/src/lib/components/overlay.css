@@ -70,20 +70,13 @@ dialog.overlay.sheet {
 dialog.overlay.sheet[open] {
   animation: overlay-sheet-in 0.5s var(--ease-out);
 }
+/* The fill and blur come from the shared float-layer rule (app.css). */
 dialog.overlay.sheet::before {
   content: "";
   position: absolute;
   inset: 0;
   z-index: -1;
   border-radius: inherit;
-  background: var(--float);
-  -webkit-backdrop-filter: blur(var(--blur)) saturate(1.35);
-  backdrop-filter: blur(var(--blur)) saturate(1.35);
-}
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  dialog.overlay.sheet::before {
-    background: var(--float-solid);
-  }
 }
 
 .overlay .grab {
@@ -143,11 +136,25 @@ dialog.overlay.sheet > .body {
   overscroll-behavior: contain;
   padding: calc(var(--sheet-head, 0px) + 4px) 22px var(--sheet-foot, calc(22px + env(safe-area-inset-bottom)));
 }
-/* A body that scrolls itself (the phone PID sidebar): the sheet does not scroll, the child fills the body. */
+/* Phone frame (Sheet narrow): 390px, centred. The body keeps the mockup's 12px inset. */
+dialog.overlay.sheet.narrow {
+  width: min(100%, 390px);
+}
+dialog.overlay.sheet.narrow > .body {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+/* Keyboard focus on the close button is a background step, not an outline. */
+dialog.overlay.sheet .close:focus-visible {
+  outline: none;
+  background: var(--hov);
+}
+/* A body that scrolls itself (the phone PID sidebar): the sheet does not scroll, the child fills the body. It starts under the top layer. */
 dialog.overlay.sheet.flat > .body {
   overflow: visible;
   display: flex;
   flex-direction: column;
+  padding-top: var(--sheet-head, 0px);
   padding-bottom: calc(22px + env(safe-area-inset-bottom));
 }
 /* No container behind the footer: each button is its own translucent blurred layer, the primary keeps its accent fill. */
@@ -166,8 +173,8 @@ dialog.overlay.sheet > footer {
 .sheet > footer button:not(.pri) {
   /* Control fill over the float layer: the blur shows through the fill (DESIGN.md, layering rule). */
   background: linear-gradient(var(--ctl), var(--ctl)), var(--float);
-  -webkit-backdrop-filter: blur(var(--blur)) saturate(1.35);
-  backdrop-filter: blur(var(--blur)) saturate(1.35);
+  -webkit-backdrop-filter: var(--float-blur);
+  backdrop-filter: var(--float-blur);
   box-shadow: var(--shadow-float);
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {

@@ -10,6 +10,7 @@ import {
 import { isValidHex, isValidName, isValidDescription, isModeValidForPid, isLengthValidForPid, isIdValidForMode, isValidFormula } from "$lib/pidInputRules";
 import { connectionStore } from "./connectionStore.svelte";
 import { vehicleStore } from "./vehicleStore.svelte";
+import { SvelteSet } from "svelte/reactivity";
 
 /** A PID object from a file or the SD card: long or short key names, nothing guaranteed. */
 type RawPidDef = Partial<PidDefinition> & { desc?: string; len?: number; minV?: number; maxV?: number; interval?: number };
@@ -36,9 +37,9 @@ export class TelemetryStore {
             const updatedDef = newDefMap.get(rawPid);
 
             if (updatedDef) {
-              // PID is still in the CAN store. Keep states, update definitions.
+              // A row with local edits keeps them; the device copy is only the baseline. Otherwise take the device's copy.
               updatedPids.push(
-                createRowObject(updatedDef, existing.loaded, existing.selected),
+                existing.isDirty ? existing : createRowObject(updatedDef, existing.loaded, existing.selected),
               );
               newDefMap.delete(rawPid);
             } else {
@@ -61,6 +62,26 @@ export class TelemetryStore {
 
   local_piddef = $state<PidRow[]>([]);
   lastPidDef = $state<PidDefinition[] | null>(null);
+  /** Changes tab: PIDs whose pending change is not ticked for Apply. Every pending change is ticked by default. */
+  deselectedChanges = new SvelteSet<number>();
+
+  /**
+   * Puts the rows for these PIDs back to the device's copy: a Revert, or the state after Apply. A PID the device no
+   * longer has is dropped (an added PID that was reverted, or a removed one that was applied).
+   */
+  restoreFromDevice(pids: ReadonlySet<number>) {
+    const devices = new Map(vehicleStore.pidDefinitions.map((def) => [Number(def.pid), def]));
+    const next: PidRow[] = [];
+    for (const row of this.local_piddef) {
+      const pid = parseInt(row.pid, 16);
+      if (!pids.has(pid)) next.push(row);
+      else {
+        const def = devices.get(pid);
+        if (def) next.push(createRowObject(def, true, row.selected));
+      }
+    }
+    this.local_piddef = next;
+  }
 
   chartRows = $state(1);
   chartCols = $state(1);

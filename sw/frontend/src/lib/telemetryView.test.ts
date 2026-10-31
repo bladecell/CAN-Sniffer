@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   chartPidsFor,
+  definitionsToApply,
   chipAction,
   footerActions,
   groupPids,
@@ -167,5 +168,39 @@ describe("footerActions", () => {
 
   test("several selected PIDs offer Remove N only", () => {
     expect(footerActions(3)).toEqual(["remove"]);
+  });
+});
+
+describe("definitionsToApply", () => {
+  type Def = { name: string };
+  const device = (name: string) => ({ name });
+  const item = (pid: number, over: { loaded?: boolean; pending?: boolean; def?: Def; deviceDef?: Def } = {}) => ({
+    pid,
+    loaded: over.loaded ?? true,
+    pending: over.pending ?? false,
+    def: over.def ?? device(`row${pid}`),
+    deviceDef: over.deviceDef,
+  });
+  const names = (defs: Def[]) => defs.map((d) => d.name);
+
+  test("writes the drafts of the chosen changes and the device copy of the rest", () => {
+    const items = [
+      item(1, { pending: true, def: device("edited"), deviceDef: device("old") }),
+      item(2, { pending: true, def: device("edited2"), deviceDef: device("old2") }),
+      item(3),
+    ];
+    expect(names(definitionsToApply(items, new Set([1])))).toEqual(["edited", "old2", "row3"]);
+  });
+
+  test("an added PID is written when chosen and dropped when not", () => {
+    const added = item(4, { pending: true, def: device("new") });
+    expect(names(definitionsToApply([added], new Set([4])))).toEqual(["new"]);
+    expect(names(definitionsToApply([added], new Set()))).toEqual([]);
+  });
+
+  test("a removed PID is dropped when chosen and kept as on the device when not", () => {
+    const removed = item(5, { loaded: false, pending: true, deviceDef: device("kept") });
+    expect(names(definitionsToApply([removed], new Set([5])))).toEqual([]);
+    expect(names(definitionsToApply([removed], new Set()))).toEqual(["kept"]);
   });
 });

@@ -32,7 +32,7 @@
 <div class="toasts">
   {#each alertStore.alerts as alert (alert.id)}
     <div
-      class="toast {alert.type}"
+      class="toast float-layer {alert.type}"
       role={alert.type === "error" ? "alert" : "status"}
       in:fly={{ y: reduceMotion ? 0 : 16, duration: reduceMotion ? 0 : 300 }}
       out:fly={{ y: reduceMotion ? 0 : 8, duration: reduceMotion ? 0 : 200 }}

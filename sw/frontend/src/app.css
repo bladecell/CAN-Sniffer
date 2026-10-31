@@ -20,6 +20,7 @@
 	--btn-px: 22px;
 	--pad-card: 26px;
 	--blur: 26px;
+	--float-blur: blur(var(--blur)) saturate(1.35);
 	--ctl-bd: transparent;
 	--ah: 55;
 	--ac: 0.17;
@@ -813,25 +814,33 @@ body:has(.scroll) {
 }
 
 /* Layering rule (DESIGN.md): every surface that sits above other content gets this one floating style.
-   Sticky or fixed bars, popovers, toasts, dialogs, the nav dock. Cards and rows in page flow never use it. */
+   Sticky or fixed bars, popovers, toasts, dialogs, the nav dock, the Sheet's glass (dialog.overlay.sheet::before:
+   the Sheet itself is not blurred, so its layers keep theirs). Cards and rows in page flow never use it. */
 .float-layer,
 .tel-float,
 .dock,
-.toast,
 dialog.overlay,
+dialog.overlay.sheet::before,
 .selpop,
 .tip {
   background: var(--float);
-  -webkit-backdrop-filter: blur(var(--blur)) saturate(1.35);
-  backdrop-filter: blur(var(--blur)) saturate(1.35);
+  -webkit-backdrop-filter: var(--float-blur);
+  backdrop-filter: var(--float-blur);
+}
+.float-layer,
+.tel-float,
+.dock,
+dialog.overlay,
+.selpop,
+.tip {
   box-shadow: var(--shadow-float);
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .float-layer,
   .tel-float,
   .dock,
-  .toast,
   dialog.overlay,
+  dialog.overlay.sheet::before,
   .selpop,
   .tip {
     background: var(--float-solid);

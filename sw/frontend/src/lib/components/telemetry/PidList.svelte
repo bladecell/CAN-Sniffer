@@ -206,7 +206,7 @@
   .pl-groups {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
     padding: 0 4px;
   }
   /* Top-level group headings stick under the PIDs header on the shared float layer, so cards scroll under them blurred. */

@@ -216,3 +216,8 @@ Decided by the user ("recommended" on all points).
 - **API:** start/stop and trip list are gated. State is open. Additive, no api_version bump.
 - **D5/D6:** separate Recorder page; a `recorder` section in settings.
 - **0-100 km/h:** separate mode with a fast speed poll. It needs an OBD2 temporary interval override/suspend API, approved as a separate task (R7).
+
+## 2026-10-29: Telemetry SD tab and Apply (UI13b)
+- **Open file** merges the file's PIDs into the list as drafts (reviewed in Changes); the device is not touched.
+- **SD folder** is a frontend-only setting kept in this browser's localStorage, default `/sdcard/configs`. Files are opened from the listed folder, so the folder of the last opened file is the current folder.
+- **Apply** is two steps until FW-FLASHPID lands: `PUT /pid_def` for the chosen rows, then `POST /pid_def/save`. If only the save fails, Retry repeats only the save.

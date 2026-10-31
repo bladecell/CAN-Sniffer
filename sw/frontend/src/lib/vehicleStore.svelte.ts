@@ -5,7 +5,6 @@ import { alertStore } from "./alertStore.svelte";
 import { validatePidDefinitionSet } from "./pidValidation";
 import { parseJsonResponse } from "./api";
 import { normalizePidDefinition, parsePidList, serializePidDefinition } from "./pidDefinition";
-import type { PidRow } from "./telemetryStore.svelte";
 import { createLatest } from "./latest";
 import { firmwareApi } from "./firmwareApi.svelte";
 import { livePids } from "./livePidStore.svelte";
@@ -247,72 +246,40 @@ export class VehicleStore {
         this.setClearState(clearCancel(this.clearState));
     };
 
-    serializePidDefinition(def: unknown) {
-        return serializePidDefinition(normalizePidDefinition(def));
-    }
-
-    async replacePids(rows: PidRow[]): Promise<boolean> {
+    /** Apply, step 1: PUT the whole set to the device, then reload it. Returns the failure reason, or null. */
+    async writePidDefinitions(definitions: PidDefinition[]): Promise<string | null> {
         try {
-            const desiredDefinitions = rows
-                .filter((row) => row.loaded)
-                .map((row) => normalizePidDefinition(row.def));
+            const normalized = definitions.map((definition) => normalizePidDefinition(definition));
+            const validationError = validatePidDefinitionSet(normalized);
+            if (validationError) throw new Error(validationError);
+            const payload = normalized.map((definition) => serializePidDefinition(definition));
 
-            const validationError = validatePidDefinitionSet(desiredDefinitions);
-            if (validationError) {
-                throw new Error(validationError);
-            }
-
-            const payload = desiredDefinitions.map((definition) =>
-                this.serializePidDefinition(definition),
-            );
-            const serializedPayload = JSON.stringify(payload);
-            const payloadBytes = new TextEncoder().encode(serializedPayload).byteLength;
-            if (payloadBytes > 64 * 1024) {
-                throw new Error("PID definitions payload exceeds 64 KiB (HTTP 413).");
-            }
+            const payloadBytes = new TextEncoder().encode(JSON.stringify(payload)).byteLength;
+            if (payloadBytes > 64 * 1024) throw new Error("PID definitions payload exceeds 64 KiB (HTTP 413).");
 
             const response = await firmwareApi.replacePidDefinitions(payload);
-
             if (response.status !== 204) {
+                // An error reply carries the device's reason; parseJsonResponse throws it.
+                await parseJsonResponse(response);
                 throw new Error(`Expected HTTP 204 from PID replacement, received ${response.status}.`);
             }
 
-            if (!(await this.loadDefinitions())) {
-                alertStore.add("PIDs were replaced, but refreshing definitions failed.", "warning");
-            }
-            return true;
+            if (!(await this.loadDefinitions())) alertStore.add("PIDs were replaced, but refreshing definitions failed.", "warning");
+            return null;
         } catch (e) {
-            const reason = e instanceof Error ? e.message : "Unknown error";
             console.error("Failed to replace PIDs:", e);
-            alertStore.add(`Failed to replace PIDs: ${reason}`, "error");
-            return false;
+            return e instanceof Error ? e.message : "Unknown error";
         }
     }
 
-    async savePids(rows: PidRow[]) {
-        if (!(await this.replacePids(rows))) {
-            return;
-        }
-
+    /** Apply, step 2: POST /pid_def/save writes the device's set to its configured file. Returns the failure reason, or null. */
+    async saveConfiguredPids(): Promise<string | null> {
         try {
-            const response = await firmwareApi.savePidDefinitions();
-
-            const result = await parseJsonResponse<{ status?: string; reason?: string }>(response);
-            if (result.status === "success") {
-                alertStore.add("PIDs saved successfully to FS.", "success");
-            } else {
-                throw new Error(result.reason || "Unknown error");
-            }
+            const result = await parseJsonResponse<{ status?: string; reason?: string }>(await firmwareApi.savePidDefinitions());
+            return result.status === "success" ? null : result.reason || "Unknown error";
         } catch (e) {
             console.error("Failed to save PIDs:", e);
-            alertStore.add("Failed to save PIDs.", "error");
-        }
-    }
-
-
-    async updatePids(rows: PidRow[]) {
-        if (await this.replacePids(rows)) {
-            alertStore.add("Successfully synced PIDs with device.", "success");
+            return e instanceof Error ? e.message : "Unknown error";
         }
     }
 }

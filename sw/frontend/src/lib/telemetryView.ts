@@ -115,3 +115,28 @@ export function footerActions(selectedCount: number): FooterAction[] {
   if (selectedCount === 1) return ["edit", "remove"];
   return ["remove"];
 }
+
+/** One row as the apply step sees it. `deviceDef` is the device's copy of the PID, if it has one. */
+export interface ApplyItem<D> {
+  pid: number;
+  loaded: boolean;
+  pending: boolean;
+  def: D;
+  deviceDef?: D;
+}
+
+/**
+ * The definition set to write when the `chosen` PIDs are applied. A chosen row goes as the draft it holds (dropped
+ * when it is removed). An unchosen pending row keeps the device's copy, so only the chosen changes reach the device.
+ */
+export function definitionsToApply<D>(items: ApplyItem<D>[], chosen: ReadonlySet<number>): D[] {
+  const out: D[] = [];
+  for (const item of items) {
+    if (!item.pending || chosen.has(item.pid)) {
+      if (item.loaded) out.push(item.def);
+    } else if (item.deviceDef !== undefined) {
+      out.push(item.deviceDef);
+    }
+  }
+  return out;
+}

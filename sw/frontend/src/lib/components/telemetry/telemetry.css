@@ -238,8 +238,7 @@
   opacity: 1;
 }
 .tel-in[aria-invalid='true'] {
-  outline: 2px solid var(--crit);
-  outline-offset: 0;
+  box-shadow: inset 0 0 0 2px var(--crit);
 }
 
 /* Selected row marker: 3px accent bar, no tint. */
@@ -301,7 +300,8 @@ dialog.overlay .edform input:not([type='checkbox']):not([type='radio']):not([typ
   flex-direction: column;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: var(--sb-head, 0px) 14px calc(var(--sb-foot, 0px) + 12px);
+  /* One rhythm: 8px from the header to the first card, 8px between cards, 8px from the last card to the footer. */
+  padding: calc(var(--sb-head, 0px) + 8px) 14px calc(var(--sb-foot, 0px) + 10px);
   border-radius: var(--r-card);
   /* Scrolls without a visible scrollbar. */
   scrollbar-width: none;
@@ -422,6 +422,12 @@ dialog.overlay .edform input:not([type='checkbox']):not([type='radio']):not([typ
 }
 .sb-foot .tel-btn[aria-disabled='true'] {
   opacity: 0.55;
+}
+/* Phone sheet: two footer buttons side by side, each label on one line (the mockup's .s-foot .btn). */
+.sb.bar .sb-foot .tel-btn {
+  padding: 0 8px;
+  font-size: 0.9rem;
+  white-space: nowrap;
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .sb-foot .tel-btn:not(.pri):not(.rm) {
@@ -713,4 +719,139 @@ dialog.overlay .edform input:not([type='checkbox']):not([type='radio']):not([typ
 .sb-panel [role='group'] {
   box-shadow: none !important;
   outline: none !important;
+}
+
+/* Shared by the Changes and SD tabs. Phone swipe layers sit under a card and show the action for the drag direction
+   (the same look as PidList). The keyboard buttons are hidden until focused, then they slide the card. */
+.sb-lay {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  font-weight: 800;
+  font-size: 0.95rem;
+  visibility: hidden;
+}
+.sb-lay-l {
+  justify-content: flex-start;
+}
+.sb-lay-r {
+  justify-content: flex-end;
+}
+.sb-lay-del {
+  background: var(--crit);
+  color: var(--bg);
+}
+.sb-lay-rev {
+  background: var(--muted);
+  color: var(--bg);
+}
+.sb-lay-apply {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.sb-row[data-dir='left'] .sb-lay-r,
+.sb-row[data-dir='right'] .sb-lay-l {
+  visibility: visible;
+}
+.sb-row.phone .sb-slide {
+  background: linear-gradient(var(--row), var(--row)), var(--float-solid);
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.sb-sra {
+  position: absolute;
+  z-index: 3;
+  top: 50%;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: transparent;
+  font-size: 0;
+  white-space: nowrap;
+  clip-path: inset(50%);
+  overflow: hidden;
+  transform: translateY(-50%);
+}
+.sb-sra:focus-visible {
+  top: 0;
+  bottom: 0;
+  width: 112px;
+  height: auto;
+  transform: none;
+  clip-path: none;
+  overflow: visible;
+  outline: none;
+}
+.sb-sra-l {
+  left: 0;
+}
+.sb-sra-r {
+  right: 0;
+}
+.sb-row:has(.sb-sra-l:focus-visible) .sb-slide {
+  transform: translateX(112px);
+}
+.sb-row:has(.sb-sra-r:focus-visible) .sb-slide {
+  transform: translateX(-112px);
+}
+.sb-row:has(.sb-sra-l:focus-visible) .sb-lay-l,
+.sb-row:has(.sb-sra-r:focus-visible) .sb-lay-r {
+  visibility: visible;
+}
+.spin {
+  animation: sb-spin 1s linear infinite;
+}
+@keyframes sb-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none;
+  }
+}
+
+/* Form and status text. */
+.tel-mono {
+  font-family: var(--mono);
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+.tel-note {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.tel-msg {
+  min-height: 1.4em;
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.tel-msg.bad {
+  color: var(--crit);
+}
+.tel-msg.bad::before {
+  content: '! ';
+  font-weight: 800;
+}
+.tel-msg.ok {
+  color: var(--ok);
+}
+.tel-msg.warn {
+  color: var(--warn);
+}
+/* Pico draws a validation icon on touched or aria-invalid=false inputs. The telemetry fields are plain fills, so it goes. */
+input.tel-in {
+  background-image: none;
 }
