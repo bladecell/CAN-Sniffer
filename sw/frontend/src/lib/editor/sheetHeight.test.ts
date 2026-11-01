@@ -18,3 +18,19 @@ describe("sheet height", () => {
     expect(stepSheetHeight(300, "down", 1000)).toBe(300);
   });
 });
+
+import { clampSheetPx } from "./sheetHeight";
+
+describe("clampSheetPx", () => {
+  test("holds the height inside the pixel bounds", () => {
+    expect(clampSheetPx(100, 250, 700)).toBe(250);
+    expect(clampSheetPx(900, 250, 700)).toBe(700);
+    expect(clampSheetPx(400.4, 250, 700)).toBe(400);
+  });
+
+  test("inverted or equal bounds collapse to a single height", () => {
+    expect(clampSheetPx(300, 700, 250)).toBe(300);
+    expect(clampSheetPx(900, 700, 250)).toBe(700);
+    expect(clampSheetPx(300, 400, 400)).toBe(400);
+  });
+});

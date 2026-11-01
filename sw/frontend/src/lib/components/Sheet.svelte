@@ -3,7 +3,7 @@
   import Icon from "$lib/Icon.svelte";
   import { overlay } from "$lib/overlay";
   import { measureHeight } from "$lib/layers";
-  import { clampSheetHeight, defaultSheetHeight, stepSheetHeight } from "$lib/editor/sheetHeight";
+  import { clampSheetHeight, clampSheetPx, defaultSheetHeight, stepSheetHeight } from "$lib/editor/sheetHeight";
   import "./overlay.css";
 
   interface Props {
@@ -16,6 +16,11 @@
     dismissible?: boolean;
     /** Opt-in: the grab handle drags (mouse, touch) or takes Arrow Up/Down to set the height. Starts at 65% of the screen on each open. */
     resizable?: boolean;
+    /** Opt-in: the dialog opens with focus on its title, not on the first control (no highlighted grab bar on open). */
+    focusTitle?: boolean;
+    /** Optional pixel bounds for a resizable sheet (default: 30% to 85% of the screen). Only consumers that pass them change. */
+    minHeight?: number;
+    maxHeight?: number;
     children: Snippet;
     footer?: Snippet;
     /** Rendered inside the header's float layer, under the title (the editor's section tabs). One layer with the header. */
@@ -26,11 +31,20 @@
     narrow?: boolean;
   }
 
-  let { open = false, title, subtitle, onClose, dismissible = true, resizable = false, children, footer, head, scrolls = true, narrow = false }: Props = $props();
+  let { open = false, title, subtitle, onClose, dismissible = true, resizable = false, focusTitle = false, minHeight, maxHeight, children, footer, head, scrolls = true, narrow = false }: Props = $props();
+  const hasPxBounds = $derived(minHeight !== undefined && maxHeight !== undefined);
+  function clampHeight(px: number): number {
+    return hasPxBounds ? clampSheetPx(px, minHeight!, maxHeight!) : clampSheetHeight(px, window.innerHeight);
+  }
   const uid = $props.id();
   const titleId = `${uid}-title`;
 
   let height = $state<number | undefined>(undefined);
+  let titleEl = $state<HTMLElement>();
+  // Opt-in initial focus on the title once the dialog is open (no highlighted control on open).
+  $effect(() => {
+    if (open && focusTitle && titleEl) queueMicrotask(() => titleEl?.focus());
+  });
   let drag: { y: number; h: number } | null = null;
   const pct = $derived(height === undefined ? 0 : Math.round((height / window.innerHeight) * 100));
 
@@ -45,7 +59,7 @@
   }
   function onGrabMove(e: PointerEvent) {
     if (!drag) return;
-    height = clampSheetHeight(drag.h + (drag.y - e.clientY), window.innerHeight);
+    height = clampHeight(drag.h + (drag.y - e.clientY));
   }
   function onGrabUp() {
     drag = null;
@@ -53,7 +67,7 @@
   function onGrabKey(e: KeyboardEvent) {
     if (height === undefined || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
     e.preventDefault();
-    height = stepSheetHeight(height, e.key === "ArrowUp" ? "up" : "down", window.innerHeight);
+    height = hasPxBounds ? clampHeight(height + (e.key === "ArrowUp" ? 1 : -1) * window.innerHeight * 0.05) : stepSheetHeight(height, e.key === "ArrowUp" ? "up" : "down", window.innerHeight);
   }
 </script>
 
@@ -77,10 +91,10 @@
         tabindex="0"
         aria-orientation="horizontal"
         aria-label="Sheet height"
-        aria-valuemin="30"
-        aria-valuemax="85"
-        aria-valuenow={pct}
-        aria-valuetext={`${pct}% of screen height`}
+        aria-valuemin={hasPxBounds ? minHeight : 30}
+        aria-valuemax={hasPxBounds ? maxHeight : 85}
+        aria-valuenow={hasPxBounds ? height : pct}
+        aria-valuetext={hasPxBounds ? `${height} pixels` : `${pct}% of screen height`}
         onpointerdown={onGrabDown}
         onpointermove={onGrabMove}
         onpointerup={onGrabUp}
@@ -92,7 +106,8 @@
     {/if}
     <header>
       <div class="titles">
-        <h2 id={titleId}>{title}</h2>
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+        <h2 id={titleId} bind:this={titleEl} tabindex={focusTitle ? -1 : undefined}>{title}</h2>
         {#if subtitle}<p>{subtitle}</p>{/if}
       </div>
       {#if dismissible}
@@ -163,6 +178,9 @@
     flex: 1 1 auto;
     min-width: 0;
     display: grid;
+  }
+  .titles h2:focus {
+    outline: none;
   }
   .titles h2 {
     margin: 0;

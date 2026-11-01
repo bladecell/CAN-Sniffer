@@ -62,21 +62,53 @@ dialog.overlay.sheet {
   border-radius: var(--r-float) var(--r-float) 0 0;
   /* Pico makes every dialog a scroller. The sheet is not one: its body scrolls, its layers sit beside it. */
   overflow: visible;
-  background: none;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
   box-shadow: var(--shadow-float);
 }
 dialog.overlay.sheet[open] {
   animation: overlay-sheet-in 0.5s var(--ease-out);
 }
-/* The fill and blur come from the shared float-layer rule (app.css). */
+/* The dialog is transparent and not blurred. Gecko drops the blur of a float layer whose ancestor is blurred, so the
+   glass is on the three siblings instead: the top layer (.float-layer), the body and each footer button. Each one
+   blurs what is behind the sheet, with the same fill, so the boundaries line up without a seam. */
+dialog.overlay.sheet {
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
 dialog.overlay.sheet::before {
+  content: none;
+}
+/* The body's top corners match the top layer's. Without them the body's square corner shows past the rounded top layer. */
+dialog.overlay.sheet > .body {
+  border-radius: var(--r-float) var(--r-float) 0 0;
+  background: var(--float);
+  -webkit-backdrop-filter: var(--float-blur);
+  backdrop-filter: var(--float-blur);
+}
+/* A self-scrolling body (the phone PID sidebar) must not be blurred: its float layers sit inside it and would lose
+   their blur. Its glass is a ::before behind the content, which does not scroll (the body is not a scroller here). */
+dialog.overlay.sheet.flat > .body {
+  position: relative;
+  z-index: 0;
+  background: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+dialog.overlay.sheet.flat > .body::before {
   content: "";
   position: absolute;
   inset: 0;
   z-index: -1;
-  border-radius: inherit;
+  border-radius: var(--r-float) var(--r-float) 0 0;
+  background: var(--float);
+  -webkit-backdrop-filter: var(--float-blur);
+  backdrop-filter: var(--float-blur);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  dialog.overlay.sheet > .body,
+  dialog.overlay.sheet.flat > .body::before {
+    background: var(--float-solid);
+  }
 }
 
 .overlay .grab {
@@ -157,7 +189,8 @@ dialog.overlay.sheet.flat > .body {
   padding-top: var(--sheet-head, 0px);
   padding-bottom: calc(22px + env(safe-area-inset-bottom));
 }
-/* No container behind the footer: each button is its own translucent blurred layer, the primary keeps its accent fill. */
+/* Footer: one full-width backing layer (as the PIDs phone action bar), so rows scrolling beneath cannot be read through
+   the buttons. The backing is a ::before, so the buttons keep their own blur (nested blur would drop it). */
 dialog.overlay.sheet > footer {
   position: absolute;
   left: 0;
@@ -166,6 +199,20 @@ dialog.overlay.sheet > footer {
   z-index: 5;
   padding-top: 12px;
   pointer-events: none;
+}
+dialog.overlay.sheet > footer::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: color-mix(in srgb, var(--float-solid) 92%, transparent);
+  -webkit-backdrop-filter: var(--float-blur);
+  backdrop-filter: var(--float-blur);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  dialog.overlay.sheet > footer::before {
+    background: var(--float-solid);
+  }
 }
 .sheet > footer button {
   pointer-events: auto;
@@ -184,6 +231,42 @@ dialog.overlay.sheet > footer {
 }
 .sheet > footer button.pri {
   box-shadow: var(--shadow-float);
+}
+/* Sheet footer buttons: one look for every sheet (the PID editor and the import sheet). Glass comes from the rules above. */
+.sheet > footer .btn {
+  flex: none;
+  min-height: 48px;
+  padding: 0 24px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--ctl);
+  color: var(--ctl-text);
+  font: 750 1rem/1 var(--font);
+  cursor: pointer;
+}
+.sheet > footer .btn.pri {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 800;
+}
+.sheet > footer .btn:disabled,
+.sheet > footer .btn[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+/* A disabled primary stays solid: a translucent button would show the fields under it. */
+.sheet > footer .btn.pri:disabled,
+.sheet > footer .btn.pri[aria-disabled='true'] {
+  opacity: 1;
+  background: var(--ctl);
+  color: var(--ctl-sub);
+}
+/* Phone: the sheet's buttons share the width. */
+@media (max-width: 640px) {
+  .sheet > footer .btn {
+    flex: 1 1 0;
+    padding: 0 12px;
+  }
 }
 .overlay footer {
   flex: none;

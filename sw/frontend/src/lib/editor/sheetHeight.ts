@@ -16,3 +16,10 @@ export function defaultSheetHeight(viewport: number): number {
 export function stepSheetHeight(px: number, dir: "up" | "down", viewport: number): number {
   return clampSheetHeight(px + (dir === "up" ? 1 : -1) * viewport * KEY_RATIO, viewport);
 }
+
+/** Clamps to explicit pixel bounds (the PID sheet: its head plus one row, up to the viewport less the nav). */
+export function clampSheetPx(px: number, min: number, max: number): number {
+  const lo = Math.min(min, max);
+  const hi = Math.max(min, max);
+  return Math.round(Math.min(Math.max(px, lo), hi));
+}
