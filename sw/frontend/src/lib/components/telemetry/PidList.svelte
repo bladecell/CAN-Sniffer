@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { canToggleTicks } from "$lib/telemetryChart/selection";
+  import { noPlotHint } from "$lib/telemetryChart/noPlotHint";
   import { telemetryStore, type PidRow } from "$lib/telemetryStore.svelte";
   import { vehicleStore } from "$lib/vehicleStore.svelte";
   import { alertStore } from "$lib/alertStore.svelte";
@@ -6,6 +8,7 @@
   import { footerActions, groupPids, pidHex, removeRows } from "$lib/telemetryView";
   import Icon from "$lib/Icon.svelte";
   import { swipeRow } from "./swipeRow";
+  import PidCard from "./PidCard.svelte";
   import SidebarHint from "./SidebarHint.svelte";
   import SidebarPanel from "./SidebarPanel.svelte";
   import { SIDEBAR_HINTS } from "./sidebarHints";
@@ -50,8 +53,17 @@
     unsupported: { name: "circle-minus", cls: "t-muted" },
   };
 
+  // Ticks write the selected plot only. With no plot selected a tick does nothing and says why.
+  let noPlot = $derived(!canToggleTicks(telemetryStore.activeChartIndex));
+
   function selectAll(on: boolean) {
+    if (!canToggleTicks(telemetryStore.activeChartIndex)) return noPlotHint();
     for (const row of loaded) row.selected = on;
+  }
+
+  function tickRow(row: PidRow) {
+    if (!canToggleTicks(telemetryStore.activeChartIndex)) return noPlotHint();
+    row.selected = !row.selected;
   }
 
   function removeWhere(matches: (row: PidRow) => boolean, count: number) {
@@ -95,47 +107,52 @@
     {#each items as row (row)}
       {@const index = telemetryStore.local_piddef.indexOf(row)}
       {@const hex = pidHex(parseInt(row.pid, 16), row.mode)}
-      <li class="sb-row prow" class:sel={row.selected} class:phone>
-        {#if phone}
-          <div class="lay lay-l" aria-hidden="true">Delete</div>
-          <div class="lay lay-r" aria-hidden="true">Edit</div>
-        {/if}
-        <div class="sb-slide" {@attach swipeRow({ left: () => onEdit(index), right: () => removeOne(row) })}>
-          <button type="button" class="sb-main" aria-pressed={row.selected} onclick={() => (row.selected = !row.selected)}>
-            <i class="sb-sw" style="--sw: {pidColor(row)}"></i>
-            <span class="sb-nm">
-              <span class="sb-nl">
-                <b>{row.name}</b>
-                {#if row.isSupported && !row.isValid}
-                  <span class="sb-tag k-crit" title="Invalid: the formula gives no usable value"><i class="dot"></i>Invalid</span>
-                {/if}
-                {#if row.pendingChanges === "Yes"}
-                  <span class="sb-tag k-warn"><i class="dot"></i>Pending</span>
-                {/if}
-                {#if row.updateInterval === 0}
-                  <span class="sb-tag" title="Static: never polled"><i class="dot"></i>Static</span>
-                {/if}
-              </span>
-              {#if hex}<span class="sb-hx">{hex}</span>{/if}
+      <PidCard
+        selected={row.selected}
+        color={pidColor(row)}
+        name={row.name}
+        {hex}
+        {phone}
+        onToggle={() => tickRow(row)}
+        swipe={swipeRow({ left: () => onEdit(index), right: () => removeOne(row) })}
+      >
+        {#snippet behind()}
+          {#if phone}
+            <div class="lay lay-l" aria-hidden="true">Delete</div>
+            <div class="lay lay-r" aria-hidden="true">Edit</div>
+          {/if}
+        {/snippet}
+        {#snippet tags()}
+          {#if row.isSupported && !row.isValid}
+            <span class="sb-tag k-crit" title="Invalid: the formula gives no usable value"><i class="dot"></i>Invalid</span>
+          {/if}
+          {#if row.pendingChanges === "Yes"}
+            <span class="sb-tag k-warn"><i class="dot"></i>Pending</span>
+          {/if}
+          {#if row.updateInterval === 0}
+            <span class="sb-tag" title="Static: never polled"><i class="dot"></i>Static</span>
+          {/if}
+        {/snippet}
+        {#snippet value()}
+          {#if row.isSupported}
+            <span class="sb-val">
+              {#if hasValue(row)}
+                <span class="v">{row.value}</span>
+                <span class="u">{row.metricUnit}</span>
+              {:else}
+                <span class="na">N/A</span>
+              {/if}
             </span>
-            {#if row.isSupported}
-              <span class="sb-val">
-                {#if hasValue(row)}
-                  <span class="v">{row.value}</span>
-                  <span class="u">{row.metricUnit}</span>
-                {:else}
-                  <span class="na">N/A</span>
-                {/if}
-              </span>
-            {/if}
-          </button>
-        </div>
-        {#if phone}
-          <!-- Keyboard path to the swipe actions. Hidden until focused, then the card slides to show the action. -->
-          <button type="button" class="sra sra-l" onclick={() => removeOne(row)}>Delete {row.name}</button>
-          <button type="button" class="sra sra-r" onclick={() => onEdit(index)}>Edit {row.name}</button>
-        {/if}
-      </li>
+          {/if}
+        {/snippet}
+        {#snippet after()}
+          {#if phone}
+            <!-- Keyboard path to the swipe actions. Hidden until focused, then the card slides to show the action. -->
+            <button type="button" class="sra sra-l" onclick={() => removeOne(row)}>Delete {row.name}</button>
+            <button type="button" class="sra sra-r" onclick={() => onEdit(index)}>Edit {row.name}</button>
+          {/if}
+        {/snippet}
+      </PidCard>
     {/each}
   </ul>
 {/snippet}
@@ -148,13 +165,13 @@
       {loaded.length} PIDs &middot; {supportedCount} supported &middot; {pendingCount} pending
     </p>
     <div class="sb-selrow">
-      <span class="num">{selectedCount ? `${selectedCount} on chart` : "None on chart"}</span>
+      <span class="num">{noPlot ? "No plot selected" : selectedCount ? `${selectedCount} on chart` : "None on chart"}</span>
       <span class="sb-acts">
         {#if selectedCount < loaded.length}
-          <button type="button" class="sb-txt" onclick={() => selectAll(true)}>Select all</button>
+          <button type="button" class="sb-txt" aria-disabled={noPlot} onclick={() => selectAll(true)}>Select all</button>
         {/if}
         {#if selectedCount > 0}
-          <button type="button" class="sb-txt" onclick={() => selectAll(false)}>Clear</button>
+          <button type="button" class="sb-txt" aria-disabled={noPlot} onclick={() => selectAll(false)}>Clear</button>
         {/if}
       </span>
     </div>
@@ -274,28 +291,27 @@
     background: var(--accent);
     color: var(--on-accent);
   }
-  .prow:global([data-dir='left']) .lay-r,
-  .prow:global([data-dir='right']) .lay-l {
+  :global(.prow[data-dir='left']) .lay-r,
+  :global(.prow[data-dir='right']) .lay-l {
     visibility: visible;
   }
-  .prow:has(.sra-l:focus-visible) .slide,
-  .prow:has(.sra-l:focus-visible) :global(.sb-slide) {
+  :global(.prow:has(.sra-l:focus-visible)) :global(.sb-slide) {
     transform: translateX(112px);
   }
-  .prow:has(.sra-r:focus-visible) :global(.sb-slide) {
+  :global(.prow:has(.sra-r:focus-visible)) :global(.sb-slide) {
     transform: translateX(-112px);
   }
-  .prow:has(.sra-l:focus-visible) .lay-l,
-  .prow:has(.sra-r:focus-visible) .lay-r {
+  :global(.prow:has(.sra-l:focus-visible)) .lay-l,
+  :global(.prow:has(.sra-r:focus-visible)) .lay-r {
     visibility: visible;
   }
-  .prow.phone :global(.sb-slide) {
+  :global(.prow.phone) :global(.sb-slide) {
     background: linear-gradient(var(--row), var(--row)), var(--float-solid);
     touch-action: pan-y;
     user-select: none;
     -webkit-user-select: none;
   }
-  .prow.phone .lay {
+  :global(.prow.phone) .lay {
     border-radius: var(--r-ctl);
   }
 </style>

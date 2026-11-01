@@ -6,6 +6,7 @@ import {
   footerActions,
   groupPids,
   pendingKind,
+  formatPid,
   pidHex,
   removeRows,
   type PidGroupInput,
@@ -71,10 +72,26 @@ describe("groupPids", () => {
   });
 });
 
+describe("formatPid", () => {
+  test("a PID that fits one byte shows two hex digits", () => {
+    expect(formatPid(0x05)).toBe("0x05");
+    expect(formatPid(0x0c)).toBe("0x0C");
+    expect(formatPid(0xff)).toBe("0xFF");
+    expect(formatPid(0x00)).toBe("0x00");
+  });
+
+  test("a longer PID shows four uppercase hex digits", () => {
+    expect(formatPid(0x0105)).toBe("0x0105");
+    expect(formatPid(0xf40c)).toBe("0xF40C");
+    expect(formatPid(0x1c0e)).toBe("0x1C0E");
+  });
+});
+
 describe("pidHex", () => {
-  test("shows the PID as 0x and four hex digits", () => {
-    expect(pidHex(0x0c, 0x01)).toBe("0x000C");
+  test("shows the PID with the shared formatter", () => {
+    expect(pidHex(0x0c, 0x01)).toBe("0x0C");
     expect(pidHex(0x1c0e, 0x22)).toBe("0x1C0E");
+    expect(pidHex(0x0105, 0x01)).toBe("0x0105");
   });
 
   test("derived PIDs show nothing", () => {

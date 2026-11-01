@@ -1,7 +1,11 @@
 <script lang="ts">
   import Icon from "$lib/Icon.svelte";
   import { closeOnOutsideScroll } from "$lib/popoverAnchor";
-  import { portal } from "$lib/layers";
+  // The popup goes to <body>, not into the sheet: a backdrop-filter on the sheet would otherwise be the popup's only backdrop root and it would read nothing (flat box). Top layer, above the sheet.
+  function toBody(node: HTMLElement) {
+    document.body.append(node);
+    return { destroy: () => node.remove() };
+  }
 
   interface Props {
     /** The hint text (from sidebarHints.ts). */
@@ -90,7 +94,7 @@
   <Icon name="circle-info" size={inline ? 16 : 20} />
 </button>
 <!-- Portalled out of the blurred header: a blurred ancestor would drop this popover's blur (lib/layers.ts). -->
-<div bind:this={pop} use:portal id={popId} class="pop" popover="auto" role="tooltip" ontoggle={onToggle}>{text}</div>
+<div bind:this={pop} use:toBody id={popId} class="pop" popover="auto" role="tooltip" ontoggle={onToggle}>{text}</div>
 
 <style>
   .hint {

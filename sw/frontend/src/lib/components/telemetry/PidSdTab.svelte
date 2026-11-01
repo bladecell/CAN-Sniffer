@@ -7,10 +7,10 @@
   import { sdFolder } from "$lib/sdFolder.svelte";
   import { normalizePidDefinition } from "$lib/pidDefinition";
   import type { PidDefinition } from "$lib/types";
+  import { classifyPidImport, pidImportCounts } from "$lib/pidImport";
   import {
     MAX_PID_FILE_BYTES,
     cardFilePath,
-    importSummary,
     parsePidFile,
     readFolder,
     serializePidFile,
@@ -21,6 +21,7 @@
   import Dialog from "$lib/components/Dialog.svelte";
   import Sheet from "$lib/components/Sheet.svelte";
   import Icon from "$lib/Icon.svelte";
+  import PidFileImportSheet from "./PidFileImportSheet.svelte";
   import { swipeRow } from "./swipeRow";
   import SidebarHint from "./SidebarHint.svelte";
   import SidebarPanel from "./SidebarPanel.svelte";
@@ -44,6 +45,9 @@
   let newOpen = $state(false);
   let newName = $state("");
   let newError = $state("");
+  /** The file read by Open, listed in the import sheet until it is closed or imported. */
+  let preview = $state<{ name: string; defs: PidDefinition[] } | null>(null);
+  let importOpen = $state(false);
 
   const folder = $derived(sdFolder.path);
   const files = $derived<SdFile[]>(listing.kind === "ok" ? listing.files : []);
@@ -107,7 +111,9 @@
     if (!response.ok) throw new Error(response.status === 404 ? "The file is not on the card." : `HTTP ${response.status}.`);
     const declared = Number(response.headers.get("content-length"));
     if (declared > MAX_PID_FILE_BYTES) throw new Error("The file is larger than 64 KiB.");
-    return parsePidFile(await response.text());
+    const defs = parsePidFile(await response.text());
+    if (defs.length === 0) throw new Error("The file holds no PIDs.");
+    return defs;
   }
 
   /** Writes a PID list to a card file. Returns the failure reason, or null. */
@@ -122,28 +128,33 @@
     }
   }
 
-  /** Open file: the PIDs are added to the list as drafts, to review in Changes. The device is not touched. */
+  /** Open file: reads the file and lists its PIDs in a sheet. Nothing is added until the user imports them. */
   async function openFile(name = selected) {
     if (!name || !canOpen) return;
     busy = true;
     try {
       const defs = await readPidFile(cardFilePath(folder, name));
-      const before = new Set(telemetryStore.local_piddef.map((row) => parseInt(row.pid, 16)));
-      telemetryStore.importPidDefinitions(defs);
-      const incoming = new Set(defs.map((def) => def.pid));
-      const rows = telemetryStore.local_piddef.filter((row) => incoming.has(parseInt(row.pid, 16)));
-      const summary = importSummary(before, rows.map((row) => ({ pid: parseInt(row.pid, 16), pending: row.pendingChanges === "Yes" })));
       openError = null;
-      const { added, changed } = summary;
-      alertStore.add(
-        added + changed === 0 ? `${name} matches your PIDs.` : `${name}: ${added} added, ${changed} changed. Review them in Changes.`,
-        "success",
-      );
+      preview = { name, defs };
+      importOpen = true;
     } catch (e) {
       openError = { name, reason: e instanceof Error ? e.message : "The file could not be read." };
     } finally {
       busy = false;
     }
+  }
+
+  /** The chosen PIDs go into the list as drafts, to review in Changes. The device is not touched. */
+  function importChosen(chosen: PidDefinition[]) {
+    if (!preview || chosen.length === 0) return;
+    const { name } = preview;
+    const { added, changed } = pidImportCounts(classifyPidImport(chosen, telemetryStore.local_piddef));
+    telemetryStore.importPidDefinitions(chosen);
+    importOpen = false;
+    alertStore.add(
+      added + changed === 0 ? `${name} matches your PIDs.` : `${name}: ${added} added, ${changed} changed. Review them in Changes.`,
+      "success",
+    );
   }
 
   async function saveSelected() {
@@ -324,6 +335,17 @@
   onCancel={() => (confirm = null)}
 />
 
+{#if preview}
+  <PidFileImportSheet
+    open={importOpen}
+    fileName={preview.name}
+    defs={preview.defs}
+    current={telemetryStore.local_piddef}
+    onImport={importChosen}
+    onClose={() => (importOpen = false)}
+  />
+{/if}
+
 <Sheet open={newOpen} title="New PID file" onClose={closeNew}>
   <form
     class="nf"
@@ -351,10 +373,8 @@
     <p class="tel-note">Creates a file in <span class="tel-mono">{folder}</span> from the {plural(pidCount, "PID")} selected on the PIDs tab.</p>
   </form>
   {#snippet footer()}
-    <div class="nf-actions">
-      <button type="button" class="tel-btn" onclick={closeNew}>Cancel</button>
-      <button type="button" class="tel-btn pri" aria-disabled={!canNew} onclick={createFile}>Create file</button>
-    </div>
+    <button type="button" class="btn" onclick={closeNew}>Cancel</button>
+    <button type="button" class="btn pri" aria-disabled={!canNew} onclick={createFile}>Create file</button>
   {/snippet}
 </Sheet>
 
@@ -394,11 +414,6 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    gap: 8px;
-  }
-  .nf-actions {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
     gap: 8px;
   }
   .nf p {

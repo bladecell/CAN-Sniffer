@@ -20,8 +20,11 @@ export interface ChartBuffer {
   readonly capacity: number;
   /** Timestamp of the newest sample, or undefined when empty. */
   lastTime(): number | undefined;
-  /** Copy of the samples with t >= fromT (all when omitted), oldest first. */
-  snapshot(fromT?: number): ChartSnapshot;
+  /**
+   * Copy of the samples with t >= fromT (all when omitted), oldest first. lead adds that many samples just before
+   * fromT, so a caller can interpolate at the edge.
+   */
+  snapshot(fromT?: number, lead?: number): ChartSnapshot;
 }
 
 export interface ChartBufferWriter extends ChartBuffer {
@@ -87,8 +90,8 @@ export function createChartBuffer(capacity = CHART_CAPACITY): ChartBufferWriter 
       append(t, v);
       return true;
     },
-    snapshot(fromT = -Infinity) {
-      const from = lowerBound(fromT);
+    snapshot(fromT = -Infinity, lead = 0) {
+      const from = Math.max(0, lowerBound(fromT) - Math.max(0, Math.floor(lead)));
       const t: number[] = new Array(count - from);
       const v: (number | null)[] = new Array(count - from);
       for (let i = from; i < count; i++) {

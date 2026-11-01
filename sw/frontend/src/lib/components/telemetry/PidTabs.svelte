@@ -90,12 +90,17 @@
     display: flex;
     flex: none;
     gap: 4px;
-    padding: 3px;
+    /* Equal 4 px inset on all sides, as the other segments (the layout selector). */
+    padding: 4px;
     border-radius: 18px;
     background: var(--ctl);
   }
   .switch.bar button {
     position: relative;
+    /* Pico gives buttons a 16 px bottom margin; a chip is exactly the container less the 4 px inset. */
+    margin: 0;
+    height: 56px;
+    min-height: 0;
     flex: 1;
     display: flex;
     flex-direction: column;

@@ -59,10 +59,15 @@ export function groupPids<T>(items: T[], describe: (item: T) => PidGroupInput): 
   return groups.filter((g) => g.items.length > 0);
 }
 
-/** The PID as shown under a card: 0x and four hex digits. Derived PIDs have no PID of their own, so nothing. */
+/** A PID as text: 0x, two hex digits when it fits one byte (0x05), otherwise four (0x0105). Uppercase. */
+export function formatPid(pid: number): string {
+  return "0x" + pid.toString(16).toUpperCase().padStart(pid > 0xff ? 4 : 2, "0");
+}
+
+/** The PID as shown in the Telemetry lists. Derived PIDs have no PID of their own, so nothing. */
 export function pidHex(pid: number, mode: number): string {
   if (mode === DERIVED_MODE) return "";
-  return "0x" + pid.toString(16).toUpperCase().padStart(4, "0");
+  return formatPid(pid);
 }
 
 export interface RemovableRow {

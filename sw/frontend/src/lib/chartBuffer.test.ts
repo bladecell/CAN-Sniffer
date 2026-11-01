@@ -29,6 +29,17 @@ describe("chart buffer", () => {
     expect(b.lastTime()).toBe(400);
   });
 
+  test("lead keeps the newest sample before fromT, so a line can start at the window edge", () => {
+    const b = createChartBuffer(8);
+    b.push(0, 1);
+    b.push(1000, 2);
+    b.push(2000, 3);
+    expect(b.snapshot(1500, 1)).toEqual({ t: [1000, 2000], v: [2, 3] });
+    expect(b.snapshot(1500)).toEqual({ t: [2000], v: [3] });
+    expect(b.snapshot(-5, 1)).toEqual({ t: [0, 1000, 2000], v: [1, 2, 3] });
+    expect(b.snapshot(0, 3)).toEqual({ t: [0, 1000, 2000], v: [1, 2, 3] });
+  });
+
   test("window query returns samples at or after fromT, inclusive, across a wrap", () => {
     const b = createChartBuffer(4);
     for (let i = 0; i < 10; i++) b.push(i * 100, i); // holds 600..900

@@ -11,6 +11,7 @@ import { isValidHex, isValidName, isValidDescription, isModeValidForPid, isLengt
 import { connectionStore } from "./connectionStore.svelte";
 import { vehicleStore } from "./vehicleStore.svelte";
 import { SvelteSet } from "svelte/reactivity";
+import { DEFAULT_PLOT_COUNT, type PlotCount } from "$lib/telemetryChart/layout";
 
 /** A PID object from a file or the SD card: long or short key names, nothing guaranteed. */
 type RawPidDef = Partial<PidDefinition> & { desc?: string; len?: number; minV?: number; maxV?: number; interval?: number };
@@ -83,10 +84,10 @@ export class TelemetryStore {
     this.local_piddef = next;
   }
 
-  chartRows = $state(1);
-  chartCols = $state(1);
+  /** Plots on the page: 1, 2, 4 or 6. Plot n shows chartPids[n - 1]. */
+  plotCount = $state<PlotCount>(DEFAULT_PLOT_COUNT);
   activeChartIndex = $state(0);
-  chartPids = $state<number[][]>([[]]);
+  chartPids = $state<number[][]>(Array.from({ length: DEFAULT_PLOT_COUNT }, () => []));
   activeIndex = $state(-1);
 
   // --- FORM STATE ---
