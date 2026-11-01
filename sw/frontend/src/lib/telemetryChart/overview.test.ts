@@ -77,3 +77,34 @@ describe("overview drag", () => {
     expect(frameDisplayX(w.endAgo) - frameDisplayX(start.endAgo)).toBeCloseTo(d, 6);
   });
 });
+
+describe("overview line edges", () => {
+  const NOW = 1_000_000;
+  const firstX = (t: number[], width = 500) => {
+    const v = t.map((_, i) => i);
+    const m = overviewModel({ width, height: 84, now: NOW, win: liveWin(60), series: [{ color: "#000", range: [0, 100], t, v }] });
+    const x = m.lines[0].d.match(/^M([\d.]+),/);
+    return x ? Number(x[1]) : NaN;
+  };
+  const every = (fromAgoMs: number, stepMs = 1000) => {
+    const out: number[] = [];
+    for (let t = NOW - fromAgoMs; t <= NOW; t += stepMs) out.push(t);
+    return out;
+  };
+
+  test("data older than five minutes starts the line at the left edge, the five-minute mark", () => {
+    expect(firstX(every(400_000))).toBeCloseTo(ovX(300, 500), 1);
+  });
+
+  test("data that starts less than one sample interval after five minutes begins at the edge too", () => {
+    expect(firstX(every(299_500))).toBeCloseTo(ovX(300, 500), 1);
+  });
+
+  test("a slow PID (one sample every 5 s) still reaches the left edge", () => {
+    expect(firstX(every(302_000, 5000))).toBeCloseTo(ovX(300, 500), 1);
+  });
+
+  test("a buffer shorter than five minutes starts at its first sample, not at the edge", () => {
+    expect(firstX(every(180_000))).toBeCloseTo(ovX(180, 500), 1);
+  });
+});

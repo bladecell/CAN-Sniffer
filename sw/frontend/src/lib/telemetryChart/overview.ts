@@ -3,7 +3,7 @@
 import { agoLabel, clamp, finiteOr } from "./math";
 import { GUTTER_LEFT, GUTTER_RIGHT } from "./gutter";
 import { domainFor, fracOf, type Range } from "./plotModel";
-import { decimate, pathOf, type Pt } from "./series";
+import { decimate, pathOf, windowPoints, type Pt } from "./series";
 import { SPAN_SEC, shiftWin, type Win } from "./window";
 
 export const OV_L = GUTTER_LEFT;
@@ -77,16 +77,12 @@ export function overviewModel(o: { width: number; height: number; now: number; w
       if (typeof x === "number" && Number.isFinite(x) && s.t[k] >= fromT) vals.push(x);
     }
     const [lo, hi] = domainFor(s.range, vals, false, true);
-    const pts: Pt[] = [];
-    for (let k = 0; k < s.t.length; k++) {
-      if (!Number.isFinite(s.t[k]) || s.t[k] < fromT || s.t[k] > o.now + 1000) continue;
-      const x = s.v[k];
-      if (typeof x !== "number" || !Number.isFinite(x)) pts.push(null);
-      else {
-        const frac = Math.min(1, Math.max(0, fracOf(x, lo, hi)));
-        pts.push({ x: ovX((o.now - s.t[k]) / 1000, W), y: bottom - frac * (bottom - OV_T) });
-      }
-    }
+    // The line runs to both edges of the strip (interpolated, as in the plot), and holds nothing past the present.
+    const pts: Pt[] = windowPoints(s.t, s.v, o.now - SPAN_SEC * 1000, o.now, o.now, 0).map((p) => {
+      if (p.v === null) return null;
+      const frac = Math.min(1, Math.max(0, fracOf(p.v, lo, hi)));
+      return { x: ovX((o.now - p.t) / 1000, W), y: bottom - frac * (bottom - OV_T) };
+    });
     return { color: s.color, d: pathOf(decimate(pts, pw)) };
   });
   return {
