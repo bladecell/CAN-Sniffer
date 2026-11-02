@@ -159,9 +159,21 @@ export function buildPlotModel(inp: PlotInput): PlotModel {
     );
     const dec = decimate(pts, pw);
     const d = pathOf(dec);
-    const first = dec.find((p): p is { x: number; y: number } => p !== null);
-    const last = [...dec].reverse().find((p): p is { x: number; y: number } => p !== null);
-    const area = (lanes || n === 1) && first && last ? `${d}L${last.x.toFixed(1)},${bot(i).toFixed(1)}L${first.x.toFixed(1)},${bot(i).toFixed(1)}Z` : null;
+    // One closed shape per run of samples: a gap must not be bridged by the fill.
+    const runs: Pt[][] = [[]];
+    for (const p of dec) p === null ? runs.push([]) : runs[runs.length - 1].push(p);
+    const base = bot(i).toFixed(1);
+    const area =
+      lanes || n === 1
+        ? runs
+            .filter((r) => r.length > 0)
+            .map((r) => {
+              const f = r[0] as { x: number; y: number };
+              const l = r[r.length - 1] as { x: number; y: number };
+              return `${pathOf(r)}L${l.x.toFixed(1)},${base}L${f.x.toFixed(1)},${base}Z`;
+            })
+            .join("") || null
+        : null;
     lines.push({ id: s.id, color: s.color, d, area });
   });
 
