@@ -6,7 +6,7 @@
   display: grid;
   gap: 20px;
   align-content: start;
-  max-width: 1200px;
+  max-width: 1152px; /* same as listDetail (Recorder, Diagnostics) */
   margin: 0 auto;
   min-width: 0;
 }
