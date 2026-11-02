@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Snippet } from "svelte";
   import { overlay } from "$lib/overlay";
   import "./overlay.css";
 
@@ -10,6 +11,8 @@
     confirmLabel: string;
     cancelLabel?: string;
     danger?: boolean;
+    /** Extra body content (a field), shown under the message. */
+    children?: Snippet;
     onConfirm: () => void;
     onCancel?: () => void;
   }
@@ -21,6 +24,7 @@
     confirmLabel,
     cancelLabel = "Cancel",
     danger = false,
+    children,
     onConfirm,
     onCancel,
   }: Props = $props();
@@ -34,6 +38,7 @@
     {#if message}
       <p>{message}</p>
     {/if}
+    {#if children}{@render children()}{/if}
     <div class="actions">
       <!-- svelte-ignore a11y_autofocus -->
       <button type="button" class="btn" autofocus onclick={() => onCancel?.()}>{cancelLabel}</button>

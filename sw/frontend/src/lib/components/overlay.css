@@ -44,6 +44,18 @@ dialog.overlay.dialog {
 dialog.overlay.dialog[open] {
   animation: overlay-dialog-in 0.4s var(--ease-out);
 }
+/* Glass (DESIGN.md, Dialog): the dialog is the float layer itself. Nothing above it is a blurred ancestor. */
+dialog.overlay.dialog {
+  background: var(--float);
+  -webkit-backdrop-filter: var(--float-blur);
+  backdrop-filter: var(--float-blur);
+  box-shadow: var(--shadow-float);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  dialog.overlay.dialog {
+    background: var(--float-solid);
+  }
+}
 
 /*
  * Sheet: bottom sheet, centred on wide screens, full width on phones. Three parts, each a sibling of the others:
