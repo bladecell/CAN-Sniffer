@@ -67,14 +67,6 @@
     return folder;
   });
 
-  const hint = $derived.by(() => {
-    if (listing.kind === "loading") return "Reading the card.";
-    if (!readable) return "Actions need a card and a valid folder.";
-    if (!fileSelected) return "Select a file first.";
-    if (pidCount === 0) return "No PIDs selected.";
-    return `${plural(pidCount, "PID")} selected on the PIDs tab.`;
-  });
-
   function formatSize(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -300,7 +292,6 @@
   {/if}
 
   {#snippet footer()}
-    <p class="fhint float-layer" aria-live="polite">{hint}</p>
     {#if !phone}
       <button type="button" class="tel-btn pri" aria-disabled={!canOpen} onclick={() => openFile()}>Open file</button>
     {/if}
@@ -391,16 +382,6 @@
   .fname {
     overflow-wrap: anywhere;
     white-space: normal;
-  }
-  .fhint {
-    grid-column: 1 / -1;
-    margin: 0;
-    padding: 6px 12px;
-    border-radius: 14px;
-    font-size: 0.82rem;
-    font-weight: 600;
-    line-height: 1.35;
-    color: var(--muted);
   }
   .nf {
     display: grid;

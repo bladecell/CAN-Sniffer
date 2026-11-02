@@ -57,9 +57,10 @@ Decision: `decisions.md`, 2026-10-24. Start, stop and list them over REST (`api.
 **CSV.** Header `t_ms,pid,value,valid`, then one row per PID update that passed the filter, LF line endings:
 - `t_ms`: the update's receive time in ms since boot (32-bit, wraps after 49.7 days; a trip never spans a reboot).
 - `pid`: the PID key in decimal, as in `pid_def.json` (`id`/`pid` of `GET /pid_def`). Names and units are in the sidecar.
-- `value`: `%.8g` of the float. Empty when the PID is invalid, NaN or infinite. Eight significant digits keep a 32-bit float exact enough; large values use exponent form (`1.2345678e+07`).
+- `value`: `%.8g` of the float. Empty when the PID is invalid, NaN or infinite. Eight significant digits keep a 32-bit float exact enough; exponent form starts at 1e8 (`123456780` is `1.2345678e+08`; `12345678` stays fixed).
 - `valid`: `1`, or `0` with an empty value.
 - A PID with a minimum spacing is thinned: an update less than that many ms after the last accepted one is not written. An update with the same `t_ms` as the last accepted one is dropped.
+- The plot download (Download CSV in a telemetry plot, saved by the browser, not written to the card) uses the same four columns and value format, then `name,unit`. Its `t_ms` is the device ms since boot of each sample, the same clock as the trip column, so trip and plot rows line up. Rows are not thinned. It holds the samples in the plot's buffer for all the plot's PIDs, or only those in the visible window when zoomed. Its `name` and `unit` are quoted when needed and a leading `=`, `+`, `-` or `@` gets an apostrophe.
 
 Rows are appended in batches (every 10 s or 8 KB, `kFlushMs` and `kBatchBytes` in `recorder_core.hpp`) with one open, write, `fsync` and close per batch. Recordings start at least 10 s apart (`kStartCooldownMs`) because rapid start/stop cycling wedged the V1_1 card. After a power cut up to about 10 s of rows are lost, and the last row can be cut short. The first file and its sidecar are created when the recording starts, before any row arrives; if that fails, `start` fails (503) and the state is `error`.
 

@@ -5,6 +5,9 @@
   import { buildPlotModel, type PlotMode, type PlotSeries, type PlotModel } from "$lib/telemetryChart/plotModel";
   import { createSeriesFeed } from "$lib/telemetryChart/feed.svelte";
   import { TELEMETRY_VIEW, type TelemetryView } from "$lib/telemetryChart/viewState.svelte";
+  import { buildPlotCsv, downloadCsv, plotCsvFileName, type PlotCsvSeries } from "$lib/telemetryChart/plotCsv";
+  import { liveWin, winStatus } from "$lib/telemetryChart/window";
+  import Icon from "$lib/Icon.svelte";
   import PlotSvg from "./PlotSvg.svelte";
 
   interface Props {
@@ -37,6 +40,7 @@
   );
 
   const defs = $derived(new Map(vehicleStore.pidDefinitions.map((d) => [d.pid, d])));
+  const nameOf = (pid: number) => defs.get(pid)?.name || `0x${pid.toString(16).toUpperCase()}`;
 
   const series = $derived.by((): PlotSeries[] => {
     void feed.version;
@@ -50,7 +54,7 @@
         def && Number.isFinite(def.minValue) && Number.isFinite(def.maxValue) ? [def.minValue, def.maxValue] : null;
       return {
         id: pid,
-        name: def?.name || `0x${pid.toString(16).toUpperCase()}`,
+        name: nameOf(pid),
         unit: def?.unit ?? "",
         color: safeHexColor(def?.color),
         range,
@@ -90,6 +94,27 @@
   });
 
   const emptyText = $derived(pids.length === 0 ? "Tick a PID in the list to chart it" : "Waiting for data...");
+
+  /** Why Download CSV cannot run, or null. */
+  const csvBlocked = $derived.by(() => {
+    if (pids.length === 0) return "No PIDs in this plot";
+    void feed.version;
+    return pids.some((pid) => feed.size(pid) > 0) ? null : "No data yet";
+  });
+
+  /** All buffered samples of the plot's PIDs. Only a window moved from the default live 60 s limits them to its visible range. */
+  function exportCsv() {
+    if (csvBlocked) return;
+    const { win } = view;
+    const now = view.presentAt() ?? 0;
+    const zoomed = winStatus(win) !== "live" || win.len !== liveWin().len;
+    const domain = zoomed ? { fromT: now - (win.endAgo + win.len) * 1000, toT: now - win.endAgo * 1000 } : null;
+    const data: PlotCsvSeries[] = pids.map((pid) => {
+      const samples = feed.read(pid, domain?.fromT ?? -Infinity);
+      return { pid, name: nameOf(pid), unit: defs.get(pid)?.unit ?? "", t: samples.t, v: samples.v };
+    });
+    downloadCsv(buildPlotCsv(data, domain), plotCsvFileName(n, new Date()));
+  }
 </script>
 
 <section
@@ -147,6 +172,16 @@
             onclick={() => (fit = !fit)}
           >
             <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14M5 21h14M12 7v10M9 10l3-3 3 3M9 14l3 3 3-3" /></svg>
+          </button>
+          <button
+            type="button"
+            class="tbtn"
+            aria-disabled={csvBlocked !== null}
+            aria-label="Download CSV"
+            title={csvBlocked ?? "Download CSV"}
+            onclick={exportCsv}
+          >
+            <Icon name="download" size={20} />
           </button>
           {#if !fullscreen}
           <button
@@ -376,6 +411,13 @@
   }
   .tbtn:hover {
     background: var(--ctl-h2);
+  }
+  .tbtn[aria-disabled='true'] {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .tbtn[aria-disabled='true']:hover {
+    background: var(--ctl);
   }
   .tbtn[aria-pressed='true'] {
     background: var(--accent);

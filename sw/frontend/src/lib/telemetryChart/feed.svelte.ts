@@ -38,6 +38,10 @@ export function createSeriesFeed(getPids: () => number[], onSample: (deviceMs: n
     get version() {
       return version;
     },
+    /** Buffered sample count of a PID, without copying the samples. */
+    size(pid: number): number {
+      return buffers.get(pid)?.size ?? 0;
+    },
     /** Samples at or after fromT (device ms), oldest first, plus the one before it when there is one. */
     read(pid: number, fromT: number): Samples {
       const buffer = buffers.get(pid);
