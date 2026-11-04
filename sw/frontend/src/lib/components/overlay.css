@@ -180,6 +180,19 @@ dialog.overlay.sheet > .body {
   overscroll-behavior: contain;
   padding: calc(var(--sheet-head, 0px) + 4px) 22px var(--sheet-foot, calc(22px + env(safe-area-inset-bottom)));
 }
+/* Wide screens: the sheet floats 24 px above the bottom edge with all four corners rounded (UI19g, same as the other floats). */
+@media (min-width: 860px) {
+  dialog.overlay.sheet {
+    bottom: 24px;
+    max-height: calc(100dvh - 48px);
+  }
+  dialog.overlay.sheet > .body {
+    border-radius: var(--r-float);
+  }
+  dialog.overlay.sheet > footer::before {
+    border-radius: 0 0 var(--r-float) var(--r-float);
+  }
+}
 /* Phone frame (Sheet narrow): 390px, centred. The body keeps the mockup's 12px inset. */
 dialog.overlay.sheet.narrow {
   width: min(100%, 390px);

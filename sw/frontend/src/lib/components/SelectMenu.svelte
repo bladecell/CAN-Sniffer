@@ -21,6 +21,8 @@
     ariaDescribedby?: string;
     ariaInvalid?: boolean | "true" | "false";
     onChange?: (value: T) => void;
+    /** "kebab": an icon-only three-dots button that opens the list as a menu of actions. Options then run through onChange. */
+    trigger?: "field" | "kebab";
   }
 
   let {
@@ -33,7 +35,10 @@
     ariaDescribedby,
     ariaInvalid,
     onChange,
+    trigger = "field",
   }: Props = $props();
+
+  const kebab = $derived(trigger === "kebab");
 
   const listId = `select-menu-${++seq}`;
 
@@ -52,6 +57,9 @@
   function place() {
     if (!triggerEl) return;
     const rect = triggerEl.getBoundingClientRect();
+    // A kebab menu is narrower than its button needs: it opens to the left of the button's right edge.
+    const width = kebab ? Math.max(200, rect.width) : rect.width;
+    const left = kebab ? Math.max(8, rect.right - width) : rect.left;
     // Up: above the field's label, so the list never covers it.
     const field = fieldBox(triggerEl);
     const spaceBelow = window.innerHeight - rect.bottom;
@@ -62,7 +70,7 @@
       placement === "up"
         ? `bottom:${window.innerHeight - field.top + 4}px`
         : `top:${rect.bottom + 4}px`;
-    menuStyle = `left:${rect.left}px;width:${rect.width}px;max-height:${menuMaxHeight}px;${edge}`;
+    menuStyle = `left:${left}px;width:${width}px;max-height:${menuMaxHeight}px;${edge}`;
   }
 
   async function openMenu() {
@@ -145,6 +153,23 @@
 <svelte:window onpointerdown={onWindowPointerDown} />
 
 <div class="select-menu" bind:this={rootEl} onfocusout={onFocusOut}>
+  {#if kebab}
+    <button
+      bind:this={triggerEl}
+      type="button"
+      {id}
+      class="select-menu-kebab"
+      aria-haspopup="menu"
+      aria-expanded={open}
+      aria-controls={open ? listId : undefined}
+      aria-label={ariaLabel}
+      {disabled}
+      onclick={toggle}
+      onkeydown={onTriggerKeydown}
+    >
+      <Icon name="ellipsis" size={20} />
+    </button>
+  {:else}
   <button
     bind:this={triggerEl}
     type="button"
@@ -171,6 +196,7 @@
     {/if}
     <Icon name="chevron-down" size={14} />
   </button>
+  {/if}
 
   {#if open}
     <div
@@ -178,8 +204,8 @@
       use:portal
       id={listId}
       popover="manual"
-      class="select-menu-list blur-background"
-      role="listbox"
+      class="select-menu-list selpop"
+      role={kebab ? "menu" : "listbox"}
       tabindex="-1"
       style={menuStyle}
       onkeydown={onListKeydown}
@@ -189,11 +215,12 @@
         <button
           bind:this={optionEls[i]}
           type="button"
-          role="option"
+          role={kebab ? "menuitem" : "option"}
           tabindex="-1"
           class="select-menu-option"
-          class:active={i === selectedIndex}
-          aria-selected={i === selectedIndex}
+          class:active={!kebab && i === selectedIndex}
+          class:danger={option.danger}
+          aria-selected={kebab ? undefined : i === selectedIndex}
           disabled={option.disabled}
           onclick={() => choose(i)}
         >
@@ -274,9 +301,9 @@
     overflow-y: auto;
     z-index: 100;
     padding: 4px 0;
-    border: 1px solid var(--pico-form-element-border-color);
+    border: 1px solid var(--hair);
     border-radius: var(--pico-border-radius);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    box-shadow: var(--shadow-float);
     animation: select-menu-in 0.15s ease-out;
   }
 
@@ -314,6 +341,29 @@
   .select-menu-option:disabled {
     cursor: not-allowed;
     opacity: 0.45;
+  }
+
+  .select-menu-option.danger {
+    color: var(--crit);
+  }
+
+  .select-menu-kebab {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    margin: 0;
+    padding: 0;
+    background: none;
+    border: 0;
+    border-radius: 14px;
+    color: var(--text);
+    cursor: pointer;
+  }
+
+  .select-menu-kebab:focus-visible {
+    outline: 3px solid var(--focus, currentColor);
+    outline-offset: 2px;
   }
 
   @keyframes select-menu-in {

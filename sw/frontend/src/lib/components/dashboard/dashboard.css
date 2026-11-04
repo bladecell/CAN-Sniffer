@@ -1,0 +1,156 @@
+/* Shared vocabulary for the dashboard page and its sheets. Global, prefixed db-. Tokens come from app.css. */
+
+.db-seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 18px;
+  background: var(--ctl);
+}
+.db-seg > button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 15px;
+  background: none;
+  color: var(--ctl-text);
+  font: 700 0.95rem/1 var(--font);
+  cursor: pointer;
+}
+.db-seg > button {
+  position: relative;
+}
+.db-seg > button[aria-checked="true"] {
+  background: var(--float-solid);
+  font-weight: 800;
+}
+.db-seg > button[aria-checked="true"]::after {
+  content: "";
+  position: absolute;
+  left: 28%;
+  right: 28%;
+  bottom: 4px;
+  height: 3px;
+  border-radius: 3px;
+  background: var(--accent);
+}
+/* Equal-width segments that fill their field (Width, Height). */
+.db-seg.eq {
+  display: flex;
+  flex-wrap: nowrap;
+}
+.db-seg.eq > button {
+  flex: 1 1 0;
+  padding: 0 6px;
+}
+.db-seg > button:focus-visible,
+.db-icon:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.db-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.db-label {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+.db-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.db-error {
+  margin: 0;
+  color: var(--crit);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.db-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--hair);
+  border-radius: var(--r-ctl);
+  background: var(--ctl);
+  color: var(--text);
+  font: 600 1rem/1.2 var(--font);
+}
+.db-input:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.db-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--ctl);
+  color: var(--ctl-text);
+  cursor: pointer;
+}
+.db-icon[aria-disabled="true"] {
+  opacity: 0.55;
+}
+
+/* Section grid: six columns, 56 px rows, 12 px gaps (docs/decisions.md, 2026-11-02). Shared with the sheet preview. */
+.db-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-auto-rows: 56px;
+  gap: 12px;
+  min-height: 56px;
+  align-items: stretch;
+}
+.db-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--hair);
+  border-radius: 18px;
+  background: var(--card);
+}
+
+/* Card level rings (mockup): warning dashed, critical solid and thicker. The card body marks its level with data-level. */
+.db-card:has(> .db-body [data-level="warn"]) {
+  outline: 2px dashed var(--warn);
+  outline-offset: -2px;
+}
+.db-card:has(> .db-body [data-level="crit"]) {
+  outline: 3px solid var(--crit);
+  outline-offset: -3px;
+}
+
+/* Motion: the drag flip (SectionView) and card transitions stop for reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  .db-card,
+  .db-add-section,
+  .db-sec-add {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* Why a card has no reading: one muted line at the foot of the card (the shared empty note). */
+.db-note {
+  margin: auto 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1.3;
+}

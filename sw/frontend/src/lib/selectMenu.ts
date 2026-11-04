@@ -3,6 +3,8 @@ export interface SelectMenuOption<T> {
   label: string;
   icon?: string;
   disabled?: boolean;
+  /** Shown in the danger colour (kebab menus: Remove, Delete). */
+  danger?: boolean;
 }
 
 /** Index of the selected option if it is enabled, else the first enabled option, else -1. */

@@ -221,3 +221,36 @@ Decided by the user ("recommended" on all points).
 - **Open file** merges the file's PIDs into the list as drafts (reviewed in Changes); the device is not touched.
 - **SD folder** is a frontend-only setting kept in this browser's localStorage, default `/sdcard/configs`. Files are opened from the listed folder, so the folder of the last opened file is the current folder.
 - **Apply** is two steps until FW-FLASHPID lands: `PUT /pid_def` for the chosen rows, then `POST /pid_def/save`. If only the save fails, Retry repeats only the save.
+
+## 2026-11-02: Dashboard redesign (UI-DASH-4..10)
+Decided by the user in a design interview.
+- **Model:** dashboard = sections (6 columns, optional title, one width) = cards. Phones show one section per row, wider screens several, so card sizes stay similar. One reflowing layout, cards flow in order, no gaps (Home Assistant sections style).
+- **Grid:** custom CSS grid, `svelte-dnd-action` zones for dragging between sections, own resize; prototype first, gridstack is the fallback. Phones: "Move to..." menu and a size picker.
+- **Storage:** `config/dashboards.json` on the SD card through the existing `/sd_card/file` routes (gated, no api.md change), temp file then atomic copy; localStorage before login and as fallback; last write wins by timestamp. Caps 8 / 12 / 24 / 150.
+- **Dashboards:** several, switched in the header (tabs vs dropdown decided in the mockup); starter templates, Driving default.
+- **Cards:** neutral glass, PID colour as data colour, shared "No data"/"Polling off" style. The dashboard never starts polling; polling, recording are control cards (disabled with a reason when they cannot run). Clear DTCs is never a card. No tap action in v1; full-screen detail and driving mode later.
+- **Card styles and thresholds (2026-11-02):** the visual style is a per-card setting chosen in the add/edit sheet with a live preview (bar: plain/ticks/threshold zones; value, gauge, chart, battery, overview have their own styles). Warn and critical thresholds are stored per card (frontend only, no pid_def change). They default to a percentage of the PID's `minV`..`maxV` range (default values to be fixed in the mockup, proposed 80% warn and 90% critical) and are editable when the card is created. Charts are at-a-glance only: no axis ticks or numeric scale. The overview card can show PID values, the VIN and the DTC count.
+- **Card styles shipped (2026-11-02, from the card mockups):** every style is a per-card setting; the first listed is the default unless noted.
+  - PID value: big number, number + sparkline, number + min/max. Bar: plain, ticks + range, threshold zones. Gauge: arc, needle dial, ring; multi-PID (2-3 PIDs: concentric rings or arcs, dial up to 2).
+  - Chart: line (default), area, lanes. Battery: glyph, bar (ring dropped). Overview: grid, list, hero; items are PID values, VIN (two columns, always fully visible) and DTC count, up to 6.
+  - DTC: plain rows and count-only summary (grouped sections dropped; chips dropped). Status: chip grid and list (compact row dropped). Controls: switch and button + state (large toggle dropped).
+  - Rules: the state indicator (icon + word) sits in a reserved slot under the PID name and never moves the value; charts have no axis ticks or scale; the battery card shows no band text; with no PID range, range-based parts are hidden and edit mode shows "Set a range"; warn/critical default to 80%/90% of the range (20%/10% when warning on low values).
+- **Card grid unit (2026-11-02):** one row = 56 px for every card and the page; mockups with 88 px rows are rescaled. DTC count-only summary is capped at 6x2 (max size).
+- **Status card Wi-Fi (2026-11-02):** v1 shows configured values only, read from `GET /settings` (gated; shows "Log in to view" before login): Wi-Fi mode, AP name, Wi-Fi network name (`sta_ssid`, labelled as configured, not connected). No live status in v1. A live Wi-Fi status field (connected, signal, IP) in `GET /system` is backlog `FW-WIFISTATUS`; it needs a requirement and approval first.
+- **Card size ranges (2026-11-02, 56 px rows, columns x rows, min / default / max; source `plan/mockups/cards-*-v1.html`):**
+  - PID value 2x1 / 3x2 / 6x3. Bar 2x1 / 3x1 / 6x2. Gauge 2x2 / 3x3 / 6x4; multi-PID gauge min 3x3 (2 PIDs) or 4x3 (3 PIDs), default 4x3.
+  - Chart 2x2 (1 PID) or 3x2 (2 PIDs) min, lanes min 3x3 (rows >= PIDs), default 6x3, max 6x4; 1/2/3/4 PIDs need 2/3/4-5/6 columns.
+  - Battery 2x1 / 3x2 / 6x3 (glyph min 3x1). Overview 3x2 / 6x2 / 6x4; with a VIN the minimum is grid 3x2, list 4x2, hero 3x4 or 5x2.
+  - DTC plain rows 3x3 / 6x3 / 6x6; DTC count-only 3x2 / 6x2 / 6x2. Status grid 4x3 / 6x3 / 6x4; status list 4x3 / 4x5 / 6x5. Polling and Recorder 3x2 / 3x2 / 6x3.
+- **Dashboard switcher (2026-11-02):** tabs (variant A in `plan/mockups/dashboard-v1.html`) on desktop and phone, with a "+" to add a dashboard; the tab row scrolls when it overflows. The dropdown variant is dropped. Needs a scrollable segmented control built from `SegControl`.
+- **Dashboard grid prototype outcome (2026-11-03, UI19b):** `svelte-dnd-action` zones plus own pointer resize and own keyboard handler (the library's keyboard mode only swaps neighbours in one zone); gridstack not needed. Cards flow in order and keep the gaps that user-set sizes leave; no dense packing (supersedes "no gaps" wording above: no automatic reordering, gaps from sizes are expected). Desktop section minimum width 340 px. Prototype: `sw/frontend/prototype/` (dev-only). Real iOS Safari touch is still untested.
+
+## 2026-11-04: Dashboard review decisions (UI19g)
+Decided by the user while reviewing the built dashboard.
+- **Header:** no visible Edit or "+" buttons; one three-dots menu (shared `SelectMenu`, kebab trigger) with Edit and Add dashboard, room for more. This overrides the Edit button in `dashboard-v1.html`. Add card lives in each section, not in the page header; Done saves, Cancel discards.
+- **Card menu:** the shared `SelectMenu`; "Move to" is one flat item per section.
+- **Chart:** no threshold line; fixed 1 minute window, shown as a static "1 min" label (no schema field).
+- **Battery:** no "Charging" word (no band text).
+- **Gauge range (schema):** optional `Card.range {min,max}` on gauge cards; parsed with min < max and |v| <= 1e7, else dropped; the sheet prefills it from the PID range.
+- **Overview items (schema):** `Card.items` is an ordered list of `{t:"pid",pid,label?}`, `{t:"vin",label?}` or `{t:"dtc",label?}`; at most 6, label up to 24 characters, VIN and DTC once each, a PID once. Old cards (`pids` plus `showVin`/`showDtc`) migrate on parse: PIDs, then VIN, then DTC. The sheet has an item editor (add, remove, reorder, label).
+- **First launch:** with nothing stored the page shows a template picker, not a pre-filled dashboard.

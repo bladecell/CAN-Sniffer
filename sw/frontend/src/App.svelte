@@ -3,7 +3,7 @@ import { connectionStore } from "$lib/connectionStore.svelte";
 
 
   import Navigation from "./Navigation.svelte";
-  import Dashboard from "./Dashboard.svelte";
+  import DashboardPage from "$lib/components/dashboard/DashboardPage.svelte";
   import Recorder from "./Recorder.svelte";
   import Settings from "./Settings.svelte";
   import Diagnostics from "./Diagnostics.svelte";
@@ -54,7 +54,7 @@ import { connectionStore } from "$lib/connectionStore.svelte";
   <DevBypassBanner />
   <ApOpenBanner />
   {#if activeTab === "dashboard"}
-    <Dashboard />
+    <DashboardPage />
   {:else if activeTab === "recorder"}
     <Recorder />
   {:else if activeTab === "settings"}
