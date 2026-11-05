@@ -145,11 +145,16 @@ struct PIDData_t
 #define MAX_NRC_LIST_SIZE 20
 #define MESSAGE_TIMEOUT_MS 200
 
-// ISO-TP / multi-ECU response timings, OBD-II profile (ISO 15765-4). Values are user-supplied
-// (2026-10-13); the standard text was not available to check them. UDS needs its own profile
-// (N_* 1000 ms, P2/P2* updated from the 0x10 response) when UDS is added. N_As and N_Bs are the ECU's own timers
-// (its transmit and its wait for our flow control, 75 ms); we do not run them, we only keep N_Ar well inside them. The quiet gap is
-// tester policy, not a standard value: tune it against real bus captures.
+// ISO-TP / multi-ECU response timings, OBD-II profile. Standard values verified against
+// ISO 15765-4:2016 clause 10.2.1 (N_As/N_Ar 25 ms, N_Bs 75 ms, (N_Br+N_Ar) < 25 ms,
+// (N_Cs+N_As) < 50 ms, N_Cr 150 ms) and the 4th edition 2021 change note ("N_As/N_Ar timeout
+// value 33 ms"). P2 50 ms / P2* 5000 ms are ISO 14229-2 / ISO 15031-5 server timings.
+// What this code enforces after a First Frame is the N_Br+N_Ar performance requirement (FC on
+// the bus); 33 ms is the 2021-edition deadline and sits well inside the ECU's N_Bs 75 ms.
+// UDS needs its own profile (N_* 1000 ms per ISO 15765-2 defaults, P2/P2* updated from the
+// 0x10 response) when UDS is added. The quiet gap is tester policy, not a standard value:
+// tune it against real bus captures. TX side caveat for multi-frame requests: keep
+// (N_Cs + N_As) < 50 ms between our own consecutive frames.
 #define ISOTP_N_AR_MS 33                    // receiver: our flow control frame must be on the bus this soon after the first frame (enforced: counted and logged when late)
 #define ISOTP_N_CR_MS 150                   // receiver: wait for the next consecutive frame, restarted per valid CF
 #define OBD2_ECU_P2_MAX_MS 50               // ECU response time after a request
