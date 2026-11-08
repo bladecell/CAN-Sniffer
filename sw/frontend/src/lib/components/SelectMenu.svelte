@@ -204,7 +204,7 @@
       use:portal
       id={listId}
       popover="manual"
-      class="select-menu-list selpop"
+      class="select-menu-list popup"
       role={kebab ? "menu" : "listbox"}
       tabindex="-1"
       style={menuStyle}
@@ -300,10 +300,7 @@
     box-sizing: border-box;
     overflow-y: auto;
     z-index: 100;
-    padding: 4px 0;
-    border: 1px solid var(--hair);
-    border-radius: var(--pico-border-radius);
-    box-shadow: var(--shadow-float);
+    padding: 8px;
     animation: select-menu-in 0.15s ease-out;
   }
 
@@ -317,7 +314,7 @@
     padding: 8px 12px;
     background: none;
     border: none;
-    border-radius: 0;
+    border-radius: 12px;
     color: var(--text);
     cursor: pointer;
     text-align: left;

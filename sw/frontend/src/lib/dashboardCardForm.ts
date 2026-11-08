@@ -17,14 +17,14 @@ export const TYPE_LABELS: Record<CardType, string> = {
 };
 
 export const STYLE_LABELS: Record<string, string> = {
-  big: "Big number",
-  spark: "Number and sparkline",
-  minmax: "Number and min and max",
+  big: "Big",
+  spark: "Sparkline",
+  minmax: "Min/max",
   plain: "Plain",
-  ticks: "Ticks and range",
-  zones: "Threshold zones",
+  ticks: "Ticks",
+  zones: "Zones",
   arc: "Arc",
-  dial: "Needle dial",
+  dial: "Dial",
   ring: "Ring",
   line: "Line",
   area: "Area",
@@ -34,11 +34,11 @@ export const STYLE_LABELS: Record<string, string> = {
   grid: "Grid",
   list: "List",
   hero: "Hero",
-  rows: "Plain rows",
-  count: "Count only",
-  chips: "Chip grid",
+  rows: "Rows",
+  count: "Count",
+  chips: "Chips",
   switch: "Switch",
-  button: "Button and state",
+  button: "Button",
 };
 
 /** The PIDs a card takes: [minimum, maximum]. Overview items share the cap with the VIN and DTC count (`extras`). */

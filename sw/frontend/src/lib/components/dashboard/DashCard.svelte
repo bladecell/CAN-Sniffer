@@ -343,4 +343,10 @@
     font-variant-numeric: tabular-nums;
     cursor: pointer;
   }
+  /* The chip stays 36px tall; the tap area grows to 44px around it. */
+  .db-sizechip::after {
+    content: "";
+    position: absolute;
+    inset: -4px 0;
+  }
 </style>

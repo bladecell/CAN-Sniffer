@@ -1,6 +1,5 @@
 <script lang="ts">
   import Icon from "$lib/Icon.svelte";
-  import { dashboardStore } from "$lib/dashboardStore.svelte.ts";
 
   let { activeTab = $bindable() } = $props();
 
@@ -42,35 +41,25 @@
 
 <div class="nav-wrapper">
   <nav class="dock" aria-label="Main">
-    {#if dashboardStore.isEditMode}
-      <div class="hud">
-        <span class="live-dot" aria-hidden="true"></span>
-        <span>Canvas unlocked</span>
-        <button class="hud-lock-btn" onclick={() => (dashboardStore.isEditMode = false)}>
-          Done editing
-        </button>
-      </div>
-    {:else}
-      <ul class="tabs" bind:this={tabList}>
-        {#each tabs as tab (tab.id)}
-          <li>
-            <a
-              class="tab"
-              href="#{tab.id}"
-              aria-current={activeTab === tab.id ? "page" : undefined}
-              onclick={(e) => {
-                if (e.metaKey || e.ctrlKey || e.shiftKey) return;
-                e.preventDefault();
-                go(tab.id);
-              }}
-            >
-              <span class="ic"><Icon name={tab.icon} size={24} /></span>
-              <span class="label">{tab.label}</span>
-            </a>
-          </li>
-        {/each}
-      </ul>
-    {/if}
+    <ul class="tabs" bind:this={tabList}>
+      {#each tabs as tab (tab.id)}
+        <li>
+          <a
+            class="tab"
+            href="#{tab.id}"
+            aria-current={activeTab === tab.id ? "page" : undefined}
+            onclick={(e) => {
+              if (e.metaKey || e.ctrlKey || e.shiftKey) return;
+              e.preventDefault();
+              go(tab.id);
+            }}
+          >
+            <span class="ic"><Icon name={tab.icon} size={24} /></span>
+            <span class="label">{tab.label}</span>
+          </a>
+        </li>
+      {/each}
+    </ul>
   </nav>
 </div>
 
@@ -161,45 +150,6 @@
     line-height: 1.2;
   }
 
-  .hud {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-    min-height: 48px;
-    padding: 0 4px;
-    color: var(--text);
-    font-weight: 700;
-    font-size: 0.9rem;
-    white-space: nowrap;
-  }
-
-  .live-dot {
-    flex: none;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: var(--accent);
-  }
-
-  .hud-lock-btn {
-    display: block;
-    margin: 0;
-    padding: 8px 18px;
-    border: none;
-    border-radius: 16px;
-    background: var(--accent);
-    color: var(--on-accent);
-    font-family: inherit;
-    font-weight: 800;
-    font-size: 0.85rem;
-    cursor: pointer;
-  }
-
-  .hud-lock-btn:active {
-    filter: brightness(0.94);
-  }
-
   @media (hover: hover) {
     .tab:hover {
       background: var(--hov);
@@ -207,8 +157,7 @@
   }
 
   @media (pointer: coarse) {
-    .tab,
-    .hud-lock-btn {
+    .tab {
       min-height: 44px;
     }
   }
@@ -264,15 +213,6 @@
 
     .tab[aria-current="page"] .ic {
       transform: translateY(-1px) scale(1.12);
-    }
-
-    .hud {
-      min-height: 58px;
-      gap: 8px;
-    }
-
-    .hud-lock-btn {
-      padding: 8px 12px;
     }
   }
 

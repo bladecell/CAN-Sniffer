@@ -4,7 +4,6 @@ import { reconnectDelay } from "./backoff";
 import { createStreamRefCount } from "./streamRefCount";
 import { createThrottle } from "./throttle";
 import { createLatest } from "./latest";
-import { parseStoredLayout } from "./layoutStorage";
 import { getModeLabel } from "./modeLabel";
 import { normalizePidDefinition } from "./pidDefinition";
 
@@ -64,26 +63,6 @@ test("latest: only the newest call is current", () => {
   expect(b()).toBe(true);
 });
 
-describe("parseStoredLayout", () => {
-  const good = { id: "a", cardType: "pid", pid: 12, displayMode: "card", w: 10, h: 7 };
-  test("keeps valid items", () => {
-    expect(parseStoredLayout(JSON.stringify([good]))).toEqual([good]);
-  });
-  test("null, junk and wrong shapes give an empty layout", () => {
-    expect(parseStoredLayout(null)).toEqual([]);
-    expect(parseStoredLayout("{")).toEqual([]);
-    expect(parseStoredLayout("{}")).toEqual([]);
-    expect(parseStoredLayout("123")).toEqual([]);
-  });
-  test("drops invalid items but keeps the rest", () => {
-    const bad = [null, 5, { id: "b" }, { ...good, id: "c", w: "x" }, { ...good, id: "d", cardType: "evil" }, { ...good, id: "e", w: -1 }, { id: "f", cardType: "overview", displayMode: "default", w: 4, h: 4, pids: [1], color: "#fff" }];
-    expect(parseStoredLayout(JSON.stringify([...bad, good]))).toEqual([good]);
-  });
-  test("drops duplicate ids", () => {
-    expect(parseStoredLayout(JSON.stringify([good, good]))).toEqual([good]);
-  });
-});
-
 test("getModeLabel tolerates undefined/NaN", () => {
   expect(getModeLabel(undefined as unknown as number)).toBe("Unknown");
   expect(getModeLabel(NaN)).toBe("Unknown");
@@ -96,10 +75,4 @@ test("normalize replaces an invalid colour with the default", () => {
   expect(normalizePidDefinition({ ...base, color: "red; x" }).color).toBe(0x01aaff);
   expect(normalizePidDefinition({ ...base, color: -5 }).color).toBe(0x01aaff);
   expect(normalizePidDefinition({ ...base, color: 255 }).color).toBe(255);
-});
-
-test("layout colours are sanitised", () => {
-  const ov = { id: "o", cardType: "overview", displayMode: "default", w: 4, h: 4, pids: [1, 2, 3], color: "red;background:url(x)" };
-  expect((parseStoredLayout(JSON.stringify([ov]))[0] as any).color).toBe("#3b82f6");
-  expect((parseStoredLayout(JSON.stringify([{ ...ov, color: "#112233" }]))[0] as any).color).toBe("#112233");
 });

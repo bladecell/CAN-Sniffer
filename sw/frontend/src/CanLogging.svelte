@@ -3,7 +3,6 @@ import { connectionStore } from "$lib/connectionStore.svelte";
 import { vehicleStore } from "$lib/vehicleStore.svelte";
 
 
-  import DashboardCardWrapper from "$lib/components/DashboardCardWrapper.svelte";
   import { untrack, onMount } from "svelte";
   import ControlsCard from "$lib/components/ControlsCard.svelte";
   import type { Column, PidDefinition } from "$lib/types";

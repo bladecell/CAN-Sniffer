@@ -796,6 +796,7 @@ body:has(.scroll) {
 .dock,
 dialog.overlay,
 dialog.overlay.sheet::before,
+.popup,
 .selpop,
 .tip {
   background: var(--float);
@@ -806,9 +807,17 @@ dialog.overlay.sheet::before,
 .tel-float,
 .dock,
 dialog.overlay,
+.popup,
 .selpop,
 .tip {
   box-shadow: var(--shadow-float);
+}
+/* The one popup surface: select lists, menus, colour and icon pickers, hints. Glass above, hairline edge, float radius.
+   Components add their own size, padding and position only. */
+.popup {
+  border: 1px solid var(--hair);
+  border-radius: var(--r-float);
+  color: var(--text);
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .float-layer,
@@ -816,6 +825,7 @@ dialog.overlay,
   .dock,
   dialog.overlay,
   dialog.overlay.sheet::before,
+  .popup,
   .selpop,
   .tip {
     background: var(--float-solid);

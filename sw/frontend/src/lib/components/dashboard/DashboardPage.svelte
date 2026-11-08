@@ -4,6 +4,7 @@
   import Dialog from "$lib/components/Dialog.svelte";
   import Sheet from "$lib/components/Sheet.svelte";
   import SelectMenu from "$lib/components/SelectMenu.svelte";
+  import SidebarHint from "$lib/components/telemetry/SidebarHint.svelte";
   import ViewHeader from "$lib/components/listDetail/ViewHeader.svelte";
   import type { SelectMenuOption } from "$lib/selectMenu";
   import { auth } from "$lib/auth.svelte";
@@ -25,10 +26,9 @@
     | { kind: "card-edit"; cardId: string }
     | { kind: "size"; cardId: string }
     | { kind: "new-dashboard" }
-    | { kind: "name-rename" }
     | { kind: "template" }
     | null;
-  type PageAction = "edit" | "add-dashboard" | "rename" | "reset" | "delete";
+  type PageAction = "reset" | "delete";
 
   const view = $derived(store.view);
   const active = $derived(view.active);
@@ -63,25 +63,16 @@
     if (auth.view.loggedIn) untrack(() => void store.sync());
   });
 
-  const menuOptions = $derived<SelectMenuOption<PageAction>[]>(
-    editing
-      ? [
-          { value: "add-dashboard", label: "Add dashboard" },
-          { value: "rename", label: "Rename dashboard" },
-          { value: "reset", label: "Reset to template" },
-          { value: "delete", label: "Delete dashboard", danger: true, disabled: view.dashboards.length <= 1 },
-        ]
-      : [
-          { value: "edit", label: "Edit" },
-          { value: "add-dashboard", label: "Add dashboard" },
-        ],
-  );
+  const menuOptions = $derived<SelectMenuOption<PageAction>[]>([
+    { value: "reset", label: "Reset to template" },
+    { value: "delete", label: "Delete dashboard", danger: true, disabled: view.dashboards.length <= 1 },
+  ]);
 
   const statusLine = $derived.by(() => {
     if (fresh) return "Pick a layout to start with. You can change it later.";
-    if (editing) return `Editing ${active.name}. Cards snap to 6 columns. Nothing is saved until you press Done.`;
     return "";
   });
+  const editHelp = $derived(`Editing ${active.name}. Cards snap to 6 columns. Nothing is saved until you press Done.`);
 
   function startEdit() {
     message = "";
@@ -167,11 +158,8 @@
 
   function onMenu(action: PageAction) {
     message = "";
-    if (action === "edit") startEdit();
-    else if (action === "add-dashboard") newDashboard();
-    else if (action === "rename") sheet = { kind: "name-rename" };
-    else if (action === "reset") confirmReset = true;
-    else if (action === "delete") confirmDelete = true;
+    if (action === "reset") confirmReset = true;
+    else confirmDelete = true;
   }
 
   // A drag ends in one zone; the zone's final list is applied card by card. Cards that left another zone are moved here.
@@ -205,6 +193,11 @@
 <div class="rv-wrap db-page">
   {#if !fresh}
     <ViewHeader title="Dashboard">
+      {#snippet info()}
+        {#if editing}
+          <SidebarHint inline text={editHelp} label="About edit mode" />
+        {/if}
+      {/snippet}
       {#snippet status()}
         {#if statusLine}<p class="db-status">{statusLine}</p>{/if}
         {#if view.save.sd === "failed"}
@@ -213,27 +206,33 @@
       {/snippet}
 
       {#snippet meta()}
-        <DashboardTabs
-          dashboards={view.dashboards}
-          activeId={active.id}
-          onSelect={(id) => {
-            message = "";
-            confirmDelete = false;
-            store.setActive(id);
-          }}
-          onAdd={newDashboard}
-        />
-      {/snippet}
-
-      {#snippet actions()}
-        <div class="db-head-acts">
+        <div class="db-meta-row">
+          <DashboardTabs
+            dashboards={view.dashboards}
+            activeId={active.id}
+            onSelect={(id) => {
+              message = "";
+              confirmDelete = false;
+              store.setActive(id);
+            }}
+            onAdd={newDashboard}
+            {editing}
+            onRename={(id, name) => {
+              const err = store.renameDashboard(id, name);
+              if (err) message = err;
+              return err;
+            }}
+          />
           {#if editing && !phone}
             <button type="button" class="rv-btn" onclick={cancel}>Cancel</button>
             <button type="button" class="rv-btn pri" onclick={done} disabled={saving}>Done</button>
           {/if}
-          <SelectMenu trigger="kebab" options={menuOptions} ariaLabel="Dashboard menu" onChange={onMenu} />
+          {#if editing}<span class="db-kebab"><SelectMenu trigger="kebab" options={menuOptions} ariaLabel="Dashboard menu" onChange={onMenu} /></span>{:else}
+            <button type="button" class="db-edit" aria-label="Edit dashboard" title="Edit dashboard" onclick={startEdit}><Icon name="edit" size={22} /></button>
+          {/if}
         </div>
       {/snippet}
+
     </ViewHeader>
   {:else}
     <ViewHeader title="Dashboard">
@@ -336,8 +335,6 @@
   </Sheet>
 {:else if sheet?.kind === "new-dashboard"}
   <NewDashboardSheet onSave={(name, template) => store.addDashboard(name, template)} onClose={() => (sheet = null)} />
-{:else if sheet?.kind === "name-rename"}
-  <NameSheet title="Rename dashboard" initial={active.name} onSave={(name) => store.renameDashboard(active.id, name)} onClose={() => (sheet = null)} />
 {:else if sheet?.kind === "template"}
   <Sheet open title="Use a template" subtitle="Replaces the sections and cards on this dashboard. Press Done to save." onClose={() => (sheet = null)}>
     <div class="db-form">
@@ -371,6 +368,44 @@
 />
 
 <style>
+  .db-meta-row {
+    display: flex;
+    align-items: stretch;
+    height: 52px;
+    gap: 8px;
+    min-width: 0;
+  }
+  .db-meta-row > :global(:first-child) {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  /* The select-menu root is block level; a fixed box keeps it from taking the row's width. */
+  .db-edit {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 52px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 16px;
+    background: var(--ctl);
+    color: var(--ctl-text);
+    cursor: pointer;
+  }
+  .db-edit:hover {
+    background: var(--ctl-h2);
+  }
+  .db-kebab {
+    flex: none;
+    align-self: center;
+    width: 44px;
+  }
+  .db-meta-row :global(.rv-btn) {
+    margin: 0;
+    height: 100%;
+    min-height: 0;
+  }
   .db-page {
     gap: 16px;
   }
@@ -438,7 +473,7 @@
     gap: 6px;
     padding: 2px 11px 2px 9px;
     border-radius: 99px;
-    background: rgba(160, 100, 0, 0.16);
+    background: var(--warn-f);
     color: var(--warn);
     font-size: 0.8rem;
     font-weight: 800;
@@ -490,12 +525,6 @@
     .db-page :global(.rv-head-main h1) {
       padding-right: 52px;
     }
-  }
-  .db-head-acts {
-    display: flex;
-    flex-wrap: nowrap;
-    align-items: center;
-    gap: 10px;
   }
   .db-form {
     display: grid;

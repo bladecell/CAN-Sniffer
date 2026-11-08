@@ -5,7 +5,7 @@
   import { type SectionRef } from "$lib/dashboardGrid";
   import Icon from "$lib/Icon.svelte";
   import DashCard from "./DashCard.svelte";
-  import { playCards, snapshotCards } from "./flip";
+  import { playCards, reduced, snapshotCards } from "./flip";
 
   interface Props {
     section: Section;
@@ -26,8 +26,7 @@
   let { section, index, count, sections, editing, phone, onDrop, onAdd, onEdit, onSize, onError }: Props = $props();
 
   // Reordering animates the other cards aside; reduced motion turns it off.
-  const reduceMotion = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const FLIP_MS = reduceMotion ? 0 : 150;
+  const FLIP_MS = reduced() ? 0 : 150;
   // The list the zone shows while a drag is in flight. Null means the store's list.
   let live = $state<Card[] | null>(null);
   const items = $derived(live ?? section.cards);
@@ -82,13 +81,13 @@
         onchange={(e) => rename(e.currentTarget.value)}
       />
       <button type="button" class="db-icon" aria-label="Move section {index + 1} up" aria-disabled={index === 0} onclick={() => index > 0 && shift(-1)}>
-        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M6 15l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
+        <Icon name="chevron-down" size={20} class="up" />
       </button>
       <button type="button" class="db-icon" aria-label="Move section {index + 1} down" aria-disabled={index >= count - 1} onclick={() => index < count - 1 && shift(1)}>
-        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
+        <Icon name="chevron-down" size={20} />
       </button>
       <button type="button" class="db-icon db-icon-danger" aria-label="Delete section {index + 1}" onclick={remove}>
-        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M5 7h14M10 7V5h4v2M8 7l1 12h6l1-12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
+        <Icon name="trash" size={20} />
       </button>
     </div>
     {#if confirmDelete}
@@ -156,12 +155,41 @@
   .db-sec-edit {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 2px;
     min-width: 0;
   }
-  .db-sec-title {
+  /* A title you edit in place: it reads as the section heading, not as a form field. */
+  .db-sec-edit .db-sec-title {
     flex: 1 1 auto;
     min-width: 0;
+    height: 40px;
+    margin: 0;
+    padding: 0 4px;
+    border: 0;
+    border-bottom: 1px solid var(--hair);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    color: var(--text);
+    font-size: 1rem;
+    font-weight: 800;
+  }
+  .db-sec-edit .db-sec-title::placeholder {
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .db-sec-edit .db-sec-title:focus {
+    border-bottom-color: var(--accent);
+    outline: none;
+  }
+  .db-sec-edit .db-icon {
+    width: 44px;
+    height: 44px;
+    min-height: 0;
+    background: transparent;
+  }
+  .db-sec-edit .db-icon:hover {
+    background: var(--ctl);
   }
   .db-icon-danger {
     color: var(--crit);

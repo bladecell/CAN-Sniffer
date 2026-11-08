@@ -19,14 +19,34 @@ describe("statusVisible", () => {
 });
 
 describe("dtcVisible", () => {
-  test("6 by 3 shows two codes and a more line for nine", () => {
-    expect(dtcVisible(9, 3)).toEqual({ shown: 2, more: 7 });
+  test("a 108 px list fits four rows: three codes and a more line for nine", () => {
+    expect(dtcVisible(9, 108)).toEqual({ shown: 3, more: 6 });
   });
-  test("6 by 6 fits nine codes", () => {
-    expect(dtcVisible(9, 6)).toEqual({ shown: 9, more: 0 });
+  test("a tall list fits nine codes", () => {
+    expect(dtcVisible(9, 250)).toEqual({ shown: 9, more: 0 });
+  });
+  test("a list too short for one row still shows a more line", () => {
+    expect(dtcVisible(9, 10)).toEqual({ shown: 0, more: 9 });
   });
   test("no codes shows none", () => {
-    expect(dtcVisible(0, 3)).toEqual({ shown: 0, more: 0 });
+    expect(dtcVisible(0, 100)).toEqual({ shown: 0, more: 0 });
+  });
+  test("a measured row pitch replaces the default", () => {
+    expect(dtcVisible(9, 108, 36)).toEqual({ shown: 2, more: 7 });
+    expect(dtcVisible(9, 108, 20)).toEqual({ shown: 4, more: 5 });
+  });
+  test("the shown rows leave room for the whole more line", () => {
+    // 5 rows of 27.5 px pitch (24.5 + 3 gap) and a 22 px more line need 159.5 px; 150 px fits 4 rows plus the line.
+    const v = dtcVisible(26, 150, 27.5, 22, 3);
+    expect(v).toEqual({ shown: 4, more: 22 });
+    expect(v.shown * 27.5 + 22).toBeLessThanOrEqual(150);
+  });
+  test("every code is shown when the rows alone fit, with no more line", () => {
+    expect(dtcVisible(4, 4 * 27.5 - 3, 27.5, 22, 3)).toEqual({ shown: 4, more: 0 });
+  });
+  test("a bad measured pitch falls back to the default", () => {
+    expect(dtcVisible(9, 108, 0)).toEqual(dtcVisible(9, 108));
+    expect(dtcVisible(9, 108, Number.NaN)).toEqual(dtcVisible(9, 108));
   });
 });
 

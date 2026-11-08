@@ -64,7 +64,7 @@
 
   const hasSamples = $derived(series.some((s) => s.latest !== null));
   const groupState = $derived<ReadState>(
-    hasSamples ? "value" : polling === false ? "off" : "nodata",
+    hasSamples ? "value" : "nodata",
   );
   const titleName = $derived(series.map((s) => s.name).join(" / "));
   const showLegend = $derived(card.style !== "lanes" && (card.h >= 3 || card.w >= 4));
@@ -95,7 +95,7 @@
     {#if showLegend}
       <ul class="legend">
         {#each series as s (s.pid)}
-          <li>{#if series.length > 1}<i class="sw" style:background={s.color}></i>{/if}<span class="ln">{s.name}</span><span class="lv">{s.latest === null ? "—" : formatReading(s.latest)}</span></li>
+          <li>{#if series.length > 1}<i class="sw" style:background={s.color}></i>{/if}<span class="ln">{s.name}</span><span class="lv">{s.latest === null ? "—" : formatReading(s.latest)}{s.unit && s.latest !== null ? ` ${s.unit}` : ""}</span></li>
         {/each}
       </ul>
     {/if}

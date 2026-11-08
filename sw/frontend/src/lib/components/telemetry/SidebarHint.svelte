@@ -94,7 +94,7 @@
   <Icon name="circle-info" size={inline ? 16 : 20} />
 </button>
 <!-- Portalled out of the blurred header: a blurred ancestor would drop this popover's blur (lib/layers.ts). -->
-<div bind:this={pop} use:toBody id={popId} class="pop" popover="auto" role="tooltip" ontoggle={onToggle}>{text}</div>
+<div bind:this={pop} use:toBody id={popId} class="pop popup" popover="auto" role="tooltip" ontoggle={onToggle}>{text}</div>
 
 <style>
   .hint {
@@ -152,21 +152,9 @@
     width: min(264px, calc(100vw - 16px));
     margin: 0;
     padding: 12px 14px;
-    border: 0;
-    border-radius: var(--r-float);
-    background: var(--float);
-    -webkit-backdrop-filter: blur(var(--blur)) saturate(1.35);
-    backdrop-filter: blur(var(--blur)) saturate(1.35);
-    box-shadow: var(--shadow-float);
-    color: var(--text);
     font-size: 0.875rem;
     font-weight: 600;
     line-height: 1.45;
     outline: none;
-  }
-  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    .pop {
-      background: var(--float-solid);
-    }
   }
 </style>

@@ -19,9 +19,23 @@ export function statusVisible(count: number, w: number, h: number, style: string
   return fit(count, Math.max(1, cap));
 }
 
-/** DTC rows at 26 px each, after the title and the group line. */
-export function dtcVisible(count: number, h: number): Visible {
-  return fit(count, Math.max(1, Math.floor((h * ROW_PX - 70) / 26)));
+/** Fallbacks used before a row has been rendered and measured. */
+export const DTC_ROW_PX = 27;
+export const DTC_MORE_PX = 24;
+export const DTC_GAP_PX = 3;
+
+const pos = (v: number, fallback: number) => (Number.isFinite(v) && v > 0 ? v : fallback);
+
+/**
+ * DTC rows that fit the measured list height. `rowPx` is the pitch of a code row (height plus gap), `moreH` the height of
+ * the "+N more" line and `gap` the gap between rows, all read from the DOM. When some codes do not fit, the rows shown
+ * leave room for the whole "+N more" line, so no row and not the line is cut. Bad measurements fall back to the defaults.
+ */
+export function dtcVisible(count: number, availPx: number, rowPx = DTC_ROW_PX, moreH = DTC_MORE_PX, gap = DTC_GAP_PX): Visible {
+  const pitch = pos(rowPx, DTC_ROW_PX);
+  if (count * pitch - pos(gap, DTC_GAP_PX) <= availPx) return { shown: count, more: 0 };
+  const shown = Math.min(count, Math.max(0, Math.floor((availPx - pos(moreH, DTC_MORE_PX)) / pitch)));
+  return { shown, more: count - shown };
 }
 
 export type ChipTone = "ok" | "warn" | "muted";

@@ -112,7 +112,7 @@
     border-radius: 99px;
     background: var(--ctl);
     color: var(--muted);
-    font-size: 0.72rem;
+    font-size: 0.75rem;
     font-weight: 800;
     white-space: nowrap;
   }
@@ -120,6 +120,7 @@
     color: var(--ok);
   }
   .chip.warn {
+    background: var(--warn-f);
     color: var(--warn);
   }
   .o {
@@ -240,6 +241,15 @@
   .big.dim .hv {
     color: var(--muted);
   }
+  /* Narrow hero (stacked headline over the list): a smaller headline keeps the last item inside the card. */
+  @container (max-width: 420px) {
+    .hv {
+      font-size: 1.5rem;
+    }
+    .hero .big {
+      gap: 0;
+    }
+  }
   /* Short cards (2 rows): shrink type and put every tile's label and value on one line so all items still show. */
   @container (max-height: 140px) {
     .o:not(.wide) {
@@ -249,7 +259,7 @@
       gap: 2px 10px;
     }
     .tl {
-      font-size: 0.68rem;
+      font-size: 0.75rem;
     }
     .tv {
       font-size: 0.9rem;
@@ -259,7 +269,7 @@
       font-size: 0.78rem;
     }
     .u {
-      font-size: 0.68rem;
+      font-size: 0.75rem;
     }
     .tile {
       flex-direction: row;
@@ -269,9 +279,16 @@
     }
     .items {
       grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+      grid-auto-flow: row dense;
+    }
+    .tile.wide {
+      grid-column: span 2;
+    }
+    .list .tile {
+      min-height: 0;
     }
     .hl {
-      font-size: 0.68rem;
+      font-size: 0.75rem;
     }
     .hv {
       font-size: 1.3rem;

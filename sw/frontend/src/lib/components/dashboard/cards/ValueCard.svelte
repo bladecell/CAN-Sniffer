@@ -41,8 +41,8 @@
     const to = recent.t[recent.t.length - 1];
     const lo = stats.lo;
     const hi = stats.hi;
-    // A trace shorter than the window fills the width, so the first seconds after mounting still look like a trace.
-    return chartPaths(recent, { w: 100, h: 40, from: Math.max(to - WINDOW_MS, recent.t[0]), to, lo, hi });
+    // Fixed 60 s window ending at the newest sample: a young trace enters from the right and slides left.
+    return chartPaths(recent, { w: 100, h: 40, from: to - WINDOW_MS, to, lo, hi });
   });
 
   const numPx = $derived(card.h >= 3 ? (card.w >= 6 ? 61 : 48) : 34);
@@ -58,7 +58,7 @@
 <div class="v" class:oneRow class:sparkOn={showSpark} class:dim={state !== "value"} data-level={level ?? "none"} style:--pc={color}>
   {#if oneRow}
     <div class="head">
-      <div class="t1"><CardTitle {name} unit={unit} {state} {level} {direction} iconOnly={card.w < 3} inline /></div>
+      <div class="t1"><CardTitle {name} {state} {level} {direction} iconOnly={card.w < 3} inline /></div>
       {#if inlineSpark && spark}
         <svg class="spark inl" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true">
           <path class="area" d={spark.area} />
@@ -68,7 +68,7 @@
       <span class="num" class:warn={level === "warn"} class:crit={level === "crit"} style:font-size="min(20px, 24cqw)">{formatReading(value)}{#if unit && value !== null}<span class="u"> {unit}</span>{/if}</span>
     </div>
   {:else}
-    <CardTitle {name} unit={unit} {state} {level} {direction} iconOnly={card.w < 3} />
+    <CardTitle {name} {state} {level} {direction} iconOnly={card.w < 3} />
     {#if showDesc}<span class="desc">{def?.description}</span>{/if}
 
     {#if state === "value"}
@@ -185,7 +185,7 @@
     justify-content: space-between;
     margin-right: 6px;
     color: var(--muted);
-    font-size: 0.68rem;
+    font-size: 0.75rem;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
   }
@@ -193,7 +193,6 @@
     flex: 1;
     min-width: 0;
     height: 100%;
-    border-bottom: 1px solid var(--hair);
   }
   .spark.inl {
     flex: 0 1 30%;

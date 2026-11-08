@@ -63,8 +63,8 @@ describe("readState", () => {
   });
 
   test("polling off wins over any stored reading", () => {
-    expect(readState(live(91), false)).toBe("off");
-    expect(readState(undefined, false)).toBe("off");
+    expect(readState(live(91), false)).toBe("value");
+    expect(readState(undefined, false)).toBe("nodata");
   });
 });
 

@@ -83,7 +83,7 @@
 </button>
 
 <!-- Portalled out of the field and the scrolling sheet body (lib/layers.ts): a popover inside either would lose its blur. -->
-<div bind:this={pop} use:portal id={popId} class="pop" popover="auto" role="dialog" aria-label={options.length ? "Choose" : "Options"} ontoggle={onToggle}>
+<div bind:this={pop} use:portal id={popId} class="pop popup" popover="auto" role="dialog" aria-label={options.length ? "Choose" : "Options"} ontoggle={onToggle}>
   <div class="grid" role="radiogroup" style="--columns: {columns};">
     {#each options as opt (opt.value)}
       <button
@@ -181,13 +181,6 @@
     margin: 0;
     padding: 8px;
     overflow: visible;
-    border: 0;
-    border-radius: var(--r-float);
-    background: var(--float);
-    -webkit-backdrop-filter: blur(var(--blur)) saturate(1.35);
-    backdrop-filter: blur(var(--blur)) saturate(1.35);
-    box-shadow: var(--shadow-float);
-    color: var(--text);
   }
   /* Field.svelte resets its controls (margin, slider height). A popover is portalled out of the field, so it resets its own. */
   .pop :global(button) {

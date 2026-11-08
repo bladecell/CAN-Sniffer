@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Icon from "$lib/Icon.svelte";
   import { onMount, untrack } from "svelte";
   import Sheet from "$lib/components/Sheet.svelte";
   import Switch from "$lib/components/Switch.svelte";
@@ -59,6 +60,8 @@
   let w = $state(seed.w);
   let h = $state(seed.h);
   let lowWarns = $state(false);
+  // Off stores no thresholds: the card never turns warning or critical.
+  let alertsOn = $state(untrack(() => (card ? card.thresholds !== undefined : true)));
   let warn = $state<number | undefined>(seed.warn);
   let rMin = $state<number | undefined>(untrack(() => card?.range?.min));
   let rMax = $state<number | undefined>(untrack(() => card?.range?.max));
@@ -79,7 +82,7 @@
 
   // The preview takes the thresholds as typed, so warning and critical states show before saving.
   const previewThresholds = $derived<Thresholds | undefined>(
-    withThresholds && warn !== undefined && critical !== undefined ? { warn, critical } : undefined,
+    withThresholds && alertsOn && warn !== undefined && critical !== undefined ? { warn, critical } : undefined,
   );
   const previewCard = $derived<Card>({
     id: "preview",
@@ -202,6 +205,11 @@
       disabled: pids.some((p, i) => i !== index && p === d.pid),
     }));
 
+  function toggleAlerts(on: boolean) {
+    alertsOn = on;
+    if (on && (warn === undefined || critical === undefined)) setDefaults();
+  }
+
   function toggleLow(on: boolean) {
     lowWarns = on;
     setDefaults();
@@ -220,7 +228,7 @@
       cardRange = { min: rMin, max: rMax };
     }
     let thresholds: Thresholds | undefined;
-    if (withThresholds) {
+    if (withThresholds && alertsOn) {
       const t = { warn: warn ?? NaN, critical: critical ?? NaN };
       const err = thresholdsError(range, t);
       if (err) return { error: err };
@@ -340,13 +348,13 @@
                 </div>
                 <div class="db-item-acts">
                   <button type="button" class="db-icon" aria-label="Move {kindName(it)} up" aria-disabled={i === 0} onclick={() => i > 0 && moveItem(i, -1)}>
-                    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M6 15l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
+                    <Icon name="chevron-down" size={20} class="up" />
                   </button>
                   <button type="button" class="db-icon" aria-label="Move {kindName(it)} down" aria-disabled={i === items.length - 1} onclick={() => i < items.length - 1 && moveItem(i, 1)}>
-                    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
+                    <Icon name="chevron-down" size={20} />
                   </button>
                   <button type="button" class="db-icon db-icon-danger" aria-label="Remove {kindName(it)}" onclick={() => removeItem(i)}>
-                    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M5 7h14M10 7V5h4v2M8 7l1 12h6l1-12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
+                    <Icon name="trash" size={20} />
                   </button>
                 </div>
               </li>
@@ -386,6 +394,8 @@
     {#if withThresholds}
       <div class="db-field">
         <span class="db-label">Thresholds</span>
+        <Switch checked={alertsOn} label="Show warnings" onchange={toggleAlerts} />
+        {#if alertsOn}
         <Switch checked={lowWarns} label="Warn on low values" onchange={toggleLow} />
         <div class="db-two">
           <Field id="db-warn" label="Warning at">
@@ -402,6 +412,7 @@
         <p class="db-hint">
           {range ? `PID range ${range.min} to ${range.max}.` : "This PID has no range. Enter the values yourself."}
         </p>
+        {/if}
       </div>
     {/if}
 
@@ -542,12 +553,17 @@
   }
   .db-slot {
     display: flex;
-    align-items: center;
+    align-items: stretch;
     gap: 8px;
     min-width: 0;
   }
   .db-slot :global(.select-menu) {
     flex: 1;
+  }
+  .db-slot :global(.rv-btn) {
+    margin: 0;
+    height: auto;
+    min-height: 48px;
   }
   .db-preview {
     display: grid;

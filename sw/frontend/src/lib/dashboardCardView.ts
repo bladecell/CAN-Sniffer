@@ -24,9 +24,8 @@ export function worstLevel(levels: (Level | null)[]): Level | null {
   return worst;
 }
 
-/** Polling off wins: a stored value is then no longer refreshed. */
-export function readState(entry: PidValue | undefined, polling: boolean | null): ReadState {
-  if (polling === false) return "off";
+/** Polling state is not shown on cards: a stored value stays a value. */
+export function readState(entry: PidValue | undefined, _polling: boolean | null): ReadState {
   if (!entry || !entry.isValid || !entry.isSupported) return "nodata";
   return "value";
 }

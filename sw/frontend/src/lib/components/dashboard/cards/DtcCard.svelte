@@ -2,7 +2,7 @@
   import type { Card } from "$lib/dashboardModel";
   import { vehicleStore } from "$lib/vehicleStore.svelte";
   import { dtcRows, dtcSummary } from "$lib/diagnosticsView";
-  import { dtcVisible } from "$lib/dashboardCardLayout";
+  import { DTC_GAP_PX, DTC_MORE_PX, DTC_ROW_PX, dtcVisible } from "$lib/dashboardCardLayout";
   import type { Level, ReadState } from "$lib/dashboardCardView";
   import { loadWhileMounted } from "./cardSources.svelte";
   import CardTitle from "./CardTitle.svelte";
@@ -20,9 +20,34 @@
   const summary = $derived(read ? dtcSummary(vehicleStore.dtc) : null);
   const level = $derived<Level | null>(summary === null || summary.tone === "ok" ? null : summary.tone);
   const count = $derived(read ? vehicleStore.totalDTCs : null);
+  let listH = $state(0);
+  let list = $state<HTMLElement>();
+  // Row pitch (height plus gap) read from the first rendered row, so a font or padding change cannot drift from a constant.
+  let rowPx = $state(DTC_ROW_PX);
+  let rowGap = $state(DTC_GAP_PX);
+  let moreH = $state(DTC_MORE_PX);
   const rows = $derived(read ? dtcRows(vehicleStore.dtc) : []);
-  const visible = $derived(dtcVisible(rows.length, card.h));
+  const visible = $derived(dtcVisible(rows.length, listH, rowPx, moreH, rowGap));
   const shown = $derived(rows.slice(0, visible.shown));
+  // Row heights change when the descriptions arrive, so every change of the rows re-measures. The more line is only in the
+  // DOM when some codes are hidden, so its height is kept from the last time it was measured.
+  $effect(() => {
+    void shown.length;
+    void visible.more;
+    void rows;
+    if (!list) return;
+    const [r0, r1] = list.querySelectorAll<HTMLElement>("li:not(.more)");
+    if (r0) {
+      const box = r0.getBoundingClientRect();
+      const cs = getComputedStyle(r0);
+      // Space after a row: the list gap plus the item's own margin (the base stylesheet gives list items one).
+      const after = r1 ? r1.getBoundingClientRect().top - box.bottom : (parseFloat(getComputedStyle(list).rowGap) || 0) + (parseFloat(cs.marginBottom) || 0);
+      rowGap = after;
+      rowPx = box.height + after;
+    }
+    const more = list.querySelector<HTMLElement>("li.more")?.getBoundingClientRect().height;
+    if (more) moreH = more;
+  });
   const breakdown = $derived([
     { key: "confirmed", label: "Confirmed", n: vehicleStore.dtc.confirmed.dtc_count },
     { key: "pending", label: "Pending", n: vehicleStore.dtc.pending.dtc_count },
@@ -55,7 +80,7 @@
   {:else if rows.length === 0}
     <span class="none ok">No fault codes stored</span>
   {:else}
-    <ul class="rows">
+    <ul class="rows" bind:clientHeight={listH} bind:this={list}>
       {#each shown as r (r.key)}
         <li class={r.group}>
           <span class="st">{r.groupLabel}</span>
@@ -82,7 +107,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
+    flex-wrap: wrap;
+    gap: 0 12px;
     flex: 1;
     min-height: 0;
   }
@@ -93,7 +119,7 @@
     min-width: 0;
   }
   .n {
-    font-size: 2.1rem;
+    font-size: 1.8rem;
     font-weight: 800;
     line-height: 1;
     font-variant-numeric: tabular-nums;
@@ -117,8 +143,8 @@
   }
   .brk {
     display: flex;
-    flex-direction: column;
-    gap: 2px;
+    flex-wrap: wrap;
+    gap: 2px 12px;
     margin: 0;
     padding: 0;
     list-style: none;
@@ -128,8 +154,11 @@
     align-items: baseline;
     gap: 6px;
   }
+  .cap {
+    white-space: nowrap;
+  }
   .brk .bl {
-    min-width: 6.5em;
+    white-space: nowrap;
   }
   .bn {
     font-size: 0.95rem;

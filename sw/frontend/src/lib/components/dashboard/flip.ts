@@ -3,7 +3,7 @@
 
 export const FLIP_MS = 160;
 
-const reduced = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+export const reduced = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const cardsOf = (grid: HTMLElement) => Array.from(grid.querySelectorAll<HTMLElement>(":scope > [data-card]"));
 
 /** Where every card is now, as drawn (a running animation counts). Call before the layout changes. */

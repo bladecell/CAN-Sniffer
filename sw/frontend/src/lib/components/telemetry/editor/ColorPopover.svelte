@@ -133,7 +133,7 @@
 {#if hexError}<p class="hexmsg" id="{id}-hexmsg" role="alert">{hexError}</p>{/if}
 
 <!-- Portalled out of the field and the scrolling sheet body (lib/layers.ts): a popover inside either would lose its blur. -->
-<div bind:this={pop} use:portal id={popId} class="pop" popover="auto" role="dialog" aria-label="Colour" ontoggle={onToggle}>
+<div bind:this={pop} use:portal id={popId} class="pop popup" popover="auto" role="dialog" aria-label="Colour" ontoggle={onToggle}>
   <div class="pal" role="radiogroup" aria-label="Palette">
     {#each PALETTE as hex (hex)}
       {@const selected = current === hex}
@@ -259,13 +259,6 @@
     width: min(304px, calc(100vw - 16px));
     margin: 0;
     padding: 14px;
-    border: 0;
-    border-radius: var(--r-float);
-    background: var(--float);
-    -webkit-backdrop-filter: blur(var(--blur)) saturate(1.35);
-    backdrop-filter: blur(var(--blur)) saturate(1.35);
-    box-shadow: var(--shadow-float);
-    color: var(--text);
   }
   .pal {
     display: grid;

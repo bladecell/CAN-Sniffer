@@ -113,7 +113,8 @@
 
   pidSources();
 
-  const ringColor = (it: Item) => (it.level === "crit" ? "var(--crit)" : it.level === "warn" ? "var(--warn)" : it.color);
+  // A single series turns warn or crit colour; several keep their own colour so the rings stay tellable apart.
+  const ringColor = (it: Item) => (items.length === 1 && it.level === "crit" ? "var(--crit)" : items.length === 1 && it.level === "warn" ? "var(--warn)" : it.color);
   const combined = $derived(items.map((it) => it.name).join(" / "));
   // Several PIDs share one state word: value while any has a reading, else off or no data.
   const groupState = $derived<ReadState>(
@@ -156,7 +157,7 @@
               cy={geo.cy}
               r={r}
               stroke-width={geo.stroke}
-              stroke={ringColor(it)}
+              style:stroke={ringColor(it)}
               stroke-dasharray="{it.fraction * ring(r)} {ring(r)}"
               transform="rotate(-90 {geo.cx} {geo.cy})"
             />
@@ -164,7 +165,7 @@
         {:else}
           <path class="track" d={sweepPath(geo.cx, geo.cy, r, geo.sweep, 1)} stroke-width={geo.stroke} />
           {#if it.fraction !== null && it.fraction > 0}
-            <path class="prog" d={sweepPath(geo.cx, geo.cy, r, geo.sweep, it.fraction)} stroke-width={geo.stroke} stroke={ringColor(it)} />
+            <path class="prog" d={sweepPath(geo.cx, geo.cy, r, geo.sweep, it.fraction)} stroke-width={geo.stroke} style:stroke={ringColor(it)} />
           {/if}
         {/if}
       {/each}
@@ -186,7 +187,7 @@
         {#each items as it, i (it.pid)}
           {#if it.fraction !== null}
             {@const tip = sweepPoint(geo.cx, geo.cy, geo.radii[0] - 8, GAUGE_SWEEP.dial, it.fraction)}
-            <line class="needle" x1={geo.cx} y1={geo.cy} x2={tip.x} y2={tip.y} stroke={i === 0 ? "var(--text)" : ringColor(it)} />
+            <line class="needle" x1={geo.cx} y1={geo.cy} x2={tip.x} y2={tip.y} style:stroke={i === 0 ? "var(--text)" : ringColor(it)} />
           {/if}
         {/each}
         <circle class="hub" cx={geo.cx} cy={geo.cy} r="4.5" />
@@ -276,14 +277,15 @@
     grid-column: 2;
   }
   .g.multi:not(.side) .dial {
-    flex: 0 1 auto;
-    width: 100%;
-    max-height: 60%;
+    flex: 1 1 0;
+    min-height: 0;
   }
+  /* The svg fills the dial box and scales its viewBox to fit: in a short card it shrinks instead of spilling out. */
   .dial svg {
+    position: absolute;
+    inset: 0;
     width: 100%;
     height: 100%;
-    max-height: 100%;
     overflow: visible;
   }
   .track {
