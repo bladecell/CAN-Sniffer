@@ -29,7 +29,7 @@ struct WsBroadcastBackend
         return err == ESP_OK;
     }
     bool ready(int fd) { return httpd_ws_get_fd_info(*server, fd) == HTTPD_WS_CLIENT_WEBSOCKET; }
-    void send(int fd, uint8_t* payload, size_t len)
+    bool send(int fd, uint8_t* payload, size_t len)
     {
         httpd_ws_frame_t frame = {};
         frame.final = true;
@@ -37,11 +37,18 @@ struct WsBroadcastBackend
         frame.payload = payload;
         frame.len = len;
         const esp_err_t err = httpd_ws_send_frame_async(*server, fd, &frame);
-        if (err != ESP_OK) { ESP_LOGW(TAG, "WS send to #%d failed: %s", fd, esp_err_to_name(err)); }
+        if (err != ESP_OK) { ESP_LOGW(TAG, "WS send to #%d failed: %s, closing", fd, esp_err_to_name(err)); }
+        return err == ESP_OK;
+    }
+    void evict(int fd)
+    {
+        const esp_err_t err = httpd_sess_trigger_close(*server, fd);
+        if (err != ESP_OK) { ESP_LOGW(TAG, "WS evict of #%d not queued: %s", fd, esp_err_to_name(err)); }
     }
 };
 
 static ws_broadcast::Dispatcher<WsBroadcastBackend> wsDispatcher;
+static ws_broadcast::DropLog                        wsDropLog;
 
 esp_err_t AsyncWebServer::sendError(httpd_req_t* req, int status, const char* reason, const char* code,
                                     uint32_t retryAfterS)
@@ -505,7 +512,13 @@ void AsyncWebServer::wsBroadcast(httpd_ws_frame_t* ws_pkt)
     const ws_broadcast::Result result = wsDispatcher.submit(WsBroadcastBackend{&server_}, ws_pkt->payload, ws_pkt->len);
     if (result != ws_broadcast::Result::accepted && result != ws_broadcast::Result::stopped)
     {
-        ESP_LOGW(TAG, "WS broadcast dropped: %u", static_cast<unsigned>(result));
+        unsigned suppressed = 0;
+        if (wsDropLog.shouldLog(static_cast<uint32_t>(esp_timer_get_time() / 1000), suppressed))
+        {
+            ESP_LOGW(TAG, "WS broadcast dropped: reason %u, pending %u/%u (%u more in the last 5 s)",
+                     static_cast<unsigned>(result), wsDispatcher.pending(),
+                     static_cast<unsigned>(ws_broadcast::Dispatcher<WsBroadcastBackend>::kMaxPending), suppressed);
+        }
     }
 }
 

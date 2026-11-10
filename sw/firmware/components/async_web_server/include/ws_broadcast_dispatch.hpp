@@ -10,6 +10,32 @@ namespace ws_broadcast {
 
 enum class Result { accepted, stopped, full, invalid, noMemory, queueFailed };
 
+// Lets one drop message through per interval and counts the ones it held back.
+class DropLog
+{
+public:
+    static constexpr uint32_t kIntervalMs = 5000;
+
+    bool shouldLog(uint32_t nowMs, unsigned& suppressed)
+    {
+        if (armed_ && nowMs - lastMs_ < kIntervalMs)
+        {
+            ++suppressed_;
+            return false;
+        }
+        armed_ = true;
+        lastMs_ = nowMs;
+        suppressed = suppressed_;
+        suppressed_ = 0;
+        return true;
+    }
+
+private:
+    bool armed_ = false;
+    uint32_t lastMs_ = 0;
+    unsigned suppressed_ = 0;
+};
+
 // Backend queue callbacks and session operations run in the HTTPD task. submit()
 // may run in producers; stop() closes admission before the owner drains HTTPD.
 template <typename Backend>
@@ -91,7 +117,9 @@ private:
             {
                 if (work->backend.ready(fds[i]))
                 {
-                    work->backend.send(fds[i], work->payload, work->len);
+                    // A client that cannot take a frame is dropped instead of retried every second. The close is
+                    // deferred to HTTPD's own queue, so the FD is not torn down under this loop.
+                    if (!work->backend.send(fds[i], work->payload, work->len)) { work->backend.evict(fds[i]); }
                 }
             }
         }

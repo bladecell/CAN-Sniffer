@@ -18,6 +18,7 @@ struct FakeHttpd
     bool failAllocation = false;
     bool failList = false;
     bool failSend = false;
+    std::vector<int> evicted;
     unsigned sendErrors = 0;
     void (*duringQueue)(void*) = nullptr;
     void* queueArg = nullptr;
@@ -64,12 +65,14 @@ struct Backend
         }
         return false;
     }
-    void send(int fd, uint8_t* payload, size_t len)
+    bool send(int fd, uint8_t* payload, size_t len)
     {
-        if (httpd->failSend) { ++httpd->sendErrors; return; }
+        if (httpd->failSend) { ++httpd->sendErrors; return false; }
         httpd->sent.push_back(fd);
         httpd->bytes.assign(payload, payload + len);
+        return true;
     }
+    void evict(int fd) { httpd->evicted.push_back(fd); }
 };
 
 using Dispatcher = ws_broadcast::Dispatcher<Backend>;
@@ -225,8 +228,53 @@ static void test_enumeration_and_send_failures_release_ownership()
     TEST_ASSERT_EQUAL(h.allocations, h.frees);
 }
 
+static void test_failed_send_evicts_only_that_client()
+{
+    FakeHttpd h;
+    Dispatcher d;
+    d.start();
+    h.clients = {{4, true}, {5, true}};
+    h.failSend = true;
+    d.submit({&h}, packet, sizeof(packet));
+    h.run();
+    TEST_ASSERT_EQUAL(2, h.sendErrors);
+    TEST_ASSERT_EQUAL(2, h.evicted.size());
+    TEST_ASSERT_EQUAL(4, h.evicted[0]);
+    TEST_ASSERT_EQUAL(5, h.evicted[1]);
+    TEST_ASSERT_EQUAL(0, d.pending());
+    TEST_ASSERT_EQUAL(h.allocations, h.frees);
+}
+
+static void test_successful_send_does_not_evict()
+{
+    FakeHttpd h;
+    Dispatcher d;
+    d.start();
+    d.submit({&h}, packet, sizeof(packet));
+    h.run();
+    TEST_ASSERT_TRUE(h.evicted.empty());
+}
+
+static void test_drop_log_is_rate_limited_and_counts_suppressed()
+{
+    ws_broadcast::DropLog log;
+    unsigned suppressed = 99;
+    TEST_ASSERT_TRUE(log.shouldLog(1000, suppressed));
+    TEST_ASSERT_EQUAL(0, suppressed);
+    TEST_ASSERT_FALSE(log.shouldLog(1500, suppressed));
+    TEST_ASSERT_FALSE(log.shouldLog(5999, suppressed));
+    TEST_ASSERT_TRUE(log.shouldLog(6000, suppressed));
+    TEST_ASSERT_EQUAL(2, suppressed);
+    TEST_ASSERT_FALSE(log.shouldLog(6001, suppressed));
+    TEST_ASSERT_TRUE(log.shouldLog(11000, suppressed));
+    TEST_ASSERT_EQUAL(1, suppressed);
+}
+
 extern "C" void run_ws_broadcast_tests(void)
 {
+    RUN_TEST(test_failed_send_evicts_only_that_client);
+    RUN_TEST(test_successful_send_does_not_evict);
+    RUN_TEST(test_drop_log_is_rate_limited_and_counts_suppressed);
     RUN_TEST(test_reused_http_fd_does_not_receive_frame);
     RUN_TEST(test_execution_selects_current_upgraded_clients);
     RUN_TEST(test_unchanged_client_receives_owned_copy);

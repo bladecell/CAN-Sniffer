@@ -1655,15 +1655,15 @@ esp_err_t d_file_delete_handler(httpd_req_t* req, void* arg)
 // 3. WEBSOCKETS & LIVE STREAMING
 // ============================================================================
 
-void ws_send_byte(uint8_t byte)
+// Answers on the requesting socket from inside its handler: no HTTPD ctrl queue slot, no fan-out to other clients.
+// A failed send is returned so the handler error makes httpd close the dead socket.
+static esp_err_t ws_reply_byte(httpd_req_t* req, uint8_t byte)
 {
-    uint8_t packet[1];
-    packet[0] = byte;
+    uint8_t          packet[1] = {byte};
+    httpd_ws_frame_t ws_frame  = {
+         .final = true, .fragmented = false, .type = HTTPD_WS_TYPE_BINARY, .payload = packet, .len = 1, .left_len = 0};
 
-    httpd_ws_frame_t ws_frame = {
-        .final = true, .fragmented = false, .type = HTTPD_WS_TYPE_BINARY, .payload = packet, .len = 1, .left_len = 0};
-
-    AsyncWebServer::getInstance().wsBroadcast(&ws_frame);
+    return httpd_ws_send_frame(req, &ws_frame);
 }
 
 // IDF does not call ws_socket_handler for the upgrade GET, so the Origin check and the stream start live in handshake
@@ -1749,7 +1749,7 @@ esp_err_t ws_socket_handler(httpd_req_t* req)
                         break;
                     case WS_PING_REQUEST_STREAM:
                         ESP_LOGD(TAG, "WS Ping received");
-                        ws_send_byte(WS_PING_RESPONSE_STREAM);
+                        ret = ws_reply_byte(req, WS_PING_RESPONSE_STREAM);
                         break;
                     default:
                         ESP_LOGW(TAG, "WS Unknown command: 0x%02X", buf[0]);
@@ -1924,6 +1924,8 @@ esp_err_t setup_web_server()
     // Keep receive waits below the upload no-progress deadline so an upload
     // worker can enforce it rather than remaining blocked in httpd_req_recv.
     server_config.httpd_config.recv_wait_timeout = 1;
+    // The httpd task sends WebSocket frames itself; a stalled phone socket may block it for this long (default 5 s).
+    server_config.httpd_config.send_wait_timeout = 2;
     // A peer that vanished without FIN or RST (phone left the Wi-Fi) is dropped after about 10 + 3 * 5 s.
     server_config.httpd_config.keep_alive_enable   = true;
     server_config.httpd_config.keep_alive_idle     = 10;
