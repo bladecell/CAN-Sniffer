@@ -1,11 +1,15 @@
 // REST-backed dashboard, diagnostics and PID configuration state.
 import { SvelteMap } from "svelte/reactivity";
-import type { PidDefinition, Obd2Status, DtcData, SystemStatus, SDCardInfo, CanBusStatus } from "./types";
+import type { PidDefinition, Obd2Status, DtcData, SystemStatus, CanBusStatus } from "./types";
+import { parseSdInfo, type SdInfoWire } from "./settingsModel";
+import { recordingStore } from "./recordingStore.svelte";
 import { alertStore } from "./alertStore.svelte";
 import { validatePidDefinitionSet } from "./pidValidation";
 import { parseJsonResponse } from "./api";
 import { normalizePidDefinition, parsePidList, serializePidDefinition } from "./pidDefinition";
 import { createLatest } from "./latest";
+import { singleFlight } from "./singleFlight";
+import { runLimited } from "./openReload";
 import { firmwareApi } from "./firmwareApi.svelte";
 import { livePids } from "./livePidStore.svelte";
 import { onConnectionOpen } from "./connectionEvents";
@@ -28,33 +32,40 @@ export class VehicleStore {
         tasks: [],
     });
 
-    async requestSystem() {
+    requestSystem = singleFlight(() => this.readSystem());
+
+    private async readSystem() {
         try {
             const response = await firmwareApi.system();
             const result = await parseJsonResponse<SystemStatus>(response);
 
             this.system = result;
         } catch (e) {
-            console.error("Failed to load PIDs", e);
+            console.error("Failed to load system status", e);
         }
     }
 
-    sdInfo = $state<SDCardInfo | null>(null);
+    /** Null until read, and after a failed read (a busy card answers 503). */
+    sdInfo = $state<SdInfoWire | null>(null);
 
-    async requestSDInfo() {
+    requestSDInfo = singleFlight(() => this.readSDInfo());
+
+    private async readSDInfo() {
         try {
             const response = await firmwareApi.sdInfo();
-            const result = await parseJsonResponse<SDCardInfo>(response);
-
-            this.sdInfo = result;
+            this.sdInfo = response.ok ? parseSdInfo(await parseJsonResponse<unknown>(response)) : null;
         } catch (e) {
+            this.sdInfo = null;
             console.error("Failed to load SD card info", e);
         }
     }
 
     pidDefinitions = $state<PidDefinition[]>([]);
 
-    async loadDefinitions(): Promise<boolean> {
+    /** Reads that run on every connection share one request while it is in flight. */
+    loadDefinitions = singleFlight(() => this.readDefinitions());
+
+    private async readDefinitions(): Promise<boolean> {
         try {
             const response = await firmwareApi.pidDefinitions();
             const definitions = parsePidList(await parseJsonResponse<unknown>(response));
@@ -73,7 +84,9 @@ export class VehicleStore {
     canStatus = $state<CanBusStatus | null>(null);
     canCurrentRate = $state(5000);
 
-    async getCanStatus() {
+    getCanStatus = singleFlight(() => this.readCanStatus());
+
+    private async readCanStatus() {
         try {
             const response = await firmwareApi.canBus();
             this.canStatus = parseCanBusStatus(await parseJsonResponse<unknown>(response));
@@ -84,7 +97,9 @@ export class VehicleStore {
 
     obd2Status = $state<Obd2Status | null>(null);
 
-    async getObd2Status() {
+    getObd2Status = singleFlight(() => this.readObd2Status());
+
+    private async readObd2Status() {
         try {
             const response = await firmwareApi.obd2();
             const result = parseObd2Status(await parseJsonResponse<unknown>(response));
@@ -114,7 +129,7 @@ export class VehicleStore {
                 this.obd2Status = { ...this.obd2Status, auto_poll: result.auto_poll, polling: result.polling };
             }
 
-            this.getObd2Status();
+            await this.readObd2Status();
         } catch (e) {
             console.error("Failed to set OBD2 auto poll", e);
         }
@@ -122,7 +137,9 @@ export class VehicleStore {
 
     vin = $state("");
 
-    async getVin() {
+    getVin = singleFlight(() => this.readVin());
+
+    private async readVin() {
         try {
             const response = await firmwareApi.vin();
             const result = await parseJsonResponse<{ vin: string }>(response);
@@ -137,7 +154,7 @@ export class VehicleStore {
         try {
             const response = await firmwareApi.requestVin();
             await parseJsonResponse(response);
-            this.getVin();
+            await this.readVin();
         } catch (e) {
             console.error("Failed to request VIN", e);
         }
@@ -147,7 +164,9 @@ export class VehicleStore {
     totalDTCs = $state(0);
     private dtcLatest = createLatest();
 
-    async getDTC() {
+    getDTC = singleFlight(() => this.readDtc());
+
+    private async readDtc() {
         // Overlapping calls: only the newest one may write the store.
         const isCurrent = this.dtcLatest.begin();
         try {
@@ -187,7 +206,7 @@ export class VehicleStore {
         try {
             const response = await firmwareApi.requestDtc(mode === -1 ? undefined : mode as 3 | 7 | 10);
             const result = await parseJsonResponse<{ status?: string; reason?: string }>(response);
-            await this.getDTC();
+            await this.readDtc();
 
             if (mode === -1 && result.status === "partial_success") {
                 alertStore.add(result.reason || "DTC refresh incomplete.", "warning");
@@ -264,7 +283,7 @@ export class VehicleStore {
                 throw new Error(`Expected HTTP 204 from PID replacement, received ${response.status}.`);
             }
 
-            if (!(await this.loadDefinitions())) alertStore.add("PIDs were replaced, but refreshing definitions failed.", "warning");
+            if (!(await this.readDefinitions())) alertStore.add("PIDs were replaced, but refreshing definitions failed.", "warning");
             return null;
         } catch (e) {
             console.error("Failed to replace PIDs:", e);
@@ -284,9 +303,20 @@ export class VehicleStore {
     }
 }
 export const vehicleStore = new VehicleStore();
+// Staggered so the device's HTTP server is not hit with every read at once.
+const OPEN_RELOAD_CONCURRENCY = 2;
 onConnectionOpen(() => {
-    void vehicleStore.loadDefinitions();
-    void vehicleStore.getObd2Status();
-    void vehicleStore.getVin();
-    void vehicleStore.getDTC();
+    void runLimited(
+        [
+            () => vehicleStore.loadDefinitions(),
+            () => vehicleStore.getObd2Status(),
+            () => vehicleStore.getVin(),
+            () => vehicleStore.getDTC(),
+            () => vehicleStore.requestSystem(),
+            () => vehicleStore.getCanStatus(),
+            () => vehicleStore.requestSDInfo(),
+            () => recordingStore.refresh(),
+        ],
+        OPEN_RELOAD_CONCURRENCY,
+    );
 });

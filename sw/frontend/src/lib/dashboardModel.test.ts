@@ -144,9 +144,9 @@ describe("overview items", () => {
       { t: "dtc" },
     ]);
   });
-  test("at most six items", () => {
-    const items = Array.from({ length: 9 }, (_, i) => ({ t: "pid", pid: i + 1 }));
-    expect(ov({ items })?.items?.length).toBe(6);
+  test("at most twelve items", () => {
+    const items = Array.from({ length: 15 }, (_, i) => ({ t: "pid", pid: i + 1 }));
+    expect(ov({ items })?.items?.length).toBe(12);
   });
   test("an overview keeps no PIDs of its own and no show flags", () => {
     const c = ov({ items: [{ t: "pid", pid: 5 }] });

@@ -9,27 +9,20 @@
     onSelect: (id: string) => void;
     /** Opens the name prompt for a new dashboard. The page decides whether the cap allows it. */
     onAdd: () => void;
-    /** Edit mode: the selected tab is a text field. Returns an error message, or null when the name was accepted. */
+    /** Edit mode: the selected tab shows a pencil that opens the edit dialog. */
     editing?: boolean;
-    onRename?: (id: string, name: string) => string | null;
+    onEdit?: () => void;
   }
 
-  let { dashboards, activeId, onSelect, onAdd, editing = false, onRename }: Props = $props();
+  let { dashboards, activeId, onSelect, onAdd, editing = false, onEdit }: Props = $props();
   let strip = $state<HTMLElement>();
-  const activeDash = $derived(dashboards.find((d) => d.id === activeId));
 
   // Keep the selected tab in view when it changes, including after a rename or a new tab.
   $effect(() => {
     void activeId;
     void dashboards.length;
-    tick().then(() => strip?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ inline: "nearest", block: "nearest" }));
+    tick().then(() => strip?.querySelector<HTMLElement>(`[data-tab="${activeId}"]`)?.scrollIntoView({ inline: "nearest", block: "nearest" }));
   });
-
-  function commit(e: Event, d: { id: string; name: string }) {
-    const input = e.currentTarget as HTMLInputElement;
-    if (input.value.trim() === d.name) return;
-    if (onRename?.(d.id, input.value)) input.value = d.name;
-  }
 
   // Tabs follow the WAI-ARIA tabs pattern: arrows move and select, Home and End jump.
   function onKey(e: KeyboardEvent, id: string) {
@@ -41,10 +34,26 @@
   }
 </script>
 
-<div class="db-tabs-wrap">
-  <div class="db-tabs-row">
-    <div class="db-tabs" role="tablist" aria-label="Dashboards" bind:this={strip}>
-      {#each dashboards as d (d.id)}
+<div class="db-tabs-row">
+  <div class="db-tabs" role="tablist" aria-label="Dashboards" bind:this={strip}>
+    {#each dashboards as d (d.id)}
+      {#if editing && d.id === activeId}
+        <div class="db-tab-cur">
+          <button
+            type="button"
+            role="tab"
+            class="db-tab"
+            data-tab={d.id}
+            aria-selected="true"
+            tabindex="0"
+            onclick={() => onSelect(d.id)}
+            onkeydown={(e) => onKey(e, d.id)}>{d.name}</button
+          >
+          <button type="button" class="db-tab-pencil" aria-label="Edit dashboard" title="Edit dashboard" onclick={onEdit}>
+            <Icon name="edit" size={18} />
+          </button>
+        </div>
+      {:else}
         <button
           type="button"
           role="tab"
@@ -55,35 +64,13 @@
           onclick={() => onSelect(d.id)}
           onkeydown={(e) => onKey(e, d.id)}>{d.name}</button
         >
-      {/each}
-    </div>
-    {#if editing}
-      <button type="button" class="db-add" aria-label="New dashboard" title="New dashboard" onclick={onAdd}>
-        <Icon name="plus" size={22} />
-      </button>
-    {/if}
+      {/if}
+    {/each}
   </div>
-  {#if editing && activeDash}
-    {#key activeDash.id}
-      {@const d = activeDash}
-        <label class="db-rename">
-          <span>Dashboard name</span>
-          <input
-            type="text"
-            maxlength="40"
-            autocomplete="off"
-            value={d.name}
-            onchange={(e) => commit(e, d)}
-            onkeydown={(e) => {
-              if (e.key === "Enter") e.currentTarget.blur();
-              else if (e.key === "Escape") {
-                e.currentTarget.value = d.name;
-                e.currentTarget.blur();
-              }
-            }}
-          />
-        </label>
-    {/key}
+  {#if editing}
+    <button type="button" class="db-add" aria-label="New dashboard" title="New dashboard" onclick={onAdd}>
+      <Icon name="plus" size={22} />
+    </button>
   {/if}
 </div>
 
@@ -127,28 +114,6 @@
     white-space: nowrap;
     cursor: pointer;
   }
-  .db-tabs-wrap {
-    display: grid;
-    gap: 8px;
-    min-width: 0;
-  }
-  .db-rename {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin: 0;
-    font: 700 0.85rem/1 var(--font);
-    color: var(--text);
-  }
-  .db-rename input {
-    flex: 1 1 auto;
-    min-width: 0;
-    height: 44px;
-    margin: 0;
-    padding: 0 14px;
-    border-radius: 15px;
-    font: 700 0.95rem/1 var(--font);
-  }
   .db-tab[aria-selected="true"] {
     font-weight: 800;
     background: var(--float-solid);
@@ -162,6 +127,58 @@
     height: 3px;
     border-radius: 3px;
     background: var(--accent);
+  }
+  /* Edit mode: the selected tab is one pill holding the name and the pencil, so the pill and underline move to the wrapper. */
+  .db-tab-cur {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex: none;
+    height: 44px;
+    border-radius: 15px;
+    background: var(--float-solid);
+  }
+  .db-tab-cur::after {
+    content: "";
+    position: absolute;
+    left: 22%;
+    right: 22%;
+    bottom: 3px;
+    height: 3px;
+    border-radius: 3px;
+    background: var(--accent);
+  }
+  .db-tab-cur > .db-tab[aria-selected="true"] {
+    padding-right: 4px;
+    background: none;
+    color: var(--text);
+  }
+  .db-tab-cur > .db-tab[aria-selected="true"]::after {
+    content: none;
+  }
+  .db-tab-pencil {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    margin: 0 4px 0 0;
+    padding: 0;
+    border: 0;
+    border-radius: 15px;
+    background: none;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .db-tab-pencil:hover,
+  .db-tab-pencil:active,
+  .db-tab-pencil:focus {
+    background: none;
+    box-shadow: none;
+  }
+  .db-tab-pencil:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
   }
   .db-add {
     flex: none;

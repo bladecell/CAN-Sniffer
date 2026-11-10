@@ -7,7 +7,7 @@ export const COLUMNS = 6;
 export const MAX_DOC_CHARS = 256 * 1024;
 const NAME_MAX = 40;
 const TITLE_MAX = 60;
-const OVERVIEW_MAX_ITEMS = 6;
+export const OVERVIEW_MAX_ITEMS = 12;
 const LABEL_MAX = 24;
 /** Largest magnitude a card range may hold (PID values are 32-bit floats; this is a sanity cap). */
 const RANGE_LIMIT = 1e7;
@@ -39,7 +39,7 @@ export interface Card {
   type: CardType;
   w: number;
   h: number;
-  /** PIDs shown: 1 for value and bar, 1-3 gauge, 1-4 chart, up to 6 overview items, none otherwise. */
+  /** PIDs shown: 1 for value and bar, 1-3 gauge, 1-4 chart, up to 12 overview items, none otherwise. */
   pids: number[];
   style: string;
   thresholds?: Thresholds;

@@ -23,7 +23,7 @@
 </script>
 
 <Sheet open {title} subtitle="Up to 40 characters." {onClose}>
-  <form class="db-form" onsubmit={save}>
+  <form id="name-form" class="db-form" onsubmit={save}>
     <label class="db-field">
       <span class="db-label">Name</span>
       <input class="db-input" type="text" maxlength="40" autocomplete="off" bind:value={name} />
@@ -31,11 +31,11 @@
     {#if message}
       <p class="db-error" role="alert">{message}</p>
     {/if}
-    <div class="db-actions">
-      <button type="button" class="rv-btn" onclick={onClose}>Cancel</button>
-      <button type="submit" class="rv-btn pri">Save</button>
-    </div>
   </form>
+  {#snippet footer()}
+    <button type="button" class="rv-btn" onclick={onClose}>Cancel</button>
+    <button type="submit" form="name-form" class="rv-btn pri">Save</button>
+  {/snippet}
 </Sheet>
 
 <style>
@@ -43,11 +43,5 @@
     display: grid;
     gap: 16px;
     padding: 4px 0 8px;
-  }
-  .db-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
-    flex-wrap: wrap;
   }
 </style>

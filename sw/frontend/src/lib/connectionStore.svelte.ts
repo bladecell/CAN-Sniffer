@@ -6,9 +6,10 @@ import { parseWsFrame, type WsFrame } from "./wsFrames";
 import { dispatchToListeners } from "./dispatch";
 import { reconnectDelay } from "./backoff";
 import { createHeartbeat, CONNECT_TIMEOUT_MS } from "./heartbeat";
+import { backoffMayReset } from "./stableLink";
 import { createStreamRefCount } from "./streamRefCount";
 import { createThrottle } from "./throttle";
-import { livePids } from "./livePidStore.svelte";
+import { countPidUpdate, livePids } from "./livePidStore.svelte";
 import { notifyConnectionOpen } from "./connectionEvents";
 import { recordingStore } from "./recordingStore.svelte";
 
@@ -35,6 +36,8 @@ export class ConnectionStore {
     );
 
     connectTimer: ReturnType<typeof setTimeout> | null = null;
+    private openPending = false;
+    private upSince: number | null = null;
 
     private heartbeat = createHeartbeat({
         ping: () => {
@@ -44,13 +47,17 @@ export class ConnectionStore {
         },
         onTimeout: () => {
             console.warn("Heartbeat missed! ESP32 appears offline.");
-            if (this.socket) this.socket.onclose = null;
-            this.socket?.close();
+            this.abandon(this.socket);
             this.handleConnectionDrop();
         },
-        // Reset the backoff only once the link has answered, so a socket that opens and dies keeps backing off.
+        // Reset the backoff only after the link has stayed up (stableLink.ts), so a socket that opens and dies keeps backing off.
+        // The first answer also starts the open-time reloads: a busy device is not asked for more until it talks.
         onPong: () => {
-            this.reconnectAttempts = 0;
+            if (backoffMayReset(this.upSince, Date.now())) this.reconnectAttempts = 0;
+            if (!this.openPending) return;
+            this.openPending = false;
+            notifyConnectionOpen();
+            void auth.resume();
         },
     });
 
@@ -90,34 +97,44 @@ export class ConnectionStore {
             this.connectTimer = null;
             if (socket.readyState === WebSocket.OPEN) return;
             console.warn("WebSocket connect timed out");
-            socket.onclose = null;
-            socket.close();
+            this.abandon(socket);
             this.handleConnectionDrop();
         }, CONNECT_TIMEOUT_MS);
 
-        this.socket.onopen = () => {
+        // A socket that was abandoned or replaced must not touch the current connection, so every handler checks it.
+        socket.onopen = () => {
+            if (socket !== this.socket) return;
             console.log("WebSocket Connected");
             alertStore.add("WebSocket Connected", "success");
             this.clearConnectTimer();
             this.connected = true;
+            this.upSince = Date.now();
             this.outageAlerted = false;
             // A new connection may find the server flag off (it resets when clients leave).
             if (this.streamRefs.count() > 0) this.sendByte(COMMANDS.START_LOG);
             this.isStreaming = this.streamRefs.count() > 0;
 
             this.heartbeat.start();
-
-            notifyConnectionOpen();
-            // Session and claim state come from GET /auth; a reconnect may follow a reboot that cleared the token.
-            auth.refresh();
+            // Session and claim state come from GET /auth, and the stores reload, once the first message arrives
+            // (onPong above). A reconnect may follow a reboot that cleared the token, so resume logs in again with the saved PIN.
+            this.openPending = true;
+            this.heartbeat.pingNow();
         };
 
-        this.socket.onclose = () => {
+        socket.onclose = () => {
+            if (socket !== this.socket) return;
             console.log("WebSocket Disconnected cleanly.");
             this.handleConnectionDrop();
         };
 
-        this.socket.onmessage = (event) => {
+        socket.onerror = () => {
+            // onclose follows and handles the drop.
+        };
+
+        socket.onmessage = (event) => {
+            if (socket !== this.socket) return;
+            // Any message proves the link is alive, so a busy device streaming frames is not dropped for a late pong.
+            this.heartbeat.pong();
             try {
                 this.handleMessage(event.data);
             } catch (e) {
@@ -130,8 +147,7 @@ export class ConnectionStore {
     handlePageShow(e: PageTransitionEvent) {
         if (this.intentionalDisconnect) return;
         if (e.persisted && this.socket && this.socket.readyState !== WebSocket.OPEN) {
-            this.socket.onclose = null;
-            this.socket.close();
+            this.abandon(this.socket);
             this.handleConnectionDrop(true);
         }
         if (!this.socket) {
@@ -143,6 +159,13 @@ export class ConnectionStore {
         }
     }
 
+    /** Detach every handler, then close: nothing this socket does afterwards reaches the store. */
+    private abandon(socket: WebSocket | null, code?: number, reason?: string) {
+        if (!socket) return;
+        socket.onopen = socket.onmessage = socket.onerror = socket.onclose = null;
+        socket.close(code, reason);
+    }
+
     clearConnectTimer() {
         if (this.connectTimer) clearTimeout(this.connectTimer);
         this.connectTimer = null;
@@ -151,6 +174,8 @@ export class ConnectionStore {
     handleConnectionDrop(silent = false) {
         this.clearConnectTimer();
         this.connected = false;
+        this.upSince = null;
+        this.openPending = false;
         this.isStreaming = false;
         this.socket = null;
         this.wsCanStatus.state = "Not Connected";
@@ -184,10 +209,8 @@ export class ConnectionStore {
         this.clearConnectTimer();
         this.heartbeat.stop();
 
-        if (this.socket) {
-            this.socket.close(1000, "User disconnected");
-            this.socket = null;
-        }
+        this.abandon(this.socket, 1000, "User disconnected");
+        this.socket = null;
 
         if (this.pollInterval) {
             clearInterval(this.pollInterval);
@@ -224,7 +247,6 @@ export class ConnectionStore {
                 recordingStore.applyFrame(frame);
                 break;
             case "pong":
-                this.heartbeat.pong();
                 break;
         }
     }
@@ -291,6 +313,7 @@ export class ConnectionStore {
 
     applyPidFrame(frame: Extract<WsFrame, { kind: "pid" }>) {
         const value = Number(frame.value.toFixed(2));
+        countPidUpdate();
 
         this.pids.set(frame.pid, {
             value,

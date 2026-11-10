@@ -17,7 +17,7 @@
 <Dialog
   open={true}
   title={`Join ${ssid}`}
-  message="This network is locked. Enter its password. It is kept on the device after you press Apply."
+  message="Enter password"
   confirmLabel="Join"
   onConfirm={join}
   onCancel={onCancel}

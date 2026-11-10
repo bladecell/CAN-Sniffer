@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { batteryBands, dtcVisible, faultChip, statusVisible } from "./dashboardCardLayout";
+import { batteryBands, dtcVisible, faultChip, overviewPlan, statusVisible, type OverviewKind } from "./dashboardCardLayout";
 
 describe("statusVisible", () => {
   test("chip grid fits every item at 6 columns by 3 rows", () => {
@@ -73,5 +73,44 @@ describe("batteryBands", () => {
   });
   test("the low edge sits at 10.5 V on a 9.5 to 15.5 V scale", () => {
     expect(batteryBands()[1].from).toBeCloseTo(1 / 6, 10);
+  });
+});
+
+describe("overviewPlan", () => {
+  // Mockup sample order: VIN, faults, bus, battery, trip, SD free.
+  const six: OverviewKind[] = ["vin", "dtc", "pid", "pid", "pid", "pid"];
+  const count = (style: string, w: number, h: number, kinds = six) => overviewPlan(style, w, h, kinds).shown.length;
+
+  test("grid shows 3, 5 and 6 of the six items at 3x2, 6x2 and 6x4", () => {
+    expect([count("grid", 3, 2), count("grid", 6, 2), count("grid", 6, 4)]).toEqual([3, 5, 6]);
+  });
+
+  test("a grid shows more than six items when the card has the room", () => {
+    const twelve: OverviewKind[] = Array.from({ length: 12 }, () => "pid");
+    expect(count("grid", 6, 4, twelve)).toBe(12);
+    expect(count("grid", 6, 3, twelve)).toBe(9);
+  });
+
+  test("list shows 2, 3 and 6 at 4x2, 6x2 and 6x4", () => {
+    expect([count("list", 4, 2), count("list", 6, 2), count("list", 6, 4)]).toEqual([2, 3, 6]);
+  });
+
+  test("an item that does not fit whole is left out, not cut", () => {
+    expect(overviewPlan("list", 3, 2, ["pid", "pid", "pid"]).shown).toEqual([0, 1]);
+  });
+
+  test("hero takes the first PID as headline, then sub-values and the VIN row", () => {
+    const p = overviewPlan("hero", 5, 2, ["vin", "pid", "dtc", "pid", "pid", "pid"]);
+    expect(p.hero).toEqual({ head: 1, subs: [2, 3, 4], vin: 0, wide: true });
+    expect(p.cols).toBe(3);
+  });
+
+  test("hero falls back to the DTC count, and to a grid with neither", () => {
+    expect(overviewPlan("hero", 6, 2, ["vin", "dtc"]).hero?.head).toBe(1);
+    expect(overviewPlan("hero", 6, 2, ["vin"]).style).toBe("grid");
+  });
+
+  test("no items shows nothing", () => {
+    expect(overviewPlan("grid", 6, 2, []).shown).toEqual([]);
   });
 });

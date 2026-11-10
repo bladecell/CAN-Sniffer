@@ -13,8 +13,11 @@ import {
   uptimeLabel,
   wifiModeLabel,
   windowOf,
+  bridgeGaps,
+  sparkScale,
   zoneStops,
   worstLevel,
+  updatesPerSecond,
 } from "./dashboardCardView";
 import type { PidValue } from "./types";
 
@@ -150,6 +153,7 @@ describe("chartPaths flat scale", () => {
 describe("chartPaths", () => {
   // Box 100 x 50, time 0..1500 ms, values 0..20. Value 10 at t=500 is y 25, value 20 is y 0.
   const box = { w: 100, h: 50, from: 0, to: 1500, lo: 0, hi: 20 };
+  const pt = (ms: number) => (ms / 1500) * 100;
 
   test("line breaks at a gap and area closes each run on its own", () => {
     const { line, area } = chartPaths({ t: [0, 500, 1000, 1500], v: [0, 10, null, 20] }, box);
@@ -164,8 +168,12 @@ describe("chartPaths", () => {
     expect(line).toContain("0.0,0.0");
   });
 
+  test("end is the newest drawn point", () => {
+    expect(chartPaths({ t: [0, 500, 1000], v: [0, 10, null] }, box).end).toEqual({ x: pt(500), y: 25 });
+  });
+
   test("no samples draw nothing", () => {
-    expect(chartPaths({ t: [], v: [] }, box)).toEqual({ line: "", area: "" });
+    expect(chartPaths({ t: [], v: [] }, box)).toEqual({ line: "", area: "", end: null });
   });
 });
 
@@ -206,6 +214,33 @@ describe("windowOf", () => {
   });
 });
 
+describe("bridgeGaps", () => {
+  test("a marker between close samples goes, one over a long gap stays", () => {
+    const s = { t: [0, 2_999, 3_000, 20_000, 20_001, 40_000], v: [1, null, 2, null, 3, 4] };
+    expect(bridgeGaps(s, 10_000)).toEqual({ t: [0, 3_000, 20_000, 20_001, 40_000], v: [1, 2, null, 3, 4] });
+  });
+
+  test("a leading or trailing marker stays", () => {
+    expect(bridgeGaps({ t: [0, 1], v: [null, 5] }, 10_000).v).toEqual([null, 5]);
+    expect(bridgeGaps({ t: [0, 1], v: [5, null] }, 10_000).v).toEqual([5, null]);
+  });
+});
+
+describe("sparkScale", () => {
+  test("a wide span is kept", () => {
+    expect(sparkScale(10, 90, { min: 0, max: 100 })).toEqual({ lo: 10, hi: 90 });
+  });
+
+  test("a narrow span widens to a tenth of the range around its middle", () => {
+    expect(sparkScale(50, 51, { min: 0, max: 100 })).toEqual({ lo: 45.5, hi: 55.5 });
+  });
+
+  test("with no range it widens to 5 % of the value, and a zero constant gets one unit", () => {
+    expect(sparkScale(100, 100)).toEqual({ lo: 97.5, hi: 102.5 });
+    expect(sparkScale(0, 0)).toEqual({ lo: -0.5, hi: 0.5 });
+  });
+});
+
 describe("zoneStops", () => {
   test("high values are bad when warn is below critical", () => {
     expect(zoneStops({ min: 0, max: 100 }, { warn: 80, critical: 90 })).toEqual({ warn: 0.8, critical: 0.9, lowBad: false });
@@ -242,5 +277,18 @@ describe("emptyNote", () => {
     expect(emptyNote("nodata")).toBe("No reading yet");
     expect(emptyNote("off")).toBe("Polling is off");
     expect(emptyNote("value")).toBe("");
+  });
+});
+
+describe("updatesPerSecond", () => {
+  test("turns a count over an interval into a whole rate", () => {
+    expect(updatesPerSecond(40, 2000)).toBe(20);
+    expect(updatesPerSecond(10, 1500)).toBe(7);
+  });
+
+  test("is zero for an empty or backwards interval", () => {
+    expect(updatesPerSecond(5, 0)).toBe(0);
+    expect(updatesPerSecond(-3, 1000)).toBe(0);
+    expect(updatesPerSecond(Number.NaN, 1000)).toBe(0);
   });
 });

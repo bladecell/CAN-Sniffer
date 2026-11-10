@@ -27,6 +27,7 @@
     latest: number | null;
     line: string;
     area: string;
+    end: { x: number; y: number } | null;
   }
 
   // Every series keeps the last minute of its samples. Time runs to the newest sample of any PID.
@@ -58,6 +59,7 @@
         latest: nums.length ? nums[nums.length - 1] : null,
         line: paths.line,
         area: paths.area,
+        end: paths.end,
       };
     }),
   );
@@ -87,6 +89,7 @@
           </div>
           <svg viewBox="-4 -3 {W + 8} {LANE_H + 6}" preserveAspectRatio="none" aria-hidden="true">
             <path class="line" d={s.line} style:stroke={s.color} />
+            {#if s.end}<path class="dot" d="M{s.end.x},{s.end.y}l0.01,0" style:stroke={s.color} />{/if}
           </svg>
         </div>
       {/each}
@@ -105,6 +108,7 @@
         {#each series as s (s.pid)}
           {#if card.style === "area"}<path class="area" d={s.area} style:fill={s.color} />{/if}
           <path class="line" d={s.line} style:stroke={s.color} />
+          {#if s.end}<path class="dot" d="M{s.end.x},{s.end.y}l0.01,0" style:stroke={s.color} />{/if}
         {/each}
       </svg>
       {#if !hasSamples}
@@ -165,6 +169,13 @@
     fill: none;
     stroke-width: 2;
     stroke-linejoin: round;
+    stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
+  }
+  /* The newest sample: a zero-length stroke with round caps stays a circle under a stretched viewBox. */
+  .dot {
+    fill: none;
+    stroke-width: 7;
     stroke-linecap: round;
     vector-effect: non-scaling-stroke;
   }

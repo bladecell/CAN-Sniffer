@@ -74,3 +74,10 @@ export function tripRows(trips: TripEntry[], live: LiveTrip | null): TripRow[] {
   }
   return rows;
 }
+
+/** Elapsed time as h:mm:ss; the hours keep counting past 99. */
+export function elapsedClock(ms: number): string {
+  const total = Number.isFinite(ms) && ms > 0 ? Math.floor(ms / 1000) : 0;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(Math.floor(total / 3600))}:${pad(Math.floor((total % 3600) / 60))}:${pad(total % 60)}`;
+}

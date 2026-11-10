@@ -39,7 +39,12 @@ export const auth = {
   get view() {
     return view;
   },
+  /** Gated routes will answer: a session is open, or the firmware runs without a login (dev bypass). */
+  get canUseGated() {
+    return view.loggedIn || view.devBypass;
+  },
   refresh: core.refresh,
+  resume: core.resume,
   gatedFetch: core.gatedFetch,
   ensureLogin: core.ensureLogin,
   closeDialog: core.closeDialog,

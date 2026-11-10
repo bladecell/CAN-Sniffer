@@ -1,5 +1,5 @@
 // Pure rules for the add and edit card sheet: PID counts, PID ranges, default and checked thresholds.
-import type { CardType, Thresholds } from "./dashboardModel";
+import { OVERVIEW_MAX_ITEMS, type CardType, type Thresholds } from "./dashboardModel";
 
 export interface PidRange { min: number; max: number }
 
@@ -52,7 +52,7 @@ export function pidSlots(type: CardType, style: string, extras: number): [number
     case "chart":
       return [1, 4];
     case "overview":
-      return [0, Math.max(0, 6 - extras)];
+      return [0, Math.max(0, OVERVIEW_MAX_ITEMS - extras)];
     default:
       return [0, 0];
   }

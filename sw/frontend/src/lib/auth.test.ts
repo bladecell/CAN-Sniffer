@@ -601,6 +601,41 @@ describe("remembered PIN (opt-in, localStorage)", () => {
     expect(h.calls.at(-1)?.auth).toBe(`Bearer ${TOKEN}`);
   });
 
+  test("resume after a reconnect logs in again with the saved PIN when the device forgot the session", async () => {
+    let authed = true;
+    const h = harness((url) => {
+      if (url === "/api/v1/auth/login") return json(200, session(authed ? TOKEN : TOKEN2));
+      if (url === "/api/v1/auth") return json(200, { state: "claimed", authenticated: authed });
+      return empty(204);
+    }, PIN);
+    await h.auth.login(PIN, true);
+    authed = false;
+    await h.auth.resume();
+    expect(h.auth.view.loggedIn).toBe(true);
+    expect(loginCalls(h)).toBe(2);
+    expect(h.auth.view.dialog).toBe("none");
+  });
+
+  test("resume keeps a live session and does not log in again", async () => {
+    const h = harness((url) => (url === "/api/v1/auth/login" ? json(200, session(TOKEN)) : url === "/api/v1/auth" ? json(200, { state: "claimed", authenticated: true }) : empty(204)), PIN);
+    await h.auth.login(PIN, true);
+    await h.auth.resume();
+    expect(loginCalls(h)).toBe(1);
+  });
+
+  test("resume without a saved PIN or with a rejected one never opens the dialog", async () => {
+    const status = (url: string) => (url === "/api/v1/auth" ? json(200, { state: "claimed", authenticated: false }) : null);
+    const none = harness((url) => status(url) ?? empty(204));
+    await none.auth.resume();
+    expect(none.auth.view.dialog).toBe("none");
+    expect(loginCalls(none)).toBe(0);
+    const bad = harness((url) => status(url) ?? json(401, { code: "BAD_PIN" }), PIN);
+    await bad.auth.resume();
+    expect(bad.auth.view.dialog).toBe("none");
+    expect(bad.auth.view.notice).toBe("saved_pin_removed");
+    expect(loginCalls(bad)).toBe(1);
+  });
+
   test("a wrong stored PIN is deleted at once and the dialog opens with a notice; no retry", async () => {
     const h = harness(loginRoute(401, { code: "BAD_PIN" }), PIN);
     const pending = h.auth.gatedFetch("/api/v1/settings");

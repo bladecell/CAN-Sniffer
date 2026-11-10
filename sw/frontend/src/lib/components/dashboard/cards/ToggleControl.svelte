@@ -11,10 +11,12 @@
     reason: string | null;
     /** A second line for a warning or an error from the device. */
     note?: string | null;
+    /** Large live figure, shown from 3 rows: PIDs/s, or elapsed time. Null when there is none. */
+    readout?: { value: string; unit: string | null } | null;
     onToggle: () => void;
   }
 
-  let { card, name, word, on, reason, note = null, onToggle }: Props = $props();
+  let { card, name, word, on, reason, note = null, readout = null, onToggle }: Props = $props();
   const disabled = $derived(reason !== null);
   const label = $derived(card.style === "button" ? (on ? `Stop ${name.toLowerCase()}` : `Start ${name.toLowerCase()}`) : name);
 </script>
@@ -33,6 +35,9 @@
       </button>
     {/if}
   </div>
+  {#if readout && card.h >= 3}
+    <div class="big"><span class="dv">{readout.value}</span>{#if readout.unit}<span class="u">{readout.unit}</span>{/if}</div>
+  {/if}
   <span class="wd">{word}{#if note && !reason} <span class="nt">{note}</span>{/if}</span>
   <span class="why" id="{card.id}-reason">{reason ?? ""}</span>
 </div>
@@ -41,7 +46,7 @@
   .t {
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: space-between;
     gap: 2px;
     height: 100%;
     min-width: 0;
@@ -61,8 +66,26 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 0.95rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+  }
+  .big {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 6px;
+    min-width: 0;
+  }
+  .dv {
+    font-size: 1.6rem;
     font-weight: 800;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+  }
+  .u {
+    color: var(--muted);
+    font-size: 0.8rem;
+    font-weight: 700;
   }
   .wd {
     font-size: 0.95rem;
@@ -100,7 +123,7 @@
     cursor: pointer;
   }
   .sw[aria-checked="true"] {
-    background: var(--ok);
+    background: var(--accent);
   }
   .knob {
     position: absolute;
@@ -114,6 +137,7 @@
   }
   .sw[aria-checked="true"] .knob {
     transform: translateX(20px);
+    background: var(--on-accent);
   }
   .btn {
     display: inline-flex;
@@ -134,8 +158,7 @@
     fill: currentColor;
   }
   .btn[aria-pressed="true"] {
-    background: var(--ok);
-    color: var(--float-solid);
+    color: var(--crit);
   }
   .sw:disabled,
   .btn:disabled {

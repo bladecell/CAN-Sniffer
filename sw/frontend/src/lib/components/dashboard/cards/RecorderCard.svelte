@@ -1,49 +1,35 @@
 <script lang="ts">
   import type { Card } from "$lib/dashboardModel";
-  import { auth } from "$lib/auth.svelte";
-  import { connectionStore } from "$lib/connectionStore.svelte";
   import { recordingStore } from "$lib/recordingStore.svelte";
-  import { vehicleStore } from "$lib/vehicleStore.svelte";
-  import { controlReason } from "$lib/dashboardCardView";
-  import { loadWhileMounted } from "./cardSources.svelte";
+  import { elapsedClock, formatBytes } from "$lib/recorderView";
+  import { recorderControl } from "./controls.svelte";
   import ToggleControl from "./ToggleControl.svelte";
 
   let { card }: { card: Card } = $props();
 
-  let sdRead = $state(false);
-  loadWhileMounted(async () => {
-    void recordingStore.refresh();
-    await vehicleStore.requestSystem();
-    sdRead = true;
-  });
-
+  const control = recorderControl();
+  const on = $derived(control.on);
   const rec = $derived(recordingStore.status);
-  const on = $derived(rec?.state === "recording");
-  const stopping = $derived(rec?.state === "stopping" || recordingStore.busy);
-  const word = $derived(
-    rec === null ? "No data"
-    : stopping ? "Stopping"
-    : rec.state === "recording" ? "Recording"
-    : rec.state === "error" ? "Error"
-    : "Off",
-  );
-  const reason = $derived(
-    controlReason({
-      linked: connectionStore.connected,
-      busUp: connectionStore.wsCanStatus.state === "CAN Connected",
-      sdPresent: sdRead ? vehicleStore.system.sd_card_detected : null,
-      needsLogin: true,
-      loggedIn: auth.view.loggedIn,
-    }) ??
-      (rec === null ? "No data" : recordingStore.coolingDown ? `Wait ${recordingStore.cooldownLeft} s` : stopping ? "Working" : null),
-  );
+  // Elapsed time ticks once a second while a session records and the card is 3 rows or taller. The file size
+  // is re-read every 5 s (GET /recorder), since the 1 Hz frame does not carry it.
+  let now = $state(Date.now());
+  $effect(() => {
+    if (!on || card.h < 3) return;
+    let ticks = 0;
+    now = Date.now();
+    const timer = setInterval(() => {
+      now = Date.now();
+      if (++ticks % 5 === 0) void recordingStore.refresh();
+    }, 1000);
+    return () => clearInterval(timer);
+  });
+  const readout = $derived.by(() => {
+    if (!on || recordingStore.startedAt === 0) return null;
+    // The file size comes from GET /recorder, which the card re-reads with the status, not from the 1 Hz frame.
+    const unit = card.w >= 4 && rec ? `${formatBytes(rec.file_bytes)} written` : null;
+    return { value: elapsedClock(now - recordingStore.startedAt), unit };
+  });
   const note = $derived(rec?.state === "error" && rec.last_error ? rec.last_error : on && rec ? `Trip ${rec.trip}, ${rec.rows} rows` : null);
-
-  function toggle() {
-    if (reason !== null) return;
-    if (on) void recordingStore.stop();
-    else void recordingStore.start();
-  }
 </script>
 
-<ToggleControl {card} name="Recorder" {word} {on} {reason} {note} onToggle={toggle} />
+<ToggleControl {card} name="Recorder" word={control.word} {on} reason={control.reason} {note} {readout} onToggle={control.toggle} />

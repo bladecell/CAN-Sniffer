@@ -19,7 +19,7 @@ const persistence = createDashboardPersistence({
 let version = $state(0);
 const controller = createDashboardController({
   persistence,
-  isLoggedIn: () => auth.view.loggedIn,
+  isLoggedIn: () => auth.canUseGated,
   now: () => Date.now(),
   onChange: () => {
     // Untracked: a change fired from inside an effect (sync after login) must not make that effect depend on `version`.

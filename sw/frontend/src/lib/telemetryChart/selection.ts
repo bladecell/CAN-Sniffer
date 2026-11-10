@@ -25,6 +25,11 @@ export function canToggleTicks(active: number): boolean {
   return active >= 0;
 }
 
+/** The plot a tick lands on: the selected plot, else the first one (-1 only when there are no plots). */
+export function plotForTick(active: number, count: number): number {
+  return active >= 0 ? active : count > 0 ? 0 : -1;
+}
+
 /** The PIDs the list shows as ticked: the selected plot's, or none. Other plots keep theirs. */
 export function chartPidsOf(perPlot: readonly (readonly number[])[], active: number): number[] {
   return active >= 0 && active < perPlot.length ? [...perPlot[active]] : [];

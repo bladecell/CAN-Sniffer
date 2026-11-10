@@ -1,6 +1,7 @@
 import { alertStore } from "./alertStore.svelte";
 import { parseJsonResponse, parseJsonResponseAllowEmpty } from "./api";
 import { firmwareApi } from "./firmwareApi.svelte";
+import { singleFlight } from "./singleFlight";
 import {
   cooldownSeconds,
   isTripCsvName,
@@ -27,12 +28,20 @@ class RecordingStore {
   tripsLoading = $state(false);
   /** A start or stop request is in flight. */
   busy = $state(false);
+  /** `Date.now()` when this session was first seen recording, 0 when not recording. Client clock: the API has no start time. */
+  startedAt = $state(0);
 
   /** `Date.now()` value the start cooldown ends at, and the clock the countdown reads. */
   cooldownUntil = $state(0);
   clock = $state(Date.now());
   coolingDown = $derived(this.cooldownUntil > this.clock);
   cooldownLeft = $derived(cooldownSeconds(this.cooldownUntil, this.clock));
+
+  private setStatus(next: RecorderStatus) {
+    this.status = next;
+    if (next.state !== "recording") this.startedAt = 0;
+    else if (this.startedAt === 0) this.startedAt = Date.now();
+  }
 
   private startCooldown(seconds: number) {
     this.clock = Date.now();
@@ -42,21 +51,23 @@ class RecordingStore {
   /** WebSocket 0x04 frame: live counters. The file size and last error come from GET /recorder. */
   applyFrame(frame: Extract<WsFrame, { kind: "recorder" }>) {
     const previous = this.status?.state;
-    this.status = {
+    this.setStatus({
       state: frame.state,
       last_error: frame.hasError ? (this.status?.last_error ?? null) : null,
       trip: frame.trip,
       rows: frame.rows,
       dropped: frame.dropped,
       file_bytes: this.status?.file_bytes ?? 0,
-    };
+    });
     if (previous !== frame.state) void this.loadTrips();
   }
 
-  async refresh() {
+  refresh = singleFlight(() => this.readStatus());
+
+  private async readStatus() {
     try {
       const response = await firmwareApi.recorder();
-      this.status = await parseJsonResponse<RecorderStatus>(response);
+      this.setStatus(await parseJsonResponse<RecorderStatus>(response));
     } catch (e) {
       console.error("Failed to read recorder", e);
     }
@@ -101,12 +112,12 @@ class RecordingStore {
         return;
       }
       if (response.status === 503) this.startCooldown(START_COOLDOWN_S);
-      this.status = await parseJsonResponse<RecorderStatus & { status?: string }>(response);
+      this.setStatus(await parseJsonResponse<RecorderStatus & { status?: string }>(response));
       this.startCooldown(START_COOLDOWN_S);
       void this.loadTrips();
     } catch (e) {
       alertStore.add(`Failed to start recording: ${errorText(e)}`, "error");
-      await this.refresh();
+      await this.readStatus();
     } finally {
       this.busy = false;
     }
@@ -117,12 +128,12 @@ class RecordingStore {
     if (this.busy) return;
     this.busy = true;
     try {
-      this.status = await parseJsonResponse<RecorderStatus & { status?: string }>(await firmwareApi.stopRecorder());
+      this.setStatus(await parseJsonResponse<RecorderStatus & { status?: string }>(await firmwareApi.stopRecorder()));
       this.startCooldown(START_COOLDOWN_S);
       void this.loadTrips();
     } catch (e) {
       alertStore.add(`Failed to stop recording: ${errorText(e)}`, "error");
-      await this.refresh();
+      await this.readStatus();
     } finally {
       this.busy = false;
     }

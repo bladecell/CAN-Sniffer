@@ -4,13 +4,16 @@
   import { vehicleStore } from "$lib/vehicleStore.svelte";
   import { safeHexColor } from "$lib/color";
   import { createSeriesFeed } from "$lib/telemetryChart/feed.svelte";
-  import { chartPaths, emptyNote, formatReading, levelOf, readState, windowOf } from "$lib/dashboardCardView";
+  import { bridgeGaps, chartPaths, emptyNote, formatReading, levelOf, readState, sparkScale, windowOf } from "$lib/dashboardCardView";
   import { pidSources } from "./cardSources.svelte";
   import CardTitle from "./CardTitle.svelte";
 
   let { card }: { card: Card } = $props();
 
   const WINDOW_MS = 60_000;
+  const STATS_MS = 300_000;
+  /** Samples closer than this are one trace: a slow PID is not a broken one. */
+  const BRIDGE_MS = 10_000;
   const pid = $derived(card.pids[0]);
   const def = $derived(vehicleStore.pidDefinitions.find((d) => d.pid === pid));
   const polling = $derived(vehicleStore.obd2Status ? vehicleStore.obd2Status.polling : null);
@@ -26,23 +29,34 @@
   pidSources();
   const feed = createSeriesFeed(() => card.pids.slice(0, 1), () => {});
 
-  // The last minute of stored samples, for the sparkline and the min and max.
-  const recent = $derived.by(() => {
+  // The last minute of stored samples for the sparkline, the last five minutes for the min and max.
+  const history = $derived.by(() => {
     void feed.version;
-    return windowOf(feed.read(pid, 0), WINDOW_MS);
+    return feed.read(pid, 0);
   });
+  const recent = $derived(bridgeGaps(windowOf(history, WINDOW_MS), BRIDGE_MS));
   const stats = $derived.by(() => {
+    const nums = (card.style === "minmax" ? windowOf(history, STATS_MS) : recent).v.filter((v): v is number => v !== null);
+    if (nums.length === 0) return null;
+    let lo = nums[0];
+    let hi = nums[0];
+    for (const n of nums) {
+      if (n < lo) lo = n;
+      if (n > hi) hi = n;
+    }
+    return { lo, hi };
+  });
+  // The strip's own scale: the data span, widened a little so a quiet signal stays flat.
+  const scale = $derived.by(() => {
     const nums = recent.v.filter((v): v is number => v !== null);
     if (nums.length === 0) return null;
-    return { lo: Math.min(...nums), hi: Math.max(...nums) };
+    return sparkScale(Math.min(...nums), Math.max(...nums), def && def.maxValue > def.minValue ? { min: def.minValue, max: def.maxValue } : null);
   });
   const spark = $derived.by(() => {
-    if (!stats || recent.t.length < 2) return null;
+    if (!scale || recent.t.length < 2) return null;
     const to = recent.t[recent.t.length - 1];
-    const lo = stats.lo;
-    const hi = stats.hi;
     // Fixed 60 s window ending at the newest sample: a young trace enters from the right and slides left.
-    return chartPaths(recent, { w: 100, h: 40, from: to - WINDOW_MS, to, lo, hi });
+    return chartPaths(recent, { w: 100, h: 40, from: to - WINDOW_MS, to, lo: scale.lo, hi: scale.hi });
   });
 
   const numPx = $derived(card.h >= 3 ? (card.w >= 6 ? 61 : 48) : 34);
@@ -60,7 +74,7 @@
     <div class="head">
       <div class="t1"><CardTitle {name} {state} {level} {direction} iconOnly={card.w < 3} inline /></div>
       {#if inlineSpark && spark}
-        <svg class="spark inl" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true">
+        <svg class="spark inl" viewBox="-2 -3 104 46" preserveAspectRatio="none" aria-hidden="true">
           <path class="area" d={spark.area} />
           <path class="line" d={spark.line} />
         </svg>
@@ -82,11 +96,11 @@
 
     {#if showSpark}
       <div class="sp" class:tall>
-        {#if tall && stats}
-          <span class="ax" aria-hidden="true"><b>{formatReading(stats.hi)}</b><b>{formatReading(stats.lo)}</b></span>
+        {#if tall && scale}
+          <span class="ax" aria-hidden="true"><b>{formatReading(scale.hi)}</b><b>{formatReading(scale.lo)}</b></span>
         {/if}
         {#if spark}
-          <svg class="spark" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true">
+          <svg class="spark" viewBox="-2 -3 104 46" preserveAspectRatio="none" aria-hidden="true">
             <path class="area" d={spark.area} />
             <path class="line" d={spark.line} />
           </svg>
@@ -99,7 +113,7 @@
       <div class="mm">
         <span>Min <b>{formatReading(stats.lo)}</b></span>
         <span>Max <b>{formatReading(stats.hi)}</b></span>
-        {#if card.h >= 3}<span class="cap">Last 60 s</span>{/if}
+        {#if card.h >= 3}<span class="cap">Last 5 min</span>{/if}
       </div>
     {/if}
   {/if}
@@ -190,6 +204,7 @@
     font-variant-numeric: tabular-nums;
   }
   .spark {
+    overflow: visible;
     flex: 1;
     min-width: 0;
     height: 100%;
@@ -203,6 +218,7 @@
     stroke: var(--pc, var(--accent));
     stroke-width: 1.75;
     stroke-linejoin: round;
+    stroke-linecap: round;
     vector-effect: non-scaling-stroke;
   }
   .spark .area {

@@ -43,21 +43,14 @@
 </script>
 
 <div class="b" class:one={oneRow} class:dim={state !== "value"} data-level={level ?? "none"} style:--pc={color}>
-  {#if oneRow}
+  {#if oneRow || state === "value"}
     <div class="head">
-      <div class="t1"><CardTitle {name} {state} {level} {direction} iconOnly={card.w < 4} inline /></div>
+      <div class="t1"><CardTitle {name} {state} {level} {direction} iconOnly={card.w < 4} inline={oneRow} /></div>
       <span class="num" class:warn={level === "warn"} class:crit={level === "crit"}>{formatReading(value)}{#if value !== null && unit}<span class="u"> {unit}</span>{/if}</span>
     </div>
   {:else}
     <CardTitle {name} {state} {level} {direction} iconOnly={card.w < 4} />
-    {#if state === "value"}
-      <div class="vals">
-        <span class="num" class:warn={level === "warn"} class:crit={level === "crit"}>{formatReading(value)}</span>
-        {#if value !== null && unit}<span class="u">{unit}</span>{/if}
-      </div>
-    {:else}
-      <p class="db-note">{emptyNote(state)}</p>
-    {/if}
+    <p class="db-note">{emptyNote(state)}</p>
   {/if}
 
   {#if range && state === "value"}
@@ -106,6 +99,13 @@
     padding: 8px 12px 10px;
     color: var(--text);
   }
+  /* Two rows: name and value on the top line, the bar at the bottom (mockup). */
+  .b:not(.one) {
+    justify-content: space-between;
+  }
+  .b:not(.one) .head {
+    align-items: flex-start;
+  }
   .b.one {
     gap: 4px;
     padding: 6px 12px;
@@ -119,11 +119,6 @@
   .t1 {
     flex: 1;
     min-width: 0;
-  }
-  .vals {
-    display: flex;
-    align-items: baseline;
-    gap: 4px;
   }
   .num {
     flex: none;

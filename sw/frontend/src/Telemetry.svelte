@@ -16,8 +16,7 @@
   import { chartPidsFor, chipAction } from "$lib/telemetryView";
   import { TELEMETRY_VIEW, TelemetryView } from "$lib/telemetryChart/viewState.svelte";
   import { PLOT_COUNTS, gridColumns, migratePlotCount, type PlotCount } from "$lib/telemetryChart/layout";
-  import { canToggleTicks, chartPidsOf, deselectOnEscape, deselectOnPointer } from "$lib/telemetryChart/selection";
-  import { noPlotHint } from "$lib/telemetryChart/noPlotHint";
+  import { chartPidsOf, deselectOnEscape, deselectOnPointer } from "$lib/telemetryChart/selection";
   import { statsColumnPx } from "$lib/telemetryChart/statsColumns";
   import { freezeWin, resumeWin } from "$lib/telemetryChart/window";
   import { formatValue } from "$lib/telemetryChart/math";
@@ -153,7 +152,7 @@
   const activeChartPids = $derived(chartPidsOf(telemetryStore.chartPids, telemetryStore.activeChartIndex));
 
   function toggleChip(pid: number, pressed: boolean) {
-    if (!canToggleTicks(telemetryStore.activeChartIndex)) return noPlotHint();
+    telemetryStore.ensureActivePlot();
     const row = telemetryStore.local_piddef.find((r) => parseInt(r.pid, 16) === pid);
     if (!row) return;
     const action = chipAction(pressed, row.selected);

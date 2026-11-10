@@ -106,4 +106,26 @@ describe("heartbeat", () => {
     expect(log.pings).toBe(1);
     expect(log.timeouts).toBe(0);
   });
+
+  test("pingNow sends at once, and a missing pong still times out", () => {
+    const { hb, clock, log } = rig();
+    hb.start();
+    hb.pingNow();
+    expect(log.pings).toBe(1);
+    hb.pingNow();
+    expect(log.pings).toBe(1);
+    clock.advance(PONG_TIMEOUT_MS);
+    expect(log.timeouts).toBe(1);
+  });
+
+  test("pong (any message counts) clears the pending timeout and the next ping may go out", () => {
+    const { hb, clock, log } = rig();
+    hb.start();
+    hb.pingNow();
+    clock.advance(PONG_TIMEOUT_MS - 1);
+    hb.pong();
+    clock.advance(PING_INTERVAL_MS + 1000);
+    expect(log.timeouts).toBe(0);
+    expect(log.pings).toBe(2);
+  });
 });

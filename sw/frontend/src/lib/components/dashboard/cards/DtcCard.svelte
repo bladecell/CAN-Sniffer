@@ -1,3 +1,15 @@
+{#snippet sev(group: string)}
+  <svg class="sv" viewBox="0 0 16 16" aria-hidden="true">
+    {#if group === "pending"}
+      <circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.8" /><path d="M8 4.6V8l2.4 1.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+    {:else if group === "permanent"}
+      <rect x="3.4" y="7" width="9.2" height="6.6" rx="1.4" fill="currentColor" /><path d="M5.4 7V5.4a2.6 2.6 0 0 1 5.2 0V7" fill="none" stroke="currentColor" stroke-width="1.8" />
+    {:else}
+      <circle cx="8" cy="8" r="7" fill="currentColor" /><path d="M8 4.2v4.4" stroke="var(--float-solid)" stroke-width="1.8" stroke-linecap="round" /><circle cx="8" cy="11.2" r="1" fill="var(--float-solid)" />
+    {/if}
+  </svg>
+{/snippet}
+
 <script lang="ts">
   import type { Card } from "$lib/dashboardModel";
   import { vehicleStore } from "$lib/vehicleStore.svelte";
@@ -56,8 +68,8 @@
   const warnWord = "Warning";
 </script>
 
-<div class="d" class:count={card.style === "count"} class:dim={cardState !== "value"}>
-  <CardTitle name="DTCs" state={cardState} {level} direction="high" {warnWord} iconOnly={card.w < 3} />
+<div class="d" class:narrow={card.w < 4} class:count={card.style === "count"} class:dim={cardState !== "value"}>
+  <CardTitle name="Fault codes" state={cardState} {level} direction="high" {warnWord} iconOnly={card.w < 3} />
 
   {#if card.style === "count"}
     {#if !read}
@@ -66,11 +78,11 @@
       <div class="cnt">
         <div class="big">
           <span class="n" class:warn={level === "warn"} class:crit={level === "crit"}>{count}</span>
-          <span class="cap">{count === 1 ? "fault code" : "fault codes"}</span>
+          <span class="cap">{card.w < 4 ? "" : "fault "}{count === 1 ? "code" : "codes"}</span>
         </div>
         <ul class="brk">
           {#each breakdown as b (b.key)}
-            <li class={b.key}><span class="bn">{b.n}</span><span class="bl">{b.label}</span></li>
+            <li class={b.key}>{@render sev(b.key)}<span class="bn">{b.n}</span><span class="bl">{b.label}</span></li>
           {/each}
         </ul>
       </div>
@@ -83,9 +95,9 @@
     <ul class="rows" bind:clientHeight={listH} bind:this={list}>
       {#each shown as r (r.key)}
         <li class={r.group}>
-          <span class="st">{r.groupLabel}</span>
+          <span class="st">{@render sev(r.group)}{#if card.w >= 5}{r.groupLabel}{/if}</span>
           <span class="code">{r.code}</span>
-          <span class="desc">{r.description}</span>
+          <span class="desc" class:nodesc={!r.description}>{r.description || "No description"}</span>
         </li>
       {/each}
       {#if visible.more > 0}<li class="more">+{visible.more} more</li>{/if}
@@ -107,15 +119,14 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    flex-wrap: wrap;
     gap: 0 12px;
     flex: 1;
     min-height: 0;
   }
   .big {
     display: flex;
-    align-items: baseline;
-    gap: 6px;
+    flex-direction: column;
+    gap: 2px;
     min-width: 0;
   }
   .n {
@@ -143,19 +154,28 @@
   }
   .brk {
     display: flex;
-    flex-wrap: wrap;
-    gap: 2px 12px;
+    flex-direction: column;
+    gap: 2px;
     margin: 0;
     padding: 0;
     list-style: none;
   }
   .brk li {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 6px;
   }
   .cap {
     white-space: nowrap;
+  }
+  .d.narrow .brk .bl {
+    font-size: 0.72rem;
+  }
+  .d.narrow .bn {
+    font-size: 0.85rem;
+  }
+  .d.narrow .brk {
+    gap: 0;
   }
   .brk .bl {
     white-space: nowrap;
@@ -204,7 +224,38 @@
   .rows li.pending .st {
     color: var(--warn);
   }
+  .rows li.permanent .st {
+    color: var(--perm);
+  }
+  .rows li.permanent {
+    border-left-color: var(--perm);
+  }
+  .brk .permanent .bn,
+  .brk .permanent .sv {
+    color: var(--perm);
+  }
+  .brk .confirmed .sv {
+    color: var(--crit);
+  }
+  .brk .pending .sv {
+    color: var(--warn);
+  }
+  .brk .sv {
+    align-self: center;
+  }
+  .rows li:not(:last-child) {
+    padding-bottom: 2px;
+    border-bottom: 1px solid var(--hair);
+  }
+  .sv {
+    flex: none;
+    width: 1em;
+    height: 1em;
+  }
   .st {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     font-size: 0.72rem;
     font-weight: 800;
     white-space: nowrap;
@@ -220,6 +271,10 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  /* A code with no description in the file: the mockup's italic placeholder. */
+  .desc.nodesc {
+    font-style: italic;
   }
   .more {
     display: block !important;

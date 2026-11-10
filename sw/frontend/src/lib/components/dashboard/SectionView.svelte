@@ -105,7 +105,7 @@
     bind:this={grid}
     class="db-grid"
     class:db-drop={editing}
-    use:dragHandleZone={{ items, flipDurationMs: FLIP_MS, type: "cards", dragDisabled: !editing }}
+    use:dragHandleZone={{ items, flipDurationMs: FLIP_MS, type: "cards", dragDisabled: !editing, dropTargetStyle: { outline: "2px dashed var(--accent)", outlineOffset: "-2px" } }}
     onconsider={(e: CustomEvent<DndEvent<Card>>) => (live = e.detail.items)}
     onfinalize={(e: CustomEvent<DndEvent<Card>>) => {
       afterDrop = true;

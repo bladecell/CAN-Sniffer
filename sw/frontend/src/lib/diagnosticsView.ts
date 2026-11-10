@@ -19,13 +19,13 @@ export const GROUPS: { group: DtcGroup; label: string; mode: string }[] = [
   { group: "permanent", label: "Permanent", mode: "0A" },
 ];
 
-/** The firmware's text for a code missing from the DTC description file. */
-const UNKNOWN_DESCRIPTION = "Description not found";
+/** The firmware's text for a code missing from the DTC description file (GET /dtc/descriptions), and the store's fallback for it. */
+const UNKNOWN_DESCRIPTIONS = new Set(["Description not found", "Description not available"]);
 
 /** Text shown as the explanation, or "" when the API gave none. */
 export function explanation(description: string): string {
   const text = description.trim();
-  return text === UNKNOWN_DESCRIPTION ? "" : text;
+  return UNKNOWN_DESCRIPTIONS.has(text) ? "" : text;
 }
 
 /** Heuristic urgency label from the code family (carried over from the previous Diagnostics view). */

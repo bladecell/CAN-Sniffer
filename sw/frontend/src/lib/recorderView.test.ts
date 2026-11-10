@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   cooldownSeconds,
+  elapsedClock,
   formatBytes,
   isTripCsvName,
   retryAfterSeconds,
@@ -130,5 +131,18 @@ describe("validTrips", () => {
       { name: "trip_000045.csv", size: 4 },
     ]);
     expect(kept.map((t) => t.name)).toEqual(["trip_000046.csv", "trip_000045.csv"]);
+  });
+});
+
+describe("elapsedClock", () => {
+  test("reads hours, minutes and seconds", () => {
+    expect(elapsedClock(0)).toBe("00:00:00");
+    expect(elapsedClock(12_345_000)).toBe("03:25:45");
+    expect(elapsedClock(100 * 3_600_000)).toBe("100:00:00");
+  });
+
+  test("shows zero for a negative or non-finite span", () => {
+    expect(elapsedClock(-5_000)).toBe("00:00:00");
+    expect(elapsedClock(Number.NaN)).toBe("00:00:00");
   });
 });

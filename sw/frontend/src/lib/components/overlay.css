@@ -36,7 +36,12 @@ dialog.overlay[open] {
 dialog.overlay::backdrop {
   background: var(--scrim);
 }
-/* Dialog: small centred confirmation. */
+/* Dialog: small centred confirmation. The page behind it is blurred as well as dimmed, so the dialog is the only sharp thing.
+   A literal radius: ::backdrop does not reliably inherit custom properties in older browsers. */
+dialog.overlay.dialog::backdrop {
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
 dialog.overlay.dialog {
   width: min(440px, calc(100% - 32px));
   max-height: calc(100dvh - 32px);
@@ -257,9 +262,11 @@ dialog.overlay.sheet > footer::before {
 .sheet > footer button.pri {
   box-shadow: var(--shadow-float);
 }
-/* Sheet footer buttons: one look for every sheet (the PID editor and the import sheet). Glass comes from the rules above. */
-.sheet > footer .btn {
+/* Sheet footer buttons: one look for every sheet (PID editor, import, dashboard and card sheets). Glass comes from the rules above. */
+.sheet > footer :is(.btn, .rv-btn) {
   flex: none;
+  width: auto;
+  margin: 0;
   min-height: 48px;
   padding: 0 24px;
   border: 0;
@@ -269,26 +276,26 @@ dialog.overlay.sheet > footer::before {
   font: 750 1rem/1 var(--font);
   cursor: pointer;
 }
-.sheet > footer .btn.pri {
+.sheet > footer :is(.btn, .rv-btn).pri {
   background: var(--accent);
   color: var(--on-accent);
   font-weight: 800;
 }
-.sheet > footer .btn:disabled,
-.sheet > footer .btn[aria-disabled='true'] {
+.sheet > footer :is(.btn, .rv-btn):disabled,
+.sheet > footer :is(.btn, .rv-btn)[aria-disabled='true'] {
   opacity: 0.55;
   cursor: not-allowed;
 }
 /* A disabled primary stays solid: a translucent button would show the fields under it. */
-.sheet > footer .btn.pri:disabled,
-.sheet > footer .btn.pri[aria-disabled='true'] {
+.sheet > footer :is(.btn, .rv-btn).pri:disabled,
+.sheet > footer :is(.btn, .rv-btn).pri[aria-disabled='true'] {
   opacity: 1;
   background: var(--ctl);
   color: var(--ctl-sub);
 }
 /* Phone: the sheet's buttons share the width. */
 @media (max-width: 640px) {
-  .sheet > footer .btn {
+  .sheet > footer :is(.btn, .rv-btn) {
     flex: 1 1 0;
     padding: 0 12px;
   }

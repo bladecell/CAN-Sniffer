@@ -3,10 +3,8 @@
   import Icon from "$lib/Icon.svelte";
   import Dialog from "$lib/components/Dialog.svelte";
   import Sheet from "$lib/components/Sheet.svelte";
-  import SelectMenu from "$lib/components/SelectMenu.svelte";
   import SidebarHint from "$lib/components/telemetry/SidebarHint.svelte";
   import ViewHeader from "$lib/components/listDetail/ViewHeader.svelte";
-  import type { SelectMenuOption } from "$lib/selectMenu";
   import { auth } from "$lib/auth.svelte";
   import { dashboardDocStore as store } from "$lib/dashboardDocStore.svelte";
   import { type Card, sizeLimits } from "$lib/dashboardModel";
@@ -27,8 +25,8 @@
     | { kind: "size"; cardId: string }
     | { kind: "new-dashboard" }
     | { kind: "template" }
+    | { kind: "edit" }
     | null;
-  type PageAction = "reset" | "delete";
 
   const view = $derived(store.view);
   const active = $derived(view.active);
@@ -44,6 +42,8 @@
   let saving = $state(false);
   let confirmDelete = $state(false);
   let confirmReset = $state(false);
+  let editName = $state("");
+  let editError = $state("");
   let phone = $state(false);
   // The layout picked on the first-run page or in the template sheet.
   let pickId = $state<TemplateId>(TEMPLATES[0].id);
@@ -60,13 +60,9 @@
 
   // The layout on the SD card is read once the user is logged in. Before that the local copy is shown.
   $effect(() => {
-    if (auth.view.loggedIn) untrack(() => void store.sync());
+    if (auth.canUseGated) untrack(() => void store.sync());
   });
 
-  const menuOptions = $derived<SelectMenuOption<PageAction>[]>([
-    { value: "reset", label: "Reset to template" },
-    { value: "delete", label: "Delete dashboard", danger: true, disabled: view.dashboards.length <= 1 },
-  ]);
 
   const statusLine = $derived.by(() => {
     if (fresh) return "Pick a layout to start with. You can change it later.";
@@ -156,10 +152,29 @@
     fail(store.removeDashboard(active.id));
   }
 
-  function onMenu(action: PageAction) {
+  // The pencil on the selected tab opens the edit dialog. Name changes apply on Save; reset and delete ask first.
+  function openEdit() {
     message = "";
-    if (action === "reset") confirmReset = true;
-    else confirmDelete = true;
+    editName = active.name;
+    editError = "";
+    sheet = { kind: "edit" };
+  }
+
+  function saveName(e: SubmitEvent) {
+    e.preventDefault();
+    const err = store.renameDashboard(active.id, editName);
+    if (err) editError = err;
+    else sheet = null;
+  }
+
+  function askReset() {
+    sheet = null;
+    confirmReset = true;
+  }
+
+  function askDelete() {
+    sheet = null;
+    confirmDelete = true;
   }
 
   // A drag ends in one zone; the zone's final list is applied card by card. Cards that left another zone are moved here.
@@ -217,17 +232,13 @@
             }}
             onAdd={newDashboard}
             {editing}
-            onRename={(id, name) => {
-              const err = store.renameDashboard(id, name);
-              if (err) message = err;
-              return err;
-            }}
+            onEdit={openEdit}
           />
           {#if editing && !phone}
             <button type="button" class="rv-btn" onclick={cancel}>Cancel</button>
             <button type="button" class="rv-btn pri" onclick={done} disabled={saving}>Done</button>
           {/if}
-          {#if editing}<span class="db-kebab"><SelectMenu trigger="kebab" options={menuOptions} ariaLabel="Dashboard menu" onChange={onMenu} /></span>{:else}
+          {#if !editing}
             <button type="button" class="db-edit" aria-label="Edit dashboard" title="Edit dashboard" onclick={startEdit}><Icon name="edit" size={22} /></button>
           {/if}
         </div>
@@ -335,6 +346,29 @@
   </Sheet>
 {:else if sheet?.kind === "new-dashboard"}
   <NewDashboardSheet onSave={(name, template) => store.addDashboard(name, template)} onClose={() => (sheet = null)} />
+{:else if sheet?.kind === "edit"}
+  <Sheet open title="Edit dashboard" subtitle="Nothing is saved until you press Done." onClose={() => (sheet = null)}>
+    <form id="db-edit-form" class="db-form" onsubmit={saveName}>
+      <label class="db-field">
+        <span class="db-label">Name</span>
+        <input class="db-input" type="text" maxlength="40" autocomplete="off" bind:value={editName} />
+      </label>
+      {#if editError}
+        <p class="db-error" role="alert">{editError}</p>
+      {/if}
+    </form>
+    <div class="db-edit-acts">
+      <button type="button" class="rv-btn" onclick={askReset}>Reset to template</button>
+      <button type="button" class="rv-btn db-danger" onclick={askDelete} disabled={view.dashboards.length <= 1}>Delete dashboard</button>
+    </div>
+    {#if view.dashboards.length <= 1}
+      <p class="db-hint">Add another dashboard before you can delete this one.</p>
+    {/if}
+    {#snippet footer()}
+      <button type="button" class="rv-btn" onclick={() => (sheet = null)}>Cancel</button>
+      <button type="submit" form="db-edit-form" class="rv-btn pri">Save</button>
+    {/snippet}
+  </Sheet>
 {:else if sheet?.kind === "template"}
   <Sheet open title="Use a template" subtitle="Replaces the sections and cards on this dashboard. Press Done to save." onClose={() => (sheet = null)}>
     <div class="db-form">
@@ -368,10 +402,11 @@
 />
 
 <style>
+  /* The rename field sits under the tabs in edit mode, so the row grows; the buttons keep the tab strip's 52 px. */
   .db-meta-row {
     display: flex;
-    align-items: stretch;
-    height: 52px;
+    align-items: flex-start;
+    min-height: 52px;
     gap: 8px;
     min-width: 0;
   }
@@ -385,6 +420,7 @@
     display: grid;
     place-items: center;
     width: 52px;
+    height: 52px;
     margin: 0;
     padding: 0;
     border: 0;
@@ -396,14 +432,24 @@
   .db-edit:hover {
     background: var(--ctl-h2);
   }
-  .db-kebab {
-    flex: none;
-    align-self: center;
-    width: 44px;
+  .db-edit-acts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin: 16px 0 20px;
+  }
+  .db-edit-acts > button {
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding: 0 12px;
+  }
+  .db-edit-acts .db-danger:not(:disabled) {
+    color: var(--crit);
   }
   .db-meta-row :global(.rv-btn) {
     margin: 0;
-    height: 100%;
+    height: 52px;
     min-height: 0;
   }
   .db-page {

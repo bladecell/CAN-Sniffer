@@ -24,7 +24,7 @@
 </script>
 
 <Sheet open title="New dashboard" subtitle="Pick a starting layout and a name. You can change both later." {onClose}>
-  <form class="db-form" onsubmit={save}>
+  <form id="new-dashboard-form" class="db-form" onsubmit={save}>
     <label class="db-field">
       <span class="db-label">Name</span>
       <input class="db-input" type="text" maxlength="40" autocomplete="off" bind:value={name} />
@@ -36,11 +36,11 @@
     {#if message}
       <p class="db-error" role="alert">{message}</p>
     {/if}
-    <div class="db-actions">
-      <button type="button" class="rv-btn" onclick={onClose}>Cancel</button>
-      <button type="submit" class="rv-btn pri">Add dashboard</button>
-    </div>
   </form>
+  {#snippet footer()}
+    <button type="button" class="rv-btn" onclick={onClose}>Cancel</button>
+    <button type="submit" form="new-dashboard-form" class="rv-btn pri">Add dashboard</button>
+  {/snippet}
 </Sheet>
 
 <style>
@@ -48,10 +48,5 @@
     display: grid;
     gap: 16px;
     padding: 4px 0 8px;
-  }
-  .db-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
   }
 </style>

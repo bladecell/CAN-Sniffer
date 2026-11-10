@@ -299,9 +299,13 @@
     margin: 0;
     box-sizing: border-box;
     overflow-y: auto;
+    scrollbar-width: none;
     z-index: 100;
     padding: 8px;
     animation: select-menu-in 0.15s ease-out;
+  }
+  .select-menu-list::-webkit-scrollbar {
+    display: none;
   }
 
   .select-menu-option {

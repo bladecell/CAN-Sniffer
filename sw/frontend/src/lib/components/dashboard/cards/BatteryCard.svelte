@@ -1,9 +1,9 @@
 <script lang="ts">
   import type { Card } from "$lib/dashboardModel";
   import { connectionStore } from "$lib/connectionStore.svelte";
-  import { carBatteryFeed } from "$lib/carBatteryFeed.svelte";
-  import { batteryReading } from "$lib/carBattery";
-  import { emptyNote, type Level, type ReadState } from "$lib/dashboardCardView";
+  import { BATTERY_HISTORY_MS, carBatteryFeed } from "$lib/carBatteryFeed.svelte";
+  import { BATTERY_LABEL, BATTERY_SCALE_MAX_V, BATTERY_SCALE_MIN_V, batteryReading } from "$lib/carBattery";
+  import { chartPaths, emptyNote, type Level, type ReadState } from "$lib/dashboardCardView";
   import { batteryBands } from "$lib/dashboardCardLayout";
   import CardTitle from "./CardTitle.svelte";
 
@@ -34,6 +34,7 @@
   const level = $derived<Level | null>(
     reading.state === "critical" ? "crit" : reading.state === "low" || reading.state === "high" ? "warn" : null,
   );
+  const okWord = $derived(level === null ? BATTERY_LABEL[reading.state] : undefined);
   const direction = $derived(reading.state === "high" ? "high" : "low");
   const fraction = $derived(reading.fraction);
   const fillColor = $derived(
@@ -45,7 +46,28 @@
   const volts = $derived(reading.volts === null ? "—" : reading.volts.toFixed(1));
   const bands = batteryBands();
   const bandTone = { crit: "var(--crit)", warn: "var(--warn)", ok: "var(--ok)" } as const;
+  // Mockup: from 4 columns and 3 rows the card adds a "Last 5 min" trace on the fixed battery scale.
+  const big = $derived(card.h >= 3 && card.w >= 4);
+  const spark = $derived.by(() => {
+    const trace = carBatteryFeed.snapshot();
+    if (trace.t.length < 2) return null;
+    const to = trace.t[trace.t.length - 1];
+    // Fixed window ending at the newest sample: a young trace enters from the right and slides left.
+    return chartPaths(trace, { w: 100, h: 40, from: to - BATTERY_HISTORY_MS, to, lo: BATTERY_SCALE_MIN_V, hi: BATTERY_SCALE_MAX_V });
+  });
 </script>
+
+{#snippet history()}
+  <div class="hist">
+    <span class="cap">Last 5 min</span>
+    {#if spark}
+      <svg class="spark" style:color={fillColor} viewBox="-2 -3 104 46" preserveAspectRatio="none" aria-hidden="true">
+        <path class="area" d={spark.area} />
+        <path class="line" d={spark.line} />
+      </svg>
+    {/if}
+  </div>
+{/snippet}
 
 <div class="bat" class:one={card.h === 1} class:glyph={card.style === "glyph"} class:dim={titleState !== "value"} data-level={level ?? "none"}>
   {#if titleState !== "value"}
@@ -53,11 +75,11 @@
     <p class="db-note">{emptyNote(titleState)}</p>
   {:else if card.h === 1}
     <div class="head">
-      <div class="t1"><CardTitle name="Battery" unit="V" state={titleState} {level} {direction} iconOnly={card.w < 4} inline /></div>
+      <div class="t1"><CardTitle name="Battery" unit="V" state={titleState} {level} {direction} {okWord} iconOnly={card.w < 4} inline /></div>
       <span class="v" style:color={valueColor}>{volts}<span class="u"> V</span></span>
     </div>
   {:else}
-    <CardTitle name="Battery" unit="V" state={titleState} {level} {direction} iconOnly={card.w < 3} />
+    <CardTitle name="Battery" unit="V" state={titleState} {level} {direction} {okWord} iconOnly={card.w < 3} />
     {#if card.style === "glyph"}
       <div class="body">
         <svg class="gl" viewBox="0 0 64 30" aria-hidden="true">
@@ -68,9 +90,17 @@
           {/if}
         </svg>
         <span class="v" style:color={valueColor}>{volts}<span class="u"> V</span></span>
+        {#if big}{@render history()}{/if}
       </div>
     {:else}
-      <span class="v big" style:color={valueColor}>{volts}<span class="u"> V</span></span>
+      {#if big}
+        <div class="row">
+          <span class="v big" style:color={valueColor}>{volts}<span class="u"> V</span></span>
+          {@render history()}
+        </div>
+      {:else}
+        <span class="v big" style:color={valueColor}>{volts}<span class="u"> V</span></span>
+      {/if}
       <div class="strip" aria-hidden="true">
         {#each bands as b, i (i)}
           <i style:left="{b.from * 100}%" style:width="{(b.to - b.from) * 100}%" style:background={bandTone[b.tone]}></i>
@@ -111,6 +141,45 @@
     align-items: center;
     gap: 10px;
     min-width: 0;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+  }
+  .hist {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 2px;
+    align-self: stretch;
+    min-width: 0;
+    min-height: 0;
+  }
+  .cap {
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .spark {
+    flex: 1;
+    width: 100%;
+    min-height: 24px;
+    overflow: visible;
+  }
+  .spark .line {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.75;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
+  }
+  .spark .area {
+    fill: currentColor;
+    fill-opacity: 0.16;
   }
   .gl {
     flex: none;

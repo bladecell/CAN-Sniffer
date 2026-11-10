@@ -473,6 +473,23 @@ export function createAuth(deps: AuthDeps) {
     set({ error, dialog: dialogFor(view.state) });
   }
 
+  /**
+   * After a reconnect: re-read the status, and if the session is gone (device reboot, idle limit passed
+   * during the outage) log in again with the saved PIN. Never opens the dialog: a failure leaves the
+   * next gated call to prompt.
+   */
+  async function resume(): Promise<void> {
+    await refresh();
+    if (silentBusy || liveToken()) return;
+    const saved = silentPin();
+    if (saved === null) return;
+    silentTried = true;
+    silentBusy = true;
+    const error = await postLogin(saved, true);
+    silentBusy = false;
+    if (error === "BAD_PIN") set({ notice: "saved_pin_removed" });
+  }
+
   /** Stops remembering the PIN. The current session, if any, is kept. */
   function forgetPin() {
     savePin(null);
@@ -542,6 +559,7 @@ export function createAuth(deps: AuthDeps) {
       return view;
     },
     refresh,
+    resume,
     gatedFetch,
     ensureLogin,
     closeDialog,

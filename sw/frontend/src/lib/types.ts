@@ -25,45 +25,12 @@ export const BATTERY_DISPLAY_MODES: readonly BatteryDisplayMode[] = ["glyph", "b
 export type BarStyle = "solid" | "zones" | "segmented" | "gradient" | "marker";
 export const BAR_STYLES: readonly BarStyle[] = ["solid", "zones", "segmented", "gradient", "marker"];
 
-export interface PidGridItem extends BaseGridItem {
-  cardType: "pid";
-  pid: number;
-  displayMode: PidDisplayMode;
-  gaugeStyle?: GaugeStyle;
-  /** Bar mode only. Missing means solid. */
-  barStyle?: BarStyle;
-}
-
-/** Car battery (12 V) card. Older saved layouts carry a placeholder displayMode; layoutStorage maps it to glyph. */
-export interface BatteryGridItem extends BaseGridItem {
-  cardType: "battery";
-  displayMode: BatteryDisplayMode;
-  gaugeStyle?: GaugeStyle;
-  barStyle?: BarStyle;
-}
-
-export interface DtcGridItem extends BaseGridItem {
-  cardType: "dtcs";
-  displayMode: SpecialDisplayMode;
-}
-
-export interface OverviewGridItem extends BaseGridItem {
-  cardType: "overview";
-  displayMode: SpecialDisplayMode;
-  pids: [number, number, number]; // Strictly typed 3-element tuple
-  color: string;                  // Hex color string
-}
-
 export interface ControlsGridItem extends BaseGridItem {
   cardType: "control";
   displayMode: SpecialDisplayMode;
   control_elements: ControlType[];
   color: string;
 }
-
-export type SpecialGridItem = BatteryGridItem | DtcGridItem;
-
-export type DashboardItem = PidGridItem | BatteryGridItem | DtcGridItem | OverviewGridItem | ControlsGridItem;
 
 /**
  * DATA STRUCTURES

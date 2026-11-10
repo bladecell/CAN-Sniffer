@@ -120,6 +120,7 @@
   const groupState = $derived<ReadState>(
     items.length === 0 || items.some((it) => it.state === "value") ? "value" : items.every((it) => it.state === "off") ? "off" : "nodata",
   );
+  const plain = (n: number) => Number(n.toFixed(1)).toLocaleString("en");
   const ring = (r: number) => 2 * Math.PI * r;
 
   // The centre number shrinks until it fits inside the arc, the ring or the dial face (viewBox units).
@@ -137,6 +138,8 @@
     {direction}
     iconOnly={card.w < 3}
   />
+
+  {#if single && firstDef?.description}<span class="ds">{firstDef.description}</span>{/if}
 
   <div class="gb">
   <div class="dial">
@@ -207,6 +210,21 @@
     </svg>
   </div>
 
+  {#if single && range}
+    <div class="gx">
+      <dl>
+        <dt>Range</dt>
+        <dd>{plain(range.min)} to {plain(range.max)}{first.unit ? ` ${first.unit}` : ""}</dd>
+        {#if card.thresholds}
+          <dt>{direction === "low" ? "Warning below" : "Warning from"}</dt>
+          <dd><i class="kz"></i>{plain(card.thresholds.warn)}</dd>
+          <dt>{direction === "low" ? "Critical below" : "Critical from"}</dt>
+          <dd><i class="kz c"></i>{plain(card.thresholds.critical)}</dd>
+        {/if}
+      </dl>
+    </div>
+  {/if}
+
   {#if !one}
     <ul class="list">
       {#each items as it (it.pid)}
@@ -223,6 +241,7 @@
 
 <style>
   .g {
+    container-type: size;
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -230,6 +249,67 @@
     min-width: 0;
     padding: 8px 12px 10px;
     color: var(--text);
+  }
+  .ds {
+    display: none;
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+  .gx {
+    display: none;
+    flex: none;
+    width: 44%;
+    color: var(--muted);
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+  .gx dl {
+    display: grid;
+    gap: 2px;
+    margin: 0;
+  }
+  .gx dt {
+    font-weight: 700;
+  }
+  .gx dd {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 6px;
+    color: var(--text);
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+  }
+  .kz {
+    display: inline-block;
+    width: 16px;
+    height: 0;
+    border-top: 3px dashed var(--warn);
+  }
+  .kz.c {
+    border-top-style: solid;
+    border-color: var(--crit);
+  }
+  /* Mockup: the description from 240 px tall, the range and threshold list beside the dial from 330 x 240. */
+  @container (min-height: 240px) {
+    .ds {
+      display: block;
+    }
+  }
+  @container (min-width: 330px) and (min-height: 240px) {
+    .gx {
+      display: block;
+    }
+    .g:not(.multi) .gb {
+      flex-direction: row;
+      align-items: center;
+      gap: 14px;
+    }
+    .g:not(.multi) .dial {
+      align-self: stretch;
+    }
   }
   .dial {
     position: relative;

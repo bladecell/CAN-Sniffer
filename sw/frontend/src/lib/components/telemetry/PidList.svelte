@@ -1,6 +1,5 @@
 <script lang="ts">
   import { canToggleTicks } from "$lib/telemetryChart/selection";
-  import { noPlotHint } from "$lib/telemetryChart/noPlotHint";
   import { telemetryStore, type PidRow } from "$lib/telemetryStore.svelte";
   import { vehicleStore } from "$lib/vehicleStore.svelte";
   import { alertStore } from "$lib/alertStore.svelte";
@@ -53,16 +52,16 @@
     unsupported: { name: "circle-minus", cls: "t-muted" },
   };
 
-  // Ticks write the selected plot only. With no plot selected a tick does nothing and says why.
+  // Ticks write the selected plot. With no plot selected the first one is selected first.
   let noPlot = $derived(!canToggleTicks(telemetryStore.activeChartIndex));
 
   function selectAll(on: boolean) {
-    if (!canToggleTicks(telemetryStore.activeChartIndex)) return noPlotHint();
+    telemetryStore.ensureActivePlot();
     for (const row of loaded) row.selected = on;
   }
 
   function tickRow(row: PidRow) {
-    if (!canToggleTicks(telemetryStore.activeChartIndex)) return noPlotHint();
+    telemetryStore.ensureActivePlot();
     row.selected = !row.selected;
   }
 
@@ -168,10 +167,10 @@
       <span class="num">{noPlot ? "No plot selected" : selectedCount ? `${selectedCount} on chart` : "None on chart"}</span>
       <span class="sb-acts">
         {#if selectedCount < loaded.length}
-          <button type="button" class="sb-txt" aria-disabled={noPlot} onclick={() => selectAll(true)}>Select all</button>
+          <button type="button" class="sb-txt" onclick={() => selectAll(true)}>Select all</button>
         {/if}
         {#if selectedCount > 0}
-          <button type="button" class="sb-txt" aria-disabled={noPlot} onclick={() => selectAll(false)}>Clear</button>
+          <button type="button" class="sb-txt" onclick={() => selectAll(false)}>Clear</button>
         {/if}
       </span>
     </div>

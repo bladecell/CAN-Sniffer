@@ -60,8 +60,8 @@ describe("pidSlots", () => {
   });
 
   test("overview items share the cap of six with the VIN and DTC count", () => {
-    expect(pidSlots("overview", "grid", 0)).toEqual([0, 6]);
-    expect(pidSlots("overview", "grid", 2)).toEqual([0, 4]);
+    expect(pidSlots("overview", "grid", 0)).toEqual([0, 12]);
+    expect(pidSlots("overview", "grid", 2)).toEqual([0, 10]);
   });
 });
 

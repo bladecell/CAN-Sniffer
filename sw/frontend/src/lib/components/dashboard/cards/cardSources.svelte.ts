@@ -1,16 +1,25 @@
 // Lifetimes for the data a card reads. Called from a card's setup; the cleanup runs when the card unmounts.
 import { untrack } from "svelte";
 import { connectionStore } from "$lib/connectionStore.svelte";
-import { onConnectionOpen } from "$lib/connectionEvents";
 import { vehicleStore } from "$lib/vehicleStore.svelte";
+import { createPidRetry } from "$lib/pidRetry";
 
-/** Runs `load` on mount and again after every device connection. Reads inside `load` are not tracked. */
+/**
+ * Runs `load` on mount. Reads inside `load` are not tracked.
+ * It does not run again on reconnect: vehicleStore reloads the shared data once per connection, staggered.
+ */
 export function loadWhileMounted(load: () => unknown): void {
   $effect(() => {
     untrack(() => void load());
-    return onConnectionOpen(() => untrack(() => void load()));
   });
 }
+
+// A failed load (the PID map busy while OBD2 starts) used to wait for the next reconnect, so cards kept showing "PID n".
+// One loop for the page, however many cards are mounted. A loaded list (even an empty one) ends it.
+const pidRetry = createPidRetry({
+  load: () => vehicleStore.loadDefinitions(),
+  isLoaded: () => vehicleStore.pidDefinitions.length > 0,
+});
 
 /**
  * Sources for a card that shows PID values: the live stream stays on while the card is mounted,
@@ -23,22 +32,5 @@ export function pidSources(): void {
     if (vehicleStore.pidDefinitions.length === 0) void vehicleStore.loadDefinitions();
     void vehicleStore.getObd2Status();
   });
-  // A failed load (the PID map busy while OBD2 starts) used to wait for the next reconnect, so the card kept showing "PID n".
-  // Retry while mounted until the list is in. Untracked, so a loaded list (even an empty one) ends the loop.
-  $effect(() => {
-    let stopped = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const attempt = async (): Promise<void> => {
-      if (stopped || (await vehicleStore.loadDefinitions())) return;
-      timer = setTimeout(() => void attempt(), PID_RETRY_MS);
-    };
-    untrack(() => {
-      if (vehicleStore.pidDefinitions.length === 0) void attempt();
-    });
-    return () => {
-      stopped = true;
-      clearTimeout(timer);
-    };
-  });
+  $effect(() => untrack(() => pidRetry.acquire()));
 }
-const PID_RETRY_MS = 5000;

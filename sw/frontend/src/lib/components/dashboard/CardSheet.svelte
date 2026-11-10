@@ -9,7 +9,7 @@
   import SizePicker from "./SizePicker.svelte";
   import { cardBodies } from "./cardRegistry";
   import { dashboardDocStore } from "$lib/dashboardDocStore.svelte";
-  import { CARD_STYLES, CARD_TYPES, type Card, type CardType, clampSize, defaultSize, sizeLimits, type OverviewItem, type Thresholds } from "$lib/dashboardModel";
+  import { CARD_STYLES, CARD_TYPES, OVERVIEW_MAX_ITEMS, type Card, type CardType, clampSize, defaultSize, sizeLimits, type OverviewItem, type Thresholds } from "$lib/dashboardModel";
   import type { CardInput } from "$lib/dashboardOps";
   import {
     STYLE_LABELS,
@@ -149,8 +149,8 @@
     setDefaults();
   }
 
-  // Overview items: each PID once, the VIN once, the DTC count once, at most six in all.
-  const ITEM_MAX = 6;
+  // Overview items: each PID once, the VIN once, the DTC count once, at most OVERVIEW_MAX_ITEMS in all.
+  const ITEM_MAX = OVERVIEW_MAX_ITEMS;
   const itemKey = (it: OverviewItem) => (it.t === "pid" ? `pid:${it.pid}` : it.t);
   const hasItem = (key: string) => items.some((it) => itemKey(it) === key);
   const kindName = (it: OverviewItem) => (it.t === "vin" ? "VIN" : it.t === "dtc" ? "DTC count" : (catalog.find((d) => d.pid === it.pid)?.name ?? `PID ${it.pid}`));
@@ -364,7 +364,7 @@
         <div class="db-add-row">
           <div class="db-add-pick">
             {#key items.length}
-            <SelectMenu id="db-add" ariaLabel="Add item" placeholder={items.length >= ITEM_MAX ? "Up to 6 items" : "+ Add item"} options={itemOptions} onChange={addItem} disabled={items.length >= ITEM_MAX} />
+            <SelectMenu id="db-add" ariaLabel="Add item" placeholder={items.length >= ITEM_MAX ? `Up to ${ITEM_MAX} items` : "+ Add item"} options={itemOptions} onChange={addItem} disabled={items.length >= ITEM_MAX} />
             {/key}
           </div>
           <span class="db-hint">{items.length} of {ITEM_MAX} items</span>

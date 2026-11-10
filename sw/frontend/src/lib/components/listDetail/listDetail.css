@@ -111,7 +111,8 @@
 }
 
 @media (min-width: 700px) {
-  .rv-head {
+  /* Two columns only with actions: an empty second track would still add its column gap to the right padding. */
+  .rv-head.rv-has-actions {
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: start;
   }

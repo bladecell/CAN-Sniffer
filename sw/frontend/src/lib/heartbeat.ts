@@ -18,14 +18,17 @@ export interface HeartbeatOptions {
   ping(): boolean;
   /** No pong within PONG_TIMEOUT_MS. */
   onTimeout(): void;
-  /** Any pong arrived. Pongs are broadcast to every client, so one from another client also counts. */
+  /** Any pong arrived, or any other message: traffic proves the link is alive. */
   onPong(): void;
   timers?: HeartbeatTimers;
 }
 
 export interface Heartbeat {
   start(): void;
+  /** Ping now unless one is already awaited, so a fresh socket is probed without waiting for the interval. */
+  pingNow(): void;
   stop(): void;
+  /** Liveness seen: any WebSocket message, not only a pong. */
   pong(): void;
 }
 
@@ -40,18 +43,21 @@ export function createHeartbeat(opts: HeartbeatOptions): Heartbeat {
     timeout = null;
   }
 
+  function pingNow() {
+    if (awaiting || !opts.ping()) return;
+    awaiting = true;
+    timeout = t.setTimeout(() => {
+      timeout = null;
+      opts.onTimeout();
+    }, PONG_TIMEOUT_MS);
+  }
+
   return {
     start() {
       if (interval !== null) return;
-      interval = t.setInterval(() => {
-        if (awaiting || !opts.ping()) return;
-        awaiting = true;
-        timeout = t.setTimeout(() => {
-          timeout = null;
-          opts.onTimeout();
-        }, PONG_TIMEOUT_MS);
-      }, PING_INTERVAL_MS);
+      interval = t.setInterval(pingNow, PING_INTERVAL_MS);
     },
+    pingNow,
     stop() {
       if (interval !== null) t.clearInterval(interval);
       interval = null;

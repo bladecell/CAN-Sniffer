@@ -1,46 +1,42 @@
 <script lang="ts">
   import type { Card } from "$lib/dashboardModel";
-  import { auth } from "$lib/auth.svelte";
-  import { connectionStore } from "$lib/connectionStore.svelte";
-  import { vehicleStore } from "$lib/vehicleStore.svelte";
-  import { controlReason } from "$lib/dashboardCardView";
-  import { loadWhileMounted } from "./cardSources.svelte";
+  import { updatesPerSecond } from "$lib/dashboardCardView";
+  import { pidUpdateCount } from "$lib/livePidStore.svelte";
+  import { pollingControl } from "./controls.svelte";
   import ToggleControl from "./ToggleControl.svelte";
 
   let { card }: { card: Card } = $props();
 
-  // Polling is switched only by this control. The dashboard never starts it.
-  loadWhileMounted(() => vehicleStore.getObd2Status());
+  const control = pollingControl();
+  const on = $derived(control.on);
 
-  let busy = $state(false);
-  const status = $derived(vehicleStore.obd2Status);
-  const on = $derived(status?.auto_poll ?? false);
-  const reason = $derived(
-    controlReason({
-      linked: connectionStore.connected,
-      busUp: connectionStore.wsCanStatus.state === "CAN Connected",
-      sdPresent: null,
-      needsLogin: false,
-      loggedIn: auth.view.loggedIn,
-    }) ?? (status === null ? "No data" : null),
-  );
-
-  async function toggle() {
-    if (busy || reason !== null) return;
-    busy = true;
-    try {
-      await vehicleStore.setAutoPoll(!on);
-    } finally {
-      busy = false;
+  // PIDs/s: PID updates counted over each second while polling runs and the card is 3 rows or taller.
+  let perSecond = $state<number | null>(null);
+  $effect(() => {
+    if (!on || card.h < 3) {
+      perSecond = null;
+      return;
     }
-  }
+    let last = pidUpdateCount();
+    let at = Date.now();
+    const timer = setInterval(() => {
+      const count = pidUpdateCount();
+      const now = Date.now();
+      perSecond = updatesPerSecond(count - last, now - at);
+      last = count;
+      at = now;
+    }, 1000);
+    return () => clearInterval(timer);
+  });
+  const readout = $derived(on && perSecond !== null ? { value: String(perSecond), unit: "PIDs/s" } : null);
 </script>
 
 <ToggleControl
   {card}
   name="Polling"
-  word={status === null ? "No data" : on ? "On" : "Off"}
+  word={control.word}
   {on}
-  reason={reason ?? (busy ? "Working" : null)}
-  onToggle={toggle}
+  reason={control.reason}
+  {readout}
+  onToggle={control.toggle}
 />

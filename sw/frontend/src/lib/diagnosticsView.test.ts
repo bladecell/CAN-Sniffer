@@ -73,6 +73,7 @@ describe("explanation", () => {
 
   test("the firmware's unknown-code text and an empty string are not explanations", () => {
     expect(explanation("Description not found")).toBe("");
+    expect(explanation("Description not available")).toBe("");
     expect(explanation("")).toBe("");
     expect(explanation("   ")).toBe("");
   });

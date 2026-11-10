@@ -14,7 +14,7 @@
   let { title, status, meta, actions, info }: Props = $props();
 </script>
 
-<header class="rv-head">
+<header class="rv-head" class:rv-has-actions={!!actions}>
   <div class="rv-head-main">
     {#if info}
       <div class="rv-title-row"><h1>{title}</h1>{@render info()}</div>

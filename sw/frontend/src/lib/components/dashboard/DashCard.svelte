@@ -7,7 +7,7 @@
   import { clampSize, type Card } from "$lib/dashboardModel";
   import type { CardInput } from "$lib/dashboardOps";
   import { columnPitch, keyResize, resizeTo, stepIndex, type SectionRef } from "$lib/dashboardGrid";
-  import { editFaceName, TYPE_LABELS } from "$lib/dashboardCardForm";
+  import { editFaceName, STYLE_LABELS, TYPE_LABELS } from "$lib/dashboardCardForm";
   import { vehicleStore } from "$lib/vehicleStore.svelte";
   import { cardBodies } from "./cardRegistry";
 
@@ -28,7 +28,8 @@
   let { card, editing, phone, sectionId, index, sectionIndex, sections, onEdit, onSize, onError }: Props = $props();
 
   const Body = $derived(cardBodies[card.type]);
-  const label = $derived(TYPE_LABELS[card.type]);
+  // The face's second line names the style (mockup "Style ..."), so it differs from the card name.
+  const styleLabel = $derived(STYLE_LABELS[card.style] ?? TYPE_LABELS[card.type]);
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
   // Spoken after a keyboard move or resize. Screen readers get no other sign that the key did anything.
   let announcement = $state("");
@@ -145,7 +146,7 @@
     {#if editing}
       <div class="db-face">
         <strong>{faceName}</strong>
-        <span>{phone ? label : `${label} · ${card.w} × ${card.h}`}</span>
+        <span>{phone ? styleLabel : `${styleLabel} · ${card.w} × ${card.h}`}</span>
       </div>
     {:else}
       <Body {card} />

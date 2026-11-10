@@ -1,5 +1,6 @@
 // Layout rules for the dashboard cards that list items: how many fit a card, the overview fault chip and the battery bands.
 // Pure, no DOM, so it runs under bun test. Row unit is 56 px (docs/decisions.md 2026-11-02).
+import { OVERVIEW_MAX_ITEMS } from "./dashboardModel";
 import { BATTERY_SCALE_MAX_V, BATTERY_SCALE_MIN_V } from "./carBattery";
 
 export interface Visible { shown: number; more: number }
@@ -60,4 +61,47 @@ export function batteryBands(): BatteryBand[] {
     from = band.to;
     return band;
   });
+}
+
+export type OverviewKind = "pid" | "vin" | "dtc";
+export interface OverviewPlan {
+  style: "grid" | "list" | "hero";
+  cols: number;
+  /** Indices of the items drawn, in order: whole items only, the rest are left out. */
+  shown: number[];
+  /** Hero only: the headline item, the sub-values and the VIN row (all indices), and the wide split. */
+  hero?: { head: number; subs: number[]; vin: number | null; wide: boolean };
+}
+
+/**
+ * Which overview items a card shows at its size (mockup `ovPlan`, docs/decisions.md 2026-11-02). Row pitch is 56 px plus a
+ * 12 px gap. Items that do not fit whole are left out instead of being cut. A hero card with no PID or DTC item is a grid.
+ */
+export function overviewPlan(style: string, w: number, h: number, kinds: readonly OverviewKind[]): OverviewPlan {
+  const first = kinds.findIndex((k) => k === "pid");
+  const head = first >= 0 ? first : kinds.findIndex((k) => k === "dtc");
+  let s: OverviewPlan["style"] = style === "list" || style === "hero" ? style : "grid";
+  if (s === "hero" && head < 0) s = "grid";
+  if (s === "hero") {
+    const vin = kinds.findIndex((k) => k === "vin");
+    const wide = w >= 5;
+    const cols = wide ? (h >= 3 ? 2 : 3) : 2;
+    const rows = vin >= 0 ? (wide ? (h >= 3 ? 2 : 1) : 2) : h >= 3 ? 3 : wide ? 2 : 1;
+    const cap = Math.min(vin >= 0 ? 4 : 5, cols * rows);
+    const subs = kinds.map((_, i) => i).filter((i) => i !== head && i !== vin).slice(0, cap);
+    return { style: s, cols, shown: [head, ...subs, ...(vin >= 0 ? [vin] : [])], hero: { head, subs, vin: vin >= 0 ? vin : null, wide } };
+  }
+  const grid = s === "grid";
+  const cols = grid ? (w >= 5 ? 3 : 2) : w >= 5 ? 2 : 1;
+  const rows = grid ? (h === 2 ? 2 : h === 3 ? 3 : 4) : Math.max(1, Math.floor((h * ROW_PX + (h - 1) * 12 - 46) / 28));
+  const cells = cols * rows;
+  const shown: number[] = [];
+  let used = 0;
+  for (let i = 0; i < kinds.length; i++) {
+    const span = kinds[i] === "vin" ? (grid ? Math.min(2, cols) : cols) : 1;
+    if (shown.length >= OVERVIEW_MAX_ITEMS || used + span > cells) break;
+    used += span;
+    shown.push(i);
+  }
+  return { style: s, cols, shown };
 }

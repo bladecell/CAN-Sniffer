@@ -123,6 +123,8 @@ export interface ChartBox {
 export interface ChartPaths {
   line: string;
   area: string;
+  /** The newest drawn point, for the dot at the end of a trace. */
+  end: { x: number; y: number } | null;
 }
 
 /**
@@ -130,7 +132,7 @@ export interface ChartPaths {
  * closed to the baseline, so a gap never draws a wedge across it. Points are decimated per pixel column.
  */
 export function chartPaths(samples: { t: number[]; v: (number | null)[] }, box: ChartBox): ChartPaths {
-  if (samples.t.length === 0) return { line: "", area: "" };
+  if (samples.t.length === 0) return { line: "", area: "", end: null };
   const span = box.to > box.from ? box.to - box.from : 1;
   const scale = box.hi > box.lo ? box.hi - box.lo : 1;
   const pts: Pt[] = samples.t.map((t, i) => {
@@ -159,7 +161,9 @@ export function chartPaths(samples: { t: number[]; v: (number | null)[] }, box: 
     else run.push(p);
   }
   close();
-  return { line, area };
+  let end: { x: number; y: number } | null = null;
+  for (let i = shown.length - 1; i >= 0 && end === null; i--) end = shown[i];
+  return { line, area, end };
 }
 
 const WIFI_MODE: Record<number, string> = {
@@ -189,8 +193,46 @@ export function windowOf(samples: { t: number[]; v: (number | null)[] }, spanMs:
   return { t: samples.t.slice(i), v: samples.v.slice(i) };
 }
 
+/**
+ * Drops the gap markers that sit between two samples at most maxMs apart. The buffer breaks the line after
+ * 2 s, which for a slow PID is its normal pace; a sparkline should only break where data is really missing.
+ */
+export function bridgeGaps(samples: { t: number[]; v: (number | null)[] }, maxMs: number): { t: number[]; v: (number | null)[] } {
+  const t: number[] = [];
+  const v: (number | null)[] = [];
+  let prevReal = -1;
+  for (let i = 0; i < samples.t.length; i++) {
+    if (samples.v[i] === null) {
+      let next = i + 1;
+      while (next < samples.t.length && samples.v[next] === null) next++;
+      if (prevReal >= 0 && next < samples.t.length && samples.t[next] - prevReal <= maxMs) continue;
+    } else prevReal = samples.t[i];
+    t.push(samples.t[i]);
+    v.push(samples.v[i]);
+  }
+  return { t, v };
+}
+
+/**
+ * The value scale of a sparkline: the data span, widened to a tenth of the PID range (or 5 % of the value)
+ * so that noise does not fill the whole strip with a steep line.
+ */
+export function sparkScale(lo: number, hi: number, range?: { min: number; max: number } | null): { lo: number; hi: number } {
+  const full = range && range.max > range.min ? range.max - range.min : 0;
+  const floor = full > 0 ? full * 0.1 : Math.max(Math.abs(lo), Math.abs(hi)) * 0.05 || 1;
+  if (hi - lo >= floor) return { lo, hi };
+  const mid = (lo + hi) / 2;
+  return { lo: mid - floor / 2, hi: mid + floor / 2 };
+}
+
 /** Where the warning and critical thresholds sit on a PID range, as fractions 0 to 1, and which way is bad. */
 export function zoneStops(range: { min: number; max: number }, t: Thresholds): { warn: number; critical: number; lowBad: boolean } {
   const at = (x: number) => clamp01((x - range.min) / (range.max - range.min));
   return { warn: at(t.warn), critical: at(t.critical), lowBad: t.warn > t.critical };
+}
+
+/** PID updates per second from a count taken over an interval (the Polling card's PIDs/s). */
+export function updatesPerSecond(delta: number, elapsedMs: number): number {
+  if (!Number.isFinite(delta) || !Number.isFinite(elapsedMs) || delta <= 0 || elapsedMs <= 0) return 0;
+  return Math.round((delta * 1000) / elapsedMs);
 }
