@@ -252,5 +252,5 @@ Decided by the user while reviewing the built dashboard.
 - **Chart:** no threshold line; fixed 1 minute window, shown as a static "1 min" label (no schema field).
 - **Battery:** no "Charging" word (no band text).
 - **Gauge range (schema):** optional `Card.range {min,max}` on gauge cards; parsed with min < max and |v| <= 1e7, else dropped; the sheet prefills it from the PID range.
-- **Overview items (schema):** `Card.items` is an ordered list of `{t:"pid",pid,label?}`, `{t:"vin",label?}` or `{t:"dtc",label?}`; at most 6, label up to 24 characters, VIN and DTC once each, a PID once. Old cards (`pids` plus `showVin`/`showDtc`) migrate on parse: PIDs, then VIN, then DTC. The sheet has an item editor (add, remove, reorder, label).
+- **Overview items (schema):** `Card.items` is an ordered list of `{t:"pid",pid,label?}`, `{t:"vin",label?}` or `{t:"dtc",label?}`; at most 12 (raised from 6 on 2026-11-10: a 6x4 grid has 12 cells), label up to 24 characters, VIN and DTC once each, a PID once. Old cards (`pids` plus `showVin`/`showDtc`) migrate on parse: PIDs, then VIN, then DTC. The sheet has an item editor (add, remove, reorder, label).
 - **First launch:** with nothing stored the page shows a template picker, not a pre-filled dashboard.

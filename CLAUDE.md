@@ -11,13 +11,13 @@ sw/frontend/        Svelte frontend, served by the firmware
 All paths are relative to the git root. Firmware and frontend conventions are in `.claude/rules/`, and load when you work in those folders.
 
 ## Start every session here
-1. Read `plan/STATUS.md` for the current phase, the next unchecked task and any blockers.
-2. Read that task in `plan/todo.md`, its phase in `plan/plan.md`, and the requirements it serves in `plan/requirements.md`.
+1. Task state lives on the board (see **Board workflow** below), not in `plan/todo.md` or `plan/STATUS.md` (both kept as backup, no longer updated for task state). Run `board list in-progress` and `board list todo` for the current and next task, and `board show <id>` for its detail and How to verify. Blockers are the blocked flag on a card.
+2. Read the task's phase in `plan/plan.md` and the requirements it serves in `plan/requirements.md`.
 3. Read the docs the task touches (see **Docs** below). Find the code itself by reading and searching it.
-4. Implement the task, then run `tools/ci.sh`, then run the task's Verify step. Only then check the box. Never check a box without running its verification.
-5. Update `plan/STATUS.md`: the next task, blockers, and metrics if any were measured. When a requirement is verified met, check it in `plan/requirements.md`.
-6. New work enters in this order: a requirement in `requirements.md`, then a phase in `plan.md`, then an item in `todo.md`, then code. Don't start work that isn't in `todo.md`.
-7. Open decisions (`D#` in `plan/plan.md`) are the user's to make. Don't build on an undecided one. Ask, or pick other work. When one is decided, record it in `docs/decisions.md`.
+4. Implement the task, then run `tools/ci.sh`, then run the card's How to verify steps. Only then move the card to verify with `board move <id> verify --notes "what ran + result"`. Never move a card without running its verification.
+5. Measured metrics still go in `plan/STATUS.md` -> Metrics. When a requirement is verified met, check it in `plan/requirements.md`.
+6. New work enters in this order: a requirement in `requirements.md`, then a phase in `plan.md`, then a card on the board (`board add`, one per plan step, created as soon as the plan exists), then code. Don't start work that isn't a card in todo.
+7. Open decisions (`D#` in `plan/plan.md`) are the user's to make. Don't build on an undecided one. Don't ask in chat: put the question on the board as a decision card with options (see **Board workflow**), then pick other work. When one is decided, record it in `docs/decisions.md`.
 
 `plan/` is gitignored and local only. `docs/` is committed.
 
@@ -77,3 +77,17 @@ IDF 6.1 lives in `~/.espressif/v6.1/esp-idf` (installed by eim, tools and venv u
 ## Map of the code
 `Supervisor` → `CAN driver` (TWAI) → `OBD2` (PID DB, TinyExpr, poll task, DTCs, VIN) → `Web server` (REST, WebSocket, middleware) → Svelte frontend.
 Planned: `Recorder` on top of OBD2, `OTA`, and `Modem` (v2) for AT, GNSS, time and MQTT. Details are in `docs/architecture.md`.
+
+<!-- project-board:start -->
+## Board workflow
+Work is tracked on a local kanban board (`board` command). Data lives in `plan/board/` and is gitignored.
+- Columns: inbox, planned, todo, in-progress, verify, done. Blocked is a flag, not a column.
+- Inbox -> Todo is the user's approval. Build only Todo items.
+- At the start of each session run `board list todo` and `board list in-progress`.
+- `board start <id>` moves a todo card to in-progress and marks you as working on it; use it (or `claim_card`) before doing any work. When done, move it to verify with `board move <id> verify --notes "what ran + result" --steps "- [ ] check one\n- [ ] check two"` and run `board stop <id>`. Notes are for what you ran and the result; anything the user should check by hand goes in How to verify as `- [ ]` lines (`--steps`).
+- Only the user moves cards to done.
+- If the `board` MCP server is configured, use its tools instead (`next_card`, `claim_card`, `add_note`, `move_to_verify` with `howToVerify`, `set_how_to_verify`, `add_card`, `release_card`); agents cannot move cards to todo, planned or done.
+- Add new items you find with `board add "title"` (or `add_card`); they land in inbox. Use `--needs-you` for unsure items.
+- Plan to cards: when a plan or phase is written or changed, every step that has no card gets one in inbox right away (`board add "title" --task <plan id> --phase <phase> --type task`, with the plan step in the description and a testable How to verify). Do not leave work only in plan files; the user approves by moving cards to todo. Before starting a phase, check `board list` for steps that are missing.
+- Questions go on the board, not in chat. When you need a choice from the user (design option, library, scope, an open `D#` decision), do not ask in prose and do not guess. Create a question card with the MCP `add_card`: `type` decision, `options` (2 to 12 short labels, each `"Label :: one-line reason"`), `recommended` (your pick), `multi: true` when several can apply, and enough context in `description`. Then continue with unblocked work. The user answers in the board and the card moves to done; read the answer with `board_show` (CLI: `board show <id>`, Answer section) before building on it, and record it in the project's decision log. Without MCP: `board add "question" --type decision --needs-you` with the options in the description.
+<!-- project-board:end -->
