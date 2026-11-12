@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { createDashboardPersistence, DASHBOARDS_PATH, DASHBOARDS_TMP_PATH, LOCAL_KEY, type SdFiles } from "./dashboardPersistence";
-import type { DashboardsDoc } from "./dashboardModel";
+import { boundedText, createDashboardPersistence, DASHBOARDS_PATH, DASHBOARDS_TMP_PATH, LOCAL_KEY, type SdFiles } from "./dashboardPersistence";
+import { MAX_DOC_CHARS, type DashboardsDoc } from "./dashboardModel";
 
 const docAt = (updatedAt: number, name = "D"): DashboardsDoc => ({ version: 1, updatedAt, dashboards: [{ id: "d" + updatedAt, name, sections: [] }] });
 
@@ -150,5 +150,41 @@ describe("initial", () => {
   test("local copy or default, synchronous", () => {
     expect(setup({ local: JSON.stringify(docAt(5, "local")) }).p.initial().doc.dashboards[0].name).toBe("local");
     expect(setup({ local: "junk" }).p.initial().source).toBe("default");
+  });
+});
+
+describe("download size guard", () => {
+  /** A chunked body with no Content-Length that never ends on its own. */
+  function endless() {
+    let pulls = 0;
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      pull(c) { pulls++; c.enqueue(new Uint8Array(64 * 1024).fill(0x20)); },
+      cancel() { cancelled = true; },
+    });
+    return { res: new Response(body), pulls: () => pulls, cancelled: () => cancelled };
+  }
+  test("boundedText stops reading and cancels past the limit", async () => {
+    const e = endless();
+    expect(e.res.headers.get("content-length")).toBeNull();
+    expect(await boundedText(e.res, 100 * 1024)).toBeNull();
+    expect(e.cancelled()).toBe(true);
+    expect(e.pulls()).toBeLessThan(8);
+  });
+  test("boundedText returns a body under the limit, multi-byte characters intact", async () => {
+    expect(await boundedText(new Response("žluťoučký kůň"), 1024)).toBe("žluťoučký kůň");
+    expect(await boundedText(new Response(null), 1024)).toBe("");
+  });
+  test("oversized chunked dashboard download is rejected, local copy kept", async () => {
+    const e = endless();
+    const store = new Map([[LOCAL_KEY, JSON.stringify(docAt(5, "local"))]]);
+    const p = createDashboardPersistence({
+      storage: { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => void store.set(k, v) },
+      sd: { download: async () => e.res, upload: async () => new Response("{}"), copy: async () => new Response("{}"), remove: async () => new Response("{}") },
+      now: () => 1000,
+    });
+    expect((await p.sync()).doc.dashboards[0].name).toBe("local");
+    expect(e.cancelled()).toBe(true);
+    expect(e.pulls()).toBeLessThan((MAX_DOC_CHARS * 3) / (64 * 1024) + 8);
   });
 });

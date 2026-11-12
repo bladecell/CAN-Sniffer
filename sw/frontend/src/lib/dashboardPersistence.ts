@@ -25,6 +25,31 @@ type SdRead = { status: "ok"; doc: DashboardsDoc } | { status: "missing" | "inva
 
 const msg = (e: unknown) => (e instanceof Error && e.message ? e.message : "Request failed.");
 
+/** UTF-8 needs at most 3 bytes per UTF-16 code unit. */
+const MAX_DOC_BYTES = MAX_DOC_CHARS * 3;
+
+/**
+ * Body text, or null once it passes `maxBytes`. The firmware sends SD files chunked, with no Content-Length,
+ * so the size is counted while reading and the download is cancelled at the limit.
+ */
+export async function boundedText(res: Response, maxBytes: number): Promise<string | null> {
+  if (!res.body) return "";
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  let bytes = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return text + decoder.decode();
+    bytes += value.byteLength;
+    if (bytes > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      return null;
+    }
+    text += decoder.decode(value, { stream: true });
+  }
+}
+
 export function createDashboardPersistence({ storage, sd, now }: PersistenceDeps) {
   function loadLocal(): DashboardsDoc | null {
     try {
@@ -48,9 +73,8 @@ export function createDashboardPersistence({ storage, sd, now }: PersistenceDeps
       const res = await sd.download(DASHBOARDS_PATH);
       if (res.status === 404) return { status: "missing" };
       if (!res.ok) return { status: "error" };
-      const declared = Number(res.headers.get("content-length"));
-      if (declared > MAX_DOC_CHARS) return { status: "invalid" };
-      const doc = parseDashboards(await res.text());
+      const text = await boundedText(res, MAX_DOC_BYTES);
+      const doc = text === null ? null : parseDashboards(text);
       return doc ? { status: "ok", doc } : { status: "invalid" };
     } catch {
       return { status: "error" };

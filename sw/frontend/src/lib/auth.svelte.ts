@@ -1,3 +1,4 @@
+import { timedFetch } from "./fetchTimeout";
 import { createAuth, initialAuthView, isPin, type AuthView, type PinStore } from "./auth";
 
 // Reactive view of the access-control state. The state machine lives in auth.ts (tested without Svelte).
@@ -26,7 +27,7 @@ const pinStorage: PinStore = {
 let view = $state.raw<AuthView>(initialAuthView(pinStorage.load() !== null));
 
 const core = createAuth({
-  fetch: (url, init) => fetch(url, init),
+  fetch: (url, init) => timedFetch(fetch, url, init),
   now: () => Date.now(),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   onChange: (next) => {

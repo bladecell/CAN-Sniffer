@@ -14,6 +14,7 @@ import { connectionStore } from "$lib/connectionStore.svelte";
   import AuthDialog from "./lib/components/AuthDialog.svelte";
   import ApOpenBanner from "./lib/components/ApOpenBanner.svelte";
   import DevBypassBanner from "./lib/components/DevBypassBanner.svelte";
+  import SessionDialog from "./lib/components/SessionDialog.svelte";
   import { auth } from "$lib/auth.svelte";
 
   onMount(() => {
@@ -53,6 +54,7 @@ import { connectionStore } from "$lib/connectionStore.svelte";
 <main class="main-content">
   <DevBypassBanner />
   <ApOpenBanner />
+  <SessionDialog />
   {#if activeTab === "dashboard"}
     <DashboardPage />
   {:else if activeTab === "recorder"}

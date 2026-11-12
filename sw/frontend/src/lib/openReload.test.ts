@@ -1,25 +1,35 @@
 import { describe, expect, test } from "bun:test";
-import { runLimited } from "./openReload";
+import { createLimiter, rebooted } from "./openReload";
 
-describe("runLimited", () => {
-  test("never runs more than the limit at once, and runs every task", async () => {
+describe("createLimiter", () => {
+  test("never more than the limit in flight across callers", async () => {
+    const limit = createLimiter(2);
     let active = 0;
     let peak = 0;
-    let done = 0;
-    const task = async () => {
+    const job = () => limit(async () => {
       peak = Math.max(peak, ++active);
       await new Promise((r) => setTimeout(r, 1));
       active--;
-      done++;
-    };
-    await runLimited(Array.from({ length: 7 }, () => task), 2);
+    });
+    await Promise.all(Array.from({ length: 9 }, job));
     expect(peak).toBe(2);
-    expect(done).toBe(7);
   });
 
-  test("a failing task does not stop the rest", async () => {
-    let done = 0;
-    await runLimited([async () => { throw new Error("x"); }, async () => void done++, async () => void done++], 2);
-    expect(done).toBe(2);
+  test("a rejection frees the slot", async () => {
+    const limit = createLimiter(1);
+    await expect(limit(async () => { throw new Error("x"); })).rejects.toThrow("x");
+    expect(await limit(async () => 5)).toBe(5);
+  });
+});
+
+describe("rebooted", () => {
+  test("no sample means load", () => expect(rebooted(null, 100, 0)).toBe(true));
+  test("uptime that kept counting is not a reboot", () => {
+    expect(rebooted({ uptimeS: 100, at: 0 }, 160, 60_000)).toBe(false);
+    expect(rebooted({ uptimeS: 100, at: 0 }, 155, 60_000)).toBe(false);
+  });
+  test("uptime below the prediction is a reboot", () => {
+    expect(rebooted({ uptimeS: 5, at: 0 }, 3, 60_000)).toBe(true);
+    expect(rebooted({ uptimeS: 3000, at: 0 }, 20, 60_000)).toBe(true);
   });
 });

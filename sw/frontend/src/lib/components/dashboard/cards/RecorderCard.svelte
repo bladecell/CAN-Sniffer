@@ -11,17 +11,17 @@
   const on = $derived(control.on);
   const rec = $derived(recordingStore.status);
   // Elapsed time ticks once a second while a session records and the card is 3 rows or taller. The file size
-  // is re-read every 5 s (GET /recorder), since the 1 Hz frame does not carry it.
+  // is re-read every 5 s (GET /recorder, one shared timer in the store), since the 1 Hz frame does not carry it.
   let now = $state(Date.now());
   $effect(() => {
     if (!on || card.h < 3) return;
-    let ticks = 0;
     now = Date.now();
-    const timer = setInterval(() => {
-      now = Date.now();
-      if (++ticks % 5 === 0) void recordingStore.refresh();
-    }, 1000);
-    return () => clearInterval(timer);
+    const timer = setInterval(() => (now = Date.now()), 1000);
+    const release = recordingStore.watchFileSize();
+    return () => {
+      clearInterval(timer);
+      release();
+    };
   });
   const readout = $derived.by(() => {
     if (!on || recordingStore.startedAt === 0) return null;

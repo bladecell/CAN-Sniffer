@@ -81,3 +81,8 @@ export function elapsedClock(ms: number): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${pad(Math.floor(total / 3600))}:${pad(Math.floor((total % 3600) / 60))}:${pad(total % 60)}`;
 }
+
+/** A state change refreshes the gated trip list only when it can be read without a login prompt, or the Recorder view shows it. */
+export function shouldLoadTrips(canUseGated: boolean, viewOpen: boolean): boolean {
+  return canUseGated || viewOpen;
+}

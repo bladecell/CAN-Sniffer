@@ -4,14 +4,15 @@ import type { WsCanStatus } from "./types";
 import { auth } from "./auth.svelte";
 import { parseWsFrame, type WsFrame } from "./wsFrames";
 import { dispatchToListeners } from "./dispatch";
-import { reconnectDelay } from "./backoff";
+import { jitter, reconnectDelay } from "./backoff";
 import { createHeartbeat, CONNECT_TIMEOUT_MS } from "./heartbeat";
 import { backoffMayReset } from "./stableLink";
 import { createStreamRefCount } from "./streamRefCount";
 import { createThrottle } from "./throttle";
 import { countPidUpdate, livePids } from "./livePidStore.svelte";
-import { notifyConnectionOpen } from "./connectionEvents";
+import { notifyConnectionDrop, notifyConnectionOpen } from "./connectionEvents";
 import { recordingStore } from "./recordingStore.svelte";
+import { closeOutcome, sessionId, wsUrl, type SessionState } from "./wsSession";
 
 export const COMMANDS = { START_LOG: 0xa0, STOP_LOG: 0xa1, PING_REQUEST: 0xa2, PING_RESPONSE: 0xa3 };
 export type MessageListener = (update: { pid: number; value: number; timestamp: number }) => void;
@@ -20,6 +21,8 @@ export class ConnectionStore {
     pids = livePids;
     listeners = new Set<MessageListener>();
     isStreaming = $state(false);
+    /** The device serves one session. Anything but `active` means this page is not reconnecting (wsSession.ts). */
+    session = $state<SessionState>("active");
     socket: WebSocket | null = null;
     pollInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -29,12 +32,13 @@ export class ConnectionStore {
     outageAlerted = false;
     pageshowBound = false;
 
-    // The server's PID stream flag is global: send 0xA0 on the first user and 0xA1 when the last one leaves.
+    // One stream flag for the session: send 0xA0 on the first user and 0xA1 when the last one leaves.
     private streamRefs = createStreamRefCount(
         () => { this.sendByte(COMMANDS.START_LOG); this.isStreaming = true; },
         () => { this.sendByte(COMMANDS.STOP_LOG); this.isStreaming = false; },
     );
 
+    private sid: string | null = null;
     connectTimer: ReturnType<typeof setTimeout> | null = null;
     private openPending = false;
     private upSince: number | null = null;
@@ -56,13 +60,15 @@ export class ConnectionStore {
             if (backoffMayReset(this.upSince, Date.now())) this.reconnectAttempts = 0;
             if (!this.openPending) return;
             this.openPending = false;
+            // Said only once the device talks: a refused session opens and closes without a message.
+            alertStore.add("WebSocket Connected", "success");
             notifyConnectionOpen();
             void auth.resume();
         },
     });
 
-    connect() {
-        if (this.socket) return;
+    connect(takeover = false) {
+        if (this.socket || this.session !== "active") return;
 
         this.intentionalDisconnect = false;
 
@@ -76,14 +82,18 @@ export class ConnectionStore {
             window.addEventListener("pageshow", (e) => this.handlePageShow(e));
         }
 
-        const host = window.location.host;
-        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-        const wsUrl = `${protocol}//${host}/ws`;
+        let storage: Storage | null = null;
+        try {
+            storage = window.sessionStorage;
+        } catch {
+            // Storage blocked: the session id lives for this page load only.
+        }
+        const url = wsUrl(window.location, (this.sid ??= sessionId(storage)), takeover);
 
-        console.log(`Connecting to ${wsUrl}...`);
+        console.log(`Connecting to ${url}...`);
 
         try {
-            this.socket = new WebSocket(wsUrl);
+            this.socket = new WebSocket(url);
         } catch (e) {
             console.error("WebSocket construction failed", e);
             this.handleConnectionDrop();
@@ -105,12 +115,11 @@ export class ConnectionStore {
         socket.onopen = () => {
             if (socket !== this.socket) return;
             console.log("WebSocket Connected");
-            alertStore.add("WebSocket Connected", "success");
             this.clearConnectTimer();
             this.connected = true;
             this.upSince = Date.now();
             this.outageAlerted = false;
-            // A new connection may find the server flag off (it resets when clients leave).
+            // A new session starts with the stream off.
             if (this.streamRefs.count() > 0) this.sendByte(COMMANDS.START_LOG);
             this.isStreaming = this.streamRefs.count() > 0;
 
@@ -121,10 +130,17 @@ export class ConnectionStore {
             this.heartbeat.pingNow();
         };
 
-        socket.onclose = () => {
+        socket.onclose = (event) => {
             if (socket !== this.socket) return;
-            console.log("WebSocket Disconnected cleanly.");
-            this.handleConnectionDrop();
+            const outcome = closeOutcome(event.code);
+            console.log(`WebSocket closed (code ${event.code}).`);
+            if (outcome === "drop") {
+                this.handleConnectionDrop();
+                return;
+            }
+            // Refused or replaced: the device has another session. Ask the user, never reconnect on our own.
+            this.session = outcome;
+            this.handleConnectionDrop(true);
         };
 
         socket.onerror = () => {
@@ -145,7 +161,7 @@ export class ConnectionStore {
 
     // A page restored from the back/forward cache has a dead socket and no timers.
     handlePageShow(e: PageTransitionEvent) {
-        if (this.intentionalDisconnect) return;
+        if (this.intentionalDisconnect || this.session !== "active") return;
         if (e.persisted && this.socket && this.socket.readyState !== WebSocket.OPEN) {
             this.abandon(this.socket);
             this.handleConnectionDrop(true);
@@ -173,6 +189,7 @@ export class ConnectionStore {
 
     handleConnectionDrop(silent = false) {
         this.clearConnectTimer();
+        notifyConnectionDrop();
         this.connected = false;
         this.upSince = null;
         this.openPending = false;
@@ -182,18 +199,32 @@ export class ConnectionStore {
 
         this.heartbeat.stop();
 
-        if (!this.intentionalDisconnect) {
+        if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
+        this.reconnectTimeout = null;
+        if (!this.intentionalDisconnect && this.session === "active") {
             if (!this.outageAlerted && !silent) {
                 this.outageAlerted = true;
                 alertStore.add("WebSocket Disconnected, reconnecting...", "error");
             }
-            if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
-            const delay = reconnectDelay(this.reconnectAttempts++);
+            const delay = jitter(reconnectDelay(this.reconnectAttempts++), Math.random());
             this.reconnectTimeout = setTimeout(() => {
                 this.reconnectTimeout = null;
                 this.connect();
             }, delay);
         }
+    }
+
+    /** Replace the session that holds the device with this page. */
+    takeOver() {
+        this.session = "active";
+        this.reconnectAttempts = 0;
+        this.intentionalDisconnect = false;
+        this.connect(true);
+    }
+
+    /** The user declined to take over: stay disconnected until they ask. */
+    parkSession() {
+        this.session = "parked";
     }
 
     disconnect() {

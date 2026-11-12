@@ -1,11 +1,14 @@
 import { alertStore } from "./alertStore.svelte";
+import { auth } from "./auth.svelte";
 import { parseJsonResponse, parseJsonResponseAllowEmpty } from "./api";
 import { firmwareApi } from "./firmwareApi.svelte";
 import { singleFlight } from "./singleFlight";
+import { createStreamRefCount } from "./streamRefCount";
 import {
   cooldownSeconds,
   isTripCsvName,
   retryAfterSeconds,
+  shouldLoadTrips,
   sidecarName,
   START_COOLDOWN_MS,
   validTrips,
@@ -59,12 +62,32 @@ class RecordingStore {
       dropped: frame.dropped,
       file_bytes: this.status?.file_bytes ?? 0,
     });
-    if (previous !== frame.state) void this.loadTrips();
+    if (previous !== frame.state && shouldLoadTrips(auth.canUseGated, this.tripsWatch.count() > 0)) void this.loadTrips();
   }
+
+  /** The Recorder view lists trips, so it wants them even without a session (the read then asks for a login). Returns the release. */
+  private tripsWatch = createStreamRefCount(() => {}, () => {});
+  watchTrips = () => this.tripsWatch.acquire();
 
   refresh = singleFlight(() => this.readStatus());
 
+  private lastRead = 0;
+  /** Mount-time and open-time loads ask for the same status within a moment of each other: the second one reuses the first. */
+  refreshIfStale = () => (Date.now() - this.lastRead < 2_000 ? Promise.resolve() : this.refresh());
+
+  /**
+   * The WebSocket frame has no file size, so GET /recorder is re-read every 5 s while anything shows it.
+   * One timer for the page, however many views ask. Returns the release.
+   */
+  private sizeTimer: ReturnType<typeof setInterval> | undefined;
+  private sizeWatch = createStreamRefCount(
+    () => (this.sizeTimer = setInterval(() => void this.refresh(), 5_000)),
+    () => clearInterval(this.sizeTimer),
+  );
+  watchFileSize = () => this.sizeWatch.acquire();
+
   private async readStatus() {
+    this.lastRead = Date.now();
     try {
       const response = await firmwareApi.recorder();
       this.setStatus(await parseJsonResponse<RecorderStatus>(response));

@@ -53,7 +53,7 @@ export function pollingControl(): Control {
 export function recorderControl(): Control {
   let sdRead = $state(false);
   loadWhileMounted(async () => {
-    void recordingStore.refresh();
+    void recordingStore.refreshIfStale();
     await vehicleStore.requestSystem();
     sdRead = true;
   });

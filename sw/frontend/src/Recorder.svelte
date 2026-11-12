@@ -86,8 +86,9 @@
   }
 
   onMount(() => {
-    void recordingStore.refresh();
+    void recordingStore.refreshIfStale();
     void recordingStore.loadTrips();
+    return recordingStore.watchTrips();
   });
 
   // Countdown ticks only while a start is refused.
@@ -97,11 +98,9 @@
     return () => clearInterval(id);
   });
 
-  // The WebSocket frame has no file size, so re-read GET /recorder while a trip is being written.
+  // The WebSocket frame has no file size, so GET /recorder is re-read while a trip is being written.
   $effect(() => {
-    if (!recording) return;
-    const id = setInterval(() => void recordingStore.refresh(), 5_000);
-    return () => clearInterval(id);
+    if (recording) return recordingStore.watchFileSize();
   });
 </script>
 

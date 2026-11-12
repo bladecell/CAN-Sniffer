@@ -2,7 +2,6 @@
 import { untrack } from "svelte";
 import { connectionStore } from "$lib/connectionStore.svelte";
 import { vehicleStore } from "$lib/vehicleStore.svelte";
-import { createPidRetry } from "$lib/pidRetry";
 
 /**
  * Runs `load` on mount. Reads inside `load` are not tracked.
@@ -13,13 +12,6 @@ export function loadWhileMounted(load: () => unknown): void {
     untrack(() => void load());
   });
 }
-
-// A failed load (the PID map busy while OBD2 starts) used to wait for the next reconnect, so cards kept showing "PID n".
-// One loop for the page, however many cards are mounted. A loaded list (even an empty one) ends it.
-const pidRetry = createPidRetry({
-  load: () => vehicleStore.loadDefinitions(),
-  isLoaded: () => vehicleStore.pidDefinitions.length > 0,
-});
 
 /**
  * Sources for a card that shows PID values: the live stream stays on while the card is mounted,
@@ -32,5 +24,4 @@ export function pidSources(): void {
     if (vehicleStore.pidDefinitions.length === 0) void vehicleStore.loadDefinitions();
     void vehicleStore.getObd2Status();
   });
-  $effect(() => untrack(() => pidRetry.acquire()));
 }

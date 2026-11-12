@@ -146,3 +146,13 @@ describe("elapsedClock", () => {
     expect(elapsedClock(Number.NaN)).toBe("00:00:00");
   });
 });
+
+import { shouldLoadTrips } from "./recorderView";
+
+describe("shouldLoadTrips", () => {
+  test("logged out with no Recorder view: no gated request", () => expect(shouldLoadTrips(false, false)).toBe(false));
+  test("a session or the open view loads", () => {
+    expect(shouldLoadTrips(true, false)).toBe(true);
+    expect(shouldLoadTrips(false, true)).toBe(true);
+  });
+});
