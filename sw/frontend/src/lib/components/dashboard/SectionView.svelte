@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { dragHandleZone, type DndEvent } from "svelte-dnd-action";
+  import { dragHandle, dragHandleZone, type DndEvent } from "svelte-dnd-action";
   import { dashboardDocStore } from "$lib/dashboardDocStore.svelte";
   import type { Card, Section } from "$lib/dashboardModel";
   import { type SectionRef } from "$lib/dashboardGrid";
@@ -10,7 +10,6 @@
   interface Props {
     section: Section;
     index: number;
-    count: number;
     sections: SectionRef[];
     editing: boolean;
     phone: boolean;
@@ -23,7 +22,7 @@
     onError: (message: string) => void;
   }
 
-  let { section, index, count, sections, editing, phone, onDrop, onAdd, onEdit, onSize, onError }: Props = $props();
+  let { section, index, sections, editing, phone, onDrop, onAdd, onEdit, onSize, onError }: Props = $props();
 
   // Reordering animates the other cards aside; reduced motion turns it off.
   const FLIP_MS = reduced() ? 0 : 150;
@@ -53,8 +52,8 @@
     const err = dashboardDocStore.renameSection(section.id, title);
     if (err) onError(err);
   }
-  function shift(delta: number) {
-    const err = dashboardDocStore.moveSection(section.id, index + delta);
+  function duplicate() {
+    const err = dashboardDocStore.duplicateSection(section.id);
     if (err) onError(err);
   }
   function remove() {
@@ -71,6 +70,9 @@
 <section class="db-section" class:editing aria-label={sectionLabel}>
   {#if editing}
     <div class="db-sec-edit">
+      <button type="button" class="db-icon db-sec-grip" use:dragHandle aria-label="Drag section {index + 1} to reorder." title="Drag to reorder">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><circle cx="9" cy="6" r="1.8" /><circle cx="15" cy="6" r="1.8" /><circle cx="9" cy="12" r="1.8" /><circle cx="15" cy="12" r="1.8" /><circle cx="9" cy="18" r="1.8" /><circle cx="15" cy="18" r="1.8" /></svg>
+      </button>
       <input
         class="db-input db-sec-title"
         type="text"
@@ -80,11 +82,8 @@
         value={section.title}
         onchange={(e) => rename(e.currentTarget.value)}
       />
-      <button type="button" class="db-icon" aria-label="Move section {index + 1} up" aria-disabled={index === 0} onclick={() => index > 0 && shift(-1)}>
-        <Icon name="chevron-down" size={20} class="up" />
-      </button>
-      <button type="button" class="db-icon" aria-label="Move section {index + 1} down" aria-disabled={index >= count - 1} onclick={() => index < count - 1 && shift(1)}>
-        <Icon name="chevron-down" size={20} />
+      <button type="button" class="db-icon" aria-label="Duplicate section {index + 1}" onclick={duplicate}>
+        <Icon name="copy" size={20} />
       </button>
       <button type="button" class="db-icon db-icon-danger" aria-label="Delete section {index + 1}" onclick={remove}>
         <Icon name="trash" size={20} />
@@ -187,6 +186,10 @@
     height: 44px;
     min-height: 0;
     background: transparent;
+  }
+  .db-sec-grip {
+    cursor: grab;
+    touch-action: none;
   }
   .db-sec-edit .db-icon:hover {
     background: var(--ctl);

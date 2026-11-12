@@ -11,6 +11,8 @@
   import { TEMPLATES, templateById, templateForName, type TemplateId } from "$lib/dashboardTemplates";
   import type { SectionRef } from "$lib/dashboardGrid";
   import DashboardTabs from "./DashboardTabs.svelte";
+  import { dragHandleZone, type DndEvent } from "svelte-dnd-action";
+  import { reduced } from "./flip";
   import SectionView from "./SectionView.svelte";
   import CardSheet from "./CardSheet.svelte";
   import NameSheet from "./NameSheet.svelte";
@@ -91,6 +93,17 @@
     confirmReset = false;
     sheet = null;
     store.cancel();
+  }
+
+  // Dragging a whole section: the zone shows `liveSections` while a drag is in flight, then the final order is applied.
+  let liveSections = $state<typeof sections | null>(null);
+  const shownSections = $derived(liveSections ?? sections);
+  const SECTION_FLIP_MS = reduced() ? 0 : 150;
+  function reorderSections(ids: string[]) {
+    liveSections = null;
+    ids.forEach((id, i) => {
+      if (sections[i]?.id !== id) fail(store.moveSection(id, i));
+    });
   }
 
   function fail(err: string | null) {
@@ -296,12 +309,16 @@
     {#if view.unreadable}
       {@render unreadable()}
     {/if}
-    <div class="db-sections">
-      {#each sections as s, i (s.id)}
+    <div
+      class="db-sections"
+      use:dragHandleZone={{ items: shownSections, flipDurationMs: SECTION_FLIP_MS, type: "sections", dragDisabled: !editing, dropTargetStyle: {} }}
+      onconsider={(e: CustomEvent<DndEvent<(typeof sections)[number]>>) => (liveSections = e.detail.items)}
+      onfinalize={(e: CustomEvent<DndEvent<(typeof sections)[number]>>) => reorderSections(e.detail.items.map((x) => x.id))}
+    >
+      {#each shownSections as s, i (s.id)}
         <SectionView
           section={s}
           index={i}
-          count={sections.length}
           sections={refs}
           {editing}
           {phone}

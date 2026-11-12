@@ -77,6 +77,18 @@ export const renameSection = (doc: DashboardsDoc, did: string, sid: string, titl
 export const removeSection = (doc: DashboardsDoc, did: string, sid: string): OpResult =>
   withDashboard(doc, did, (d) => (d.sections.some((s) => s.id === sid) ? { ...d, sections: d.sections.filter((s) => s.id !== sid) } : "Section not found."));
 
+/** Copies a section with all its cards to just after the original. Every card gets a new id. */
+export const duplicateSection = (doc: DashboardsDoc, did: string, sid: string): OpResult =>
+  withDashboard(doc, did, (d) => {
+    const i = d.sections.findIndex((s) => s.id === sid);
+    if (i < 0) return "Section not found.";
+    if (d.sections.length >= CAPS.sectionsPerDashboard) return `At most ${CAPS.sectionsPerDashboard} sections per dashboard.`;
+    const src = d.sections[i];
+    if (totalCards(doc) + src.cards.length > CAPS.cardsTotal) return `At most ${CAPS.cardsTotal} cards in total.`;
+    const copy: Section = { id: newId(), title: src.title, cards: src.cards.map((c) => ({ ...c, pids: [...c.pids], ...(c.items && { items: c.items.map((it) => ({ ...it })) }), id: newId() })) };
+    return { ...d, sections: insertAt(d.sections, copy, i + 1) };
+  });
+
 export const moveSection = (doc: DashboardsDoc, did: string, sid: string, toIndex: number): OpResult =>
   withDashboard(doc, did, (d) => {
     const s = d.sections.find((x) => x.id === sid);

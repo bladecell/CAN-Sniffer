@@ -125,6 +125,7 @@ export function createDashboardController(deps: ControllerDeps) {
     addSection: (title = "") => inActive((d, did) => ops.addSection(d, did, title)),
     renameSection: (sid: string, title: string) => inActive((d, did) => ops.renameSection(d, did, sid, title)),
     removeSection: (sid: string) => inActive((d, did) => ops.removeSection(d, did, sid)),
+    duplicateSection: (sid: string) => inActive((d, did) => ops.duplicateSection(d, did, sid)),
     moveSection: (sid: string, toIndex: number) => inActive((d, did) => ops.moveSection(d, did, sid, toIndex)),
     addCard: (sid: string, input: CardInput) => inActive((d, did) => ops.addCard(d, did, sid, input)),
     updateCard: (cid: string, input: CardInput) => inActive((d, did) => ops.updateCard(d, did, cid, input)),

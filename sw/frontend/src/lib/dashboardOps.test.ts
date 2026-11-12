@@ -94,6 +94,19 @@ describe("cards", () => {
     d = ok(ops.moveCard(d, "d1", "c3", "s2", 99));
     expect(ids(d, "d1", "s2")).toEqual(["c1", "c3"]);
   });
+  test("duplicate section lands after the original with fresh ids, and respects caps", () => {
+    const d = ok(ops.duplicateSection(base(), "d1", "s1"));
+    const secs = d.dashboards[0].sections;
+    expect(secs.length).toBe(3);
+    expect(secs[2].id).toBe("s2");
+    expect(secs[1].id).not.toBe("s1");
+    expect(secs[1].cards.length).toBe(2);
+    expect(secs[1].cards.map((c) => c.id)).not.toContain("c1");
+    expect(secs[1].cards[0].pids).not.toBe(secs[0].cards[0].pids);
+    expect(ops.duplicateSection(base(), "d1", "nope").ok).toBe(false);
+    const many = ok(ops.addDashboard(base(), "X", Array.from({ length: CAPS.sectionsPerDashboard }, (_, i) => ({ id: `q${i}`, title: "", cards: [] }))));
+    expect(ops.duplicateSection(many, many.dashboards.at(-1)!.id, "q0").ok).toBe(false);
+  });
   test("duplicate lands after the original with a new id", () => {
     const d = ok(ops.duplicateCard(base(), "d1", "c1"));
     const got = ids(d, "d1", "s1");
