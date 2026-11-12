@@ -48,6 +48,9 @@
     >
       <span class="ic"><Icon name={icons[alert.type]} size={20} /></span>
       <span class="msg">{alert.message}</span>
+      {#if alert.action}
+        <button type="button" class="act" onclick={alert.action.run}>{alert.action.label}</button>
+      {/if}
       <button type="button" class="close" aria-label="Dismiss notification" onclick={() => alertStore.remove(alert.id)}>
         <Icon name="x" size={18} />
       </button>
@@ -110,6 +113,19 @@
   .msg {
     min-width: 0;
     overflow-wrap: anywhere;
+  }
+  .act {
+    flex: none;
+    width: auto;
+    margin: 0;
+    min-height: 36px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: var(--r-ctl);
+    background: var(--accent);
+    color: var(--on-accent, #fff);
+    font-weight: 700;
+    cursor: pointer;
   }
   .close {
     flex: none;

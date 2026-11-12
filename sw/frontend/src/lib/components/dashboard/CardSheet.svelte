@@ -10,7 +10,7 @@
   import SizePicker from "./SizePicker.svelte";
   import { cardBodies } from "./cardRegistry";
   import { dashboardDocStore } from "$lib/dashboardDocStore.svelte";
-  import { CARD_STYLES, CARD_TYPES, OVERVIEW_MAX_ITEMS, type Card, type CardType, clampSize, defaultSize, sizeLimits, type OverviewItem, type Thresholds } from "$lib/dashboardModel";
+  import { CARD_STYLES, CARD_TYPES, OVERVIEW_MAX_ITEMS, STATUS_ITEMS, type Card, type CardType, type StatusItemKey, clampSize, defaultSize, sizeLimits, type OverviewItem, type Thresholds } from "$lib/dashboardModel";
   import type { CardInput } from "$lib/dashboardOps";
   import {
     STYLE_LABELS,
@@ -45,6 +45,7 @@
       style: card?.style ?? CARD_STYLES[t][0],
       pids: card ? [...card.pids] : [],
       items: card?.items ? card.items.map((i) => ({ ...i })) : [],
+      hidden: card?.hidden ? [...card.hidden] : [],
       sectionId: initialSection || sections[0]?.id || "",
       w: card?.w ?? sizeSeed.w,
       h: card?.h ?? sizeSeed.h,
@@ -57,6 +58,7 @@
   let style = $state<string>(seed.style);
   let pids = $state<number[]>(seed.pids);
   let items = $state<OverviewItem[]>(seed.items);
+  let hidden = $state<StatusItemKey[]>(seed.hidden);
   let sectionId = $state(seed.sectionId);
   let w = $state(seed.w);
   let h = $state(seed.h);
@@ -93,6 +95,7 @@
     w: size.w,
     h: size.h,
     items: type === "overview" ? items : undefined,
+    hidden: type === "status" ? hidden : undefined,
     thresholds: previewThresholds,
   });
   const Body = $derived(cardBodies[type]);
@@ -230,6 +233,11 @@
     if (on && (warn === undefined || critical === undefined)) setDefaults();
   }
 
+  // A status row is shown unless it is listed in `hidden`. `show` is true when the row should appear.
+  function toggleRow(key: StatusItemKey, show: boolean) {
+    hidden = show ? hidden.filter((k) => k !== key) : [...hidden.filter((k) => k !== key), key];
+  }
+
   function toggleLow(on: boolean) {
     lowWarns = on;
     setDefaults();
@@ -264,6 +272,7 @@
         ...(thresholds ? { thresholds } : {}),
         ...(cardRange ? { range: cardRange } : {}),
         ...(type === "overview" ? { items: items.map((it) => ({ ...it })) } : {}),
+        ...(type === "status" ? { hidden: [...hidden] } : {}),
       },
     };
   }
@@ -383,6 +392,19 @@
       </div>
     {/if}
 
+    {#if type === "status"}
+      <fieldset class="db-field db-span rows-pick">
+        <legend class="db-label">Rows shown</legend>
+        {#each STATUS_ITEMS as item (item.key)}
+          {@const shown = !hidden.includes(item.key)}
+          <button type="button" role="switch" aria-checked={shown} class:off={!shown} onclick={() => toggleRow(item.key, !shown)}>
+            <Icon name={shown ? "eye" : "eye-slash"} size={18} />
+            {item.label}
+          </button>
+        {/each}
+      </fieldset>
+    {/if}
+
     {#if withThresholds}
       <div class="db-field">
         <span class="db-label">Thresholds</span>
@@ -440,6 +462,41 @@
   .db-wrap {
     display: flex;
     flex-wrap: wrap;
+  }
+  .rows-pick {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 2px 16px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .rows-pick button {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: auto;
+    min-height: 40px;
+    margin: 0;
+    padding: 0 8px;
+    border: 0;
+    border-radius: var(--r-ctl);
+    background: transparent;
+    color: var(--text);
+    font-weight: 700;
+    text-align: left;
+    cursor: pointer;
+  }
+  .rows-pick button:hover {
+    background: var(--hov);
+  }
+  .rows-pick button :global(svg) {
+    flex: none;
+    color: var(--accent-text);
+  }
+  .rows-pick button.off {
+    color: var(--muted);
+    font-weight: 600;
   }
   .db-span {
     grid-column: 1 / -1;

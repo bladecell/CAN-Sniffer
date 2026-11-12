@@ -75,8 +75,10 @@
   .pw input::placeholder {
     color: var(--ctl-sub);
   }
+  /* Fixed width: Show and Hide differ in width, and that must not resize the field. */
   .pw button {
-    padding: 0 18px;
+    width: 84px;
+    padding: 0;
     cursor: pointer;
   }
   .bad {

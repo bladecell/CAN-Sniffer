@@ -36,15 +36,11 @@ dialog.overlay[open] {
 dialog.overlay::backdrop {
   background: var(--scrim);
 }
-/* Dialog: small centred confirmation. The page behind it is blurred as well as dimmed, so the dialog is the only sharp thing.
-   A literal radius: ::backdrop does not reliably inherit custom properties in older browsers. */
-dialog.overlay.dialog::backdrop {
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
-}
+/* Pico makes every dialog a scroller, and a scroller drops its own backdrop blur (layers.ts). The surface is not a
+   scroller here: the content inside it scrolls (Dialog.svelte .content). */
 dialog.overlay.dialog {
   width: min(440px, calc(100% - 32px));
-  max-height: calc(100dvh - 32px);
+  overflow: visible;
 }
 dialog.overlay.dialog[open] {
   animation: overlay-dialog-in 0.4s var(--ease-out);

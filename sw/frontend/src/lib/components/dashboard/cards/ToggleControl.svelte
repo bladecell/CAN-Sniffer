@@ -43,10 +43,11 @@
 </div>
 
 <style>
+  /* The content block sits in the middle of the card, so the switch is vertically centred. */
   .t {
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
+    justify-content: center;
     gap: 2px;
     height: 100%;
     min-width: 0;

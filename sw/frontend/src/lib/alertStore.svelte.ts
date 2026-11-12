@@ -12,7 +12,7 @@ const timers = new Map<number, Timer>();
 
 function start(id: number) {
   const t = timers.get(id);
-  if (!t || t.handle !== null) return;
+  if (!t || t.handle !== null || t.leftMs === Infinity) return;
   t.startedAt = Date.now();
   t.handle = setTimeout(() => alertStore.remove(id), t.leftMs);
 }
@@ -30,13 +30,15 @@ export const alertStore = {
     return alerts;
   },
 
-  add(message: string, type: Alert["type"] = "info", duration = TOAST_MS) {
+  /** `duration` Infinity keeps the toast until removed. Returns its id. */
+  add(message: string, type: Alert["type"] = "info", duration = TOAST_MS, action?: Alert["action"]) {
     // Date.now() instead of crypto.randomUUID(): the UI is served over plain HTTP, where randomUUID is unavailable.
     const id = Date.now() + Math.random();
     for (const old of evictOldest(alerts.map((a) => a.id), MAX_TOASTS)) alertStore.remove(old);
-    alerts.push({ id, message, type });
+    alerts.push({ id, message, type, action });
     timers.set(id, { handle: null, leftMs: duration, startedAt: 0 });
     start(id);
+    return id;
   },
 
   remove(id: number) {

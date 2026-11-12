@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import type { Card } from "$lib/dashboardModel";
+  import type { Card, StatusItemKey } from "$lib/dashboardModel";
   import { auth } from "$lib/auth.svelte";
   import { connectionStore } from "$lib/connectionStore.svelte";
   import { settingsStore } from "$lib/settingsStore.svelte";
@@ -10,7 +10,6 @@
   import { sdView } from "$lib/settingsModel";
   import { loadWhileMounted } from "./cardSources.svelte";
   import CardTitle from "./CardTitle.svelte";
-  import { pollingControl, recorderControl, type Control } from "./controls.svelte";
 
   let { card }: { card: Card } = $props();
 
@@ -35,10 +34,6 @@
     if (auth.canUseGated) untrack(() => void settingsStore.load());
   });
 
-  // The same switches as the Polling and Recorder cards.
-  const polling = pollingControl();
-  const recorder = recorderControl();
-
   const LOW_HEAP_BYTES = 32 * 1024;
 
   interface Item {
@@ -52,8 +47,6 @@
     tone?: "ok" | Level;
     /** Mockup detail text, shown at 5 columns (list) or 4 rows (chips). */
     detail?: string;
-    /** A switch in place of the value: the item is a control, not a reading. */
-    control?: Control;
   }
 
   const canState = $derived(connectionStore.connected ? connectionStore.wsCanStatus.state : null);
@@ -80,8 +73,6 @@
       tone: !systemRead ? undefined : sys.sd_card_detected ? "ok" : "crit",
       detail: sys.sd_card_detected ? sdDetail : undefined,
     });
-    list.push({ key: "polling", label: "Polling", value: polling.word, level: null, muted: polling.reason !== null, control: polling, detail: polling.reason ?? "OBD2 requests" });
-    list.push({ key: "recorder", label: "Recorder", value: recorder.word, level: null, muted: recorder.reason !== null, control: recorder, detail: recorder.reason ?? "trip to SD card" });
     list.push({
       key: "heap",
       label: "Free heap",
@@ -103,7 +94,7 @@
       const locked = !auth.canUseGated;
       list.push({ key: "mode", label: "Wi-Fi mode", value: locked ? "Log in to view" : wifi ? wifiModeLabel(wifi.mode) : "No data", level: null, muted: locked || !wifi, detail: "from Settings" });
       list.push({ key: "ap", label: "AP name", value: locked ? "Log in to view" : wifi ? wifi.ssid || "—" : "No data", level: null, muted: locked || !wifi, detail: "access point" });
-      list.push({ key: "sta", label: "Network (configured)", value: locked ? "Log in to view" : wifi ? wifi.sta_ssid || "—" : "No data", level: null, muted: locked || !wifi, detail: "not live" });
+      list.push({ key: "sta", label: "Network", value: locked ? "Log in to view" : wifi ? wifi.sta_ssid || "—" : "No data", level: null, muted: locked || !wifi, detail: "not live" });
     }
     return list;
   });
@@ -114,16 +105,12 @@
     warn: "M12 3 22 20H2zm-1 6v5h2V9zm0 7v2h2v-2z",
     crit: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm-1 5h2v6h-2zm0 8h2v2h-2z",
   } as const;
-  const worst = $derived(worstLevel(items.map((i) => i.level)));
-  const visible = $derived(statusVisible(items.length, card.w, card.h, card.style));
-  const shown = $derived(items.slice(0, visible.shown));
+  // Rows the card's settings switched off are left out before the fit, so the rest fill the space.
+  const offered = $derived(items.filter((i) => !card.hidden?.includes(i.key as StatusItemKey)));
+  const worst = $derived(worstLevel(offered.map((i) => i.level)));
+  const visible = $derived(statusVisible(offered.length, card.w, card.h, card.style));
+  const shown = $derived(offered.slice(0, visible.shown));
 </script>
-
-{#snippet toggle(c: Control, label: string)}
-  <button type="button" role="switch" class="sw" aria-checked={c.on} aria-label={label} title={c.reason ?? undefined} disabled={c.reason !== null} onclick={() => void c.toggle()}>
-    <span class="trk"><span class="knob"></span></span>
-  </button>
-{/snippet}
 
 <div class="s">
   <CardTitle name="Status" level={worst} warnWord="Warning" iconOnly={card.w < 4} />
@@ -131,13 +118,12 @@
   {#if card.style === "list"}
     <ul class="rows">
       {#each shown as it (it.key)}
-        <li class:muted={it.muted} class:ctl={it.control}>
+        <li class:muted={it.muted}>
           <span class="ico">
             {#if it.tone}<svg class="ti {it.tone}" viewBox="0 0 24 24" aria-hidden="true"><path d={TONE_PATH[it.tone]} /></svg>{/if}
           </span>
           <span class="lb">{it.label}</span>
           <b class="vl {it.tone ?? ''}">{it.value}</b>
-          {#if it.control}{@render toggle(it.control, it.label)}{/if}
           {#if card.w >= 5 && it.detail}<span class="sd">{it.detail}</span>{/if}
         </li>
       {/each}
@@ -148,14 +134,10 @@
       {#each shown as it (it.key)}
         <li class:muted={it.muted}>
           <span class="lb">{it.label}</span>
-          {#if it.control}
-            <span class="cw">{@render toggle(it.control, it.label)}<span class="cv">{it.value}</span></span>
-          {:else}
-            <span class="chip {it.tone ?? 'plain'}">
-              {#if it.tone}<svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><path d={TONE_PATH[it.tone]} /></svg>{/if}
-              <span class="ct">{it.value}</span>
-            </span>
-          {/if}
+          <span class="chip {it.tone ?? 'plain'}">
+            {#if it.tone}<svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><path d={TONE_PATH[it.tone]} /></svg>{/if}
+            <span class="ct">{it.value}</span>
+          </span>
           {#if card.h >= 4 && it.detail}<em>{it.detail}</em>{/if}
         </li>
       {/each}
@@ -210,68 +192,6 @@
     line-height: 1.2;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  /* Switch: a 48 x 44 hit area around a 40 x 24 track, as the 44 px target rule asks. */
-  .sw {
-    display: grid;
-    flex: none;
-    place-items: center;
-    width: 48px;
-    height: 44px;
-    margin: 0;
-    padding: 0;
-    border: 0;
-    background: none;
-    cursor: pointer;
-  }
-  .trk {
-    position: relative;
-    width: 40px;
-    height: 24px;
-    border-radius: 99px;
-    background: var(--ctl);
-  }
-  .sw[aria-checked="true"] .trk {
-    background: var(--accent);
-  }
-  .knob {
-    position: absolute;
-    top: 3px;
-    left: 3px;
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: var(--float-solid);
-    transition: transform 0.2s;
-  }
-  .sw[aria-checked="true"] .knob {
-    transform: translateX(16px);
-    background: var(--on-accent);
-  }
-  .sw:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  .sw:focus-visible {
-    outline: 3px solid var(--focus);
-    outline-offset: -3px;
-    border-radius: 12px;
-  }
-  .cw {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    min-width: 0;
-    margin-left: -6px;
-  }
-  .cv {
-    font-size: 0.76rem;
-    font-weight: 800;
-  }
-  .chips li.muted .cv {
-    color: var(--muted);
-    font-weight: 600;
   }
 
   /* Chip grid: a label, then a pill tinted by the level (the mockup chip, not the whole cell). */
@@ -364,9 +284,6 @@
   }
   .rows li:first-child {
     border-top: 0;
-  }
-  .rows li.ctl {
-    min-height: 44px;
   }
   .rows li.more {
     display: block;

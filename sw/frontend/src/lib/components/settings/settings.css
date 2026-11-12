@@ -267,9 +267,15 @@
   gap: 6px 20px;
   align-items: center;
   padding: 12px 16px;
-  min-height: 72px;
   border-radius: var(--r-ctl);
   background: var(--card2);
+}
+/* Align-right rows: the control sets the height, so the row takes no more than its content. */
+.st-row:not(.stack) {
+  padding: 10px 16px;
+}
+.st-row:not(.stack) .st-btn {
+  min-height: 44px;
 }
 .st-row.stack {
   grid-template-columns: minmax(0, 1fr);
@@ -334,6 +340,11 @@
 .st-root .st-in::placeholder {
   color: var(--ctl-sub);
   opacity: 0.8;
+}
+/* Stacked text field (folder path): the full width of its row, so the path is readable. */
+.st-root .st-row.stack > .st-ctl > .st-in {
+  width: 100%;
+  font-size: 1rem;
 }
 .st-root .st-in.num {
   width: 130px;
@@ -649,9 +660,15 @@
   border-radius: 24px;
   padding: 20px;
 }
-.st-phone .st-row {
+/* Phone: one container per group. Rows are plain text in the card, with no boxes and no dividers. A boxed row keeps its box. */
+.st-phone .st-list {
+  gap: 16px;
+}
+.st-phone .st-row:not(.boxed) {
   grid-template-columns: minmax(0, 1fr);
-  padding: 14px 16px;
+  padding: 0;
+  border-radius: 0;
+  background: none;
 }
 .st-phone .st-row.inl,
 .st-phone .st-row.fact {
@@ -683,22 +700,37 @@
   top: calc(env(safe-area-inset-top, 0px) + 8px);
   z-index: 20;
   margin: 0;
-  padding: 6px;
-  display: flex;
-  gap: 10px;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 12px;
   align-items: center;
-  border-radius: 24px;
+  min-height: 68px;
+  padding: 10px 14px 10px 16px;
+  border-radius: var(--r-ctl);
   box-shadow: none;
 }
 .st-drill-head h2 {
-  font-size: 1.2rem;
+  font-size: 1.1rem;
+  font-weight: 800;
 }
+/* The back chevron is the card chevron: 18 px, muted, in the card's first column. The button keeps a 44 px hit area. */
 .st-drill-head .st-btn.icon {
-  width: var(--ctl-h);
+  width: 44px;
+  min-height: 44px;
   padding: 0;
+  background: none;
+  color: var(--muted);
 }
 .st-drill-head .st-btn.icon > svg {
+  width: 1.1em;
+  height: 1.1em;
   transform: rotate(90deg);
+}
+@media (hover: hover) {
+  .st-drill-head .st-btn.icon:hover:not(:disabled) {
+    background: var(--hov);
+  }
 }
 .st-slide {
   animation: st-slide 0.45s cubic-bezier(0.16, 1, 0.3, 1);

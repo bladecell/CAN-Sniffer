@@ -11,38 +11,28 @@
 </nav>
 
 <style>
-  /* Section tabs: a segmented control inside the sheet header's float layer. The selected tab is an accent fill. */
+  /* Section tabs: the same segmented switch as the PID panels (PidTabs bar): a tray, a raised selected tab, an accent underline. */
   .tabs {
     margin: 0;
     box-sizing: border-box;
     display: flex;
     gap: 4px;
-    height: auto;
     padding: 4px;
     border-radius: 18px;
-    /* A subtle tone under the sheet, darker than the sheet in both themes (mockup). */
-    background: #ece2d4;
-  }
-  @media (prefers-color-scheme: dark) {
-    .tabs {
-      background: #34291f;
-    }
-  }
-  :global(html[data-theme='dark']) .tabs {
-    background: #34291f;
+    background: var(--ctl);
   }
   .tab {
+    position: relative;
     flex: 1 1 0;
     min-width: 0;
     min-height: 44px;
     margin: 0;
     padding: 0 10px;
     border: 0;
-    border-radius: 14px;
-    background: transparent;
+    border-radius: 15px;
+    background: none;
     color: var(--ctl-sub);
-    font: inherit;
-    font-weight: 650;
+    font: 700 0.9rem/1.2 var(--font);
     white-space: nowrap;
     cursor: pointer;
   }
@@ -52,11 +42,19 @@
     }
   }
   .tab[aria-current='true'] {
+    background: var(--float-solid);
+    color: var(--text);
+    font-weight: 800;
+  }
+  .tab[aria-current='true']::after {
+    content: '';
+    position: absolute;
+    left: 24%;
+    right: 24%;
+    bottom: 3px;
+    height: 3px;
+    border-radius: 3px;
     background: var(--accent);
-    color: var(--on-accent);
-    font-weight: 650;
-    box-shadow: none;
-    outline: none;
   }
   /* No ring on mouse or keyboard focus (Pico draws one with box-shadow). Keyboard focus is a background step. */
   .tab:focus,
@@ -68,7 +66,6 @@
     background: var(--hov);
   }
   .tab[aria-current='true']:focus-visible {
-    background: var(--accent);
-    filter: brightness(0.92);
+    background: var(--float-solid);
   }
 </style>

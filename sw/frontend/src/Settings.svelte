@@ -229,7 +229,7 @@
     <div class="st-phone st-slide">
       <div class="st-drill-head st-float">
         <button type="button" class="st-btn icon" aria-label="Back to Settings" onclick={() => (openId = null)}>
-          <Icon name="chevron-down" size={22} />
+          <Icon name="chevron-down" size={18} />
         </button>
         <h2>{GROUP[openId].title}</h2>
       </div>

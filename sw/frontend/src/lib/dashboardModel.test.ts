@@ -35,6 +35,15 @@ describe("sizeLimits and clampSize", () => {
   });
 });
 
+describe("status card hidden rows", () => {
+  test("keeps known keys once, drops unknown ones, only on status cards", () => {
+    const st = normalizeCard({ type: "status", style: "list", pids: [], w: 6, h: 3, hidden: ["heap", "heap", "nope", 4, "sd"] }, new Set());
+    expect(st?.hidden).toEqual(["heap", "sd"]);
+    expect(normalizeCard({ type: "status", style: "list", pids: [], w: 6, h: 3, hidden: ["bogus"] }, new Set())?.hidden).toBeUndefined();
+    expect(normalizeCard({ type: "value", style: "big", pids: [12], w: 3, h: 2, hidden: ["heap"] }, new Set())?.hidden).toBeUndefined();
+  });
+});
+
 describe("parseDashboards", () => {
   test("valid document round-trips", () => {
     const d = parseDashboards(JSON.stringify(doc()));

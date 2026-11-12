@@ -49,7 +49,10 @@
 
 <style>
   .content {
+    max-height: calc(100dvh - 32px);
     padding: 22px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
   p {
     margin: 8px 0 0;

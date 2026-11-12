@@ -62,7 +62,7 @@
       </SettingRow>
     {/if}
     {#if show(ROW.restart)}
-      <SettingRow title={ROW.restart.title} hint="Keeps all settings. The page reconnects when the device is back.">
+      <SettingRow title={ROW.restart.title} hint="Keeps all settings. The page reconnects when the device is back." boxed>
         <button type="button" class="st-btn" onclick={() => (confirmRestart = true)} disabled={restarting}>
           <Icon name="reload" size={16} />Restart device
         </button>

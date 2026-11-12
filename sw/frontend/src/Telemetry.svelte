@@ -219,16 +219,6 @@
           {status === "live" ? "Pause" : "Back to live"}
         </button>
 
-        <button
-          type="button"
-          class="tel-btn"
-          aria-disabled={telemetryStore.activeIndex < 0}
-          title={telemetryStore.activeIndex < 0 ? "Select a PID to edit it. New PID is in the list." : undefined}
-          onclick={() => telemetryStore.activeIndex >= 0 && (editorOpen = true)}
-        >
-          <Icon name="edit" size={18} />Edit PID
-        </button>
-
         <button type="button" class="tel-btn phone-only" onclick={() => (pidSheetOpen = true)} aria-haspopup="dialog">
           <Icon name="list" size={18} />PIDs
         </button>

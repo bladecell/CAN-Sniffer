@@ -54,7 +54,6 @@ import { connectionStore } from "$lib/connectionStore.svelte";
 <main class="main-content">
   <DevBypassBanner />
   <ApOpenBanner />
-  <SessionDialog />
   {#if activeTab === "dashboard"}
     <DashboardPage />
   {:else if activeTab === "recorder"}
@@ -68,6 +67,7 @@ import { connectionStore } from "$lib/connectionStore.svelte";
   {:else if activeTab === "telemetry"}
     <Telemetry />
   {/if}
+  <SessionDialog />
 </main>
 
 <Toast />

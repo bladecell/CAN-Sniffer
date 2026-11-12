@@ -30,6 +30,18 @@ export const CARD_TYPES = Object.keys(CARD_STYLES) as CardType[];
 
 export interface Thresholds { warn: number; critical: number }
 
+/** The rows a Status card can show, in display order. */
+export const STATUS_ITEMS = [
+  { key: "can", label: "CAN link" },
+  { key: "sd", label: "SD card" },
+  { key: "heap", label: "Free heap" },
+  { key: "uptime", label: "Uptime" },
+  { key: "mode", label: "Wi-Fi mode" },
+  { key: "ap", label: "AP name" },
+  { key: "sta", label: "Network" },
+] as const;
+export type StatusItemKey = (typeof STATUS_ITEMS)[number]["key"];
+
 /** One overview row: a PID value, the VIN (once) or the DTC count (once). The label replaces the PID name. */
 export type OverviewItem = { t: "pid"; pid: number; label?: string } | { t: "vin"; label?: string } | { t: "dtc"; label?: string };
 const hasVin = (c: { items?: OverviewItem[] }) => (c.items ?? []).some((i) => i.t === "vin");
@@ -47,6 +59,8 @@ export interface Card {
   items?: OverviewItem[];
   /** Gauge only: the scale for this card, instead of the PID's range. Optional; old cards have none. */
   range?: { min: number; max: number };
+  /** Status only: the info rows the user switched off. Absent means every row shows. */
+  hidden?: StatusItemKey[];
 }
 
 export interface Section { id: string; title: string; cards: Card[] }
@@ -154,6 +168,11 @@ export function normalizeCard(raw: unknown, takenIds: Set<string>): Card | null 
   if (t === "gauge" && isRecord(raw.range) && isNum(raw.range.min) && isNum(raw.range.max)) {
     const { min, max } = raw.range;
     if (min < max && Math.abs(min) <= RANGE_LIMIT && Math.abs(max) <= RANGE_LIMIT) card.range = { min, max };
+  }
+  if (t === "status" && Array.isArray(raw.hidden)) {
+    const keys: string[] = STATUS_ITEMS.map((i) => i.key);
+    const hidden = [...new Set(raw.hidden.filter((k): k is StatusItemKey => typeof k === "string" && keys.includes(k)))];
+    if (hidden.length > 0) card.hidden = hidden;
   }
   if (isRecord(raw.thresholds) && isNum(raw.thresholds.warn) && isNum(raw.thresholds.critical) && raw.thresholds.warn !== raw.thresholds.critical) {
     card.thresholds = { warn: raw.thresholds.warn, critical: raw.thresholds.critical };

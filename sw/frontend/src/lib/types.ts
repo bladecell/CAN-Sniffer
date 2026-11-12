@@ -187,6 +187,7 @@ export interface Alert {
   id: number;
   message: string;
   type: "info" | "success" | "warning" | "error";
+  action?: { label: string; run: () => void };
 }
 
 export interface PidDefinition {
