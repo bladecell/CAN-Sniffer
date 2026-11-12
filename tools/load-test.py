@@ -2,14 +2,19 @@
 """Load test for the async web server (WEB-1).
 
 Usage: tools/load-test.py [host] [legacy options]
-       tools/load-test.py --mode read-only --base-url http://HOST --simulator-no-car --no-other-ws-clients
+       tools/load-test.py --mode read-only --base-url http://HOST --simulator-no-car
          --handshake-schedule compare --handshake-only --stagger-ms 250
-Read-only mode uses only GET/WS, reports per-client handshake timing, then records per-client lifecycle and data
-rates while three steady WS clients run with stepped HTTP levels. It skips the load phase unless all three are live.
---drain-seconds inserts a bounded pause after successful probes and before steady WS startup (default 0).
-The PID-stream flag is global: close every other WS client before confirming --no-other-ws-clients. The tool cannot
-detect or prove exclusivity and never sends the global 0xA1 stop command.
-The default legacy mode retains its historical PATCH /obd2 polling behavior.
+The firmware serves ONE WebSocket session (docs/api.md, decisions.md 2026-11-11): /ws?sid=<1-8 hex, nonzero>
+[&takeover=1]. A second sid while the holder is live is upgraded, then closed with code 4000; takeover=1 replaces
+the holder (old one gets 4001); a holder silent for 10 s is replaced.
+Read-only mode starts ONE steady WS client with its own sid (it asks for the PID stream with 0xA0 and pings every
+2 s), then runs --ws handshake probes (default 2) with other sids and checks each is refused with close code 4000
+(reported as refused=N). It then records the client's lifecycle and data rates while stepped HTTP levels run. The
+load phase is skipped unless the steady client is live. --takeover makes the steady client replace a current
+session (that disconnects any open web page); without it a busy device is reported and the run stops.
+--drain-seconds inserts a bounded pause after the probes and before the HTTP load phase (default 0).
+The tool never sends the 0xA1 stop command. The default legacy mode retains its historical PATCH /obd2 polling
+behavior and also uses one WS client.
 Per level it prints success / 429 / 503 / other-status / timeout / error counts, latency p50 and p95, the WebSocket
 packet rate, and heap and the lowest task stack from GET /system (heap_free, heap_min_free, tasks).
 Never calls clear_dtc, SD format or delete, OTA, or any pid_def write.
@@ -53,6 +58,8 @@ class HttpResult:
 class WsClientStats:
     client_id: str
     role: str
+    sid: str = ""
+    close_code: int | None = None
     handshake_status: str = "pending"
     handshake_valid: bool = False
     handshake_elapsed_s: float = 0.0
@@ -119,9 +126,59 @@ def validate_websocket_handshake(response: bytes, key: str) -> str:
     return status_line
 
 
-def validate_ws_exclusivity(confirmed: bool) -> None:
-    if not confirmed:
-        raise ValueError("confirm --no-other-ws-clients after closing all other WebSocket clients")
+def new_sid(exclude: set[str] | None = None) -> str:
+    """Random session id: 1-8 hex digits, never zero."""
+    while True:
+        sid = format(int.from_bytes(os.urandom(4), "big"), "x")
+        if int(sid, 16) and sid not in (exclude or set()):
+            return sid
+
+
+def ws_path(sid: str, takeover: bool = False) -> str:
+    return f"/ws?sid={sid}" + ("&takeover=1" if takeover else "")
+
+
+def parse_ws_frame(buffer: bytes) -> tuple[int, bytes, bytes] | None:
+    """Split one unmasked server frame off buffer: (opcode, payload, rest), or None when incomplete."""
+    if len(buffer) < 2:
+        return None
+    size, offset = buffer[1] & 0x7f, 2
+    if size == 126:
+        if len(buffer) < 4:
+            return None
+        size, offset = struct.unpack(">H", buffer[2:4])[0], 4
+    elif size == 127:
+        raise ValueError("oversized WebSocket frame")
+    if len(buffer) < offset + size:
+        return None
+    return buffer[0] & 0x0f, buffer[offset:offset + size], buffer[offset + size:]
+
+
+def close_code_of(payload: bytes) -> int | None:
+    return int.from_bytes(payload[:2], "big") if len(payload) >= 2 else None
+
+
+def read_close_code(sock: socket.socket, deadline: float) -> int | None:
+    """Wait for the server's close frame after an upgrade; None on EOF, timeout or no close code."""
+    buffer = b""
+    try:
+        while True:
+            parsed = parse_ws_frame(buffer)
+            if parsed is None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return None
+                sock.settimeout(remaining)
+                part = sock.recv(4096)
+                if not part:
+                    return None
+                buffer += part
+                continue
+            opcode, payload, buffer = parsed
+            if opcode == 8:
+                return close_code_of(payload)
+    except (OSError, ValueError):
+        return None
 
 
 def record_ws_payload(client: WsClientStats, payload: bytes) -> None:
@@ -161,16 +218,19 @@ def format_ws_diagnostics(
             details = (f"{client.role} id={client.client_id} status={client.handshake_status} "
                        f"handshake_s={client.handshake_elapsed_s:.3f} "
                        f"connected_s={connected_duration:.3f} connected={client.connected} "
-                       f"disconnect={client.disconnect_reason} pid={packets} pid_rate={packets / elapsed:.1f}/s "
+                       f"disconnect={client.disconnect_reason} "
+                       f"close={client.close_code if client.close_code is not None else '-'} pid={packets} pid_rate={packets / elapsed:.1f}/s "
                        f"pong={pongs} pong_rate={pongs / elapsed:.1f}/s")
             if client.exception_class:
                 details += f" exception={client.exception_class}: {client.exception_message}"
             if client.worker_still_running:
                 details += " cleanup=worker_still_running"
             rows.append(details)
-    expected = (3 if any(client.role == "steady-data" for client in clients)
+    expected = (1 if any(client.role == "steady-data" for client in clients)
                 else sum(client.role == "handshake-probe" for client in clients))
-    return f"ready={ready} live={live} expected={expected}; " + " | ".join(rows)
+    probes = [client for client in clients if client.role == "handshake-probe"]
+    refused = f" refused={sum(client.close_code == 4000 for client in probes)}/{len(probes)}" if probes else ""
+    return f"ready={ready} live={live} expected={expected}{refused}; " + " | ".join(rows)
 
 
 def validate_read_only_bounds(duration: int, concurrency: int) -> None:
@@ -203,7 +263,7 @@ def validate_drain_seconds(seconds: float) -> None:
         raise ValueError(f"drain interval must be finite and 0..{MAX_DRAIN_SECONDS:g} seconds")
 
 
-def drain_before_steady_start(seconds: float) -> None:
+def drain_after_probes(seconds: float) -> None:
     if seconds:
         time.sleep(seconds)
 
@@ -294,9 +354,10 @@ def system_diagnostics(base_url: str, timeout: float) -> dict[str, Any]:
 
 def synchronized_handshakes(
     base_url: str, count: int, timeout: float, *, schedule: str = "synchronized",
-    stagger_ms: int = 250,
+    stagger_ms: int = 250, exclude_sids: set[str] | None = None,
 ) -> list[WsClientStats]:
-    """Run bounded handshake probes and retain upgraded sockets until every outcome is known."""
+    """Run bounded handshake probes, each with its own sid, and retain upgraded sockets until every outcome is
+    known. While another session is live each probe is upgraded and then closed by the server with code 4000."""
     validate_read_only_timeout(timeout)
     validate_operator_confirmation(True, base_url)
     if not 1 <= count <= 64:
@@ -306,7 +367,11 @@ def synchronized_handshakes(
     if not 0 <= stagger_ms <= 2000:
         raise ValueError("handshake stagger must be 0..2000 ms")
     barrier = threading.Barrier(count) if schedule == "synchronized" else None
+    sids: set[str] = set(exclude_sids or ())
     clients = [WsClientStats(f"probe-{index + 1}", "handshake-probe") for index in range(count)]
+    for client in clients:
+        client.sid = new_sid(sids)
+        sids.add(client.sid)
     sockets: list[socket.socket | None] = [None] * count
     socket_locks = [threading.Lock() for _ in range(count)]
     abandoned = [threading.Event() for _ in range(count)]
@@ -341,7 +406,7 @@ def synchronized_handshakes(
                 sock = None
                 return
             key = base64.b64encode(os.urandom(16)).decode()
-            request = (f"GET /ws HTTP/1.1\r\nHost: {url.netloc}\r\nUpgrade: websocket\r\n"
+            request = (f"GET {ws_path(client.sid)} HTTP/1.1\r\nHost: {url.netloc}\r\nUpgrade: websocket\r\n"
                        f"Connection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n")
             sock.sendall(request.encode())
             response = b""
@@ -365,6 +430,9 @@ def synchronized_handshakes(
                 client.handshake_valid = True
                 client.connected = True
                 client.connected_at = time.monotonic()
+            code = read_close_code(sock, started + timeout)
+            with client.lock:
+                client.close_code = code
         except Exception as error:
             failure = handshake_failure(client.client_id, base_url, error)
             with client.lock:
@@ -439,15 +507,29 @@ def synchronized_handshakes(
     return clients
 
 
+def stop_steady(ws_stop: threading.Event, client: WsClientStats, thread: threading.Thread,
+                timeout: float) -> None:
+    ws_stop.set()
+    thread.join(timeout=timeout + 1)
+    if thread.is_alive():
+        with client.lock:
+            transport = client.transport
+            client.worker_still_running = True
+        if transport is not None:
+            try:
+                transport.close()
+            except OSError:
+                pass
+
+
 def run_read_only_mode(args: argparse.Namespace) -> None:
     validate_operator_confirmation(args.simulator_no_car, args.base_url)
-    validate_ws_exclusivity(getattr(args, "no_other_ws_clients", False))
     validate_drain_seconds(getattr(args, "drain_seconds", DEFAULT_DRAIN_SECONDS))
     validate_read_only_timeout(args.timeout)
     if not 1 <= args.seconds <= 3600:
         raise ValueError("duration must be 1..3600 s")
-    if args.ws != 3:
-        raise ValueError("read-only mode uses exactly three WebSocket clients")
+    if not 1 <= args.ws <= 8:
+        raise ValueError("--ws is the number of refusal probes, 1..8")
     if len(args.concurrency) > 12 or any(n < 1 or n > 64 for n in args.concurrency):
         raise ValueError("provide 1..12 HTTP levels, each between 1 and 64")
     if not args.concurrency:
@@ -455,71 +537,54 @@ def run_read_only_mode(args: argparse.Namespace) -> None:
     schedule = getattr(args, "handshake_schedule", "synchronized")
     stagger_ms = getattr(args, "stagger_ms", 250)
     schedules = ("synchronized", "staggered") if schedule == "compare" else (schedule,)
-    for current_schedule in schedules:
-        handshake_results = synchronized_handshakes(
-            args.base_url, args.ws, args.timeout, schedule=current_schedule, stagger_ms=stagger_ms
-        )
-        print(f"{current_schedule} handshake probes:",
-              format_ws_diagnostics(handshake_results, max(args.timeout, 0.001)))
-        if any(client.worker_still_running for client in handshake_results):
-            print("remaining phases skipped: handshake worker cleanup is still pending")
-            return
-    if getattr(args, "handshake_only", False):
-        return
-    if schedule == "compare":
-        print("handshake comparison complete; subsequent steady/load phase skipped in compare mode")
-        return
-    drain_before_steady_start(getattr(args, "drain_seconds", DEFAULT_DRAIN_SECONDS))
+    client = WsClientStats("steady-1", "steady-data", sid=new_sid())
     ws_stop = threading.Event()
-    ws_clients = [WsClientStats(f"steady-{index + 1}", "steady-data") for index in range(3)]
-    ws_threads = [threading.Thread(target=steady_ws_client,
-                                   args=(args.base_url, client, ws_stop, args.timeout, True), daemon=True)
-                  for client in ws_clients]
-    for thread in ws_threads:
-        thread.start()
-    startup_deadline = time.monotonic() + args.timeout
-    for client in ws_clients:
-        client.handshake_complete.wait(max(0.0, startup_deadline - time.monotonic()))
-    ready, live = ws_ready_live_counts(ws_clients)
-    if ready != 3 or live != 3:
+    thread = threading.Thread(target=steady_ws_client,
+                              args=(args.base_url, client, ws_stop, args.timeout,
+                                    getattr(args, "takeover", False)), daemon=True)
+    thread.start()
+    client.handshake_complete.wait(args.timeout)
+    thread.join(timeout=0.3)  # a busy device closes the upgraded socket with 4000 right away
+    ready, live = ws_ready_live_counts([client])
+    if ready != 1 or live != 1:
         failure_snapshot = (ready, live)
-        ws_stop.set()
-        for client in ws_clients:
-            with client.lock:
-                transport = client.transport
-                if client.handshake_status == "pending":
-                    client.handshake_status = "startup_timeout"
-                    client.exception_class = "TimeoutError"
-                    client.exception_message = "steady WebSocket handshake startup deadline exceeded"
-                    client.disconnect_reason = "startup_timeout"
-            if transport is not None:
-                try:
-                    transport.close()
-                except OSError:
-                    pass
-        for thread in ws_threads:
-            thread.join(timeout=0.6)
-        for client, thread in zip(ws_clients, ws_threads):
-            if thread.is_alive():
-                with client.lock:
-                    client.worker_still_running = True
-        print("steady WebSocket startup incomplete; HTTP phase skipped:",
-              format_ws_diagnostics(ws_clients, max(args.timeout, 0.001), counts=failure_snapshot))
+        with client.lock:
+            if client.handshake_status == "pending":
+                client.handshake_status = "startup_timeout"
+                client.exception_class = "TimeoutError"
+                client.exception_message = "steady WebSocket handshake startup deadline exceeded"
+                client.disconnect_reason = "startup_timeout"
+        stop_steady(ws_stop, client, thread, 0.6)
+        print("steady WebSocket startup incomplete; probes and HTTP phase skipped:",
+              format_ws_diagnostics([client], max(args.timeout, 0.001), counts=failure_snapshot))
         return
     try:
+        for current_schedule in schedules:
+            handshake_results = synchronized_handshakes(
+                args.base_url, args.ws, args.timeout, schedule=current_schedule, stagger_ms=stagger_ms,
+                exclude_sids={client.sid},
+            )
+            print(f"{current_schedule} refusal probes (expect close 4000):",
+                  format_ws_diagnostics(handshake_results, max(args.timeout, 0.001)))
+            if any(c.worker_still_running for c in handshake_results):
+                print("remaining phases skipped: handshake worker cleanup is still pending")
+                return
+        if getattr(args, "handshake_only", False):
+            return
+        if schedule == "compare":
+            print("handshake comparison complete; subsequent HTTP load phase skipped in compare mode")
+            return
+        drain_after_probes(getattr(args, "drain_seconds", DEFAULT_DRAIN_SECONDS))
         for concurrency in args.concurrency:
-            if ws_ready_live_counts(ws_clients)[1] != 3:
-                print("HTTP concurrency levels skipped: fewer than three steady WebSocket clients remain live")
-                print("steady WebSocket clients:",
-                      format_ws_diagnostics(ws_clients, max(args.timeout, 0.001)))
+            if ws_ready_live_counts([client])[1] != 1:
+                print("HTTP concurrency levels skipped: the steady WebSocket client is no longer live")
+                print("steady WebSocket client:", format_ws_diagnostics([client], max(args.timeout, 0.001)))
                 break
             outcomes = []
             end = time.monotonic() + args.seconds
             started = time.monotonic()
-            before = {}
-            for client in ws_clients:
-                with client.lock:
-                    before[client.client_id] = (client.pid_packets, client.pongs)
+            with client.lock:
+                before = {client.client_id: (client.pid_packets, client.pongs)}
             lock = threading.Lock()
 
             def worker() -> None:
@@ -534,30 +599,27 @@ def run_read_only_mode(args: argparse.Namespace) -> None:
             for item in workers:
                 item.join(timeout=args.seconds + args.timeout + 1)
             elapsed = max(time.monotonic() - started, 0.001)
+            packets_before, pongs_before = before[client.client_id]
             print(f"HTTP concurrency={concurrency} duration={elapsed:.1f}s",
-                  format_read_only_report(outcomes, elapsed,
-                                          sum(client.pid_packets - before[client.client_id][0]
-                                              for client in ws_clients),
-                                          sum(client.pongs - before[client.client_id][1]
-                                              for client in ws_clients),
+                  format_read_only_report(outcomes, elapsed, client.pid_packets - packets_before,
+                                          client.pongs - pongs_before,
                                           system_diagnostics(args.base_url, args.timeout)))
-            print("steady WebSocket clients:", format_ws_diagnostics(ws_clients, elapsed, before))
-            if ws_ready_live_counts(ws_clients)[1] != 3:
-                print("remaining HTTP levels skipped: fewer than three steady WebSocket clients remain live")
+            print("steady WebSocket client:", format_ws_diagnostics([client], elapsed, before))
+            if ws_ready_live_counts([client])[1] != 1:
+                print("remaining HTTP levels skipped: the steady WebSocket client is no longer live")
                 break
     finally:
-        ws_stop.set()
-        for thread in ws_threads:
-            thread.join(timeout=args.timeout + 1)
+        stop_steady(ws_stop, client, thread, args.timeout)
 
 
 def steady_ws_client(
     base_url: str, client: WsClientStats, stop: threading.Event, timeout: float,
-    no_other_ws_clients: bool = False,
+    takeover: bool = False,
 ) -> None:
     validate_read_only_timeout(timeout)
     validate_operator_confirmation(True, base_url)
-    validate_ws_exclusivity(no_other_ws_clients)
+    if not client.sid:
+        client.sid = new_sid()
     url = urlsplit(base_url)
     sock = None
     started = time.monotonic()
@@ -566,7 +628,8 @@ def steady_ws_client(
         with client.lock:
             client.transport = sock
         key = base64.b64encode(os.urandom(16)).decode()
-        sock.sendall((f"GET /ws HTTP/1.1\r\nHost: {url.netloc}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+        sock.sendall((f"GET {ws_path(client.sid, takeover)} HTTP/1.1\r\nHost: {url.netloc}\r\n"
+                      f"Upgrade: websocket\r\nConnection: Upgrade\r\n"
                       f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n").encode())
         response = b""
         while b"\r\n\r\n" not in response and len(response) < 8192:
@@ -622,17 +685,11 @@ def steady_ws_client(
                     client.disconnect_reason = "peer_closed"
                 break
             buffer += data
-            while len(buffer) >= 2:
-                size, offset = buffer[1] & 0x7f, 2
-                if size == 126:
-                    if len(buffer) < 4:
-                        break
-                    size, offset = struct.unpack(">H", buffer[2:4])[0], 4
-                if len(buffer) < offset + size:
-                    break
-                frame, buffer = buffer[offset:offset + size], buffer[offset + size:]
-                if frame and frame[0] == 0x88:
+            while (parsed := parse_ws_frame(buffer)) is not None:
+                opcode, frame, buffer = parsed
+                if opcode == 8:
                     with client.lock:
+                        client.close_code = close_code_of(frame)
                         client.disconnect_reason = "server_close_frame"
                     return
                 record_ws_payload(client, frame)
@@ -680,10 +737,11 @@ def http_get(host, path, timeout=5.0):
 
 
 class WsClient(threading.Thread):
-    """Minimal RFC 6455 client: sends 0xA0 (start PID stream) and a 0xA2 ping every 2 s, counts 0x02 packets."""
+    """Minimal RFC 6455 client with its own sid: sends 0xA0 (start PID stream) and a 0xA2 ping every 2 s, counts 0x02 packets."""
 
     def __init__(self, host):
         super().__init__(daemon=True)
+        self.sid = new_sid()
         self.host, self.stop, self.packets, self.pongs, self.error, self.t0 = host, False, 0, 0, None, 0.0
 
     def send(self, s, payload):
@@ -694,8 +752,8 @@ class WsClient(threading.Thread):
         try:
             s = socket.create_connection((self.host, 80), timeout=3)
             key = base64.b64encode(os.urandom(16)).decode()
-            s.sendall((f"GET /ws HTTP/1.1\r\nHost: {self.host}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
-                       f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n").encode())
+            s.sendall((f"GET {ws_path(self.sid)} HTTP/1.1\r\nHost: {self.host}\r\nUpgrade: websocket\r\n"
+                       f"Connection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n").encode())
             head = b""
             while b"\r\n\r\n" not in head:
                 head += s.recv(1)
@@ -717,15 +775,11 @@ class WsClient(threading.Thread):
                     self.error = "closed by server"
                     return
                 buf += d
-                while len(buf) >= 2:
-                    n, off = buf[1] & 0x7F, 2
-                    if n == 126:
-                        if len(buf) < 4:
-                            break
-                        n, off = struct.unpack(">H", buf[2:4])[0], 4
-                    if len(buf) < off + n:
-                        break
-                    p, buf = buf[off:off + n], buf[off + n:]
+                while (parsed := parse_ws_frame(buf)) is not None:
+                    opcode, p, buf = parsed
+                    if opcode == 8:
+                        self.error = f"closed by server, code {close_code_of(p)}"
+                        return
                     if p[:1] == b"\x02" and len(p) == 20:
                         self.packets += 1
                     elif p == b"\xa3":
@@ -772,15 +826,16 @@ def main():
     ap.add_argument("host", nargs="?", default="can-sniffer.local")
     ap.add_argument("--levels", default="2,4,8,16,32")
     ap.add_argument("--seconds", type=int, default=30)
-    ap.add_argument("--ws", type=int, default=3)
+    ap.add_argument("--ws", type=int, default=2,
+                    help="read-only: number of refusal probes (1..8); legacy mode always runs one WS client")
     ap.add_argument("--slow", type=int, default=2)
     ap.add_argument("--no-large", action="store_true", help="skip the periodic gzipped GET /")
     ap.add_argument("--mode", choices=("legacy", "read-only"), default="legacy")
     ap.add_argument("--base-url", help="explicit http(s):// URL for read-only mode")
     ap.add_argument("--simulator-no-car", action="store_true",
                     help="confirm target is a simulator with no vehicle connected")
-    ap.add_argument("--no-other-ws-clients", action="store_true",
-                    help="confirm all other WebSocket clients are closed; their global stream state cannot be detected")
+    ap.add_argument("--takeover", action="store_true",
+                    help="steady client replaces a current WS session (disconnects an open page); default is to stop if busy")
     ap.add_argument("--handshake-schedule", choices=("synchronized", "staggered", "compare"),
                     default="synchronized", help="read-only handshake probe timing")
     ap.add_argument("--stagger-ms", type=int, default=250,
@@ -788,7 +843,7 @@ def main():
     ap.add_argument("--handshake-only", action="store_true",
                     help="run selected handshake probes only; skip steady WebSockets and HTTP")
     ap.add_argument("--drain-seconds", type=float, default=DEFAULT_DRAIN_SECONDS,
-                    help="pause between successful probes and steady WS startup (0..30; default 0)")
+                    help="pause after the probes and before the HTTP load phase (0..30; default 0)")
     ap.add_argument("--concurrency", default="1,2,4,8", help="HTTP concurrency levels for read-only mode")
     ap.add_argument("--timeout", type=float, default=5.0)
     a = ap.parse_args()
@@ -798,9 +853,8 @@ def main():
         try:
             a.concurrency = [int(value) for value in a.concurrency.split(",")]
             validate_operator_confirmation(a.simulator_no_car, a.base_url)
-            validate_ws_exclusivity(a.no_other_ws_clients)
-            if not 0 < a.timeout <= 60 or a.ws != 3:
-                raise ValueError("timeout must be 0..60 s and read-only mode uses exactly three WS clients")
+            if not 0 < a.timeout <= 60 or not 1 <= a.ws <= 8:
+                raise ValueError("timeout must be 0..60 s and --ws (refusal probes) 1..8")
             if not 0 <= a.stagger_ms <= 2000:
                 raise ValueError("handshake stagger must be 0..2000 ms")
             run_read_only_mode(a)
@@ -813,10 +867,9 @@ def main():
     c.request("PATCH", "/api/v1/obd2", '{"auto_poll": true}', {"Content-Type": "application/json"})
     print("poll start", c.getresponse().status)
     print("start   uptime/heap_free/heap_min/lowest stacks:", diag(host))
-    ws = [WsClient(host) for _ in range(a.ws)]
+    ws = [WsClient(host)]  # the firmware serves one WebSocket session
     for w in ws:
         w.start()
-        time.sleep(1.0)  # opening several WebSockets at the same instant stalls the whole server (see docs/architecture.md)
     time.sleep(1)
     slow_stop, slow_counts = threading.Event(), []
     slow = [threading.Thread(target=slow_client, args=(host, slow_stop, slow_counts), daemon=True) for _ in range(a.slow)]

@@ -82,7 +82,7 @@ class ReadOnlyLoadTest(unittest.TestCase):
 
       def recv(self, _size: int) -> bytes:
         part, self.response = self.response[:1], self.response[1:]
-        if self.response == b"":
+        if part and self.response == b"":
           state["completed"] += 1
         return part
 
@@ -141,27 +141,82 @@ class ReadOnlyLoadTest(unittest.TestCase):
 
   def test_handshake_only_compare_runs_both_schedules_without_load_phases(self) -> None:
     args = argparse.Namespace(
-        simulator_no_car=True, no_other_ws_clients=True, base_url="http://localhost",
-        seconds=1, ws=3, concurrency=[1], timeout=1.0,
+        simulator_no_car=True, base_url="http://localhost",
+        seconds=1, ws=2, concurrency=[1], timeout=1.0,
         handshake_schedule="compare", stagger_ms=30, handshake_only=True,
         drain_seconds=1.0,
     )
     observed: list[str] = []
 
+    def live_steady(_url: str, client: Any, stop: threading.Event, _timeout: float,
+                    _takeover: bool) -> None:
+      with client.lock:
+        client.handshake_valid = client.connected = True
+      client.handshake_complete.set()
+      stop.wait(5)
+
     def probes(_url: str, count: int, _timeout: float, *, schedule: str,
-                stagger_ms: int) -> list[Any]:
+                stagger_ms: int, exclude_sids: set[str]) -> list[Any]:
       observed.append(schedule)
       return [load_test.WsClientStats(f"{schedule}-{index}", "handshake-probe")
               for index in range(count)]
 
     with (
         patch.object(load_test, "synchronized_handshakes", side_effect=probes),
-        patch.object(load_test, "steady_ws_client", side_effect=AssertionError("steady WS started")),
+        patch.object(load_test, "steady_ws_client", side_effect=live_steady),
         patch.object(load_test, "read_only_http_request", side_effect=AssertionError("HTTP started")),
         patch.object(load_test.time, "sleep", side_effect=AssertionError("handshake-only drained")),
     ):
       load_test.run_read_only_mode(args)
     self.assertEqual(observed, ["synchronized", "staggered"])
+
+  def test_probes_use_own_sids_distinct_from_the_steady_client_and_expect_4000(self) -> None:
+    sids: list[str] = []
+
+    class FakeSocket:
+      def __init__(self) -> None:
+        self.response = b""
+
+      def settimeout(self, _timeout: float) -> None:
+        pass
+
+      def sendall(self, data: bytes) -> None:
+        request_line = data.split(b"\r\n")[0].decode()
+        sids.append(request_line.split("sid=")[1].split(" ")[0])
+        self.has_takeover = b"takeover" in data
+        key = next(line.split(b":", 1)[1].strip().decode()
+                   for line in data.split(b"\r\n") if line.startswith(b"Sec-WebSocket-Key:"))
+        self.response = fake_upgrade_response(key) + b"\x88\x02\x0f\xa0"
+
+      def recv(self, size: int) -> bytes:
+        part, self.response = self.response[:size], self.response[size:]
+        return part
+
+      def close(self) -> None:
+        pass
+
+    with patch.object(load_test.socket, "create_connection", lambda *_a, **_k: FakeSocket()):
+      results = load_test.synchronized_handshakes("http://localhost", 3, 1.0, exclude_sids={"abc"})
+    self.assertEqual([client.close_code for client in results], [4000] * 3)
+    self.assertEqual(len(set(sids)), 3)
+    self.assertNotIn("abc", sids)
+    for sid in sids:
+      self.assertTrue(1 <= len(sid) <= 8 and int(sid, 16) != 0)
+    self.assertIn("refused=3/3", load_test.format_ws_diagnostics(results, 1.0))
+
+  def test_steady_url_carries_sid_and_optional_takeover(self) -> None:
+    self.assertEqual(load_test.ws_path("1a", False), "/ws?sid=1a")
+    self.assertEqual(load_test.ws_path("1a", True), "/ws?sid=1a&takeover=1")
+    for _ in range(50):
+      sid = load_test.new_sid({"1"})
+      self.assertTrue(1 <= len(sid) <= 8 and int(sid, 16) != 0 and sid != "1")
+
+  def test_parse_ws_frame_and_close_code(self) -> None:
+    self.assertIsNone(load_test.parse_ws_frame(b"\x88"))
+    self.assertIsNone(load_test.parse_ws_frame(b"\x88\x02\x0f"))
+    opcode, payload, rest = load_test.parse_ws_frame(b"\x88\x02\x0f\xa1\x82")
+    self.assertEqual((opcode, load_test.close_code_of(payload), rest), (8, 4001, b"\x82"))
+    self.assertIsNone(load_test.close_code_of(b""))
 
   def test_failed_probe_sockets_are_closed_after_all_failure_outcomes(self) -> None:
     state = {"completed": 0, "closed_too_early": False, "closed": 0}
@@ -244,33 +299,33 @@ class ReadOnlyLoadTest(unittest.TestCase):
                      ["controller_cancelled"] * 2)
     self.assertEqual([client.exception_class for client in cancelled], ["", ""])
 
-  def test_startup_failure_reports_ready_live_snapshot_before_cleanup(self) -> None:
+  def test_steady_startup_failure_reports_snapshot_and_skips_probes_and_http(self) -> None:
     args = argparse.Namespace(
-        simulator_no_car=True, no_other_ws_clients=True, base_url="http://localhost",
-        seconds=1, ws=3, concurrency=[1], timeout=1.0,
+        simulator_no_car=True, base_url="http://localhost",
+        seconds=1, ws=2, concurrency=[1], timeout=1.0,
     )
-    probes = [load_test.WsClientStats(f"probe-{index}", "handshake-probe") for index in range(1, 4)]
 
     def start_client(_url: str, client: Any, _stop: threading.Event,
-                     _timeout: float, _exclusive: bool) -> None:
+                     _timeout: float, _takeover: bool) -> None:
       with client.lock:
-        client.handshake_valid = client.client_id != "steady-3"
-        client.connected = client.client_id != "steady-3"
+        client.handshake_status = "exception"
+        client.exception_class = "ConnectionRefusedError"
       client.handshake_complete.set()
 
     from contextlib import redirect_stdout
     from io import StringIO
     output = StringIO()
     with (
-        patch.object(load_test, "synchronized_handshakes", return_value=probes),
+        patch.object(load_test, "synchronized_handshakes",
+                     side_effect=AssertionError("probes ran without a session holder")),
         patch.object(load_test, "steady_ws_client", side_effect=start_client),
-        patch.object(load_test.time, "sleep"),
+        patch.object(load_test, "read_only_http_request", side_effect=AssertionError("HTTP phase started")),
         redirect_stdout(output),
     ):
       load_test.run_read_only_mode(args)
-    self.assertIn("ready=2 live=2 expected=3", output.getvalue())
+    self.assertIn("ready=0 live=0 expected=1", output.getvalue())
 
-  def test_probe_to_steady_drain_is_finite_configurable_and_zero_by_default(self) -> None:
+  def test_probe_to_load_drain_is_finite_configurable_and_zero_by_default(self) -> None:
     self.assertEqual(load_test.DEFAULT_DRAIN_SECONDS, 0.0)
     for value in (-0.1, float("inf"), float("nan"), 31.0):
       with self.subTest(value=value), self.assertRaises(ValueError):
@@ -278,8 +333,8 @@ class ReadOnlyLoadTest(unittest.TestCase):
     load_test.validate_drain_seconds(2.5)
     sleeps: list[float] = []
     with patch.object(load_test.time, "sleep", side_effect=sleeps.append):
-      load_test.drain_before_steady_start(0)
-      load_test.drain_before_steady_start(0.25)
+      load_test.drain_after_probes(0)
+      load_test.drain_after_probes(0.25)
     self.assertEqual(sleeps, [0.25])
 
   def test_invalid_drain_fails_before_probes_in_every_read_only_mode(self) -> None:
@@ -292,8 +347,8 @@ class ReadOnlyLoadTest(unittest.TestCase):
         with self.subTest(schedule=schedule, handshake_only=handshake_only,
                           drain_seconds=drain_seconds):
           args = argparse.Namespace(
-              simulator_no_car=True, no_other_ws_clients=True,
-              base_url="http://localhost", seconds=1, ws=3,
+              simulator_no_car=True,
+              base_url="http://localhost", seconds=1, ws=2,
               concurrency=[1], timeout=1.0, handshake_schedule=schedule,
               stagger_ms=0, handshake_only=handshake_only,
               drain_seconds=drain_seconds,
@@ -308,7 +363,7 @@ class ReadOnlyLoadTest(unittest.TestCase):
   def test_cli_selects_immediate_or_drained_transition_without_networking(self) -> None:
     for option, expected in [(None, 0.0), ("0.5", 0.5)]:
       argv = ["load-test.py", "--mode", "read-only", "--base-url", "http://localhost",
-              "--simulator-no-car", "--no-other-ws-clients"]
+              "--simulator-no-car"]
       if option is not None:
         argv.extend(["--drain-seconds", option])
       captured: list[float] = []
@@ -429,11 +484,6 @@ class ReadOnlyLoadTest(unittest.TestCase):
       load_test.validate_websocket_handshake = original_validator
       load_test.socket.create_connection = original
 
-  def test_read_only_subscription_requires_exclusive_websocket_confirmation(self) -> None:
-    with self.assertRaises(ValueError):
-      load_test.validate_ws_exclusivity(False)
-    load_test.validate_ws_exclusivity(True)
-
   def test_websocket_report_keeps_clients_separate_and_shows_rates_and_lifecycle(self) -> None:
     probe = load_test.WsClientStats(client_id="probe-2", role="handshake-probe")
     probe.handshake_status = "HTTP/1.1 503 Service Unavailable"
@@ -448,7 +498,7 @@ class ReadOnlyLoadTest(unittest.TestCase):
     self.assertIn("handshake-probe id=probe-2 status=HTTP/1.1 503", report)
     self.assertIn("steady-data id=steady-1 status=HTTP/1.1 101", report)
     self.assertIn("pid=8 pid_rate=4.0/s pong=2 pong_rate=1.0/s", report)
-    self.assertIn("ready=1 live=1 expected=3", report)
+    self.assertIn("ready=1 live=1 expected=1", report)
 
   def test_websocket_frame_accounting_is_client_local_and_exact(self) -> None:
     first = load_test.WsClientStats(client_id="steady-1", role="steady-data")
@@ -494,7 +544,7 @@ class ReadOnlyLoadTest(unittest.TestCase):
     original = load_test.socket.create_connection
     load_test.socket.create_connection = lambda *_args, **_kwargs: fake_socket
     try:
-      load_test.steady_ws_client("http://localhost", client, threading.Event(), 1.0, True)
+      load_test.steady_ws_client("http://localhost", client, threading.Event(), 1.0)
     finally:
       load_test.socket.create_connection = original
     self.assertTrue(client.handshake_status.startswith("HTTP/1.1 101"))
@@ -537,60 +587,102 @@ class ReadOnlyLoadTest(unittest.TestCase):
     self.assertNotIn("abc", result.exception_message)
     self.assertNotIn("other", result.exception_message)
 
-  def test_lingering_handshake_aborts_steady_and_http_phases(self) -> None:
+  def test_lingering_handshake_aborts_http_phase(self) -> None:
     args = argparse.Namespace(
         simulator_no_car=True,
-        no_other_ws_clients=True,
         base_url="http://localhost",
         seconds=1,
-        ws=3,
+        ws=2,
         concurrency=[1],
         timeout=1.0,
     )
-    steady_started = threading.Event()
+    def live_steady(_url: str, client: Any, stop: threading.Event, _timeout: float,
+                    _takeover: bool) -> None:
+      with client.lock:
+        client.handshake_valid = client.connected = True
+      client.handshake_complete.set()
+      stop.wait(5)
+
     with (
         patch.object(load_test, "synchronized_handshakes",
                      return_value=[load_test.WsClientStats("probe-1", "handshake-probe",
                                                            worker_still_running=True)]),
-        patch.object(load_test, "steady_ws_client", side_effect=lambda *_args: steady_started.set()),
+        patch.object(load_test, "steady_ws_client", side_effect=live_steady),
         patch.object(load_test, "read_only_http_request", side_effect=AssertionError("HTTP phase started")),
         patch.object(load_test, "system_diagnostics", return_value={}),
         patch.object(load_test.time, "sleep"),
     ):
       load_test.run_read_only_mode(args)
-    self.assertFalse(steady_started.is_set())
 
-  def test_steady_phase_requires_three_live_handshakes(self) -> None:
+  def test_http_phase_runs_with_one_steady_client_and_probes_after_it_is_live(self) -> None:
     args = argparse.Namespace(
         simulator_no_car=True,
-        no_other_ws_clients=True,
         base_url="http://localhost",
         seconds=1,
-        ws=3,
+        ws=2,
         concurrency=[1],
         timeout=1.0,
     )
-    probes = [load_test.WsClientStats(f"probe-{index}", "handshake-probe") for index in range(1, 4)]
-    clients_started: list[str] = []
+    order: list[str] = []
 
-    def start_fake_client(_url: str, client: Any, _stop: threading.Event,
-                          _timeout: float, _exclusive: bool) -> None:
-      clients_started.append(client.client_id)
+    def live_steady(_url: str, client: Any, stop: threading.Event, _timeout: float,
+                    takeover: bool) -> None:
+      order.append(f"steady takeover={takeover} sid={client.sid}")
       with client.lock:
-        client.handshake_status = ("HTTP/1.1 101 Switching Protocols" if client.client_id != "steady-3"
-                                   else "exception")
-        client.handshake_valid = client.client_id != "steady-3"
-        client.connected = client.client_id != "steady-3"
+        client.handshake_status = "HTTP/1.1 101 Switching Protocols"
+        client.handshake_valid = client.connected = True
       client.handshake_complete.set()
+      stop.wait(5)
+
+    def probes(_url: str, count: int, _timeout: float, **kwargs: Any) -> list[Any]:
+      order.append(f"probes={count} exclude={sorted(kwargs['exclude_sids'])}")
+      return [load_test.WsClientStats(f"probe-{index}", "handshake-probe", close_code=4000)
+              for index in range(count)]
+
+    http_calls: list[str] = []
+
+    def http(_url: str, method: str, path: str, _timeout: float) -> Any:
+      http_calls.append(path)
+      time.sleep(0.2)
+      return load_test.HttpResult(200, 0.01)
 
     with (
-        patch.object(load_test, "synchronized_handshakes", return_value=probes),
-        patch.object(load_test, "steady_ws_client", side_effect=start_fake_client),
-        patch.object(load_test, "read_only_http_request", side_effect=AssertionError("HTTP phase started")),
-        patch.object(load_test.time, "sleep"),
+        patch.object(load_test, "synchronized_handshakes", side_effect=probes),
+        patch.object(load_test, "steady_ws_client", side_effect=live_steady),
+        patch.object(load_test, "read_only_http_request", side_effect=http),
+        patch.object(load_test, "system_diagnostics", return_value={}),
     ):
       load_test.run_read_only_mode(args)
-    self.assertEqual(sorted(clients_started), ["steady-1", "steady-2", "steady-3"])
+    self.assertEqual(len(order), 2)
+    self.assertTrue(order[0].startswith("steady takeover=False sid="))
+    sid = order[0].rsplit("sid=", 1)[1]
+    self.assertEqual(order[1], f"probes=2 exclude={[sid]}")
+    self.assertTrue(http_calls)
+
+  def test_refused_steady_client_stops_before_probes_and_http_phase(self) -> None:
+    args = argparse.Namespace(simulator_no_car=True, base_url="http://localhost", seconds=1,
+                              ws=2, concurrency=[1], timeout=1.0)
+
+    def refused_steady(_url: str, client: Any, _stop: threading.Event, _timeout: float,
+                       _takeover: bool) -> None:
+      with client.lock:
+        client.handshake_status = "HTTP/1.1 101 Switching Protocols"
+        client.handshake_valid = True
+        client.close_code = 4000
+        client.disconnect_reason = "server_close_frame"
+      client.handshake_complete.set()
+
+    from contextlib import redirect_stdout
+    from io import StringIO
+    output = StringIO()
+    with (
+        patch.object(load_test, "steady_ws_client", side_effect=refused_steady),
+        patch.object(load_test, "synchronized_handshakes", side_effect=AssertionError("probes started")),
+        patch.object(load_test, "read_only_http_request", side_effect=AssertionError("HTTP phase started")),
+        redirect_stdout(output),
+    ):
+      load_test.run_read_only_mode(args)
+    self.assertIn("close=4000", output.getvalue())
 
   def test_read_only_http_client_rejects_mutating_methods_before_transport(self) -> None:
     methods: list[str] = []
@@ -681,24 +773,21 @@ class ReadOnlyLoadTest(unittest.TestCase):
     with self.assertRaises(ValueError):
       load_test.validate_operator_confirmation(False, "")
 
-  def test_read_only_mode_requires_exclusive_ws_confirmation_before_network(self) -> None:
-    args = argparse.Namespace(simulator_no_car=True, base_url="http://localhost", seconds=1,
-                              ws=3, concurrency=[1], timeout=1.0, no_other_ws_clients=False)
-    original = load_test.socket.create_connection
-    load_test.socket.create_connection = lambda *_args, **_kwargs: self.fail("network started")
-    try:
-      with self.assertRaisesRegex(ValueError, "no-other-ws-clients"):
-        load_test.run_read_only_mode(args)
-    finally:
-      load_test.socket.create_connection = original
+  def test_read_only_mode_rejects_bad_probe_count_before_network(self) -> None:
+    for ws in (0, 9):
+      args = argparse.Namespace(simulator_no_car=True, base_url="http://localhost", seconds=1,
+                                ws=ws, concurrency=[1], timeout=1.0)
+      with patch.object(load_test.socket, "create_connection",
+                        lambda *_a, **_k: self.fail("network started")):
+        with self.assertRaises(ValueError):
+          load_test.run_read_only_mode(args)
 
   def test_read_only_callable_rejects_nonfinite_timeout_before_starting_network(self) -> None:
     args = argparse.Namespace(
         simulator_no_car=True,
-        no_other_ws_clients=True,
         base_url="http://localhost",
         seconds=1,
-        ws=3,
+        ws=2,
         concurrency=[1],
         timeout=float("nan"),
     )
