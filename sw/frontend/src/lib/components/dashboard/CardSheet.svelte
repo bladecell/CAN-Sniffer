@@ -6,6 +6,7 @@
   import SelectMenu from "$lib/components/SelectMenu.svelte";
   import Field from "$lib/components/telemetry/editor/Field.svelte";
   import NumberStepper from "$lib/components/telemetry/editor/NumberStepper.svelte";
+  import ItemList from "./ItemList.svelte";
   import SizePicker from "./SizePicker.svelte";
   import { cardBodies } from "./cardRegistry";
   import { dashboardDocStore } from "$lib/dashboardDocStore.svelte";
@@ -154,7 +155,11 @@
   const itemKey = (it: OverviewItem) => (it.t === "pid" ? `pid:${it.pid}` : it.t);
   const hasItem = (key: string) => items.some((it) => itemKey(it) === key);
   const kindName = (it: OverviewItem) => (it.t === "vin" ? "VIN" : it.t === "dtc" ? "DTC count" : (catalog.find((d) => d.pid === it.pid)?.name ?? `PID ${it.pid}`));
-  const itemUnit = (it: OverviewItem) => (it.t === "vin" ? "VIN" : it.t === "dtc" ? "DTC" : (catalog.find((d) => d.pid === it.pid)?.unit || "PID"));
+  const itemUnit = (it: OverviewItem) => (it.t === "pid" ? (catalog.find((d) => d.pid === it.pid)?.unit ?? "") : "");
+  const pidColor = (pid: number) => {
+    const c = catalog.find((d) => d.pid === pid)?.color;
+    return c === undefined ? undefined : `#${(c & 0xffffff).toString(16).padStart(6, "0")}`;
+  };
   const addItem = (key: string) => {
     message = "";
     if (items.length >= ITEM_MAX || hasItem(key)) return;
@@ -171,9 +176,6 @@
     const next = [...items];
     [next[i], next[j]] = [next[j], next[i]];
     items = next;
-  };
-  const setLabel = (i: number, label: string) => {
-    items = items.map((it, j) => (j === i ? { ...it, label: label || undefined } : it));
   };
   const itemOptions = $derived<SelectMenuOption<string>[]>([
     ...catalog.map((d) => ({ value: `pid:${d.pid}`, label: `${d.name}${d.unit ? ` (${d.unit})` : ""}`, disabled: hasItem(`pid:${d.pid}`) })),
@@ -197,7 +199,25 @@
     message = "";
     pids = pids.filter((_, i) => i !== index);
   }
-  const slotCount = $derived(Math.max(1, Math.min(hi, pids.length + 1)));
+  const pidName = (p: number) => catalog.find((d) => d.pid === p)?.name ?? `PID ${p}`;
+  const pidUnit = (p: number) => catalog.find((d) => d.pid === p)?.unit || "PID";
+  const pidItemOptions = $derived<SelectMenuOption<string>[]>(catalog.map((d) => ({ value: String(d.pid), label: `${d.name}${d.unit ? ` (${d.unit})` : ""}`, disabled: pids.includes(d.pid) })));
+  const reorderPids = (ids: string[]) => {
+    const next = ids.map(Number).filter((p) => pids.includes(p));
+    if (next.length === pids.length) pids = next;
+  };
+  const reorderItems = (ids: string[]) => {
+    const byKey = new Map(items.map((it) => [itemKey(it), it]));
+    const next = ids.flatMap((id) => byKey.get(id) ?? []);
+    if (next.length === items.length) items = next;
+  };
+  const movePid = (i: number, d: number) => {
+    const j = i + d;
+    if (j < 0 || j >= pids.length) return;
+    const next = [...pids];
+    [next[i], next[j]] = [next[j], next[i]];
+    pids = next;
+  };
   const pidOptions = (index: number): SelectMenuOption<number>[] =>
     catalog.map((d) => ({
       value: d.pid,
@@ -310,66 +330,38 @@
       {:else if catalog.length === 0}
         <p class="db-hint">No PIDs yet. Add PIDs in Settings first.</p>
       {:else}
-        {#each Array.from({ length: slotCount }, (_, i) => i) as i (i)}
-          <Field id="db-pid-{i}" label={hi === 1 ? "PID" : `PID ${i + 1}`}>
-                          <div class="db-slot">
-                <SelectMenu
-                  id="db-pid-{i}"
-                  ariaLabel={hi === 1 ? "PID" : `PID ${i + 1}`}
-                  placeholder="Choose a PID"
-                  options={pidOptions(i)}
-                  value={pids[i]}
-                  onChange={(pid) => setSlot(i, pid)}
-                />
-                {#if hi > 1 && i < pids.length && pids.length > lo}
-                  <button type="button" class="rv-btn sm" onclick={() => clearSlot(i)}>Remove</button>
-                {/if}
-              </div>
+        {#if hi === 1}
+          <Field id="db-pid-0" label="PID">
+            <SelectMenu id="db-pid-0" ariaLabel="PID" placeholder="Choose a PID" options={pidOptions(0)} value={pids[0]} onChange={(pid) => setSlot(0, pid)} />
           </Field>
-        {/each}
+        {:else}
+          <ItemList
+            title="PIDs"
+            rows={pids.map((p) => ({ id: String(p), name: pidName(p), unit: pidUnit(p), color: pidColor(p) }))}
+            options={pidItemOptions}
+            max={hi}
+            min={lo}
+            onAdd={(key) => setSlot(pids.length, Number(key))}
+            onRemove={clearSlot}
+            onMove={movePid}
+            onReorder={reorderPids}
+          />
+        {/if}
       {/if}
     {/if}
 
     {#if type === "overview"}
-      <div class="db-field db-span">
-        <span class="db-label">Items <span class="db-count">{items.length} of {ITEM_MAX}</span></span>
-        {#if items.length === 0}
-          <p class="db-hint">No items yet. Add a PID value, the VIN or the DTC count.</p>
-        {:else}
-          <ul class="db-items" aria-label="Overview items, in display order">
-            {#each items as it, i (i)}
-              <li class="db-item">
-                <div class="db-item-main">
-                  <div class="db-item-head">
-                    <strong title={kindName(it)}>{kindName(it)}</strong>
-                    <span class="db-unit">{itemUnit(it)}</span>
-                  </div>
-                  <input class="db-label-in" type="text" maxlength="24" placeholder="Label (optional)" value={it.label ?? ""} aria-label="Label for {kindName(it)}" oninput={(e) => setLabel(i, e.currentTarget.value)} />
-                </div>
-                <div class="db-item-acts">
-                  <button type="button" class="db-icon" aria-label="Move {kindName(it)} up" aria-disabled={i === 0} onclick={() => i > 0 && moveItem(i, -1)}>
-                    <Icon name="chevron-down" size={20} class="up" />
-                  </button>
-                  <button type="button" class="db-icon" aria-label="Move {kindName(it)} down" aria-disabled={i === items.length - 1} onclick={() => i < items.length - 1 && moveItem(i, 1)}>
-                    <Icon name="chevron-down" size={20} />
-                  </button>
-                  <button type="button" class="db-icon db-icon-danger" aria-label="Remove {kindName(it)}" onclick={() => removeItem(i)}>
-                    <Icon name="trash" size={20} />
-                  </button>
-                </div>
-              </li>
-            {/each}
-          </ul>
-        {/if}
-        <div class="db-add-row">
-          <div class="db-add-pick">
-            {#key items.length}
-            <SelectMenu id="db-add" ariaLabel="Add item" placeholder={items.length >= ITEM_MAX ? `Up to ${ITEM_MAX} items` : "+ Add item"} options={itemOptions} onChange={addItem} disabled={items.length >= ITEM_MAX} />
-            {/key}
-          </div>
-          <span class="db-hint">{items.length} of {ITEM_MAX} items</span>
-        </div>
-      </div>
+      <ItemList
+        title="Items"
+        rows={items.map((it) => ({ id: itemKey(it), name: kindName(it), unit: itemUnit(it), color: it.t === "pid" ? pidColor(it.pid) : undefined }))}
+        options={itemOptions}
+        max={ITEM_MAX}
+        emptyHint="No items yet. Add a PID value, the VIN or the DTC count."
+        onAdd={addItem}
+        onRemove={removeItem}
+        onMove={moveItem}
+        onReorder={reorderItems}
+      />
     {/if}
 
     {#if type === "gauge" && pids.length === 1}
@@ -459,86 +451,6 @@
     gap: 14px 18px;
     align-items: start;
   }
-  .db-count {
-    margin-left: 6px;
-    padding: 1px 8px;
-    border-radius: 99px;
-    background: var(--ctl);
-    color: var(--ctl-text);
-    font-size: 0.75rem;
-    font-weight: 800;
-  }
-  .db-items {
-    display: grid;
-    gap: 6px;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-  .db-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    min-width: 0;
-    padding: 8px 10px 8px 12px;
-    border-radius: 18px;
-    background: var(--card);
-  }
-  .db-item-main {
-    display: grid;
-    flex: 1;
-    gap: 4px;
-    min-width: 0;
-  }
-  .db-item-head {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-  }
-  .db-item-head strong {
-    overflow: hidden;
-    font-size: 0.9rem;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .db-unit {
-    flex: none;
-    padding: 1px 8px;
-    border-radius: 99px;
-    background: var(--ctl);
-    color: var(--ctl-text);
-    font-size: 0.72rem;
-    font-weight: 800;
-  }
-  .db-label-in {
-    box-sizing: border-box;
-    width: 100%;
-    min-height: 44px;
-    padding: 0 12px;
-    border: 0;
-    border-radius: 12px;
-    background: var(--ctl);
-    color: var(--ctl-text);
-    font: 600 0.9rem/1 var(--font);
-  }
-  .db-item-acts {
-    display: flex;
-    flex: none;
-    gap: 6px;
-  }
-  .db-icon-danger {
-    color: var(--crit);
-  }
-  .db-add-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 12px;
-  }
-  .db-add-pick {
-    flex: 0 1 220px;
-  }
   .db-two {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -550,20 +462,6 @@
       grid-template-columns: repeat(2, minmax(0, 1fr));
       column-gap: 18px;
     }
-  }
-  .db-slot {
-    display: flex;
-    align-items: stretch;
-    gap: 8px;
-    min-width: 0;
-  }
-  .db-slot :global(.select-menu) {
-    flex: 1;
-  }
-  .db-slot :global(.rv-btn) {
-    margin: 0;
-    height: auto;
-    min-height: 48px;
   }
   .db-preview {
     display: grid;

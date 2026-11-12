@@ -160,6 +160,7 @@
   line-height: 1.3;
 }
 
-.db-icon .up {
+.db-icon .up,
+.db-ib .up {
   transform: rotate(180deg);
 }
