@@ -1,16 +1,37 @@
+#include <sys/select.h>
 #include <unistd.h>
+
+#include <atomic>
 
 #include <cstdio>
 
 #include <new>
 #include "async_web_server.hpp"
 #include "ws_broadcast_dispatch.hpp"
+#include "ws_session.hpp"
 
 #include "esp_check.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 
 static const char* TAG = "ASYNC_WEB_SERVER";
+
+// The one WebSocket client that receives frames. Written in the HTTPD task, read by it and by stop().
+static std::atomic<int> wsActiveFd{-1};
+// Guards the PID frame ring in the dispatcher: a few dozen bytes copied per hold.
+static portMUX_TYPE wsLowLock = portMUX_INITIALIZER_UNLOCKED;
+
+// True when a send to `fd` would not block: lwIP reports a TCP socket writable only with more free send buffer
+// (TCP_SNDLOWAT) than the largest frame sent here.
+static bool socketWritable(int fd)
+{
+    if (fd < 0 || fd >= FD_SETSIZE) { return false; }
+    fd_set writeSet;
+    FD_ZERO(&writeSet);
+    FD_SET(fd, &writeSet);
+    timeval noWait = {};
+    return select(fd + 1, nullptr, &writeSet, nullptr, &noWait) == 1;
+}
 
 struct WsBroadcastBackend
 {
@@ -22,13 +43,12 @@ struct WsBroadcastBackend
     {
         return httpd_queue_work(*server, callback, arg) == ESP_OK;
     }
-    bool list(int* fds, size_t& count)
-    {
-        const esp_err_t err = httpd_get_client_list(*server, &count, fds);
-        if (err != ESP_OK) { ESP_LOGW(TAG, "Failed to enumerate WS clients: %s", esp_err_to_name(err)); }
-        return err == ESP_OK;
-    }
+    void lock() { taskENTER_CRITICAL(&wsLowLock); }
+    void unlock() { taskEXIT_CRITICAL(&wsLowLock); }
+    int active() { return wsActiveFd.load(); }
     bool ready(int fd) { return httpd_ws_get_fd_info(*server, fd) == HTTPD_WS_CLIENT_WEBSOCKET; }
+    bool writable(int fd) { return socketWritable(fd); }
+    uint32_t nowMs() { return static_cast<uint32_t>(esp_timer_get_time() / 1000); }
     bool send(int fd, uint8_t* payload, size_t len)
     {
         httpd_ws_frame_t frame = {};
@@ -37,11 +57,20 @@ struct WsBroadcastBackend
         frame.payload = payload;
         frame.len = len;
         const esp_err_t err = httpd_ws_send_frame_async(*server, fd, &frame);
-        if (err != ESP_OK) { ESP_LOGW(TAG, "WS send to #%d failed: %s, closing", fd, esp_err_to_name(err)); }
-        return err == ESP_OK;
+        if (err != ESP_OK)
+        {
+            ESP_LOGW(TAG, "WS send to #%d failed: %s", fd, esp_err_to_name(err));
+            return false;
+        }
+        // HTTPD counts only received requests as use. Without this a WebSocket that mostly listens becomes the least
+        // recently used session and is purged when the socket table fills.
+        (void)httpd_sess_update_lru_counter(*server, fd);
+        return true;
     }
     void evict(int fd)
     {
+        ESP_LOGW(TAG, "WS client #%d cannot take frames for %u ms, closing", fd,
+                 static_cast<unsigned>(ws_broadcast::SendHealth::kEvictAfterMs));
         const esp_err_t err = httpd_sess_trigger_close(*server, fd);
         if (err != ESP_OK) { ESP_LOGW(TAG, "WS evict of #%d not queued: %s", fd, esp_err_to_name(err)); }
     }
@@ -161,6 +190,7 @@ void AsyncWebServer::closeSocket(httpd_handle_t, int sockfd)
 esp_err_t AsyncWebServer::stop()
 {
     wsDispatcher.stop();
+    wsActiveFd.store(-1);
     running_ = false;
 
     // Drain workers FIRST, while the server is still alive, so their request
@@ -503,13 +533,15 @@ esp_err_t AsyncWebServer::registerSocketRoute(const char* uri, esp_err_t (*handl
     return err;
 }
 
-void AsyncWebServer::wsBroadcast(httpd_ws_frame_t* ws_pkt)
+void AsyncWebServer::wsBroadcast(httpd_ws_frame_t* ws_pkt, bool low)
 {
     if (!ws_pkt)
     {
         return;
     }
-    const ws_broadcast::Result result = wsDispatcher.submit(WsBroadcastBackend{&server_}, ws_pkt->payload, ws_pkt->len);
+    const WsBroadcastBackend   backend{&server_};
+    const ws_broadcast::Result result = low ? wsDispatcher.submitLow(backend, ws_pkt->payload, ws_pkt->len)
+                                            : wsDispatcher.submit(backend, ws_pkt->payload, ws_pkt->len);
     if (result != ws_broadcast::Result::accepted && result != ws_broadcast::Result::stopped)
     {
         unsigned suppressed = 0;
@@ -522,36 +554,26 @@ void AsyncWebServer::wsBroadcast(httpd_ws_frame_t* ws_pkt)
     }
 }
 
-uint32_t AsyncWebServer::getActiveWSClientCount(int excludeFd)
+void AsyncWebServer::setActiveWsClient(int fd)
 {
-    static const size_t MAX_CLIENTS = 20;
-    int                 client_fds[MAX_CLIENTS];
-    size_t              fds = MAX_CLIENTS;
+    wsActiveFd.store(fd);
+}
 
-    esp_err_t ret = httpd_get_client_list(server_, &fds, client_fds);
+int AsyncWebServer::activeWsClient() const
+{
+    return wsActiveFd.load();
+}
 
-    if (ret != ESP_OK)
-    {
-        return 0;
-    }
-
-    uint32_t client_count = 0;
-
-    for (int i = 0; i < fds; i++)
-    {
-        int fd = client_fds[i];
-        if (fd == excludeFd)
-        {
-            continue;
-        }
-
-        httpd_ws_client_info_t info = httpd_ws_get_fd_info(server_, fd);
-
-        if (info == HTTPD_WS_CLIENT_WEBSOCKET)
-        {
-            client_count++;
-        }
-    }
-
-    return client_count;
+void AsyncWebServer::wsClose(int fd, uint16_t code)
+{
+    if (!server_ || fd < 0) { return; }
+    uint8_t          payload[2];
+    httpd_ws_frame_t frame = {};
+    frame.final            = true;
+    frame.type             = HTTPD_WS_TYPE_CLOSE;
+    frame.len              = ws_session::closePayload(code, payload);
+    frame.payload          = frame.len ? payload : nullptr;
+    // Best effort. The socket stays open: closing it now with the peer's ping unread resets the connection and the
+    // browser never sees the code. The peer echoes the close and httpd closes the socket then.
+    if (socketWritable(fd)) { (void)httpd_ws_send_frame_async(server_, fd, &frame); }
 }

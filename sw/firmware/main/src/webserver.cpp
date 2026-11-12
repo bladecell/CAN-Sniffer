@@ -37,6 +37,7 @@
 #include "http_parser.h"
 #include "input_limits.hpp"
 #include "response_rules.hpp"
+#include "ws_session.hpp"
 #include "json_budget.hpp"
 #include "middleware.hpp"
 #include "obd2_patch.hpp"
@@ -1678,9 +1679,52 @@ static esp_err_t ws_pre_handshake(httpd_req_t* req)
     return pass_host_origin(req) ? ESP_OK : ESP_FAIL;  // pass_host_origin already sent the 403
 }
 
+// The one WebSocket session (ws_session.hpp). HTTPD task only.
+static ws_session::Holder wsHolder;
+
+// The session socket is gone: nobody is left to stream to.
+static void ws_session_end(int fd)
+{
+    if (fd != wsHolder.fd) { return; }
+    wsHolder = {};
+    AsyncWebServer::getInstance().setActiveWsClient(-1);
+    b_pid_stream_enabled.store(false);
+    wsStreamingEnabled.store(false);
+}
+
 static esp_err_t ws_post_handshake(httpd_req_t* req)
 {
-    ESP_LOGI(TAG, "WS Connect: Client #%d", httpd_req_to_sockfd(req));
+    const int      fd  = httpd_req_to_sockfd(req);
+    const uint32_t now = static_cast<uint32_t>(esp_timer_get_time() / 1000);
+    uint32_t       sid = 0;
+    bool           takeover = false;
+    char           query[48];
+    char           value[12];
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK)
+    {
+        if (httpd_query_key_value(query, "sid", value, sizeof(value)) == ESP_OK) { sid = ws_session::parseSid(value); }
+        takeover = httpd_query_key_value(query, "takeover", value, sizeof(value)) == ESP_OK && strcmp(value, "1") == 0;
+    }
+
+    AsyncWebServer& server = AsyncWebServer::getInstance();
+    switch (ws_session::admit(wsHolder, now, sid, takeover))
+    {
+        case ws_session::Admit::busy:
+            ESP_LOGI(TAG, "WS client #%d refused: #%d holds the session", fd, wsHolder.fd);
+            server.wsClose(fd, ws_session::kCloseInUse);
+            return ESP_OK;
+        case ws_session::Admit::replace:
+            ESP_LOGI(TAG, "WS client #%d replaces #%d", fd, wsHolder.fd);
+            server.wsClose(wsHolder.fd, ws_session::kCloseReplaced);
+            break;
+        case ws_session::Admit::accept:
+            break;
+    }
+    ESP_LOGI(TAG, "WS Connect: Client #%d", fd);
+    wsHolder = {fd, sid, now};
+    server.setActiveWsClient(fd);
+    // A new session asks for the PID stream itself.
+    b_pid_stream_enabled.store(false);
     wsStreamingEnabled.store(true);
     if (WSDataStreamSemaphore != nullptr)
     {
@@ -1702,15 +1746,28 @@ esp_err_t ws_socket_handler(httpd_req_t* req)
         return ret;
     }
 
+    // A refused or replaced socket is waiting for its close echo. Read and drop anything else it sends (the page's
+    // first ping) so the socket is not reset before the close code arrives.
+    if (sockfd != wsHolder.fd)
+    {
+        if (ws_pkt.type == HTTPD_WS_TYPE_CLOSE) { return ESP_OK; }
+        uint8_t sink[16];
+        if (ws_pkt.len > sizeof(sink)) { return ESP_FAIL; }
+        ws_pkt.payload = sink;
+        return httpd_ws_recv_frame(req, &ws_pkt, sizeof(sink));
+    }
+    wsHolder.lastRxMs = static_cast<uint32_t>(esp_timer_get_time() / 1000);
+
     if (ws_pkt.type == HTTPD_WS_TYPE_CLOSE)
     {
         ESP_LOGI(TAG, "WS Client #%d Closed", sockfd);
-        if (AsyncWebServer::getInstance().getActiveWSClientCount() <= 1)
-        {
-            b_pid_stream_enabled.store(false);
-            wsStreamingEnabled.store(false);
-        }
-        return httpd_ws_send_frame(req, &ws_pkt);
+        ws_session_end(sockfd);
+        // An empty close frame. Echoing the received header (a length with no payload) is a malformed frame, and the
+        // browser reports an abnormal close. httpd closes the socket after this handler.
+        httpd_ws_frame_t reply = {};
+        reply.final            = true;
+        reply.type             = HTTPD_WS_TYPE_CLOSE;
+        return httpd_ws_send_frame(req, &reply);
     }
 
     if (!input_limits::wsFrameLenOk(ws_pkt.len))
@@ -1781,7 +1838,7 @@ void pid_stream_callback(uint16_t pid)
                                      .len        = PID_STREAM_PACKET_SIZE,
                                      .left_len   = 0};
 
-        AsyncWebServer::getInstance().wsBroadcast(&ws_frame);
+        AsyncWebServer::getInstance().wsBroadcast(&ws_frame, true);
     }
 }
 
@@ -1817,14 +1874,11 @@ void ws_send_recorder_state()
     }
 }
 
-// Any socket that closes (close frame or not) may have been the last stream client. Runs in the httpd task.
+// Any socket that closes (close frame or not) may have been the session socket. Runs in the httpd task.
 static void ws_socket_closed(int fd)
 {
-    if (AsyncWebServer::getInstance().getActiveWSClientCount(fd) == 0)
-    {
-        b_pid_stream_enabled.store(false);
-        wsStreamingEnabled.store(false);
-    }
+    if (fd == wsHolder.fd) { ESP_LOGI(TAG, "WS client #%d socket closed", fd); }
+    ws_session_end(fd);
 }
 
 static void WSDataStreamTask(void* pvParameters)
@@ -1849,6 +1903,9 @@ static void WSDataStreamTask(void* pvParameters)
             else
             {
                 xSemaphoreTake(WSDataStreamSemaphore, portMAX_DELAY);
+                // Start the 1 Hz period from now. A stale wake time makes vTaskDelayUntil return at once for every
+                // period that passed while idle, which sent a burst of status frames to a new session.
+                xLastWakeTime = xTaskGetTickCount();
             }
         }
     }
@@ -2025,6 +2082,7 @@ esp_err_t stop_web_server()
         vSemaphoreDelete(WSDataStreamSemaphore);
         WSDataStreamSemaphore = nullptr;
     }
+    wsHolder = {};
     b_pid_stream_enabled.store(false);
     wsStreamingEnabled.store(false);
     return ESP_OK;

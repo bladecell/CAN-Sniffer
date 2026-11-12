@@ -10,7 +10,6 @@
 #include "freertos/task.h"
 #include "http_error.hpp"
 
-#define MAX_WS_CLIENTS CONFIG_LWIP_MAX_LISTENING_TCP
 
 class AsyncWebServer
 {
@@ -82,10 +81,16 @@ public:
                                   esp_err_t (*preHandshake)(httpd_req_t* r)  = nullptr,
                                   esp_err_t (*postHandshake)(httpd_req_t* r) = nullptr);
 
-    void wsBroadcast(httpd_ws_frame_t* ws_pkt);
+    // Queues a frame for the active WebSocket client. `low`: a PID update (at most 32 bytes). PID updates wait in
+    // their own buffer and cannot push a status frame out.
+    void wsBroadcast(httpd_ws_frame_t* ws_pkt, bool low = false);
 
-    // WebSocket clients currently connected, not counting `excludeFd` (the socket being closed, still listed by httpd).
-    uint32_t getActiveWSClientCount(int excludeFd = -1);
+    // The one WebSocket client that receives frames, -1 for none.
+    void setActiveWsClient(int fd);
+    int  activeWsClient() const;
+    // Sends a close frame with `code` (ws_session.hpp) if the socket can take it now, then closes the session.
+    // HTTPD task only.
+    void wsClose(int fd, uint16_t code);
 
     struct WorkerHandle
     {

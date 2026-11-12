@@ -2,7 +2,7 @@
 
 This is the contract between `sw/firmware` and `sw/frontend`. A change here lands in both sides and this doc in the same commit.
 
-Source of truth in the firmware: the route table `api_routes` in `sw/firmware/main/src/webserver.cpp` (handlers), `sw/firmware/main/src/middleware.cpp` (response bodies and status mapping). Frontend callers (the table names the function) are in `sw/frontend/src/lib/canStore.svelte.ts`, `lib/api.ts` and `lib/components/`.
+Source of truth in the firmware: the route table `api_routes` in `sw/firmware/main/src/webserver.cpp` (handlers), `sw/firmware/main/src/middleware.cpp` (response bodies and status mapping). Frontend callers (the table names the function) are in `sw/frontend/src/lib/firmwareApi.ts` (one function per route), `lib/api.ts` (fetch wrappers) and the stores and components that call them.
 
 ## Conventions
 - Server: port 80, host `can-sniffer.local` (mDNS) or the device IP. No TLS: the default AP is open, so the PIN and the session token cross the air in clear text (accepted risk, `decisions.md` 2026-10-18). Routes marked **gated** need a login (see Authentication); everything else is open.
@@ -43,7 +43,7 @@ Gated route without a valid token: `401` `UNAUTHORIZED`. Device not claimed yet:
 ### Versioning
 - `GET /api/v1/system` returns `api_version` (integer, `API_VERSION` in `utilities.h`, currently 3) next to `app_version` (`APP_VERSION_STRING` from `APP_VERSION_MAJOR/MINOR/PATCH`, `"1.2.4"` when checked). `app_version` is the firmware release, `api_version` is the contract.
 - Inside `/api/v1` only additive changes are allowed without a bump: new routes, new response fields, new optional parameters, new enum values that clients ignore. Clients must ignore fields they do not know. Anything else (rename, removed field, changed status or type) is breaking: it bumps `api_version` and lands with the matching frontend in the same commit.
-- That is acceptable only while the frontend ships in the same image as the firmware. If the frontend can be updated separately (open decision D9), it must read `api_version` on connect and show a firmware/web mismatch notice, and breaking changes then need `/api/v2` routes. The server has 48 handler slots and uses 41 (40 REST routes including `/`, plus `/ws`), so a side-by-side `/api/v2` fits only for a few routes.
+- That is acceptable only while the frontend ships in the same image as the firmware. If the frontend can be updated separately (open decision D9), it must read `api_version` on connect and show a firmware/web mismatch notice, and breaking changes then need `/api/v2` routes. The server has 48 handler slots and uses 45 (44 REST routes including `/`, plus `/ws`), so a side-by-side `/api/v2` fits only for a few routes.
 - WebSocket: no version byte. New frame types use unused type bytes; the size of an existing frame never changes. The protocol version is the `api_version` fetched over REST when the socket opens.
 
 ### Error body
@@ -163,21 +163,26 @@ The request and file format uses different names for the same fields: `desc`, `m
 
 ## WebSocket
 - Path: `/ws` (plain `ws://`, GET upgrade). Binary frames only. All multi-byte values are little-endian.
-- There is no per-client state. The flags below are global. The frontend sends one ping every 3 s, never while a pong is outstanding, and reconnects when no pong arrives within 6 s. It resets its reconnect backoff on the first pong, and gives up a socket that is not open within 5 s.
-- On connect the server starts the 1 Hz CAN status stream. The stream stops when the last client closes.
+- **One session.** The device serves one WebSocket client at a time (`decisions.md` 2026-11-11). Only that client receives frames and only its commands are read. The client names itself in the upgrade URL: `/ws?sid=<1-8 hex digits, not zero>`, and adds `&takeover=1` to replace the current session.
+  - No session yet: the new client becomes the session.
+  - Same `sid` as the session (the same page reconnecting), `takeover=1`, no `sid` at all (scripts), or the session has sent nothing for 10 s: the new client replaces it. The old socket gets close code `4001` and is closed.
+  - Otherwise the upgrade completes and the new socket is closed at once with close code `4000` (device in use). The frontend then asks "Take over?" and reconnects with `takeover=1`. A page closed with `4000` or `4001` does not reconnect on its own.
+- The frontend sends one ping every 3 s, never while a pong is outstanding, and reconnects when no pong arrives within 6 s. It resets its reconnect backoff on the first pong, and gives up a socket that is not open within 5 s.
+- When a session starts the server starts the 1 Hz CAN status stream and turns the PID stream off (the client asks for it with `0xA0`). Both stop when the session socket closes.
 
 | Type | Direction | Payload | Rate |
 |---|---|---|---|
-| `0xA0` start PID stream | client → server | 1 byte `0xA0`. Enables PID packets for all clients | on demand |
+| `0xA0` start PID stream | client → server | 1 byte `0xA0`. Enables PID packets for the session | on demand |
 | `0xA1` stop PID stream | client → server | 1 byte `0xA1` | on demand |
-| `0xA2` ping | client → server | 1 byte `0xA2` | frontend: every 2 s |
-| `0xA3` pong | server → the pinging client only | 1 byte `0xA3`, reply to a ping, sent from inside the socket handler (other clients do not see it). If the send fails the server closes that socket | per ping |
-| `0x02` PID update | server → all clients, only after `0xA0` | 20 bytes: `[0]=0x02`, `[1]=18` (payload length), `[2..5]` uint32 `pid`, `[6..9]` float32 value, `[10..13]` uint32 `lastUpdated` (ms since boot), `[14..17]` uint32 update interval ms, `[18]` isSupported (0/1), `[19]` isValid (0/1) | once per PID update, so it follows the poll rate. Not throttled |
-| `0x03` CAN status | server → all clients | 12 bytes: `[0]=0x03`, `[1]=10`, `[2]` CAN state (0 not initialized, 1 bus off, 2 not connected, 3 connected), `[3..6]` float32 poll utilization 0.0–1.0, `[7..10]` float32 battery voltage in V (0 = unknown), `[11]` bus connected (0/1) | 1 Hz while at least one client is connected |
-| `0x04` recorder state | server → all clients | 16 bytes: `[0]=0x04`, `[1]=14`, `[2]` state (0 idle, 1 recording, 2 stopping, 3 error), `[3..6]` uint32 trip, `[7..10]` uint32 rows, `[11..14]` uint32 dropped, `[15]` last error present (0/1) | 1 Hz while a client is connected, and right after a successful `start` or `stop`. Best effort: a broadcast is dropped when three are pending (`architecture.md`, WebSocket broadcast dispatch) |
+| `0xA2` ping | client → server | 1 byte `0xA2` | frontend: every 3 s |
+| `0xA3` pong | server → client | 1 byte `0xA3`, reply to a ping, sent from inside the socket handler. If the send fails the server closes that socket | per ping |
+| `0x02` PID update | server → client, only after `0xA0` | 20 bytes: `[0]=0x02`, `[1]=18` (payload length), `[2..5]` uint32 `pid`, `[6..9]` float32 value, `[10..13]` uint32 `lastUpdated` (ms since boot), `[14..17]` uint32 update interval ms, `[18]` isSupported (0/1), `[19]` isValid (0/1) | once per PID update, so it follows the poll rate. Not throttled. Lowest priority: PID updates wait in a 16-frame buffer of their own and are dropped when it is full; they never displace a status or recorder frame |
+| `0x03` CAN status | server → client | 12 bytes: `[0]=0x03`, `[1]=10`, `[2]` CAN state (0 not initialized, 1 bus off, 2 not connected, 3 connected), `[3..6]` float32 poll utilization 0.0–1.0, `[7..10]` float32 battery voltage in V (0 = unknown), `[11]` bus connected (0/1) | 1 Hz while a session is connected |
+| `0x04` recorder state | server → client | 16 bytes: `[0]=0x04`, `[1]=14`, `[2]` state (0 idle, 1 recording, 2 stopping, 3 error), `[3..6]` uint32 trip, `[7..10]` uint32 rows, `[11..14]` uint32 dropped, `[15]` last error present (0/1) | 1 Hz while a client is connected, and right after a successful `start` or `stop`. Best effort: a broadcast is dropped when three are pending (`architecture.md`, WebSocket broadcast dispatch) |
 
 Other behaviour:
 - A frame longer than 125 bytes makes the server close the socket (no allocation). Text frames are logged and ignored. Unknown command bytes are logged and ignored.
-- A close frame is echoed. Whenever a socket closes, for any reason (close frame, reset, timeout), and no other WebSocket client remains, both streams are turned off.
+- A close frame from the session is answered with an empty close frame. Whenever the session socket closes, for any reason (close frame, reset, timeout, replaced), both streams are turned off.
+- A client that cannot take frames is not written to: the frame is dropped and the client is skipped for 250 ms. It is closed only after at least 3 failed sends that span 5 s (`decisions.md` RD1). A short Wi-Fi gap loses frames, not the connection.
 - `0x01` (`MSG_TYPE_LOG`) is defined in `middleware.hpp` but nothing sends it.
 - Up to 20 WebSocket clients are considered by a broadcast. The server allows 7 open sockets in total. When the table is full the least recently used socket is closed to make room (a socket serving an async request is never chosen), and a peer that vanishes without closing is dropped by TCP keep-alive after about 25 s, so a stale browser tab cannot lock the device out. A client must reconnect if its socket is purged.
