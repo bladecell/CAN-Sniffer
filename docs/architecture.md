@@ -241,7 +241,7 @@ Read-only view of the bus next to normal polling and recording; nothing is trans
 
 ## WebSocket broadcast dispatch
 
-The device serves one WebSocket session (`ws_session.hpp`, rules in `api.md`). `ws_post_handshake` admits, replaces or refuses a new client; the session socket is `AsyncWebServer::activeWsClient()`. The holder record and the stream flags are touched only in the HTTPD task.
+The device serves one WebSocket session (`ws_session.hpp`, rules in `api.md`). `ws_post_handshake` admits, replaces or refuses a new client; the session socket is `AsyncWebServer::activeWsClient()`. The holder record and the stream flags are touched only in the HTTPD task. Ending the session (close or take-over) stops the PID and raw streams, resets Raw CAN mode to Monitor and releases the WebSocket sleep hold.
 
 `wsBroadcast` copies each binary payload into one owned work item. The session lookup, the upgraded-state check and the send all run within that item's HTTPD callback. The recipient is the session socket at execution time, not a snapshot taken by the producer. There is one session socket, so a broadcast has one recipient.
 
