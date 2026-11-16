@@ -10,32 +10,6 @@ namespace ws_broadcast {
 
 enum class Result { accepted, stopped, full, invalid, noMemory, queueFailed };
 
-// Lets one drop message through per interval and counts the ones it held back.
-class DropLog
-{
-public:
-    static constexpr uint32_t kIntervalMs = 5000;
-
-    bool shouldLog(uint32_t nowMs, unsigned& suppressed)
-    {
-        if (armed_ && nowMs - lastMs_ < kIntervalMs)
-        {
-            ++suppressed_;
-            return false;
-        }
-        armed_ = true;
-        lastMs_ = nowMs;
-        suppressed = suppressed_;
-        suppressed_ = 0;
-        return true;
-    }
-
-private:
-    bool armed_ = false;
-    uint32_t lastMs_ = 0;
-    unsigned suppressed_ = 0;
-};
-
 // Decides when the one WebSocket client is skipped and when it is evicted. A full send buffer or a short Wi-Fi gap
 // drops frames; only failures that keep coming for kEvictAfterMs close the socket. HTTPD task only.
 class SendHealth
@@ -72,21 +46,33 @@ private:
     uint32_t skipUntilMs_ = 0;
 };
 
-// Sends frames to the one active WebSocket client. Backend queue callbacks and session operations run in the HTTPD
-// task. submit() and submitLow() may run in producers; stop() closes admission before the owner drains HTTPD.
+// Sends frames to the one active WebSocket client (Backend::active). Backend queue callbacks and session operations run
+// in the HTTPD task. submit() and submitLow() may run in producers; stop() closes admission before the owner drains HTTPD.
 //
-// Two paths share the HTTPD ctrl queue, which has few slots (see kMaxPending):
-// - submit(): status and recorder frames, one queued work item each, at most kMaxHigh pending.
+// Three paths share the HTTPD ctrl queue, which has few slots (see kMaxPending), each with its own budget:
+// - submit(): status and recorder frames, one queued work item each, at most kMaxHigh pending, at most kMaxPayload bytes.
 // - submitLow(): PID updates. They wait in a ring of kLowFrames and one work item sends all of them, so a burst of PID
 //   updates costs one slot and cannot push a status frame out.
+// - submit(..., Class::bulk): the raw CAN stream (batches and stats), at most kMaxBulkPayload bytes, kMaxBulkPending
+//   pending. It goes to the active client only when that client is subscribed (Backend::subscribed), or, with a target
+//   descriptor, when the target is the active client. A client whose socket has no room (Backend::writable) or sits in a
+//   send-failure skip window is passed over instead of blocking HTTPD in a send. Bulk items that reached nobody add their
+//   `units` (frames) to a counter the producer reads with takeBulkSkipped(). The budgets are independent: a saturated
+//   stream never makes a normal submit fail.
+// Every send, bulk included, feeds SendHealth, so a stream into a stuck socket evicts it like any other frame.
 template <typename Backend>
 class Dispatcher
 {
 public:
+    enum class Class : uint8_t { normal, bulk };
+
     static constexpr size_t kMaxPayload = 125;
-    // The SDK ctrl mailbox has CONFIG_LWIP_UDP_RECVMBOX_SIZE (6) slots; leave room for its own session closes
+    static constexpr size_t kMaxBulkPayload = 257;
+    // The SDK ctrl mailbox has CONFIG_LWIP_UDP_RECVMBOX_SIZE (6) slots; 3 + 1 leaves room for its own session closes
     static constexpr unsigned kMaxPending = 3;
+    // The PID drain item takes one of the kMaxPending slots, so status frames get the rest.
     static constexpr unsigned kMaxHigh = kMaxPending - 1;
+    static constexpr unsigned kMaxBulkPending = 1;
     static constexpr size_t kLowFrames = 16;
     static constexpr size_t kLowPayload = 32;
 
@@ -97,30 +83,35 @@ public:
     }
 
     void stop() { state_.fetch_or(kStopped); }
-    unsigned pending() const { return state_.load() & ~kStopped; }
-
-    Result submit(Backend backend, const uint8_t* payload, size_t len)
+    unsigned pending() const
     {
-        if (!payload || len == 0 || len > kMaxPayload) { return Result::invalid; }
-        if (!admit()) { return Result::stopped; }
-        unsigned high = high_.load();
-        do
+        const unsigned state = state_.load();
+        return countOf(state, false) + countOf(state, true);
+    }
+    unsigned bulkPending() const { return countOf(state_.load(), true); }
+    uint32_t takeBulkSkipped() { return skipped_.exchange(0); }
+
+    Result submit(Backend backend, const uint8_t* payload, size_t len, Class cls = Class::normal, uint16_t units = 0,
+                  int target = -1)
+    {
+        const bool bulk = cls == Class::bulk;
+        if (!payload || len == 0 || len > (bulk ? kMaxBulkPayload : kMaxPayload)) { return Result::invalid; }
+        if (state_.load() & kStopped) { return Result::stopped; }
+        if (!bulk && !reserveHigh()) { return Result::full; }
+        const Result admitted = admit(bulk);
+        if (admitted != Result::accepted)
         {
-            if (high >= kMaxHigh)
-            {
-                state_.fetch_sub(1);
-                return Result::full;
-            }
-        } while (!high_.compare_exchange_weak(high, high + 1));
-        void* storage = backend.allocate(sizeof(Work));
+            if (!bulk) { high_.fetch_sub(1); }
+            return admitted;
+        }
+        void* storage = backend.allocate(sizeof(Work) + len);
         if (!storage)
         {
-            high_.fetch_sub(1);
-            state_.fetch_sub(1);
+            release(bulk);
             return Result::noMemory;
         }
-        Work* work = new (storage) Work{this, backend, len, {}};
-        std::memcpy(work->payload, payload, len);
+        Work* work = new (storage) Work{this, backend, len, units, target, bulk};
+        std::memcpy(work->payload(), payload, len);
         if (!backend.queue(&execute, work))
         {
             dispose(work);
@@ -151,15 +142,16 @@ public:
 
         // This producer owns the one drain item until it is queued or given up.
         drainBackend_ = backend;
-        if (!admit())
+        const Result admitted = admit(false);
+        if (admitted != Result::accepted)
         {
             dropLow(backend);
-            return Result::stopped;
+            return admitted;
         }
         if (!backend.queue(&drain, this))
         {
             dropLow(backend);
-            state_.fetch_sub(1);
+            release(false);
             return Result::queueFailed;
         }
         return Result::accepted;
@@ -167,9 +159,14 @@ public:
 
 private:
     static constexpr unsigned kStopped = 1U << 31;
+    static constexpr unsigned kBulkShift = 8;  // bits 0-7 normal count, 8-15 bulk count
+    static constexpr unsigned unit(bool bulk) { return bulk ? 1U << kBulkShift : 1U; }
+    static constexpr unsigned countOf(unsigned state, bool bulk) { return (state >> (bulk ? kBulkShift : 0)) & 0xFFU; }
     // Rounds one drain item sends before it queues itself again, so a fast producer cannot hold the HTTPD task.
     static constexpr unsigned kDrainRounds = 4;
+    // One word holds the stop bit and both counters, so admission and the stop are decided together.
     std::atomic<unsigned> state_{kStopped};
+    // Status frames in flight (a subset of the normal count): the drain item keeps its own slot.
     std::atomic<unsigned> high_{0};
     SendHealth health_;
 
@@ -185,24 +182,43 @@ private:
     bool drainQueued_ = false;
     Backend drainBackend_{};
 
+    std::atomic<uint32_t> skipped_{0};
+
+    // The payload follows the header in the same allocation, so a 20-byte PID update does not pay for a bulk-sized slot.
     struct Work
     {
         Dispatcher* owner;
         Backend backend;
         size_t len;
-        uint8_t payload[kMaxPayload];
+        uint16_t units;
+        int target;  // bulk only: -1 = the active client if subscribed, else just this descriptor
+        bool bulk;
+        uint8_t* payload() { return reinterpret_cast<uint8_t*>(this + 1); }
     };
 
-    // Counts one pending item unless stopped.
-    bool admit()
+    bool reserveHigh()
     {
-        unsigned state = state_.load();
+        unsigned high = high_.load();
         do
         {
-            if (state & kStopped) { return false; }
-        } while (!state_.compare_exchange_weak(state, state + 1));
+            if (high >= kMaxHigh) { return false; }
+        } while (!high_.compare_exchange_weak(high, high + 1));
         return true;
     }
+
+    // Counts one pending item of the class unless stopped or its budget is spent.
+    Result admit(bool bulk)
+    {
+        unsigned state = state_.load();
+        for (;;)
+        {
+            if (state & kStopped) { return Result::stopped; }
+            if (countOf(state, bulk) >= (bulk ? kMaxBulkPending : kMaxPending)) { return Result::full; }
+            if (state_.compare_exchange_weak(state, state + unit(bulk))) { return Result::accepted; }
+        }
+    }
+
+    void release(bool bulk) { state_.fetch_sub(unit(bulk)); }
 
     void dropLow(Backend& backend)
     {
@@ -216,28 +232,42 @@ private:
     {
         Dispatcher* owner = work->owner;
         Backend backend = work->backend;
+        const bool bulk = work->bulk;
         work->~Work();
         backend.release(work);
-        owner->high_.fetch_sub(1);
-        owner->state_.fetch_sub(1);
+        if (!bulk) { owner->high_.fetch_sub(1); }
+        owner->release(bulk);
     }
 
-    void deliver(Backend& backend, uint8_t* payload, size_t len)
+    // `bulk` is null for normal frames. No HTTPD session can close/reuse an FD between selection and send: both happen in
+    // the same HTTPD work callback.
+    void deliver(Backend& backend, uint8_t* payload, size_t len, const Work* bulk = nullptr)
     {
-        // No HTTPD session can close/reuse an FD between this selection and
-        // send: both happen in the same HTTPD work callback.
         const int fd = backend.active();
-        if (fd < 0 || !backend.ready(fd) || health_.skip(fd, backend.nowMs())) { return; }
+        if (fd < 0 || !backend.ready(fd)) { return; }
+        if (bulk && !(bulk->target >= 0 ? fd == bulk->target : backend.subscribed(fd))) { return; }
+        const uint32_t now = backend.nowMs();
         // A socket that cannot take a frame right now is not written to: a blocking send would hold the HTTPD
         // task. The frame is dropped. The close is deferred to HTTPD's own queue.
-        if (backend.writable(fd) && backend.send(fd, payload, len)) { health_.ok(); }
-        else if (health_.fail(backend.nowMs())) { backend.evict(fd); }
+        if (!health_.skip(fd, now))
+        {
+            if (backend.writable(fd) && backend.send(fd, payload, len))
+            {
+                health_.ok();
+                return;
+            }
+            if (health_.fail(backend.nowMs())) { backend.evict(fd); }
+        }
+        if (bulk) { skipped_.fetch_add(bulk->units); }
     }
 
     static void execute(void* arg)
     {
         Work* work = static_cast<Work*>(arg);
-        if (!(work->owner->state_.load() & kStopped)) { work->owner->deliver(work->backend, work->payload, work->len); }
+        if (!(work->owner->state_.load() & kStopped))
+        {
+            work->owner->deliver(work->backend, work->payload(), work->len, work->bulk ? work : nullptr);
+        }
         dispose(work);
     }
 
@@ -269,7 +299,7 @@ private:
                 break;
             }
         }
-        self->state_.fetch_sub(1);
+        self->release(false);
     }
 };
 

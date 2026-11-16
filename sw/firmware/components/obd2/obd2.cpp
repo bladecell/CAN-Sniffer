@@ -141,6 +141,9 @@ esp_err_t OBD2::stopInternal(bool)
         if (lifecycleState_ == LifecycleState::Stopped) { xSemaphoreGive(admissionMtx_); return ESP_OK; }
         lifecycleState_ = LifecycleState::Stopping;
         stopRequested_ = true;
+        rawFc_.disarm();
+        parsingEnabled_.store(true);  // Raw mode without parsing never outlives OBD2
+        healthPingEnabled_.store(true);
         autoPoll = false;
         recoveryNeeded_ = false;
         pendingDiscover_ = false;

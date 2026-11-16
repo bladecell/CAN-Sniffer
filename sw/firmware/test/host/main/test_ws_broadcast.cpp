@@ -1,6 +1,9 @@
+#include <atomic>
 #include <cstdlib>
 #include <utility>
+#include <thread>
 #include <vector>
+#include "../../../components/async_web_server/include/log_gate.hpp"
 #include "../../../components/async_web_server/include/ws_broadcast_dispatch.hpp"
 #include "../../../components/async_web_server/include/ws_session.hpp"
 #include "unity.h"
@@ -23,6 +26,8 @@ struct FakeHttpd
     bool failAllocation = false;
     bool failSend = false;
     std::vector<int> evicted;
+    std::vector<int> subscribers{4};  // bulk goes only to the active client when it is in here (or is the explicit target)
+    size_t lastAlloc = 0;
     unsigned sendErrors = 0;
     void (*duringQueue)(void*) = nullptr;
     void* queueArg = nullptr;
@@ -43,6 +48,7 @@ struct Backend
     void* allocate(size_t size)
     {
         if (httpd->failAllocation) { return nullptr; }
+        httpd->lastAlloc = size;
         void* p = std::malloc(size);
         if (p) { ++httpd->allocations; }
         return p;
@@ -66,6 +72,11 @@ struct Backend
         {
             if (client.fd == fd) { return client.upgraded; }
         }
+        return false;
+    }
+    bool subscribed(int fd)
+    {
+        for (int s : httpd->subscribers) { if (s == fd) { return true; } }
         return false;
     }
     bool send(int fd, uint8_t* payload, size_t len)
@@ -488,19 +499,366 @@ static void test_successful_send_does_not_evict()
     TEST_ASSERT_TRUE(h.evicted.empty());
 }
 
-static void test_drop_log_is_rate_limited_and_counts_suppressed()
+static uint8_t bulkPayload[ws_broadcast::Dispatcher<Backend>::kMaxBulkPayload + 1];
+
+static void test_bulk_payload_limit_is_larger_than_normal(void)
 {
-    ws_broadcast::DropLog log;
-    unsigned suppressed = 99;
-    TEST_ASSERT_TRUE(log.shouldLog(1000, suppressed));
+    FakeHttpd h;
+    Dispatcher d;
+    d.start();
+    TEST_ASSERT_EQUAL(Result::invalid, d.submit({&h}, bulkPayload, Dispatcher::kMaxPayload + 1));
+    TEST_ASSERT_EQUAL(Result::accepted, d.submit({&h}, bulkPayload, Dispatcher::kMaxBulkPayload, Dispatcher::Class::bulk, 16));
+    TEST_ASSERT_EQUAL(Result::invalid, d.submit({&h}, bulkPayload, Dispatcher::kMaxBulkPayload + 1, Dispatcher::Class::bulk, 16));
+    h.run();
+    TEST_ASSERT_EQUAL(h.allocations, h.frees);
+}
+
+static void test_allocation_is_sized_to_the_payload(void)
+{
+    FakeHttpd h;
+    Dispatcher d;
+    d.start();
+    d.submit({&h}, packet, sizeof(packet));
+    const size_t small = h.lastAlloc;
+    d.submit({&h}, bulkPayload, 250, Dispatcher::Class::bulk, 1);
+    TEST_ASSERT_EQUAL(250 - sizeof(packet), h.lastAlloc - small);
+    h.run();
+}
+
+static void test_bulk_saturation_never_denies_a_normal_submit(void)
+{
+    FakeHttpd h;
+    Dispatcher d;
+    d.start();
+    TEST_ASSERT_EQUAL(Result::accepted, d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 1));
+    TEST_ASSERT_EQUAL(Result::full, d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 1));
+    TEST_ASSERT_EQUAL(1, d.bulkPending());
+    for (unsigned i = 0; i < Dispatcher::kMaxHigh; ++i)
+    {
+        TEST_ASSERT_EQUAL(Result::accepted, d.submit({&h}, packet, sizeof(packet)));
+    }
+    TEST_ASSERT_EQUAL(Result::full, d.submit({&h}, packet, sizeof(packet)));
+    TEST_ASSERT_EQUAL(Dispatcher::kMaxHigh + 1, d.pending());
+    h.run();
+    TEST_ASSERT_EQUAL(0, d.pending());
+    TEST_ASSERT_EQUAL(0, d.bulkPending());
+    TEST_ASSERT_EQUAL(h.allocations, h.frees);
+}
+
+static void test_normal_saturation_does_not_take_the_bulk_slot(void)
+{
+    FakeHttpd h;
+    Dispatcher d;
+    d.start();
+    for (unsigned i = 0; i < Dispatcher::kMaxHigh; ++i) { d.submit({&h}, packet, sizeof(packet)); }
+    TEST_ASSERT_EQUAL(Result::accepted, d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 1));
+    h.run();
+    TEST_ASSERT_EQUAL(0, d.pending());
+}
+
+static void test_bulk_admission_closes_on_stop_and_counts_as_pending(void)
+{
+    FakeHttpd h;
+    Dispatcher d;
+    d.start();
+    d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 1);
+    d.stop();
+    TEST_ASSERT_EQUAL(1, d.pending());  // shutdown waits for it
+    TEST_ASSERT_EQUAL(Result::stopped, d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 1));
+    h.run();
+    TEST_ASSERT_EQUAL(0, d.pending());
+    TEST_ASSERT_TRUE(h.sent.empty());
+}
+
+static void test_failed_bulk_submissions_release_the_bulk_slot(void)
+{
+    FakeHttpd h;
+    Dispatcher d;
+    d.start();
+    h.reject = true;
+    TEST_ASSERT_EQUAL(Result::queueFailed, d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 1));
+    h.reject = false;
+    h.failAllocation = true;
+    TEST_ASSERT_EQUAL(Result::noMemory, d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 1));
+    h.failAllocation = false;
+    TEST_ASSERT_EQUAL(0, d.bulkPending());
+    TEST_ASSERT_EQUAL(0, d.pending());
+    TEST_ASSERT_EQUAL(Result::accepted, d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 1));
+    h.run();
+}
+
+static void test_bulk_skips_unwritable_clients_and_counts_units(void)
+{
+    FakeHttpd h;
+    Dispatcher d;
+    d.start();
+    h.writable = false;
+    d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 7);
+    h.run();
+    TEST_ASSERT_TRUE(h.sent.empty());
+    TEST_ASSERT_EQUAL(7, d.takeBulkSkipped());
+    TEST_ASSERT_EQUAL(0, d.takeBulkSkipped());
+    d.submit({&h}, packet, sizeof(packet));  // normal frames are not written to a full socket either
+    h.run();
+    TEST_ASSERT_TRUE(h.sent.empty());
+    h.now = ws_broadcast::SendHealth::kSkipMs;  // past the skip window the client is tried again
+    h.writable = true;
+    d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 7);
+    h.run();
+    TEST_ASSERT_EQUAL(1, h.sent.size());
+    TEST_ASSERT_EQUAL(0, d.takeBulkSkipped());
+}
+
+static void test_bulk_with_no_clients_is_not_counted_as_skipped(void)
+{
+    FakeHttpd h;
+    Dispatcher d;
+    d.start();
+    h.clients.clear();
+    d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 5);
+    h.run();
+    TEST_ASSERT_EQUAL(0, d.takeBulkSkipped());
+    TEST_ASSERT_EQUAL(h.allocations, h.frees);
+}
+
+static void test_log_gate_limits_and_reports_suppressed(void)
+{
+    LogGate g(1000);
+    uint32_t suppressed = 99;
+    TEST_ASSERT_TRUE(g.allow(5000, suppressed));
     TEST_ASSERT_EQUAL(0, suppressed);
-    TEST_ASSERT_FALSE(log.shouldLog(1500, suppressed));
-    TEST_ASSERT_FALSE(log.shouldLog(5999, suppressed));
-    TEST_ASSERT_TRUE(log.shouldLog(6000, suppressed));
+    TEST_ASSERT_FALSE(g.allow(5001, suppressed));
+    TEST_ASSERT_FALSE(g.allow(5999, suppressed));
+    TEST_ASSERT_TRUE(g.allow(6000, suppressed));
     TEST_ASSERT_EQUAL(2, suppressed);
-    TEST_ASSERT_FALSE(log.shouldLog(6001, suppressed));
-    TEST_ASSERT_TRUE(log.shouldLog(11000, suppressed));
+    TEST_ASSERT_FALSE(g.allow(6500, suppressed));
+    TEST_ASSERT_TRUE(g.allow(7000, suppressed));
     TEST_ASSERT_EQUAL(1, suppressed);
+}
+
+static void test_log_gate_first_call_at_time_zero_and_clock_wrap(void)
+{
+    LogGate g(1000);
+    uint32_t suppressed = 0;
+    TEST_ASSERT_TRUE(g.allow(0, suppressed));
+    TEST_ASSERT_FALSE(g.allow(10, suppressed));
+    LogGate w(1000);
+    TEST_ASSERT_TRUE(w.allow(0xFFFFFF00u, suppressed));
+    TEST_ASSERT_FALSE(w.allow(0xFFFFFF10u, suppressed));
+    TEST_ASSERT_FALSE(w.allow(0x10u, suppressed));   // 272 ms later across the 32-bit wrap
+    TEST_ASSERT_TRUE(w.allow(0x400u, suppressed));   // 1.1 s later
+}
+
+static void test_bulk_goes_only_to_the_active_client_when_subscribed(void)
+{
+    FakeHttpd h;
+    h.clients = {{4, true}, {5, true}, {6, true}};
+    h.subscribers = {5, 6};
+    h.active = 5;
+    Dispatcher d;
+    d.start();
+    d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 3);
+    h.run();
+    TEST_ASSERT_EQUAL(1, h.sent.size());
+    TEST_ASSERT_EQUAL(5, h.sent[0]);
+    h.sent.clear();
+    h.subscribers = {6};  // the active session did not subscribe: a subscribed refused socket gets nothing
+    d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 3);
+    h.run();
+    TEST_ASSERT_TRUE(h.sent.empty());
+    TEST_ASSERT_EQUAL(0, d.takeBulkSkipped());
+}
+
+static void test_bulk_with_no_subscriber_sends_nothing_and_skips_nothing(void)
+{
+    FakeHttpd h;
+    h.subscribers.clear();
+    h.writable = false;
+    Dispatcher d;
+    d.start();
+    d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 4);
+    h.run();
+    TEST_ASSERT_TRUE(h.sent.empty());
+    TEST_ASSERT_EQUAL(0, d.takeBulkSkipped());
+}
+
+static void test_targeted_bulk_reaches_only_the_requester_if_it_is_the_session(void)
+{
+    FakeHttpd h;
+    h.clients = {{4, true}, {5, true}};
+    h.subscribers = {4};  // 5 asked and failed to subscribe: it is not in the set
+    h.active = 5;
+    Dispatcher d;
+    d.start();
+    d.submit({&h}, bulkPayload, 23, Dispatcher::Class::bulk, 0, 5);
+    h.run();
+    TEST_ASSERT_EQUAL(1, h.sent.size());
+    TEST_ASSERT_EQUAL(5, h.sent[0]);
+    h.sent.clear();
+    d.submit({&h}, bulkPayload, 23, Dispatcher::Class::bulk, 0, 4);  // 4 is not the session socket
+    h.run();
+    TEST_ASSERT_TRUE(h.sent.empty());
+}
+
+static void test_targeted_bulk_to_a_closed_socket_is_dropped(void)
+{
+    FakeHttpd h;
+    Dispatcher d;
+    d.start();
+    d.submit({&h}, bulkPayload, 23, Dispatcher::Class::bulk, 0, 99);
+    h.run();
+    TEST_ASSERT_TRUE(h.sent.empty());
+    TEST_ASSERT_EQUAL(h.allocations, h.frees);
+}
+
+static void test_only_unwritable_subscribers_count_as_skipped(void)
+{
+    FakeHttpd h;
+    h.clients = {{4, true}, {5, true}};
+    h.subscribers = {4};
+    h.writable = false;
+    Dispatcher d;
+    d.start();
+    d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 6);
+    h.run();
+    TEST_ASSERT_EQUAL(6, d.takeBulkSkipped());
+    h.active = 5;  // the session is not subscribed: nothing to skip
+    d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 6);
+    h.run();
+    TEST_ASSERT_EQUAL(0, d.takeBulkSkipped());
+}
+
+// Raw bulk frames and the single session: a stuck socket is evicted by bulk traffic alone, and the stream's units are
+// reported as skipped while it waits.
+static void test_bulk_failures_evict_the_session_like_any_frame(void)
+{
+    FakeHttpd h;
+    Dispatcher d;
+    d.start();
+    h.writable = false;
+    const uint32_t times[] = {1000, 1300, 1600, 5900};
+    for (uint32_t t : times)
+    {
+        h.now = t;
+        d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 2);
+        h.run();
+    }
+    TEST_ASSERT_TRUE(h.evicted.empty());
+    h.now = 6200;
+    d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 2);
+    h.run();
+    TEST_ASSERT_EQUAL(1, h.evicted.size());
+    TEST_ASSERT_EQUAL(4, h.evicted[0]);
+    TEST_ASSERT_EQUAL(0, d.pending());
+}
+
+static void test_bulk_inside_the_skip_window_is_counted_not_sent(void)
+{
+    FakeHttpd h;
+    Dispatcher d;
+    d.start();
+    h.failSend = true;
+    d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 5);
+    h.run();
+    TEST_ASSERT_EQUAL(1, h.sendErrors);
+    TEST_ASSERT_EQUAL(5, d.takeBulkSkipped());
+    h.failSend = false;
+    d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 5);  // same instant: still inside the window
+    h.run();
+    TEST_ASSERT_TRUE(h.sent.empty());
+    TEST_ASSERT_EQUAL(5, d.takeBulkSkipped());
+    h.now = ws_broadcast::SendHealth::kSkipMs;
+    d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 5);
+    h.run();
+    TEST_ASSERT_EQUAL(1, h.sent.size());
+    TEST_ASSERT_EQUAL(0, d.takeBulkSkipped());
+}
+
+static void test_bulk_success_clears_send_failures(void)
+{
+    FakeHttpd h;
+    Dispatcher d;
+    d.start();
+    h.writable = false;
+    for (uint32_t t : {0u, 300u})
+    {
+        h.now = t;
+        d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 1);
+        h.run();
+    }
+    h.writable = true;
+    h.now = 600;
+    d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 1);
+    h.run();
+    TEST_ASSERT_EQUAL(1, h.sent.size());
+    h.writable = false;
+    for (uint32_t t : {6000u, 6300u, 6600u})
+    {
+        h.now = t;
+        d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 1);
+        h.run();
+    }
+    TEST_ASSERT_TRUE(h.evicted.empty());  // the earlier failures do not count towards this run
+}
+
+// Status frames, a full PID buffer and a bulk frame all pending at once: nobody is refused, nobody starves.
+static void test_bulk_has_its_own_slot_next_to_status_and_pid_frames(void)
+{
+    FakeHttpd h;
+    Dispatcher d;
+    d.start();
+    const uint8_t pid[] = {2, 18, 7};
+    for (size_t i = 0; i < Dispatcher::kLowFrames; ++i) { TEST_ASSERT_EQUAL(Result::accepted, d.submitLow({&h}, pid, sizeof(pid))); }
+    for (unsigned i = 0; i < Dispatcher::kMaxHigh; ++i) { TEST_ASSERT_EQUAL(Result::accepted, d.submit({&h}, packet, sizeof(packet))); }
+    TEST_ASSERT_EQUAL(Result::accepted, d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 4));
+    TEST_ASSERT_EQUAL(Result::full, d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 4));
+    TEST_ASSERT_EQUAL(Result::full, d.submit({&h}, packet, sizeof(packet)));
+    TEST_ASSERT_EQUAL(Result::full, d.submitLow({&h}, pid, sizeof(pid)));
+    TEST_ASSERT_EQUAL(Dispatcher::kMaxPending + 1, d.pending());
+    h.run();
+    TEST_ASSERT_EQUAL(Dispatcher::kLowFrames + Dispatcher::kMaxHigh + 1, h.sent.size());
+    TEST_ASSERT_EQUAL(0, d.pending());
+    TEST_ASSERT_EQUAL(0, d.takeBulkSkipped());
+    TEST_ASSERT_EQUAL(0, h.locks);
+    TEST_ASSERT_EQUAL(h.allocations, h.frees);
+}
+
+// A drain item that yields (kDrainRounds) goes back to the queue behind a bulk item; both finish and release their slots.
+static void test_bulk_after_a_pid_burst_is_delivered_in_queue_order(void)
+{
+    FakeHttpd h;
+    Dispatcher d;
+    d.start();
+    const uint8_t pid[] = {2, 18, 7};
+    d.submitLow({&h}, pid, sizeof(pid));
+    d.submit({&h}, bulkPayload, 100, Dispatcher::Class::bulk, 4);
+    h.run();
+    TEST_ASSERT_EQUAL(2, h.sent.size());
+    TEST_ASSERT_EQUAL(100, h.bytes.size());  // the bulk frame went last
+    TEST_ASSERT_EQUAL(0, d.pending());
+    TEST_ASSERT_EQUAL(0, d.takeBulkSkipped());
+}
+
+static void test_log_gate_lets_exactly_one_of_many_racing_callers_through(void)
+{
+    for (int round = 0; round < 200; ++round)
+    {
+        LogGate gate(1000);
+        std::atomic<int> allowed{0};
+        std::atomic<bool> go{false};
+        std::thread threads[4];
+        for (auto& t : threads)
+        {
+            t = std::thread([&] {
+                while (!go.load()) {}
+                uint32_t suppressed = 0;
+                if (gate.allow(5000, suppressed)) { allowed.fetch_add(1); }
+            });
+        }
+        go.store(true);
+        for (auto& t : threads) { t.join(); }
+        TEST_ASSERT_EQUAL(1, allowed.load());
+    }
 }
 
 extern "C" void run_ws_broadcast_tests(void)
@@ -518,7 +876,6 @@ extern "C" void run_ws_broadcast_tests(void)
     RUN_TEST(test_session_id_parse_rejects_bad_input);
     RUN_TEST(test_close_payload_is_empty_or_a_status_code);
     RUN_TEST(test_successful_send_does_not_evict);
-    RUN_TEST(test_drop_log_is_rate_limited_and_counts_suppressed);
     RUN_TEST(test_reused_http_fd_does_not_receive_frame);
     RUN_TEST(test_only_the_active_client_receives);
     RUN_TEST(test_unchanged_client_receives_owned_copy);
@@ -528,4 +885,25 @@ extern "C" void run_ws_broadcast_tests(void)
     RUN_TEST(test_pending_and_payload_are_bounded);
     RUN_TEST(test_shutdown_drains_ownership_without_sending_and_can_restart);
     RUN_TEST(test_enumeration_and_send_failures_release_ownership);
+    RUN_TEST(test_bulk_payload_limit_is_larger_than_normal);
+    RUN_TEST(test_allocation_is_sized_to_the_payload);
+    RUN_TEST(test_bulk_saturation_never_denies_a_normal_submit);
+    RUN_TEST(test_normal_saturation_does_not_take_the_bulk_slot);
+    RUN_TEST(test_bulk_admission_closes_on_stop_and_counts_as_pending);
+    RUN_TEST(test_failed_bulk_submissions_release_the_bulk_slot);
+    RUN_TEST(test_bulk_skips_unwritable_clients_and_counts_units);
+    RUN_TEST(test_bulk_with_no_clients_is_not_counted_as_skipped);
+    RUN_TEST(test_log_gate_limits_and_reports_suppressed);
+    RUN_TEST(test_log_gate_first_call_at_time_zero_and_clock_wrap);
+    RUN_TEST(test_bulk_goes_only_to_the_active_client_when_subscribed);
+    RUN_TEST(test_bulk_with_no_subscriber_sends_nothing_and_skips_nothing);
+    RUN_TEST(test_targeted_bulk_reaches_only_the_requester_if_it_is_the_session);
+    RUN_TEST(test_targeted_bulk_to_a_closed_socket_is_dropped);
+    RUN_TEST(test_only_unwritable_subscribers_count_as_skipped);
+    RUN_TEST(test_bulk_failures_evict_the_session_like_any_frame);
+    RUN_TEST(test_bulk_inside_the_skip_window_is_counted_not_sent);
+    RUN_TEST(test_bulk_success_clears_send_failures);
+    RUN_TEST(test_bulk_has_its_own_slot_next_to_status_and_pid_frames);
+    RUN_TEST(test_bulk_after_a_pid_burst_is_delivered_in_queue_order);
+    RUN_TEST(test_log_gate_lets_exactly_one_of_many_racing_callers_through);
 }

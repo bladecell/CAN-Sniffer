@@ -34,6 +34,37 @@ static void test_status_error_precedence(void)
   TEST_ASSERT_EQUAL_INT(500, httpStatus(d, 3));
 }
 
+static void test_power_only_system_patch_needs_no_restart(void)
+{
+  // system.sleep_enabled and the two voltage thresholds are applied live (Core::setPolicy); nothing else in the system
+  // section is, and wifi and can only after a reboot.
+  TEST_ASSERT_FALSE(systemKeyNeedsRestart("sleep_enabled"));
+  TEST_ASSERT_FALSE(systemKeyNeedsRestart("stay_awake_voltage_mv"));
+  TEST_ASSERT_FALSE(systemKeyNeedsRestart("low_battery_voltage_mv"));
+  TEST_ASSERT_TRUE(systemKeyNeedsRestart("pid_def_path"));
+  TEST_ASSERT_TRUE(systemKeyNeedsRestart("dtc_desc_path"));
+  TEST_ASSERT_FALSE(systemKeyNeedsRestart("something_unknown"));  // ignored by the parser: nothing changed
+  TEST_ASSERT_FALSE(systemKeyNeedsRestart(""));
+
+  const Outcome saved[]         = {Outcome::Saved};
+  const bool    powerOnly[]     = {false};
+  const bool    needsRestart[]  = {true};
+  TEST_ASSERT_FALSE(restartRequired(saved, powerOnly, 1));
+  TEST_ASSERT_TRUE(restartRequired(saved, needsRestart, 1));
+  const Outcome two[]    = {Outcome::Saved, Outcome::Saved};
+  const bool    mixed[]  = {true, false};  // wifi + power
+  TEST_ASSERT_TRUE(restartRequired(two, mixed, 2));
+  const bool    both[]   = {false, false};
+  TEST_ASSERT_FALSE(restartRequired(two, both, 2));
+  const Outcome failed[] = {Outcome::Saved, Outcome::Invalid};  // the unsaved section needs nothing
+  const bool    f[]      = {false, true};
+  TEST_ASSERT_FALSE(restartRequired(failed, f, 2));
+  const Outcome none[] = {Outcome::Invalid};
+  const bool    n[]    = {true};
+  TEST_ASSERT_FALSE(restartRequired(none, n, 1));
+  TEST_ASSERT_FALSE(restartRequired(nullptr, nullptr, 0));
+}
+
 static void test_status_empty_is_bad_request(void)
 {
   TEST_ASSERT_EQUAL_INT(400, httpStatus(nullptr, 0));
@@ -70,6 +101,7 @@ extern "C" void run_settings_patch_tests(void)
   RUN_TEST(test_section_names);
   RUN_TEST(test_status_all_saved_needs_restart);
   RUN_TEST(test_status_error_precedence);
+  RUN_TEST(test_power_only_system_patch_needs_no_restart);
   RUN_TEST(test_status_empty_is_bad_request);
   RUN_TEST(test_section_count_is_capped);
 }

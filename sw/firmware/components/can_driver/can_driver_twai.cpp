@@ -27,6 +27,7 @@ bool IRAM_ATTR CanDriver::twai_rx_cb(twai_node_handle_t handle, const twai_rx_do
 
     CanDriver::CanFrame frame{};
     BaseType_t          woken = pdFALSE;
+    frame.ts_us               = static_cast<uint32_t>(esp_timer_get_time());  // as early as the ISR allows
 
     twai_frame_t rx_frame = {
         .header     = {},

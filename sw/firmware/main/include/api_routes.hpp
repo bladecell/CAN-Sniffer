@@ -12,6 +12,14 @@
 // The only wildcard patterns are those where the handler validates the whole remainder as a path parameter
 // (<pid> or <path>); anything else would answer typos such as GET /api/v1/dtcs.
 
+// Capacity of the HTTP server's handler table (httpd_config_t::max_uri_handlers). Every (uri, method) pair in API_ROUTES takes a
+// slot, and so does the WebSocket route /ws. When the table is full httpd_register_uri_handler fails and routes are lost
+// (2026-10-30: the 49th handler disabled the whole web server). test_api_routes.cpp keeps the routes plus kExtraUriHandlers
+// under this limit with kUriHandlerHeadroom to spare; raise the limit here when it fails. Cost: one httpd_uri_t (about 32 B) per slot.
+constexpr unsigned kMaxUriHandlers   = 64;  // 48 routes + /ws now (was 48: full at 47 + /ws, broke at the 48th route)
+constexpr unsigned kExtraUriHandlers = 1;  // /ws, registered outside the table
+constexpr unsigned kUriHandlerHeadroom = 8;
+
 // clang-format off
 #define API_ROUTES(X)                                                                          \
   X("/api/v1/wifi/scan",             POST,   p_wifi_scan_handler,              1)                \
@@ -40,9 +48,13 @@
   X("/api/v1/recorder/start",       POST,   p_recorder_start_handler,        1)                \
   X("/api/v1/recorder/stop",        POST,   p_recorder_stop_handler,         1)                \
   X("/api/v1/recorder/trips",       GET,    g_recorder_trips_handler,        1)                \
+  X("/api/v1/can/mode",             GET,    g_can_mode_handler,              0)                \
+  X("/api/v1/can/mode",             POST,   p_can_mode_handler,              1)                \
+  X("/api/v1/can/send",             POST,   p_can_send_handler,              1)                \
   X("/api/v1/system",               GET,    g_system_index_handler,          0)                \
   X("/api/v1/system/reboot",        POST,   p_system_reboot_index_handler,   1)                \
   X("/api/v1/system/sleep",         POST,   p_system_sleep_index_handler,    1)                \
+  X("/api/v1/system/keep_awake",    POST,   p_system_keep_awake_handler,     1)                \
   X("/api/v1/sd_card/info",         GET,    g_sd_card_info_handler,          0)                \
   X("/api/v1/sd_card/copy",         POST,   p_sd_card_copy_handler,          1)                \
   X("/api/v1/sd_card/format",       POST,   p_sd_card_format_handler,        1)                \
@@ -58,4 +70,16 @@
   X("/api/v1/auth/pin",             PUT,    put_auth_pin_handler,            1)                \
   X("/api/v1/settings",             GET,    g_settings_index_handler,        1)                \
   X("/api/v1/settings",             PATCH,  patch_settings_index_handler,    1)
+// clang-format on
+
+// Routes that put an OBD request on the bus or arm the DTC/VIN collectors. They answer 409 RAW_MODE outside Monitor mode
+// (checked under the mode lock; see can_mode_service::ObdRequestGuard), 503 BUSY if the lock is not obtained. Everything under
+// /api/v1/req/ belongs here; test_api_routes.cpp pins the list. Not here, guarded on their own: POST /can/send (needs Raw),
+// POST /recorder/start and PATCH /obd2 auto_poll true (refused in Raw). Read-only GETs of stored data are not requests.
+// clang-format off
+#define OBD_REQUEST_ROUTES(X)                \
+  X("/api/v1/req/static_pid", POST)          \
+  X("/api/v1/req/vin",        POST)          \
+  X("/api/v1/req/dtc",        POST)          \
+  X("/api/v1/req/clear_dtc",  POST)
 // clang-format on

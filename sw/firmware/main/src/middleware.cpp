@@ -29,7 +29,12 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "http_error.hpp"
+#include "can_mode_http.hpp"
+#include "can_mode_service.hpp"
+#include "keep_awake_http.hpp"
+#include "log_gate.hpp"
 #include "obd2.hpp"
+#include "raw_tx_policy.hpp"
 #include "recorder.hpp"
 #include "recorder_http.hpp"
 #include "pid_json.hpp"
@@ -400,7 +405,7 @@ static void add_auto_poll_state(cJSON* root)
     cJSON_AddBoolToObject(root, "polling", OBD2::getInstance().isPolling());
 }
 
-MiddlewareJsonResult m_auto_poll_set(bool on)
+static MiddlewareJsonResult auto_poll_set_unchecked(bool on)
 {
     const esp_err_t err = OBD2::getInstance().setAutoPoll(on);
     if (err != ESP_OK)
@@ -414,6 +419,32 @@ MiddlewareJsonResult m_auto_poll_set(bool on)
     }
     add_auto_poll_state(root);
     return json_result(root, 200);
+}
+
+// Turning polling on is refused in Raw mode (like POST /recorder/start) and runs under the mode lock, so a switch to Raw
+// cannot slip in between. Turning it off is always allowed.
+MiddlewareJsonResult m_auto_poll_set(bool on)
+{
+    if (!on)
+    {
+        return auto_poll_set_unchecked(false);
+    }
+    MiddlewareJsonResult result = json_result(nullptr, 500);
+    const auto           gate   = can_mode_service::run(can_mode_service::Requirement::pollOn,
+                                                  [&](bool)
+                                                  {
+                                                      result = auto_poll_set_unchecked(true);
+                                                      return false;
+                                                  });
+    if (gate == can_mode_service::Run::notAllowed)
+    {
+        return json_result(json_error_body("Raw CAN mode is active; leave it first", "RAW_MODE"), 409);
+    }
+    if (gate == can_mode_service::Run::busy)
+    {
+        return json_result(json_error_body("A CAN mode change is in progress", "BUSY"), 503);
+    }
+    return result;
 }
 
 MiddlewareJsonResult m_can_bus_get()
@@ -497,6 +528,7 @@ MiddlewareJsonResult m_system_get()
     }
 
     cJSON_AddNumberToObject(root, "api_version", API_VERSION);
+    cJSON_AddBoolToObject(root, "keep_awake", SUPERVISOR::getInstance().sleep_hold_active(supervisor::kHoldUser));
     cJSON_AddStringToObject(root, "app_version", APP_VERSION_STRING);
     cJSON_AddNumberToObject(root, "uptime_s", SUPERVISOR::getInstance().get_uptime_seconds());
     cJSON_AddStringToObject(root, "restart_reason", SUPERVISOR::getInstance().get_restart_reason());
@@ -564,6 +596,24 @@ uint32_t m_system_sleep_reserve()
 void m_system_sleep_finish(uint32_t token, bool responseSent)
 {
     SUPERVISOR::getInstance().finish_sleep_request(token, responseSent);
+}
+
+// POST /system/keep_awake: the volatile user hold on the automatic inactivity sleep (30 min cap, not persisted).
+MiddlewareJsonResult m_keep_awake_set(const cJSON* payload)
+{
+    bool enabled = false;
+    if (!keep_awake_http::parseBody(payload, enabled))
+    {
+        return json_result(json_error_body("Body must be {\"enabled\": true|false}", "BAD_JSON"), 422);
+    }
+    SUPERVISOR::getInstance().set_sleep_hold(supervisor::kHoldUser, enabled);
+    cJSON* root = cJSON_CreateObject();
+    if (root == nullptr)
+    {
+        return json_result(nullptr, 500);
+    }
+    cJSON_AddBoolToObject(root, "keep_awake", SUPERVISOR::getInstance().sleep_hold_active(supervisor::kHoldUser));
+    return json_result(root, 200);
 }
 
 MiddlewareJsonResult m_system_reboot()
@@ -954,8 +1004,31 @@ MiddlewareJsonResult m_dtc_description_get(const char* target_codes[], size_t co
     return json_result(root);
 }
 
+// REST routes that put OBD requests on the bus (OBD_REQUEST_ROUTES in api_routes.hpp) run only in Monitor mode. The guard
+// checks the mode under the mode lock and, while it lives, keeps Raw mode from starting; it is held for the whole request.
+static bool obd_request_refused(const can_mode_service::ObdRequestGuard& guard, MiddlewareJsonResult& out)
+{
+    switch (guard.state())
+    {
+        case can_mode_service::ObdRequestGuard::State::allowed:
+            return false;
+        case can_mode_service::ObdRequestGuard::State::rawMode:
+            out = json_result(json_error_body("Raw CAN mode is active; leave it first", "RAW_MODE"), 409);
+            return true;
+        default:
+            out = json_result(json_error_body("A CAN mode change is in progress", "BUSY"), 503);
+            return true;
+    }
+}
+
 MiddlewareJsonResult m_vin_request()
 {
+    const can_mode_service::ObdRequestGuard modeGuard;
+    MiddlewareJsonResult                    refused = json_result(nullptr, 500);
+    if (obd_request_refused(modeGuard, refused))
+    {
+        return refused;
+    }
     cJSON* root = cJSON_CreateObject();
     if (root == nullptr)
     {
@@ -978,6 +1051,12 @@ MiddlewareJsonResult m_vin_request()
 
 MiddlewareJsonResult m_dtc_request(int mode)
 {
+    const can_mode_service::ObdRequestGuard modeGuard;
+    MiddlewareJsonResult                    refused = json_result(nullptr, 500);
+    if (obd_request_refused(modeGuard, refused))
+    {
+        return refused;
+    }
     const bool supported_mode = mode == MODE_DTCS || mode == MODE_PENDING_DTCS || mode == MODE_PERMANENT_DTCS;
     if (mode != -1 && !supported_mode)
     {
@@ -1109,6 +1188,12 @@ MiddlewareJsonResult m_dtc_request(int mode)
 
 MiddlewareJsonResult m_clear_dtc_request()
 {
+    const can_mode_service::ObdRequestGuard modeGuard;
+    MiddlewareJsonResult                    refused = json_result(nullptr, 500);
+    if (obd_request_refused(modeGuard, refused))
+    {
+        return refused;
+    }
     cJSON* root = cJSON_CreateObject();
     if (root == nullptr)
     {
@@ -1131,14 +1216,24 @@ MiddlewareJsonResult m_clear_dtc_request()
     return json_result(root, err == ESP_OK ? 200 : status_for_error(err, 503, Fault::Bus));
 }
 
-cJSON* m_static_pid_request()
+MiddlewareJsonResult m_static_pid_request()
 {
+    const can_mode_service::ObdRequestGuard modeGuard;
+    MiddlewareJsonResult                    refused = json_result(nullptr, 500);
+    if (obd_request_refused(modeGuard, refused))
+    {
+        return refused;
+    }
     cJSON* root = cJSON_CreateObject();
+    if (root == nullptr)
+    {
+        return json_result(nullptr, 500);
+    }
     OBD2::getInstance().pollRequestStaticPids();
 
     cJSON_AddStringToObject(root, "status", "success");
 
-    return root;
+    return json_result(root, 200);
 }
 
 esp_err_t pid_stream_packet_get(uint16_t pid, uint8_t* out_packet)
@@ -1862,7 +1957,9 @@ static settings_patch::Outcome patch_section(cJSON* fields, esp_err_t (Settings:
     return Outcome::Saved;
 }
 
-static settings_patch::Outcome patch_one_section(const char* name, cJSON* fields, FixedText<>& reason)
+// `liveApplyFailed` is set when a saved system section could not be applied to the running supervisor: the values are in NVS
+// and take effect after a reboot, so the response says restart_required.
+static settings_patch::Outcome patch_one_section(const char* name, cJSON* fields, FixedText<>& reason, bool& liveApplyFailed)
 {
     using settings_patch::Outcome;
     using settings_patch::Section;
@@ -1880,8 +1977,29 @@ static settings_patch::Outcome patch_one_section(const char* name, cJSON* fields
             return patch_section<CanDriver::Config>(fields, &Settings::getCanConfig, &Settings::setCanConfig, apply_can_settings,
                                                     Settings::checkCanConfig, reason);
         case Section::System:
-            return patch_section<SUPERVISOR::Config>(fields, &Settings::getSupervisorConfig, &Settings::setSupervisorConfig,
-                                                     apply_system_settings, Settings::checkSupervisorConfig, reason);
+        {
+            const Outcome outcome = patch_section<SUPERVISOR::Config>(fields, &Settings::getSupervisorConfig, &Settings::setSupervisorConfig,
+                                                                      apply_system_settings, Settings::checkSupervisorConfig, reason);
+            if (outcome == Outcome::Saved)
+            {
+                // Saved: now the running supervisor uses the new sleep_enabled and voltage thresholds too, without a reboot.
+                SUPERVISOR::Config stored;
+                if (Settings::getInstance().getSupervisorConfig(stored) == ESP_OK)
+                {
+                    const esp_err_t applied = SUPERVISOR::getInstance().apply_power_policy(stored.power);
+                    if (applied != ESP_OK)
+                    {
+                        ESP_LOGW(TAG, "Power policy saved but not applied live: %s", esp_err_to_name(applied));
+                        liveApplyFailed = true;
+                    }
+                }
+                else
+                {
+                    liveApplyFailed = true;
+                }
+            }
+            return outcome;
+        }
         case Section::Unknown:
             break;
     }
@@ -1939,7 +2057,8 @@ MiddlewareJsonResult m_settings_set(cJSON* payload)
         return json_result(body, 400);
     }
 
-    settings_patch::Outcome outcomes[settings_patch::kMaxSections] = {};
+    settings_patch::Outcome outcomes[settings_patch::kMaxSections]     = {};
+    bool                    needsRestart[settings_patch::kMaxSections] = {};
     cJSON*                  errors = cJSON_CreateArray();
     cJSON*                  root   = cJSON_CreateObject();
     if (errors == nullptr || root == nullptr)
@@ -1953,7 +2072,25 @@ MiddlewareJsonResult m_settings_set(cJSON* payload)
     for (cJSON* c = payload->child; c != nullptr && i < n; c = c->next, i++)
     {
         FixedText<> reason;
-        outcomes[i] = patch_one_section(c->string != nullptr ? c->string : "", c, reason);
+        bool liveApplyFailed = false;
+        outcomes[i]          = patch_one_section(c->string != nullptr ? c->string : "", c, reason, liveApplyFailed);
+        switch (settings_patch::sectionOf(c->string != nullptr ? c->string : ""))
+        {
+            case settings_patch::Section::System:
+                // The power fields are applied live; only the path fields need a reboot.
+                for (const cJSON* k = c->child; k != nullptr; k = k->next)
+                {
+                    needsRestart[i] = needsRestart[i] || (k->string != nullptr && settings_patch::systemKeyNeedsRestart(k->string));
+                }
+                needsRestart[i] = needsRestart[i] || liveApplyFailed;
+                break;
+            case settings_patch::Section::Wifi:
+            case settings_patch::Section::Can:
+                needsRestart[i] = true;
+                break;
+            default:
+                break;
+        }
         if (outcomes[i] != settings_patch::Outcome::Saved)
         {
             cJSON* e = cJSON_CreateObject();
@@ -1974,7 +2111,7 @@ MiddlewareJsonResult m_settings_set(cJSON* payload)
         const cJSON* why   = first != nullptr ? cJSON_GetObjectItemCaseSensitive(first, "reason") : nullptr;
         cJSON_AddStringToObject(root, "reason", settings_patch::topReason(cJSON_IsString(why) ? why->valuestring : nullptr));
     }
-    cJSON_AddBoolToObject(root, "restart_required", settings_patch::restartRequired(outcomes, n));
+    cJSON_AddBoolToObject(root, "restart_required", settings_patch::restartRequired(outcomes, needsRestart, n));
     if (status != 200)
     {
         cJSON_AddItemToObject(root, "errors", errors);
@@ -2019,7 +2156,7 @@ MiddlewareJsonResult m_recorder_get()
     return json_result(root, root != nullptr ? 200 : 500);
 }
 
-MiddlewareJsonResult m_recorder_start(const recorder_core::PidSel* pids, size_t n)
+static MiddlewareJsonResult recorder_start_unchecked(const recorder_core::PidSel* pids, size_t n)
 {
     Recorder::Config config;
     if (n > recorder_core::kMaxPids || (n > 0 && pids == nullptr))
@@ -2051,6 +2188,160 @@ MiddlewareJsonResult m_recorder_start(const recorder_core::PidSel* pids, size_t 
     if (err == ESP_ERR_NOT_ALLOWED)
     {
         result.retry_after_s = (Recorder::getInstance().startRetryAfterMs() + 999) / 1000;  // whole seconds, rounded up
+    }
+    return result;
+}
+
+// Runs under the mode lock, so a switch to Raw cannot slip in between the mode check and the start (Recorder::start turns
+// polling on before its state shows Recording; Raw entry would otherwise see an idle recorder and switch polling off).
+MiddlewareJsonResult m_recorder_start(const recorder_core::PidSel* pids, size_t n)
+{
+    MiddlewareJsonResult result = json_result(nullptr, 500);
+    const auto           gate   = can_mode_service::run(can_mode_service::Requirement::monitor,
+                                                  [&](bool)
+                                                  {
+                                                      result = recorder_start_unchecked(pids, n);
+                                                      return false;
+                                                  });
+    if (gate == can_mode_service::Run::notAllowed)
+    {
+        return json_result(json_error_body("Raw CAN mode is active; leave it first", "RAW_MODE"), 409);
+    }
+    if (gate == can_mode_service::Run::busy)
+    {
+        return json_result(json_error_body("A CAN mode change is in progress", "BUSY"), 503);
+    }
+    return result;
+}
+
+static MiddlewareJsonResult can_mode_state_result()
+{
+    cJSON* root = cJSON_CreateObject();
+    cJSON* list = cJSON_CreateArray();
+    if (root == nullptr || list == nullptr)
+    {
+        cJSON_Delete(root);
+        cJSON_Delete(list);
+        return json_result(nullptr, 500);
+    }
+    const can_mode_service::Snapshot snap = can_mode_service::get();
+    cJSON_AddStringToObject(root, "mode", snap.name);
+    cJSON_AddBoolToObject(root, "isotp_flow_control", snap.fc);
+    cJSON_AddBoolToObject(root, "obd_parsing", snap.parsing);
+    for (size_t i = 0; i < can_mode_service::modeCount(); ++i)
+    {
+        cJSON* name = cJSON_CreateString(can_mode_service::modeName(i));
+        if (name == nullptr || !cJSON_AddItemToArray(list, name))
+        {
+            cJSON_Delete(name);
+            cJSON_Delete(list);
+            cJSON_Delete(root);
+            return json_result(nullptr, 500);
+        }
+    }
+    if (!cJSON_AddItemToObject(root, "modes", list))
+    {
+        cJSON_Delete(list);
+        cJSON_Delete(root);
+        return json_result(nullptr, 500);
+    }
+    return json_result(root, 200);
+}
+
+MiddlewareJsonResult m_can_mode_get()
+{
+    return can_mode_state_result();
+}
+
+MiddlewareJsonResult m_can_mode_set(const cJSON* payload)
+{
+    const char* mode    = nullptr;
+    bool        fc      = false;
+    bool        parsing = false;
+    if (!can_mode_http::parseBody(payload, mode, fc, parsing))
+    {
+        return json_result(json_error_body(can_mode_http::reason(can_mode::Status::unknownMode), "BAD_JSON"), 422);
+    }
+    const can_mode::Status status = can_mode_service::set(mode, fc, parsing);
+    if (status != can_mode::Status::ok)
+    {
+        return json_result(json_error_body(can_mode_http::reason(status), can_mode_http::code(status)),
+                           can_mode_http::httpStatus(status));
+    }
+    return can_mode_state_result();
+}
+
+MiddlewareJsonResult m_can_send(const cJSON* payload)
+{
+    static LogGate sendGate(raw_tx::kMinIntervalMs);  // one raw send per 250 ms, device wide
+
+    raw_tx::Request req{};
+    const raw_tx::Error parsed = raw_tx::parse(payload, req);
+    if (parsed != raw_tx::Error::none)
+    {
+        return json_result(json_error_body(raw_tx::reason(parsed), raw_tx::code(parsed)), raw_tx::httpStatus(parsed));
+    }
+
+    // The mode check, the recorder and polling checks and the send all run under the mode lock: Raw mode cannot end, and a
+    // recording or polling cannot start, between the checks and the frame.
+    MiddlewareJsonResult result = json_result(nullptr, 500);
+    const auto           gate   = can_mode_service::run(
+        can_mode_service::Requirement::rawSend,
+        [&](bool fc)
+        {
+            const Recorder::State recorderState = Recorder::getInstance().getState();
+            if (recorderState == Recorder::State::Recording || recorderState == Recorder::State::Stopping)
+            {
+                result = json_result(json_error_body("The recorder is recording; stop it first", "RECORDING"), 409);
+                return false;
+            }
+            if (OBD2::getInstance().isAutoPoll())
+            {
+                result = json_result(json_error_body("Polling is on; Raw mode needs it off", "POLLING_ACTIVE"), 409);
+                return false;
+            }
+            uint32_t suppressed = 0;
+            if (!sendGate.allow(static_cast<uint32_t>(esp_timer_get_time() / 1000), suppressed))
+            {
+                result               = json_result(json_error_body("One raw send per 250 ms", "RATE_LIMITED"), 429);
+                result.retry_after_s = 1;
+                return false;
+            }
+            const esp_err_t err = OBD2::getInstance().sendRawFrame(req.id, req.data, req.len, fc);
+            if (err != ESP_OK)
+            {
+                // TX_TIMEOUT: the frame was queued and may still go out later; it cannot be withdrawn.
+                const char* reason = err == ESP_ERR_NOT_FINISHED  ? "A diagnostic request or the bus is busy"
+                                     : err == ESP_ERR_TIMEOUT     ? "The frame was not confirmed in time and may still be sent"
+                                     : err == ESP_FAIL            ? "The frame could not be sent"
+                                     : err == ESP_ERR_INVALID_ARG ? "Invalid frame"
+                                                                  : "CAN bus is down";
+                const char* code   = err == ESP_ERR_NOT_FINISHED  ? "BUSY"
+                                     : err == ESP_ERR_TIMEOUT     ? "TX_TIMEOUT"
+                                     : err == ESP_FAIL            ? "TX_FAILED"
+                                     : err == ESP_ERR_INVALID_ARG ? "BAD_DATA"
+                                                                  : "BUS_DOWN";
+                result               = json_result(json_error_body(reason, code), err == ESP_ERR_INVALID_ARG ? 422 : 503);
+                result.retry_after_s = err == ESP_ERR_NOT_FINISHED ? 1 : 0;
+                return false;
+            }
+            cJSON* root = cJSON_CreateObject();
+            if (root == nullptr)
+            {
+                result = json_result(nullptr, 500);
+                return true;
+            }
+            cJSON_AddStringToObject(root, "status", "sent");
+            result = json_result(root, 200);
+            return true;  // counts as activity for the idle timeout
+        });
+    if (gate == can_mode_service::Run::notAllowed)
+    {
+        return json_result(json_error_body("Enter Raw mode first (POST /api/v1/can/mode)", "NOT_RAW_MODE"), 409);
+    }
+    if (gate == can_mode_service::Run::busy)
+    {
+        return json_result(json_error_body("A CAN mode change is in progress", "BUSY"), 503);
     }
     return result;
 }

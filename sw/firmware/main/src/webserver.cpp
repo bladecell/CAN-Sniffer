@@ -18,6 +18,10 @@
 #include "auth.hpp"
 #include "auth_http.hpp"
 #include "async_web_server.hpp"
+#include "can_mode_service.hpp"
+#include "can_raw.hpp"
+#include "supervisor.hpp"
+#include "log_gate.hpp"
 #include "body_reader.hpp"
 #include "button.h"
 #include "cJSON.h"
@@ -722,6 +726,18 @@ esp_err_t p_system_reboot_index_handler(httpd_req_t* req, void* arg)
     return send_json_response(req, m_system_reboot());
 }
 
+esp_err_t p_system_keep_awake_handler(httpd_req_t* req, void* arg)
+{
+    cJSON* root = get_validated_json_payload(req, 64);
+    if (root == nullptr)
+    {
+        return ESP_OK;  // the helper already answered
+    }
+    MiddlewareJsonResult result = m_keep_awake_set(root);
+    cJSON_Delete(root);
+    return send_json_response(req, result);
+}
+
 esp_err_t p_system_sleep_index_handler(httpd_req_t* req, void* arg)
 {
     return manual_sleep_http::dispatch(req->uri, req->content_len,
@@ -824,6 +840,36 @@ esp_err_t p_recorder_stop_handler(httpd_req_t* req, void* arg)
         ws_send_recorder_state();
     }
     return sent;
+}
+
+esp_err_t g_can_mode_handler(httpd_req_t* req, void* arg)
+{
+    return send_json_response(req, m_can_mode_get());
+}
+
+esp_err_t p_can_mode_handler(httpd_req_t* req, void* arg)
+{
+    cJSON* root = get_validated_json_payload(req, 128);
+    if (root == nullptr)
+    {
+        return ESP_OK;  // the helper already answered
+    }
+    MiddlewareJsonResult result = m_can_mode_set(root);
+    cJSON_Delete(root);
+    return send_json_response(req, result);
+}
+
+// Body {"id":2015,"data":"02 01 00"}: at most 128 bytes are read.
+esp_err_t p_can_send_handler(httpd_req_t* req, void* arg)
+{
+    cJSON* root = get_validated_json_payload(req, 128);
+    if (root == nullptr)
+    {
+        return ESP_OK;
+    }
+    MiddlewareJsonResult result = m_can_send(root);
+    cJSON_Delete(root);
+    return send_json_response(req, result);
 }
 
 esp_err_t g_recorder_trips_handler(httpd_req_t* req, void* arg)
@@ -1056,7 +1102,7 @@ esp_err_t patch_obd2_index_handler(httpd_req_t* req, void* arg)
 
 esp_err_t p_static_pid_index_handler(httpd_req_t* req, void* arg)
 {
-    return send_json_response(req, {m_static_pid_request(), 200});
+    return send_json_response(req, m_static_pid_request());
 }
 
 // ============================================================================
@@ -1682,14 +1728,85 @@ static esp_err_t ws_pre_handshake(httpd_req_t* req)
 // The one WebSocket session (ws_session.hpp). HTTPD task only.
 static ws_session::Holder wsHolder;
 
-// The session socket is gone: nobody is left to stream to.
+// The raw CAN stream is per socket: 0xB0 subscribes the sending socket, 0xB1 or closing the socket unsubscribes it, and the
+// ring runs while a socket is subscribed. Only the session socket (wsHolder) gets its commands handled, so that is at most one. All of this runs in the httpd task (handler, socket-closed hook, bulk
+// send), so the set needs no lock. 0xB0 is accepted at most every 500 ms (the first subscriber allocates the 5 KB ring);
+// a start inside that window is ignored, and a client sees from the stats frame that nothing is running for it. 0xB1 is never
+// delayed. A failed start or a full set is answered to the requester only, with a stats frame whose active bit is clear.
+// The on/off lines are logged at most once per 5 s.
+struct RawStreamCtl
+{
+    bool start() { return CanRaw::getInstance().start() == ESP_OK; }
+    void stop() { CanRaw::getInstance().stop(); }
+};
+static RawStreamCtl                         rawStreamCtl;
+static can_raw::Subscriptions<RawStreamCtl> rawSubscribers(rawStreamCtl);
+static LogGate                              canRawStartGate(500);
+static LogGate                              canRawLogGate(5000);
+
+static bool can_raw_is_subscribed(int fd)
+{
+    return rawSubscribers.contains(fd);
+}
+
+static void ws_can_raw_log(const char* what)
+{
+    uint32_t suppressed = 0;
+    if (canRawLogGate.allow(static_cast<uint32_t>(esp_timer_get_time() / 1000), suppressed))
+    {
+        ESP_LOGI(TAG, "Raw CAN stream %s (%u more commands in the last interval)", what, static_cast<unsigned>(suppressed));
+    }
+}
+
+static void ws_can_raw_start(int fd)
+{
+    uint32_t ignored = 0;
+    if (!canRawStartGate.allow(static_cast<uint32_t>(esp_timer_get_time() / 1000), ignored))
+    {
+        return;
+    }
+    switch (rawSubscribers.subscribe(fd))
+    {
+        case can_raw::SubResult::started:
+            ws_can_raw_log("on");
+            break;
+        case can_raw::SubResult::joined:
+        case can_raw::SubResult::already:
+            break;
+        default:
+            CanRaw::getInstance().sendInactiveStats(fd);  // sink runs here, on the HTTP task: it only submits a broadcast
+            break;
+    }
+}
+
+static void ws_can_raw_stop(int fd)
+{
+    const bool wasOn = CanRaw::getInstance().isActive();
+    (void)rawSubscribers.unsubscribe(fd);
+    if (wasOn && !CanRaw::getInstance().isActive())
+    {
+        ws_can_raw_log("off");
+    }
+}
+
+// Nobody is left to stream to: the PID and raw streams stop, Raw CAN mode ends and the WebSocket sleep hold is released.
+static void ws_streams_stop()
+{
+    b_pid_stream_enabled.store(false);
+    wsStreamingEnabled.store(false);
+    rawSubscribers.clear();
+    can_mode_service::reset(true);  // Raw mode ends with the session
+    SUPERVISOR::getInstance().set_sleep_hold(supervisor::kHoldWs, false);
+}
+
+// A WebSocket socket is gone (or replaced). Runs in the httpd task.
 static void ws_session_end(int fd)
 {
+    rawSubscribers.onClose(fd);  // any socket, any reason; the fd may be reused by the next client
     if (fd != wsHolder.fd) { return; }
     wsHolder = {};
     AsyncWebServer::getInstance().setActiveWsClient(-1);
-    b_pid_stream_enabled.store(false);
-    wsStreamingEnabled.store(false);
+    ws_streams_stop();
 }
 
 static esp_err_t ws_post_handshake(httpd_req_t* req)
@@ -1712,10 +1829,13 @@ static esp_err_t ws_post_handshake(httpd_req_t* req)
         case ws_session::Admit::busy:
             ESP_LOGI(TAG, "WS client #%d refused: #%d holds the session", fd, wsHolder.fd);
             server.wsClose(fd, ws_session::kCloseInUse);
-            return ESP_OK;
+            return ESP_OK;  // not the session: no stream, no sleep hold
         case ws_session::Admit::replace:
             ESP_LOGI(TAG, "WS client #%d replaces #%d", fd, wsHolder.fd);
             server.wsClose(wsHolder.fd, ws_session::kCloseReplaced);
+            // The replaced socket stays open until its close echo. Its raw subscription, PID stream, Raw CAN mode and
+            // sleep hold end now; the new session asks for what it needs.
+            ws_session_end(wsHolder.fd);
             break;
         case ws_session::Admit::accept:
             break;
@@ -1723,6 +1843,9 @@ static esp_err_t ws_post_handshake(httpd_req_t* req)
     ESP_LOGI(TAG, "WS Connect: Client #%d", fd);
     wsHolder = {fd, sid, now};
     server.setActiveWsClient(fd);
+    // A client is connected: no automatic inactivity sleep (30 min cap from the first client). Handshake and close hooks
+    // both run in the httpd task, so the release in ws_session_end cannot race this.
+    SUPERVISOR::getInstance().set_sleep_hold(supervisor::kHoldWs, true);  // the core arms it once per wake period
     // A new session asks for the PID stream itself.
     b_pid_stream_enabled.store(false);
     wsStreamingEnabled.store(true);
@@ -1796,21 +1919,33 @@ esp_err_t ws_socket_handler(httpd_req_t* req)
             }
             else if (ws_pkt.type == HTTPD_WS_TYPE_BINARY)
             {
-                switch (buf[0])
+                const can_raw::Command rawCommand = can_raw::parseCommand(buf, ws_pkt.len);
+                if (rawCommand == can_raw::Command::start)
                 {
-                    case WS_START_PID_STREAM:
-                        b_pid_stream_enabled.store(true);
-                        break;
-                    case WS_STOP_PID_STREAM:
-                        b_pid_stream_enabled.store(false);
-                        break;
-                    case WS_PING_REQUEST_STREAM:
-                        ESP_LOGD(TAG, "WS Ping received");
-                        ret = ws_reply_byte(req, WS_PING_RESPONSE_STREAM);
-                        break;
-                    default:
-                        ESP_LOGW(TAG, "WS Unknown command: 0x%02X", buf[0]);
-                        break;
+                    ws_can_raw_start(sockfd);
+                }
+                else if (rawCommand == can_raw::Command::stop)
+                {
+                    ws_can_raw_stop(sockfd);
+                }
+                else
+                {
+                    switch (buf[0])
+                    {
+                        case WS_START_PID_STREAM:
+                            b_pid_stream_enabled.store(true);
+                            break;
+                        case WS_STOP_PID_STREAM:
+                            b_pid_stream_enabled.store(false);
+                            break;
+                        case WS_PING_REQUEST_STREAM:
+                            ESP_LOGD(TAG, "WS Ping received");
+                            ret = ws_reply_byte(req, WS_PING_RESPONSE_STREAM);
+                            break;
+                        default:
+                            ESP_LOGW(TAG, "WS Unknown command: 0x%02X", buf[0]);
+                            break;
+                    }
                 }
             }
         }
@@ -1881,6 +2016,26 @@ static void ws_socket_closed(int fd)
     ws_session_end(fd);
 }
 
+// Transport for the raw CAN stream: batches and stats both go out as bulk broadcasts (own pending slot, so the stream can
+// never take a PID update's), skipped for a client whose socket has no room. Runs in the can_raw task, below httpd in priority.
+static can_raw::SinkResult can_raw_sink(void*, const uint8_t* data, size_t len, size_t frames, int targetFd)
+{
+    AsyncWebServer& server = AsyncWebServer::getInstance();
+    if (const uint32_t skipped = server.takeBulkSkipped(); skipped != 0)
+    {
+        CanRaw::getInstance().addWsSkipped(skipped);  // accepted earlier, but no client had room: not "streamed"
+    }
+    switch (server.wsBroadcastBulk(data, len, static_cast<uint16_t>(frames), targetFd))
+    {
+        case AsyncWebServer::WsSend::accepted:
+            return can_raw::SinkResult::accepted;
+        case AsyncWebServer::WsSend::busy:
+            return can_raw::SinkResult::busy;
+        default:
+            return can_raw::SinkResult::dropped;
+    }
+}
+
 static void WSDataStreamTask(void* pvParameters)
 {
     if (WSDataStreamSemaphore != nullptr)
@@ -1927,13 +2082,29 @@ static esp_err_t register_routes()
     AsyncWebServer& server     = AsyncWebServer::getInstance();
     size_t          num_routes = sizeof(api_routes) / sizeof(api_routes[0]);
 
+    // /ws first: if the handler table ever overflows (the host test keeps that from happening) the live stream is not what is lost.
+    ESP_RETURN_ON_ERROR(server.registerSocketRoute("/ws", ws_socket_handler, NULL, ws_pre_handshake, ws_post_handshake), TAG,
+                        "route /ws");
+    size_t dropped = 0;
     for (size_t i = 0; i < num_routes; i++)
     {
-        ESP_RETURN_ON_ERROR(server.registerRoute(api_routes[i].uri, api_routes[i].method, route_shim,
-                                                  const_cast<RouteDef*>(&api_routes[i])),
-                            TAG, "route %s", api_routes[i].uri);
+        const esp_err_t err = server.registerRoute(api_routes[i].uri, api_routes[i].method, route_shim,
+                                                    const_cast<RouteDef*>(&api_routes[i]));
+        if (err == ESP_ERR_HTTPD_HANDLERS_FULL)
+        {
+            // Capacity only: keep the web server up with the routes that fit rather than none at all.
+            ESP_LOGE(TAG, "Handler table full, route %s %s not registered", AsyncWebServer::get_method_str(api_routes[i].method),
+                     api_routes[i].uri);
+            dropped++;
+            continue;
+        }
+        ESP_RETURN_ON_ERROR(err, TAG, "route %s", api_routes[i].uri);
     }
-    return server.registerSocketRoute("/ws", ws_socket_handler, NULL, ws_pre_handshake, ws_post_handshake);
+    if (dropped != 0)
+    {
+        ESP_LOGE(TAG, "%u routes missing: raise kMaxUriHandlers in api_routes.hpp", static_cast<unsigned>(dropped));
+    }
+    return ESP_OK;
 }
 
 }  // namespace
@@ -1977,7 +2148,7 @@ esp_err_t setup_web_server()
     server_config.async_worker_task_priority    = 5;
     server_config.async_worker_stack_size       = 8192;
     server_config.httpd_config.uri_match_fn     = httpd_uri_match_wildcard;
-    server_config.httpd_config.max_uri_handlers = 48;
+    server_config.httpd_config.max_uri_handlers = kMaxUriHandlers;
     // Keep receive waits below the upload no-progress deadline so an upload
     // worker can enforce it rather than remaining blocked in httpd_req_recv.
     server_config.httpd_config.recv_wait_timeout = 1;
@@ -1990,6 +2161,7 @@ esp_err_t setup_web_server()
     server_config.httpd_config.keep_alive_count    = 3;
     server_config.on_socket_closed               = ws_socket_closed;
     server_config.request_filter                 = request_filter;
+    server_config.bulk_subscribed                = can_raw_is_subscribed;
 
     esp_err_t ret = AsyncWebServer::getInstance().start(server_config);
     if (ret != ESP_OK)
@@ -2010,10 +2182,16 @@ esp_err_t setup_web_server()
 
     OBD2::getInstance().subscribe(pid_stream_callback);
 
+    if (CanRaw::getInstance().init(can_raw_sink, nullptr) != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Raw CAN stream unavailable; the rest of the web server runs without it");
+    }
+
     WSDataStreamSemaphore = xSemaphoreCreateBinary();
     if (WSDataStreamSemaphore == nullptr)
     {
         ESP_LOGE(TAG, "Failed to create the WS stream semaphore");
+        (void)CanRaw::getInstance().deinit();
         AsyncWebServer::getInstance().stop();
         (void)stop_access_control();
         return ESP_ERR_NO_MEM;
@@ -2029,6 +2207,7 @@ esp_err_t setup_web_server()
     {
         ESP_LOGE(TAG, "Failed to create WSDataStreamTask!");
         wsTaskRunning.store(false);
+        (void)CanRaw::getInstance().deinit();
         AsyncWebServer::getInstance().stop();
         (void)stop_access_control();
         vSemaphoreDelete(WSDataStreamSemaphore);
@@ -2045,6 +2224,13 @@ esp_err_t setup_web_server()
 esp_err_t stop_web_server()
 {
     constexpr int kTaskExitPolls = 100;  // 10 ms each
+
+    // First, so the raw stream stops sending before the server goes. ESP_ERR_TIMEOUT: retry, nothing else was touched.
+    if (const esp_err_t rawErr = CanRaw::getInstance().deinit(); rawErr != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Raw CAN stream did not stop: %s", esp_err_to_name(rawErr));
+        return rawErr;
+    }
 
     if (wsTaskRunning.load())
     {
@@ -2085,6 +2271,8 @@ esp_err_t stop_web_server()
     wsHolder = {};
     b_pid_stream_enabled.store(false);
     wsStreamingEnabled.store(false);
+    rawSubscribers.clear();  // httpd is gone, so nothing else touches the set; a restart must not inherit old descriptors
+    SUPERVISOR::getInstance().set_sleep_hold(supervisor::kHoldWs, false);
     return ESP_OK;
 }
 

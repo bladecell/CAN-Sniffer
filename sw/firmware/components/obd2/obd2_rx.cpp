@@ -81,7 +81,10 @@ void OBD2::receiveTask()
         if (ret == ESP_OK)
         {
             syncDiagRequest();  // the request may have gone out while this task waited for the frame
-            ret = handleDiagFrame(f) ? ESP_OK : parseRecFrame(f);
+            serviceRawFlowControl(f);
+            // Raw mode without obd_parsing: the frame was tapped and may have been answered (flow control) above; nothing
+            // below may touch PID data, collectors or discovery.
+            ret = !parsingEnabled_.load(std::memory_order_relaxed) ? ESP_OK : (handleDiagFrame(f) ? ESP_OK : parseRecFrame(f));
 
             if (ret != ESP_OK)
             {
@@ -100,7 +103,17 @@ void OBD2::receiveTask()
         // poll queue if the ECU stops responding (e.g. ignition turned off).
         TickType_t now = xTaskGetTickCount();
 
-        if (now - last_ping_ms >= pdMS_TO_TICKS(OBD2_HEALTHCHECK_PING_PERIOD_MS))
+        // Not in Raw mode (the user sends everything there), and not while a raw send waits for its TX-done (the ping can be byte
+        // for byte the user's frame). Switched off: the schedule restarts, so the first ping after Raw comes a full period later.
+        const bool pingEnabled = healthPingEnabled_.load();
+        if (!pingEnabled)
+        {
+            last_ping_ms      = now;
+            failed_pings      = 0;
+            awaiting_response = false;
+        }
+        if (obd2frame::healthPingDue(pingEnabled, now, last_ping_ms, pdMS_TO_TICKS(OBD2_HEALTHCHECK_PING_PERIOD_MS),
+                                     rawTxState_.load() != kRawTxIdle))
         {
             last_ping_ms = now;
 
@@ -123,11 +136,15 @@ void OBD2::receiveTask()
             esp_err_t enqueueResult = req(r);
             if (enqueueResult == ESP_OK)
             {
-                awaiting_response = true;
+                awaiting_response = parsingEnabled_.load();  // without parsing nobody reads the reply; the TX itself still probes the bus
                 response_deadline = now + pdMS_TO_TICKS(HEALTHCHECK_RESPONSE_TIMEOUT_MS);
             }
         }
 
+        if (!parsingEnabled_.load())
+        {
+            awaiting_response = false;  // switched off meanwhile: do not count the unread reply as a missed ping
+        }
         if (awaiting_response)
         {
             if (xSemaphoreTake(healthCheckSemaphore, 0) == pdTRUE)

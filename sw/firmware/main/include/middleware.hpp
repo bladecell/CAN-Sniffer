@@ -46,6 +46,8 @@ MiddlewareJsonResult m_obdii_get();
 MiddlewareJsonResult m_obdii_set(cJSON* payload);
 MiddlewareJsonResult m_system_get();
 MiddlewareJsonResult m_system_reboot();
+// Volatile user hold on automatic inactivity sleep. Body {"enabled":bool}; 200 {keep_awake}, 422 bad body.
+MiddlewareJsonResult m_keep_awake_set(const cJSON* payload);
 // Fixed-capacity admission; finish must run after the response attempt, including a failed send.
 uint32_t m_system_sleep_reserve();
 void m_system_sleep_finish(uint32_t token, bool responseSent);
@@ -62,7 +64,7 @@ MiddlewareJsonResult m_vin_request();
 MiddlewareJsonResult m_dtc_request(int mode);
 // Sends OBD mode 0x04 (clears codes on a real vehicle). The route is gated by a Bearer session; there is no other check.
 MiddlewareJsonResult m_clear_dtc_request();
-cJSON* m_static_pid_request();
+MiddlewareJsonResult m_static_pid_request();
 
 MiddlewareJsonResult m_pid_def_set(cJSON* payload);
 MiddlewareJsonResult m_pid_def_save(cJSON* payload);
@@ -73,6 +75,12 @@ MiddlewareJsonResult m_recorder_get();
 MiddlewareJsonResult m_recorder_start(const recorder_core::PidSel* pids, size_t n);
 MiddlewareJsonResult m_recorder_stop();
 MiddlewareJsonResult m_recorder_trips_get();
+// CAN view mode (can_mode.hpp) and raw send (raw_tx_policy.hpp). Mode: GET 200 {mode, fc, modes}; POST body {mode, fc?}: 422 bad body or
+// mode, 409 recording, 503 not RUNNING or polling busy. Send: 200 {status:sent} once the TX-done hook confirmed the frame; 403, 409, 422,
+// 429, 503 as in api.md. Both take ownership of nothing: the caller deletes `payload`.
+MiddlewareJsonResult m_can_mode_get();
+MiddlewareJsonResult m_can_mode_set(const cJSON* payload);
+MiddlewareJsonResult m_can_send(const cJSON* payload);
 esp_err_t recorder_state_packet_get(uint8_t* out_packet);
 
 MiddlewareJsonResult m_settings_get();

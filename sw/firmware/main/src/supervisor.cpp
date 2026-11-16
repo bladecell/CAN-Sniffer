@@ -152,7 +152,8 @@ supervisor::Operations SUPERVISOR::operations(SUPERVISOR* self)
             },
             [](void*, const char* name, esp_err_t error, bool initializing)
             { ESP_LOGI(TAG, "%s %s: %s", initializing ? "Init" : "Deinit", name, esp_err_to_name(error)); },
-            [](void* p) { return static_cast<SUPERVISOR*>(p)->_config.power; }};
+            [](void* p) { return static_cast<SUPERVISOR*>(p)->_config.power; },
+            [](void*) { return static_cast<uint32_t>(pdTICKS_TO_MS(xTaskGetTickCount())); }};
 }
 
 esp_err_t SUPERVISOR::init(const supervisor::SettingsBootstrap& bootstrap)

@@ -26,6 +26,7 @@
 #include "obd2_data_model.hpp"
 #include "obd2_common.hpp"
 #include "obd2_frame.hpp"
+#include "raw_flow_control.hpp"
 
 #define POLL_TASK_PERIOD_MS MIN_TRANSMIT_PERIOD_MS
 #define ERR_ACCUMULATE(result, expr) ((result) = (result) ?: (expr))
@@ -58,6 +59,32 @@ public:
     bool      isAutoPoll() const;
     // autoPoll && CAN bus connected && the poll queue holds recurring entries.
     bool      isPolling();
+
+    // Raw CAN send for POST /can/send (Raw mode). The caller has validated id, data and service (raw_tx_policy.hpp). Sends
+    // the frame as given (1 to 8 bytes) and returns once the TX-done hook saw that very frame leave the controller, at most
+    // 250 ms. Takes the diagnostic request slot without waiting, so it never runs alongside a DTC or VIN request.
+    // ESP_ERR_INVALID_STATE: stopped or bus down. ESP_ERR_NOT_FINISHED: slot busy. ESP_ERR_INVALID_ARG: length.
+    // ESP_FAIL: the TX path refused or failed the frame. ESP_ERR_TIMEOUT: not confirmed in time; the frame was queued and may
+    // still go out later (a queued frame cannot be withdrawn). Also takes the bus mutex (50 ms wait, NOT_FINISHED on failure),
+    // so it never interleaves with a poll or an open ISO-TP session. With armFlowControl the receive task answers the first
+    // frame of a multi-frame reply for 1.5 s (RawFlowControl; only the ECU a physical send addressed, every ECU after 0x7DF);
+    // it is disarmed on any failure.
+    esp_err_t sendRawFrame(uint32_t id, const uint8_t* data, uint8_t len, bool armFlowControl);
+    void      disarmRawFlowControl() { rawFc_.disarm(); }
+
+    // Raw CAN mode without OBD parsing: while false the receive task still reads and taps every frame (the raw stream, the
+    // ISO-TP flow-control responder) but does not parse it, so PID values, DTC/VIN collectors and discovery see nothing.
+    // A relaxed atomic read per frame, no lock. Default true; OBD2 stop sets it back.
+    void      setParsingEnabled(bool on) { parsingEnabled_.store(on); }
+    bool      isParsingEnabled() const { return parsingEnabled_.load(); }
+    // The receive task's health-check ping (02 01 00 to 0x7DF every ~4 s). Off in Raw mode: that mode sends only what the user
+    // sends. Default true; OBD2 stop sets it back; it restarts a full period after being switched on again.
+    void      setHealthPingEnabled(bool on) { healthPingEnabled_.store(on); }
+    // Raw CAN mode is on: every request except the client's own raw frame (and the flow-control answer) is refused in req() and
+    // dropped by the poll task; connect-time recovery and discovery do nothing. Switching it on also forgets pending
+    // recovery/discovery and flushes the poll queue (one-shot VIN/DTC/ping entries). Off again: polling comes back through
+    // setAutoPoll(true) as usual; PID discovery missed meanwhile happens at the next connect or when polling is turned on.
+    void      setRawActive(bool on);
     esp_err_t requestPID(uint16_t pid);
 
     void      requestSuppPids();
@@ -143,6 +170,18 @@ private:
     std::atomic<bool>        diagPending_{false};  // an ECU answered NRC 0x78: the requester may wait longer
     uint32_t                 diagGen_         = 0;  // requester side, under diagnosticRequestMtx_
     uint32_t                 diagSeenRequest_ = 0;
+    // Raw send (sendRawFrame): the TX-done ISR matches the frame it is waiting for by id, length and bytes.
+    static constexpr uint32_t kRawTxIdle = 0, kRawTxWaiting = 1, kRawTxSent = 2, kRawTxFailed = 3;
+    std::atomic<uint32_t>    rawTxState_{kRawTxIdle};  // 32-bit like every atomic the TX-done ISR touches (no library call for 8-bit ones)
+    std::atomic<uint32_t>    rawTxId_{0};
+    std::atomic<uint32_t>    rawTxLen_{0};
+    std::atomic<uint32_t>    rawTxLo_{0};
+    std::atomic<uint32_t>    rawTxHi_{0};
+    obd2frame::RawFlowControl rawFc_;
+    std::atomic<bool>        parsingEnabled_{true};
+    std::atomic<bool>        healthPingEnabled_{true};
+    std::atomic<bool>        rawActive_{false};
+    void      serviceRawFlowControl(const CanDriver::CanFrame& f);
     void      resetDiagCollection();
     void      releaseDiagBus();
     void      tryHoldDiagBus();

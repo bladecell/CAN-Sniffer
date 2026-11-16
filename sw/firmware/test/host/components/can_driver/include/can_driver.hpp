@@ -19,5 +19,6 @@ public:
         Header  header;
         uint8_t data[8];
         size_t  length;
+        uint32_t ts_us;
     };
 };

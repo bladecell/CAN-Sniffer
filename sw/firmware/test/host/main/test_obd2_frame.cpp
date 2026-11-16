@@ -482,6 +482,47 @@ static void test_clear_dtc_request_is_one_byte_after_the_pci(void)
     expectBytes({0x01, 0x04}, b);  // mode 04 has no parameters: PCI length 1 (the SID only)
 }
 
+
+static void test_connect_work_is_planned_per_mode(void)
+{
+    // handleCanConnected: Raw mode sends nothing of its own; Monitor as before (recover with polling, discover without).
+    TEST_ASSERT_EQUAL(static_cast<int>(ConnectWork::None), static_cast<int>(planConnectWork(true, true, false)));
+    TEST_ASSERT_EQUAL(static_cast<int>(ConnectWork::None), static_cast<int>(planConnectWork(true, false, false)));
+    TEST_ASSERT_EQUAL(static_cast<int>(ConnectWork::None), static_cast<int>(planConnectWork(true, false, true)));
+    TEST_ASSERT_EQUAL(static_cast<int>(ConnectWork::Recover), static_cast<int>(planConnectWork(false, true, false)));
+    TEST_ASSERT_EQUAL(static_cast<int>(ConnectWork::Recover), static_cast<int>(planConnectWork(false, true, true)));
+    TEST_ASSERT_EQUAL(static_cast<int>(ConnectWork::Discover), static_cast<int>(planConnectWork(false, false, false)));
+    TEST_ASSERT_EQUAL(static_cast<int>(ConnectWork::None), static_cast<int>(planConnectWork(false, false, true)));
+}
+
+static void test_health_ping_schedule(void)
+{
+    // enabled, nowMs, lastMs, periodMs, rawSendWaiting
+    TEST_ASSERT_FALSE(healthPingDue(true, 3999, 0, 4000, false));
+    TEST_ASSERT_TRUE(healthPingDue(true, 4000, 0, 4000, false));
+    TEST_ASSERT_FALSE(healthPingDue(false, 400000, 0, 4000, false));  // Raw mode: no pings, however late
+    TEST_ASSERT_FALSE(healthPingDue(true, 4000, 0, 4000, true));      // a raw send is waiting for its TX-done
+    TEST_ASSERT_TRUE(healthPingDue(true, 0x100u, 0xFFFFF000u, 4000, false));  // 32-bit clock wrap: 4352 ms
+    TEST_ASSERT_FALSE(healthPingDue(true, 0x10u, 0xFFFFFF00u, 4000, false));
+}
+
+static void test_health_ping_frame_is_recognised(void)
+{
+    RequestBytes ping = {};
+    buildCurrentDataRequest(0x00, ping);
+    TEST_ASSERT_TRUE(isHealthPingFrame(0x7DF, ping, 8));
+    TEST_ASSERT_FALSE(isHealthPingFrame(0x7E0, ping, 8));  // physical request: not the ping
+    TEST_ASSERT_FALSE(isHealthPingFrame(0x7DF, ping, 3));  // a short "02 01 00" differs in length on the bus
+    TEST_ASSERT_FALSE(isHealthPingFrame(0x7DF, nullptr, 8));
+    RequestBytes other;
+    memcpy(other, ping, sizeof(other));
+    other[2] = 0x0C;
+    TEST_ASSERT_FALSE(isHealthPingFrame(0x7DF, other, 8));
+    memcpy(other, ping, sizeof(other));
+    other[7] ^= 0xFF;
+    TEST_ASSERT_FALSE(isHealthPingFrame(0x7DF, other, 8));
+}
+
 extern "C" void run_obd2_frame_tests(void)
 {
     RUN_TEST(test_single_frame_mode01);
@@ -513,4 +554,7 @@ extern "C" void run_obd2_frame_tests(void)
     RUN_TEST(test_discovery_backoff_doubles_and_caps);
     RUN_TEST(test_exhaustive_first_bytes_and_lengths);
     RUN_TEST(test_random_payloads_never_overrun);
+    RUN_TEST(test_connect_work_is_planned_per_mode);
+    RUN_TEST(test_health_ping_schedule);
+    RUN_TEST(test_health_ping_frame_is_recognised);
 }

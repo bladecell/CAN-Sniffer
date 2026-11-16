@@ -83,9 +83,63 @@ void test_renamed_routes_are_removed(void)
   }
 }
 
+// Every route that puts an OBD request on the bus or arms the DTC/VIN collectors is refused with 409 RAW_MODE outside Monitor
+// mode (middleware.cpp, can_mode_service::ObdRequestGuard). The list is OBD_REQUEST_ROUTES in api_routes.hpp. A new route under
+// /api/v1/req/ is an OBD request by definition and must be listed (and guarded).
+struct ObdRoute
+{
+  const char* method;
+  const char* uri;
+};
+#define OBD_ROUTE_ENTRY(uri, method) {#method, uri},
+const ObdRoute kObdRoutes[] = {OBD_REQUEST_ROUTES(OBD_ROUTE_ENTRY)};
+#undef OBD_ROUTE_ENTRY
+
+bool isObdRoute(const Route& r)
+{
+  for (const ObdRoute& o : kObdRoutes)
+  {
+    if (strcmp(o.uri, r.uri) == 0 && strcmp(o.method, r.method) == 0) { return true; }
+  }
+  return false;
+}
+
+void test_obd_request_routes_are_listed_and_exist(void)
+{
+  for (const ObdRoute& o : kObdRoutes)
+  {
+    bool found = false;
+    for (size_t i = 0; i < kCount; i++)
+    {
+      found = found || (strcmp(kRoutes[i].uri, o.uri) == 0 && strcmp(kRoutes[i].method, o.method) == 0);
+    }
+    TEST_ASSERT_TRUE_MESSAGE(found, o.uri);
+  }
+  TEST_ASSERT_EQUAL_UINT32(4, sizeof(kObdRoutes) / sizeof(kObdRoutes[0]));
+}
+
+void test_every_req_route_is_an_obd_request_route(void)
+{
+  for (size_t i = 0; i < kCount; i++)
+  {
+    if (strncmp(kRoutes[i].uri, "/api/v1/req/", 12) == 0)
+    {
+      TEST_ASSERT_TRUE_MESSAGE(isObdRoute(kRoutes[i]), kRoutes[i].uri);
+    }
+  }
+}
+
+// The handler table must hold every route plus /ws, with room to grow. A full table makes httpd refuse the last registrations.
+void test_routes_fit_the_http_handler_table_with_headroom(void)
+{
+  TEST_ASSERT_TRUE_MESSAGE(kCount + kExtraUriHandlers <= kMaxUriHandlers, "handler table too small: raise kMaxUriHandlers");
+  TEST_ASSERT_TRUE_MESSAGE(kCount + kExtraUriHandlers + kUriHandlerHeadroom <= kMaxUriHandlers,
+                           "less than kUriHandlerHeadroom free handler slots: raise kMaxUriHandlers");
+}
+
 void test_route_count_matches_docs(void)
 {
-  TEST_ASSERT_EQUAL_UINT32(44, kCount);  // docs/api.md: GET / plus 43 under /api/v1
+  TEST_ASSERT_EQUAL_UINT32(48, kCount);  // docs/api.md: GET / plus 47 under /api/v1
 }
 // The access-control decision (docs/decisions.md 2026-10-18), spelled out. A route is gated if and only if it is listed;
 // adding a route forces a decision here.
@@ -101,12 +155,13 @@ const GatedRoute kGated[] = {
     {"GET", "/api/v1/sd_card/file/*"},    {"PUT", "/api/v1/sd_card/file/*"},
     {"DELETE", "/api/v1/sd_card/file/*"}, {"POST", "/api/v1/sd_card/format"},
     {"POST", "/api/v1/sd_card/copy"}, {"POST", "/api/v1/system/reboot"},
-    {"POST", "/api/v1/system/sleep"},
+    {"POST", "/api/v1/system/sleep"},      {"POST", "/api/v1/system/keep_awake"},
     {"POST", "/api/v1/pid_def"},          {"PUT", "/api/v1/pid_def"},
     {"DELETE", "/api/v1/pid_def/*"},      {"POST", "/api/v1/pid_def/save"},
     {"POST", "/api/v1/pid_def/load"},     {"POST", "/api/v1/req/clear_dtc"},
     {"POST", "/api/v1/auth/logout"},      {"PUT", "/api/v1/auth/pin"},
     {"POST", "/api/v1/recorder/start"},   {"POST", "/api/v1/recorder/stop"},
+    {"POST", "/api/v1/can/mode"},         {"POST", "/api/v1/can/send"},
     {"GET", "/api/v1/recorder/trips"},
 };
 constexpr size_t kGatedCount = sizeof(kGated) / sizeof(kGated[0]);
@@ -191,6 +246,9 @@ void test_open_routes_stay_open(void)
 extern "C" void run_api_routes_tests(void)
 {
   RUN_TEST(test_gated_set_is_exactly_the_decision);
+  RUN_TEST(test_routes_fit_the_http_handler_table_with_headroom);
+  RUN_TEST(test_obd_request_routes_are_listed_and_exist);
+  RUN_TEST(test_every_req_route_is_an_obd_request_route);
   RUN_TEST(test_manual_sleep_is_an_exact_authenticated_post);
   RUN_TEST(test_open_routes_stay_open);
   RUN_TEST(test_wildcards_only_on_path_parameter_routes);

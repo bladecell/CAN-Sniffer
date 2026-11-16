@@ -10,6 +10,7 @@
 #include "led_status.hpp"
 #include "obd2.hpp"
 #include "obd2_simulator.hpp"
+#include "can_mode_service.hpp"
 #include "recorder.hpp"
 #include "sd_card.hpp"
 #include "settings.hpp"
@@ -47,6 +48,7 @@ esp_err_t stopCan(void*)
 
 esp_err_t stopObd(void*)
 {
+    can_mode_service::reset(false);  // OBD2 is going down; its stop clears the polling flag, nothing to restore
     return OBD2::getInstance().deinit();
 }
 
@@ -57,6 +59,7 @@ esp_err_t stopWifi(void*)
 
 esp_err_t stopWebserver(void*)
 {
+    can_mode_service::reset(true);  // the page that owned Raw mode is gone
     return stop_web_server();
 }
 
