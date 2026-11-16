@@ -309,7 +309,7 @@
     {#if !editing}
       <div class="db-span">
         <Field id="db-type" label="Card type">
-                    <div class="db-seg db-wrap" role="radiogroup" aria-label="Card type">
+                    <div class="seg" role="radiogroup" aria-label="Card type">
               {#each typeOptions as o (o.value)}
                 <button type="button" role="radio" data-value={o.value} aria-checked={type === o.value} tabindex={type === o.value ? 0 : -1} onclick={() => pickType(o.value)}>{o.label}</button>
               {/each}
@@ -321,7 +321,7 @@
     <div class="db-span db-row">
       {#if styles.length > 1}
         <Field id="db-style" label="Style">
-          <div class="db-seg eq" role="radiogroup" aria-label="Style">
+          <div class="seg eq" role="radiogroup" aria-label="Style">
             {#each styleOptions as o (o.value)}
               <button type="button" role="radio" data-value={o.value} aria-checked={style === o.value} tabindex={style === o.value ? 0 : -1} onclick={() => pickStyle(o.value)}>{o.label}</button>
             {/each}
@@ -447,8 +447,8 @@
   </div>
 
   {#snippet footer()}
-    <button type="button" class="rv-btn" onclick={onClose}>Cancel</button>
-    <button type="button" class="rv-btn pri" onclick={save}>{editing ? "Save card" : "Add card"}</button>
+    <button type="button" class="btn" onclick={onClose}>Cancel</button>
+    <button type="button" class="btn pri" onclick={save}>{editing ? "Save card" : "Add card"}</button>
   {/snippet}
 </Sheet>
 
@@ -458,10 +458,6 @@
     gap: 14px;
     padding: 4px 0 8px;
     min-width: 0;
-  }
-  .db-wrap {
-    display: flex;
-    flex-wrap: wrap;
   }
   .rows-pick {
     display: grid;
@@ -534,7 +530,7 @@
   .db-preview-grid .db-tile {
     min-width: 0;
     min-height: 0;
-    border-radius: 22px;
+    border-radius: var(--r-card);
     background: var(--card);
     overflow: hidden;
   }

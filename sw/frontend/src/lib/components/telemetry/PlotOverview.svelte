@@ -86,7 +86,7 @@
 <section class="ov card" class:pinned aria-label="Time window">
   <div class="cap">
     <span>Shared by all plots. Drag the frame to move it, its edges to zoom.</span>
-    <div class="tel-seg sm" role="group" aria-label="Visible window">
+    <div class="seg sm" role="group" aria-label="Visible window">
       {#each WINDOW_LENS as s (s)}
         <button
           type="button"
@@ -160,8 +160,8 @@
     right: 12px;
     bottom: calc(12px + env(safe-area-inset-bottom, 0px));
     z-index: var(--fs-z);
+    /* Opaque, as the full-screen cell it sits on: nothing passes under it, so it is not a float layer. */
     background: var(--float-solid);
-    backdrop-filter: blur(var(--blur)) saturate(1.35);
     box-shadow: var(--shadow-float);
   }
   .cap {
@@ -173,11 +173,6 @@
     color: var(--muted);
     font-size: 0.85rem;
     font-weight: 600;
-  }
-  @media (pointer: coarse) {
-    .tel-seg button {
-      min-height: 44px;
-    }
   }
   .track {
     min-width: 0;

@@ -27,7 +27,7 @@
   <form id="new-dashboard-form" class="db-form" onsubmit={save}>
     <label class="db-field">
       <span class="db-label">Name</span>
-      <input class="db-input" type="text" maxlength="40" autocomplete="off" bind:value={name} />
+      <input class="in" type="text" maxlength="40" autocomplete="off" bind:value={name} />
     </label>
     <div class="db-field">
       <span class="db-label">Starting layout</span>
@@ -38,8 +38,8 @@
     {/if}
   </form>
   {#snippet footer()}
-    <button type="button" class="rv-btn" onclick={onClose}>Cancel</button>
-    <button type="submit" form="new-dashboard-form" class="rv-btn pri">Add dashboard</button>
+    <button type="button" class="btn" onclick={onClose}>Cancel</button>
+    <button type="submit" form="new-dashboard-form" class="btn pri">Add dashboard</button>
   {/snippet}
 </Sheet>
 

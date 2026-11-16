@@ -76,7 +76,7 @@
     {#if show(ROW.hotspotName)}
       <SettingRow title={ROW.hotspotName.title} hint="Visible to phones and laptops near the car." error={built.errors.ssid}>
         <input
-          class="st-in"
+          class="in"
           type="text"
           aria-label={ROW.hotspotName.title}
           value={draft.ssid}
@@ -88,7 +88,7 @@
     {#if show(ROW.hotspotPassword)}
       <SettingRow title={ROW.hotspotPassword.title} hint="8 to 63 characters. Blank keeps the saved one." error={built.errors.password}>
         <input
-          class="st-in"
+          class="in"
           type="password"
           autocomplete="new-password"
           placeholder="Leave blank to keep"
@@ -119,7 +119,7 @@
     {/if}
     {#if show(ROW.networks)}
       <SettingRow title={ROW.networks.title} hint={scanHint} stack error={wifiScanStore.error ?? undefined}>
-        <button type="button" class="st-btn sm" onclick={() => wifiScanStore.scan()} disabled={wifiScanStore.scanning}>
+        <button type="button" class="btn sm" onclick={() => wifiScanStore.scan()} disabled={wifiScanStore.scanning}>
           <Icon name="reload" size={16} />{wifiScanStore.scanning ? "Scanning" : age?.stale ? "Scan again" : "Scan"}
         </button>
         {#if wifiScanStore.networks.length > 0}
@@ -139,14 +139,14 @@
       <SettingRow title={ROW.staSsid.title} hint="For a hidden network: type its name, then set its password." error={built.errors.staSsid}>
         <div class="st-pair">
           <input
-            class="st-in"
+            class="in"
             type="text"
             aria-label={ROW.staSsid.title}
             value={draft.staSsid}
             aria-invalid={built.errors.staSsid ? "true" : undefined}
             oninput={(e) => (edits.staSsid = e.currentTarget.value)}
           />
-          <button type="button" class="st-btn sm" disabled={draft.staSsid === ""} onclick={() => (joining = draft.staSsid)}>Password…</button>
+          <button type="button" class="btn sm" disabled={draft.staSsid === ""} onclick={() => (joining = draft.staSsid)}>Password…</button>
         </div>
       </SettingRow>
     {/if}

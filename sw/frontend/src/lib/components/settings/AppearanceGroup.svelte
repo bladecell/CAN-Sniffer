@@ -2,6 +2,7 @@
   import { ACCENTS, CONTROL_FILLS, THEMES, nextOption, type ControlFill, type Theme } from "$lib/appearance";
   import { appearance, setAppearance } from "$lib/appearance.svelte";
   import { GROUP, ROW, rowShown, type RowMeta } from "$lib/settingsModel";
+  import GlassSlider from "./GlassSlider.svelte";
   import SegControl from "./SegControl.svelte";
   import SettingRow from "./SettingRow.svelte";
 
@@ -59,6 +60,11 @@
     {#if show(ROW.ctl)}
       <SettingRow title={ROW.ctl.title} hint="Strong gives buttons and fields a darker fill for more contrast.">
         <SegControl label="Control fill" options={fillOptions} value={appearance.ctl} onChange={(v) => setAppearance("ctl", v)} />
+      </SettingRow>
+    {/if}
+    {#if show(ROW.glass)}
+      <SettingRow title={ROW.glass.title} hint="Lower is more solid. Cards change the most, menus and dialogs stay readable." stack>
+        <GlassSlider labelId="glass-label" value={appearance.glass} onChange={(v) => setAppearance("glass", v)} />
       </SettingRow>
     {/if}
   </div>

@@ -43,7 +43,7 @@
 .st-root :focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
-  border-radius: 6px;
+  border-radius: var(--r-xs);
 }
 .st-root [hidden] {
   display: none !important;
@@ -62,17 +62,6 @@
   color: var(--muted);
   font-weight: 600;
   font-size: 0.95rem;
-}
-.st-float {
-  background: var(--float);
-  -webkit-backdrop-filter: blur(var(--blur)) saturate(1.35);
-  backdrop-filter: blur(var(--blur)) saturate(1.35);
-  box-shadow: var(--shadow-float);
-}
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .st-float {
-    background: var(--float-solid);
-  }
 }
 
 /* Header card: title, chips, search. */
@@ -101,14 +90,20 @@
   color: var(--ctl-sub);
   pointer-events: none;
 }
-.st-root input.st-in[type='search'] {
+.st-root input.in[type='search'] {
   padding-left: 44px;
   background-image: none;
   -webkit-appearance: none;
   appearance: none;
 }
-.st-root input.st-in[type='search']::-webkit-search-decoration,
-.st-root input.st-in[type='search']::-webkit-search-cancel-button {
+.st-root input.in[type='search']:focus,
+.st-root input.in[type='search']:focus-visible {
+  outline: none;
+  box-shadow: none;
+  background: var(--ctl-h2);
+}
+.st-root input.in[type='search']::-webkit-search-decoration,
+.st-root input.in[type='search']::-webkit-search-cancel-button {
   -webkit-appearance: none;
   display: none;
 }
@@ -118,42 +113,9 @@
   }
 }
 
-/* Status chips: icon + label, translucent fill, pill. Colour is never the only signal. */
-.st-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 11px 2px 9px;
-  border-radius: 99px;
-  font-size: 0.8rem;
-  font-weight: 800;
-  line-height: 1.5;
-  white-space: nowrap;
-  background: var(--ctl);
-  color: var(--ctl-sub);
-}
-.st-chip svg {
-  width: 1em;
-  height: 1em;
-}
-.st-chip.c-ok {
-  background: var(--ok-f);
-  color: var(--ok);
-}
-.st-chip.c-warn {
-  background: var(--warn-f);
-  color: var(--warn);
-}
-.st-tag {
-  display: inline-block;
+/* A tag beside a row title. */
+.st-lab .tag {
   margin-left: 6px;
-  padding: 0 8px;
-  border-radius: 99px;
-  background: var(--ctl);
-  color: var(--ctl-sub);
-  font-size: 0.72rem;
-  font-weight: 800;
-  line-height: 1.6;
   vertical-align: 1px;
 }
 
@@ -187,7 +149,7 @@
   min-height: 52px;
   padding: 0 14px 0 18px;
   border: 0;
-  border-radius: 16px;
+  border-radius: var(--r-ctl);
   background: none;
   text-align: left;
   font: inherit;
@@ -232,7 +194,7 @@
   width: 48px;
   height: 48px;
   flex: none;
-  border-radius: 16px;
+  border-radius: var(--r-ctl);
   background: var(--ctl);
   display: grid;
   place-items: center;
@@ -274,7 +236,7 @@
 .st-row:not(.stack) {
   padding: 10px 16px;
 }
-.st-row:not(.stack) .st-btn {
+.st-row:not(.stack) .btn {
   min-height: 44px;
 }
 .st-row.stack {
@@ -323,122 +285,20 @@
   font-weight: 700;
 }
 
-/* Controls: fill, no border. */
-.st-root .st-in {
-  margin: 0; /* Pico gives inputs a 1rem bottom margin, which offsets them in centred rows */
+/* Text fields in a row: the shared .in, content width. */
+.st-root .in {
   width: 250px;
   max-width: 100%;
-  min-height: var(--ctl-h);
-  padding: 0 14px;
-  border: 0;
-  border-radius: var(--r-ctl);
-  background: var(--ctl);
-  color: var(--ctl-text);
-  font-size: 1rem;
-  box-shadow: none;
-}
-.st-root .st-in::placeholder {
-  color: var(--ctl-sub);
-  opacity: 0.8;
 }
 /* Stacked text field (folder path): the full width of its row, so the path is readable. */
-.st-root .st-row.stack > .st-ctl > .st-in {
+.st-root .st-row.stack > .st-ctl > .in {
   width: 100%;
-  font-size: 1rem;
 }
-.st-root .st-in.num {
+.st-root .in.num {
   width: 130px;
-  font-variant-numeric: tabular-nums;
 }
-.st-root .st-in[aria-invalid='true'] {
-  outline: 2px solid var(--crit);
-  outline-offset: -2px;
-}
-.st-root .st-in:disabled {
-  opacity: 0.55;
-}
-.st-root .st-in.mono {
-  font-family: var(--mono);
+.st-root .in.mono {
   font-size: 0.95rem;
-}
-.st-seg {
-  display: inline-flex;
-  gap: 2px;
-  padding: 3px;
-  border-radius: 18px;
-  background: var(--ctl);
-}
-.st-seg button {
-  position: relative;
-  min-height: 44px;
-  min-width: 44px;
-  padding: 0 16px;
-  border: 0;
-  border-radius: 15px;
-  background: none;
-  font-weight: 700;
-  color: var(--ctl-text);
-}
-.st-seg button[aria-checked='true'] {
-  font-weight: 800;
-  background: var(--float-solid);
-}
-.st-seg button[aria-checked='true']::after {
-  content: '';
-  position: absolute;
-  left: 22%;
-  right: 22%;
-  bottom: 3px;
-  height: 3px;
-  border-radius: 3px;
-  background: var(--accent);
-}
-.st-seg button:disabled {
-  opacity: 0.55;
-}
-.st-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: var(--ctl-h);
-  padding: 0 22px;
-  border: 0;
-  border-radius: var(--r-ctl);
-  background: var(--ctl);
-  color: var(--ctl-text);
-  font-weight: 700;
-  white-space: nowrap;
-}
-.st-btn.sm {
-  min-height: 40px;
-  padding: 0 16px;
-}
-.st-btn.pri {
-  background: var(--accent);
-  color: var(--on-accent);
-  font-weight: 800;
-}
-.st-btn.danger {
-  color: var(--ctl-crit);
-}
-.st-btn:disabled,
-.st-btn[aria-disabled='true'] {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-@media (hover: hover) {
-  .st-btn:hover:not(:disabled) {
-    background: var(--ctl-h2);
-  }
-}
-.st-btn:active:not(:disabled) {
-  filter: brightness(0.94);
-}
-.st-btn > svg {
-  width: 1.1em;
-  height: 1.1em;
-  flex: none;
 }
 .st-switch-ctl {
   min-width: 52px;
@@ -534,14 +394,14 @@
 .st-meter {
   height: 8px;
   width: 100%;
-  border-radius: 8px;
+  border-radius: var(--r-xs);
   background: var(--ctl);
   overflow: hidden;
 }
 .st-meter > i {
   display: block;
   height: 100%;
-  border-radius: 8px;
+  border-radius: var(--r-xs);
   background: var(--accent);
 }
 
@@ -589,7 +449,7 @@
   width: 44px;
   height: 44px;
   grid-row: 1 / 3;
-  border-radius: 14px;
+  border-radius: calc(var(--r-ctl) - 2px);
   background: var(--ctl);
   display: grid;
   place-items: center;
@@ -642,7 +502,7 @@
   gap: 10px;
   align-items: center;
   padding: 8px 8px 8px 22px;
-  border-radius: 28px;
+  border-radius: var(--r-card);
   white-space: nowrap;
   font-weight: 700;
 }
@@ -657,7 +517,7 @@
   padding-bottom: 60px;
 }
 .st-phone .st-card {
-  border-radius: 24px;
+  border-radius: var(--r-card);
   padding: 20px;
 }
 /* Phone: one container per group. Rows are plain text in the card, with no boxes and no dividers. A boxed row keeps its box. */
@@ -681,15 +541,15 @@
 .st-phone .st-row.fact .st-ctl {
   justify-content: flex-end;
 }
-.st-phone .st-root .st-in,
-.st-phone .st-in {
+.st-phone .st-root .in,
+.st-phone .in {
   width: 100%;
 }
-.st-phone .st-seg {
+.st-phone .seg {
   width: 100%;
   display: flex;
 }
-.st-phone .st-seg button {
+.st-phone .seg button {
   flex: 1;
   padding: 0 8px;
 }
@@ -707,33 +567,34 @@
   align-items: center;
   min-height: 68px;
   padding: 10px 14px 10px 16px;
-  border-radius: var(--r-ctl);
-  box-shadow: none;
+  /* At rest it is one of the page's cards; stuck, it is a float layer (app.css rest-top). */
+  --rest-fill: var(--card);
+  border-radius: var(--r-card);
 }
 .st-drill-head h2 {
   font-size: 1.1rem;
   font-weight: 800;
 }
 /* The back chevron is the card chevron: 18 px, muted, in the card's first column. The button keeps a 44 px hit area. */
-.st-drill-head .st-btn.icon {
+.st-drill-head .btn.icon {
   width: 44px;
   min-height: 44px;
   padding: 0;
   background: none;
   color: var(--muted);
 }
-.st-drill-head .st-btn.icon > svg {
+.st-drill-head .btn.icon > svg {
   width: 1.1em;
   height: 1.1em;
   transform: rotate(90deg);
 }
 @media (hover: hover) {
-  .st-drill-head .st-btn.icon:hover:not(:disabled) {
+  .st-drill-head .btn.icon:hover:not(:disabled) {
     background: var(--hov);
   }
 }
 .st-slide {
-  animation: st-slide 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: st-slide 0.45s var(--ease-out);
 }
 @keyframes st-slide {
   from {
@@ -752,7 +613,7 @@
   .st-root h1 {
     font-size: 1.7rem;
   }
-  .st-root .st-in {
+  .st-root .in {
     width: 100%;
   }
   .st-apply {
@@ -763,7 +624,7 @@
     justify-content: space-between;
     padding: 8px 8px 8px 18px;
   }
-  .st-apply .st-btn {
+  .st-apply .btn {
     padding: 0 14px;
   }
 }
@@ -782,7 +643,7 @@
   width: 100%;
   min-width: 0;
 }
-.st-pair .st-in {
+.st-pair .in {
   flex: 1;
   width: auto;
   min-width: 0;
@@ -791,7 +652,7 @@
   padding-block: 0;
 }
 /* The button matches the field's control height (.btn.sm is 40px, the field is 48px). */
-.st-pair .st-btn {
+.st-pair .btn {
   flex: none;
   min-height: var(--ctl-h);
   height: var(--ctl-h);

@@ -80,7 +80,7 @@
 <div class="o">
   <div class="hd">
     <div class="t1"><CardTitle name="Overview" iconOnly={card.w < 3} inline /></div>
-    <span class="chip {chip.tone}">{chip.text}</span>
+    <span class="chip c-{chip.tone}">{chip.text}</span>
   </div>
 
   {#if tiles.length === 0}
@@ -159,22 +159,6 @@
   }
   .chip {
     flex: none;
-    padding: 2px 11px;
-    border-radius: 99px;
-    background: var(--ctl);
-    color: var(--ctl-sub);
-    font-size: 0.8rem;
-    font-weight: 800;
-    line-height: 1.5;
-    white-space: nowrap;
-  }
-  .chip.ok {
-    background: var(--ok-f);
-    color: var(--ok);
-  }
-  .chip.warn {
-    background: var(--warn-f);
-    color: var(--warn);
   }
   small {
     overflow: hidden;
@@ -253,7 +237,7 @@
     gap: 8px;
     min-width: 0;
     padding: 0 8px;
-    border-radius: 9px;
+    border-radius: var(--r-xs);
     background: var(--row);
   }
   .ovl li.full {
@@ -313,7 +297,7 @@
     justify-content: center;
     min-width: 0;
     padding: 2px 5px;
-    border-radius: 9px;
+    border-radius: var(--r-xs);
     background: var(--row);
   }
   .hs small {
@@ -328,7 +312,7 @@
     flex-direction: column;
     margin-top: 2px;
     padding: 2px 6px;
-    border-radius: 9px;
+    border-radius: var(--r-xs);
     background: var(--row);
   }
   .hvin small {

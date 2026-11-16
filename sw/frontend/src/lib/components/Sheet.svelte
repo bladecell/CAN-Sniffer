@@ -2,7 +2,7 @@
   import type { Snippet } from "svelte";
   import Icon from "$lib/Icon.svelte";
   import { overlay } from "$lib/overlay";
-  import { measureHeight } from "$lib/layers";
+  import { measureHeight, trackUnder } from "$lib/layers";
   import { clampSheetHeight, clampSheetPx, defaultSheetHeight, stepSheetHeight } from "$lib/editor/sheetHeight";
   import "./overlay.css";
 
@@ -82,7 +82,7 @@
   aria-labelledby={titleId}
 >
   <!-- One float layer: grabber, title, close and tabs share one background, over the top of the sheet. -->
-  <div class="sheet-top float-layer" {@attach measureHeight("--sheet-head")}>
+  <div class="sheet-top float-layer rest-top" {@attach measureHeight("--sheet-head")}>
     {#if resizable}
       <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
       <div
@@ -121,7 +121,7 @@
     </header>
   </div>
   {#if open}
-    <div class="body">{@render children()}</div>
+    <div class="body" {@attach scrolls ? trackUnder : null}>{@render children()}</div>
     {#if footer}
       <footer {@attach measureHeight("--sheet-foot")}>{@render footer()}</footer>
     {/if}

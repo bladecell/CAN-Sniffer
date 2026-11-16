@@ -134,7 +134,7 @@
       {#each shown as it (it.key)}
         <li class:muted={it.muted}>
           <span class="lb">{it.label}</span>
-          <span class="chip {it.tone ?? 'plain'}">
+          <span class="chip c-{it.tone ?? 'plain'}">
             {#if it.tone}<svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><path d={TONE_PATH[it.tone]} /></svg>{/if}
             <span class="ct">{it.value}</span>
           </span>
@@ -170,17 +170,14 @@
     fill: currentColor;
   }
   .ti.ok,
-  .chip.ok,
   .vl.ok {
     color: var(--ok);
   }
   .ti.warn,
-  .chip.warn,
   .vl.warn {
     color: var(--warn);
   }
   .ti.crit,
-  .chip.crit,
   .vl.crit {
     color: var(--crit);
   }
@@ -219,28 +216,8 @@
     grid-column: 1 / -1;
   }
   .chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
     align-self: flex-start;
     max-width: 100%;
-    padding: 1px 8px 1px 6px;
-    border-radius: 99px;
-    background: var(--ctl);
-    color: var(--text);
-    font-size: 0.76rem;
-    font-weight: 800;
-    line-height: 1.5;
-    white-space: nowrap;
-  }
-  .chip.ok {
-    background: var(--ok-f);
-  }
-  .chip.warn {
-    background: var(--warn-f);
-  }
-  .chip.crit {
-    background: var(--crit-f);
   }
   .chip .ct {
     min-width: 0;

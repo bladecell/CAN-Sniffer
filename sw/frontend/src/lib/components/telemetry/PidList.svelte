@@ -207,11 +207,11 @@
   {#snippet footer()}
     {#each footerActions(selectedCount) as action (action)}
       {#if action === "new"}
-        <button type="button" class="tel-btn pri" onclick={onNew}><Icon name="plus" size={18} />New PID</button>
+        <button type="button" class="btn pri" onclick={onNew}><Icon name="plus" size={18} />New PID</button>
       {:else if action === "edit"}
-        <button type="button" class="tel-btn" onclick={editSelected}><Icon name="edit" size={18} />Edit</button>
+        <button type="button" class="btn" onclick={editSelected}><Icon name="edit" size={18} />Edit</button>
       {:else}
-        <button type="button" class="tel-btn rm" onclick={removeSelected}><Icon name="trash" size={18} />Remove {selectedCount}</button>
+        <button type="button" class="btn rm" onclick={removeSelected}><Icon name="trash" size={18} />Remove {selectedCount}</button>
       {/if}
     {/each}
   {/snippet}

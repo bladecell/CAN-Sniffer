@@ -80,7 +80,7 @@
       <div class="inrow">
         <input
           id="sd-folder"
-          class="tel-in tel-mono"
+          class="in tel-mono"
           bind:value={draft}
           onchange={() => commit()}
           onkeydown={(e) => e.key === "Enter" && commit()}
@@ -90,7 +90,7 @@
           aria-invalid={typed.ok ? undefined : "true"}
           aria-describedby="sd-msg sd-help"
         />
-        <button type="button" class="tel-btn choose" aria-expanded={browse.kind !== "closed"} aria-controls="sd-folders" onclick={toggleBrowse}>
+        <button type="button" class="btn choose" aria-expanded={browse.kind !== "closed"} aria-controls="sd-folders" onclick={toggleBrowse}>
           Choose
         </button>
       </div>
@@ -156,7 +156,7 @@
     gap: 8px;
   }
   /* Input and Choose share the control height, as in the mockup (.btn, .ctl: 48px). */
-  .inrow .tel-in {
+  .inrow .in {
     height: var(--ctl-h);
     min-height: 0;
   }
@@ -191,7 +191,7 @@
     min-height: 48px;
     padding: 0 12px;
     border: 0;
-    border-radius: 12px;
+    border-radius: var(--r-sm);
     background: none;
     color: var(--text);
     text-align: left;

@@ -148,7 +148,7 @@
     bottom: 0;
     left: -18px;
     width: calc(12% + 18px);
-    border-radius: 8px;
+    border-radius: var(--r-xs);
     background: repeating-linear-gradient(135deg, transparent 0 3px, var(--ctl-sub) 3px 4px);
     opacity: 0.6;
   }

@@ -29,7 +29,7 @@
         <span class="knob"></span>
       </button>
     {:else}
-      <button type="button" class="btn" aria-pressed={on} aria-label={label} aria-describedby="{card.id}-reason" {disabled} onclick={onToggle}>
+      <button type="button" class="btn sm tgl" aria-pressed={on} aria-label={label} aria-describedby="{card.id}-reason" {disabled} onclick={onToggle}>
         <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><rect width="10" height="10" rx="1.5" /></svg>
         {on ? "Stop" : "Start"}
       </button>
@@ -140,34 +140,23 @@
     transform: translateX(20px);
     background: var(--on-accent);
   }
-  .btn {
-    display: inline-flex;
+  .tgl {
     flex: none;
-    align-items: center;
-    gap: 6px;
-    min-width: 44px;
     min-height: 44px;
     padding: 0 14px;
-    border: 0;
-    border-radius: 14px;
-    background: var(--ctl);
-    color: var(--ctl-text);
-    font: 800 0.95rem/1 var(--font);
-    cursor: pointer;
+    font-weight: 800;
   }
-  .btn svg {
+  .tgl svg {
     fill: currentColor;
   }
-  .btn[aria-pressed="true"] {
+  .tgl[aria-pressed="true"] {
     color: var(--crit);
   }
-  .sw:disabled,
-  .btn:disabled {
+  .sw:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
-  .sw:focus-visible,
-  .btn:focus-visible {
+  .sw:focus-visible {
     outline: 3px solid var(--focus);
     outline-offset: 2px;
   }

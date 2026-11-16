@@ -201,7 +201,7 @@
     min-height: 56px;
     padding: 6px 2px;
     border: 0;
-    border-radius: 14px;
+    border-radius: calc(var(--r-ctl) - 2px);
     background: transparent;
     color: var(--text);
     font: inherit;

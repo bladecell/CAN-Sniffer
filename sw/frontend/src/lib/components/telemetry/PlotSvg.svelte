@@ -214,7 +214,7 @@
     <p class="sr" aria-live="polite">{announced}</p>
 
     {#if showTip && hover}
-      <div class="tip" style:left="{flip ? hover.x - 174 : hover.x + 14}px" style:top="{model.T + 8}px">
+      <div class="tip float-layer" style:left="{flip ? hover.x - 174 : hover.x + 14}px" style:top="{model.T + 8}px">
         <div class="t">{hover.label}</div>
         {#each hover.rows as r (r.id)}
           <div class="r">
@@ -251,7 +251,7 @@
     touch-action: pan-y;
     cursor: crosshair;
     user-select: none;
-    border-radius: 8px;
+    border-radius: var(--r-xs);
   }
   svg:focus-visible {
     outline: 3px solid var(--focus);
@@ -325,16 +325,8 @@
     pointer-events: none;
     min-width: 150px;
     padding: 10px 12px;
-    border-radius: 16px;
-    background: var(--float);
-    backdrop-filter: blur(var(--blur)) saturate(1.35);
-    box-shadow: var(--shadow-float);
+    border-radius: var(--r-ctl);
     font-size: 0.9rem;
-  }
-  @supports not (backdrop-filter: blur(1px)) {
-    .tip {
-      background: var(--float-solid);
-    }
   }
   .tip .t {
     color: var(--muted);

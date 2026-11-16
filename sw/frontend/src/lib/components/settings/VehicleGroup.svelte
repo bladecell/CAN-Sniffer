@@ -38,7 +38,7 @@
     {#if show(ROW.rxQueue)}
       <SettingRow title={ROW.rxQueue.title} hint="Frames buffered between the bus and the poller. 1 to 256." error={built.errors.rx_queue_size}>
         <input
-          class="st-in num mono"
+          class="in num mono"
           type="text"
           inputmode="numeric"
           aria-label={ROW.rxQueue.title}
@@ -51,7 +51,7 @@
     {#if show(ROW.txQueue)}
       <SettingRow title={ROW.txQueue.title} hint="Frames waiting to be sent. 1 to 64." error={built.errors.tx_queue_depth}>
         <input
-          class="st-in num mono"
+          class="in num mono"
           type="text"
           inputmode="numeric"
           aria-label={ROW.txQueue.title}

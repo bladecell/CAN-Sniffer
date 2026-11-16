@@ -70,7 +70,7 @@
       {/if}
       <form onsubmit={submitLogin}>
         <label for="auth-login-pin">PIN (6 digits)</label>
-        <input
+        <input class="in"
           id="auth-login-pin"
           type="password"
           inputmode="numeric"
@@ -83,7 +83,7 @@
           required
         />
         <label class="auth-remember">
-          <input
+          <input class="in"
             type="checkbox"
             checked={rememberChoice ?? auth.view.pinSaved}
             onchange={(e) => (rememberChoice = e.currentTarget.checked)}
@@ -129,9 +129,9 @@
       <form onsubmit={submitClaim}>
         <p>This device has no PIN yet. Choose 6 digits. The PIN is set after you press BOOT on the device.</p>
         <label for="auth-new-pin">New PIN (6 digits)</label>
-        <input id="auth-new-pin" type="password" inputmode="numeric" autocomplete="new-password" maxlength="6" pattern={PIN_PATTERN} bind:value={newPin} required />
+        <input class="in" id="auth-new-pin" type="password" inputmode="numeric" autocomplete="new-password" maxlength="6" pattern={PIN_PATTERN} bind:value={newPin} required />
         <label for="auth-confirm-pin">Repeat the PIN</label>
-        <input
+        <input class="in"
           id="auth-confirm-pin"
           type="password"
           inputmode="numeric"

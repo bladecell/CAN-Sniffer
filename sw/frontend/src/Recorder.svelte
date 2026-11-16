@@ -123,7 +123,7 @@
     {/snippet}
 
     {#snippet actions()}
-      <button type="button" class="rv-btn pri" aria-disabled={primaryDisabled} onclick={togglePrimary}>
+      <button type="button" class="btn pri" aria-disabled={primaryDisabled} onclick={togglePrimary}>
         <Icon name={recording ? "square" : "circle-solid"} size={16} />
         {primaryLabel}
       </button>
@@ -134,13 +134,13 @@
     <StateNote title="SD card not available" icon="alert-circle" tone="warn" role="alert">
       <p class="rv-muted">Trips are saved to the SD card, so recording is off and the trip list can't be read. Insert a card, or wait if it is busy, then check again.</p>
       <div class="rv-acts">
-        <button type="button" class="rv-btn pri" onclick={retry}>Check again</button>
+        <button type="button" class="btn pri" onclick={retry}>Check again</button>
       </div>
     </StateNote>
   {:else if recordingStore.tripsError === "failed" && trips.length === 0}
     <StateNote title="Trip list failed to load" icon="alert-circle" tone="warn" role="alert">
       <div class="rv-acts">
-        <button type="button" class="rv-btn pri" onclick={retry}>Try again</button>
+        <button type="button" class="btn pri" onclick={retry}>Try again</button>
       </div>
     </StateNote>
   {:else if trips.length === 0 && recordingStore.tripsLoading}
@@ -177,11 +177,11 @@
         {#if full}<h2>{t.name}</h2>{/if}
         <div class="rv-chips">
           {#if t.live}
-            <span class="rv-chip c-crit"><Icon name="circle-solid" size={12} />Recording</span>
+            <span class="chip c-crit"><Icon name="circle-solid" size={12} />Recording</span>
           {:else if t.sidecar}
-            <span class="rv-chip c-ok"><Icon name="circle-check" size={14} />Summary saved</span>
+            <span class="chip c-ok"><Icon name="circle-check" size={14} />Summary saved</span>
           {:else}
-            <span class="rv-chip c-warn"><Icon name="alert-circle" size={14} />No summary file</span>
+            <span class="chip c-warn"><Icon name="alert-circle" size={14} />No summary file</span>
           {/if}
         </div>
         <dl class="rv-facts">
@@ -194,11 +194,11 @@
           <p class="rv-muted">Still writing. Stop the recording to download or delete.</p>
         {:else}
           <div class="rv-acts">
-            <button type="button" class="rv-btn" onclick={() => download(t)}>
+            <button type="button" class="btn" onclick={() => download(t)}>
               <Icon name="save" size={16} />
               Download
             </button>
-            <button type="button" class="rv-btn danger" onclick={() => (pendingDelete = t)}>
+            <button type="button" class="btn danger" onclick={() => (pendingDelete = t)}>
               <Icon name="trash" size={16} />
               Delete
             </button>

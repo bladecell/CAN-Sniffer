@@ -24,7 +24,7 @@
   ]);
 </script>
 
-<div class="switch {variant}" aria-label="PID panels">
+<div class={variant === "rail" ? "switch rail" : "seg eq stack"} role="group" aria-label="PID panels">
   {#each panels as p (p.id)}
     <button
       type="button"
@@ -49,7 +49,7 @@
     gap: 4px;
     width: 56px;
     padding: 6px;
-    border-radius: 20px;
+    border-radius: calc(var(--r-float) - 8px);
     background: var(--card);
     align-self: flex-start;
   }
@@ -62,7 +62,7 @@
     margin: 0;
     padding: 0;
     border: 0;
-    border-radius: 14px;
+    border-radius: calc(var(--r-ctl) - 2px);
     background: none;
     color: var(--ctl-sub);
     cursor: pointer;
@@ -85,23 +85,8 @@
       background: var(--hov);
     }
   }
-  /* Phone: a segmented switch with icon over label, in the sheet's header layer (the mockup's .pswitch). */
-  .switch.bar {
-    display: flex;
-    flex: none;
-    gap: 4px;
-    /* Equal 4 px inset on all sides, as the other segments (the layout selector). */
-    padding: 4px;
-    border-radius: 18px;
-    background: var(--ctl);
-  }
-  .switch.bar button {
-    position: relative;
-    /* Pico gives buttons a 16 px bottom margin; a chip is exactly the container less the 4 px inset. */
-    margin: 0;
-    height: 56px;
-    min-height: 0;
-    flex: 1;
+  /* Phone bar: the shared segmented control (.seg), with the icon over the label. */
+  .stack > button {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -109,27 +94,7 @@
     gap: 2px;
     min-height: 56px;
     padding: 0 2px;
-    border: 0;
-    border-radius: 15px;
-    background: none;
-    color: var(--ctl-sub);
-    font: 700 0.78rem/1.2 var(--font);
-    cursor: pointer;
-  }
-  .switch.bar button[aria-pressed='true'] {
-    background: var(--float-solid);
-    color: var(--text);
-    font-weight: 800;
-  }
-  .switch.bar button[aria-pressed='true']::after {
-    content: '';
-    position: absolute;
-    left: 24%;
-    right: 24%;
-    bottom: 3px;
-    height: 3px;
-    border-radius: 3px;
-    background: var(--accent);
+    font-size: 0.78rem;
   }
   .badge {
     position: absolute;
@@ -140,7 +105,7 @@
     min-width: 18px;
     height: 18px;
     padding: 0 5px;
-    border-radius: 9px;
+    border-radius: var(--r-xs);
     background: var(--accent);
     color: var(--on-accent);
     font-size: 0.7rem;
@@ -148,7 +113,7 @@
     line-height: 1;
   }
   /* The count sits on the icon's top right corner (the mockup), not in the label line. */
-  .switch.bar .badge {
+  .stack .badge {
     top: 4px;
     left: calc(50% + 4px);
     right: auto;

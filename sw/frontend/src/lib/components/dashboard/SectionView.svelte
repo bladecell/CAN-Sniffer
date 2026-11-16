@@ -74,7 +74,7 @@
         <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><circle cx="9" cy="6" r="1.8" /><circle cx="15" cy="6" r="1.8" /><circle cx="9" cy="12" r="1.8" /><circle cx="15" cy="12" r="1.8" /><circle cx="9" cy="18" r="1.8" /><circle cx="15" cy="18" r="1.8" /></svg>
       </button>
       <input
-        class="db-input db-sec-title"
+        class="in db-sec-title"
         type="text"
         maxlength="60"
         placeholder="Section title (optional)"
@@ -92,8 +92,8 @@
     {#if confirmDelete}
       <div class="db-sec-confirm" role="alert">
         <span>This removes {section.cards.length} {section.cards.length === 1 ? "card" : "cards"} with it.</span>
-        <button type="button" class="rv-btn sm" onclick={() => (confirmDelete = false)}>Keep</button>
-        <button type="button" class="rv-btn sm fill-crit" onclick={remove}>Delete section</button>
+        <button type="button" class="btn sm" onclick={() => (confirmDelete = false)}>Keep</button>
+        <button type="button" class="btn sm fill-crit" onclick={remove}>Delete section</button>
       </div>
     {/if}
   {:else if section.title}
@@ -148,7 +148,7 @@
   /* Edit mode frames each section as a panel (mockup); view mode shows the cards on the page itself. */
   .db-section.editing {
     padding: 12px;
-    border-radius: 28px;
+    border-radius: var(--r-card);
     background: var(--row);
   }
   .db-sec-edit {
@@ -213,7 +213,7 @@
   }
   /* Edit mode shows the six columns the cards snap to (mockup). */
   .db-drop {
-    border-radius: 18px;
+    border-radius: var(--r-track);
     background-image: repeating-linear-gradient(
       to right,
       color-mix(in srgb, var(--text) 6%, transparent) 0 calc((100% - 60px) / 6),
@@ -228,7 +228,7 @@
     min-height: 48px;
     width: 100%;
     border: 0;
-    border-radius: 18px;
+    border-radius: var(--r-track);
     background: var(--ctl);
     color: var(--ctl-text);
     font: 800 0.95rem/1 var(--font);

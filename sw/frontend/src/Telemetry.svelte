@@ -206,20 +206,20 @@
       <div class="card bar">
         <h1 tabindex="-1">Telemetry</h1>
 
-        <div class="tel-seg layouts" role="group" aria-label="Number of plots">
+        <div class="seg" role="group" aria-label="Number of plots">
           {#each PLOT_COUNTS as n (n)}
             <button type="button" aria-pressed={count === n} aria-label="{n} {n === 1 ? 'plot' : 'plots'}" onclick={() => setLayout(n)}>{n}</button>
           {/each}
         </div>
 
-        <button type="button" class="tel-btn" class:pri={status !== "live"} onclick={togglePause} aria-label={status === "live" ? "Pause" : "Back to live"}>
+        <button type="button" class="btn" class:pri={status !== "live"} onclick={togglePause} aria-label={status === "live" ? "Pause" : "Back to live"}>
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
             {#if status === "live"}<path d="M8 5v14M16 5v14" />{:else}<path d="M5 5v14l10-7zM19 5v14" />{/if}
           </svg>
           {status === "live" ? "Pause" : "Back to live"}
         </button>
 
-        <button type="button" class="tel-btn phone-only" onclick={() => (pidSheetOpen = true)} aria-haspopup="dialog">
+        <button type="button" class="btn phone-only" onclick={() => (pidSheetOpen = true)} aria-haspopup="dialog">
           <Icon name="list" size={18} />PIDs
         </button>
       </div>
@@ -403,16 +403,10 @@
       font-size: 1.7rem;
     }
   }
-  .layouts {
-    width: max-content;
-  }
   /* Header buttons: 46 px tall, 18 px side padding (mockup .btn). */
-  .bar :global(.tel-btn) {
+  .bar :global(.btn) {
     min-height: 46px;
     padding: 0 18px;
-  }
-  .layouts button {
-    min-width: 44px;
   }
   .ic {
     width: 20px;

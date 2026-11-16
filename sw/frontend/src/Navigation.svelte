@@ -40,7 +40,7 @@
 <svelte:window onresize={moveBar} />
 
 <div class="nav-wrapper">
-  <nav class="dock" aria-label="Main">
+  <nav class="dock float-layer" aria-label="Main">
     <ul class="tabs" bind:this={tabList}>
       {#each tabs as tab (tab.id)}
         <li>
@@ -75,14 +75,14 @@
     pointer-events: none;
   }
 
-  /* Floating layer: the only place blur and float tokens are used for page chrome (DESIGN.md, Elevation) */
+  /* Float layer (app.css .float-layer). */
   .dock {
     pointer-events: auto;
     display: flex;
     align-items: center;
     margin: 0;
     padding: 8px 10px;
-    border-radius: 28px;
+    border-radius: var(--r-float);
     color: var(--text);
   }
 
@@ -126,7 +126,7 @@
     align-items: center;
     gap: 8px;
     padding: 11px 16px 13px;
-    border-radius: 20px;
+    border-radius: calc(var(--r-float) - 8px);
     color: var(--muted);
     font-weight: 800;
     text-decoration: none;
@@ -182,7 +182,7 @@
     .dock {
       width: 100%;
       padding: 7px 2px 9px;
-      border-radius: 32px;
+      border-radius: calc(var(--r-float) + 4px);
     }
 
     .tabs {
@@ -205,7 +205,7 @@
       width: 100%;
       min-height: 58px;
       padding: 6px 0 8px;
-      border-radius: 24px;
+      border-radius: calc(var(--r-float) - 4px);
       font-size: 0.64rem;
       font-weight: 700;
       letter-spacing: -0.01em;

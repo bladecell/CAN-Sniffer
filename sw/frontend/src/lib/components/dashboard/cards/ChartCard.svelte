@@ -140,13 +140,6 @@
   }
   .chip {
     flex: none;
-    padding: 2px 8px;
-    border-radius: 99px;
-    background: var(--ctl);
-    color: var(--ctl-text);
-    font-size: 0.72rem;
-    font-weight: 800;
-    white-space: nowrap;
   }
   .mid {
     stroke: var(--hair);

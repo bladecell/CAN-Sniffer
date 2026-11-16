@@ -140,7 +140,7 @@
     <div class="tools">
       <div class="tray" class:open={trayShown}>
         <div class="trayin" inert={!trayShown}>
-          <div class="tel-seg pm" role="group" aria-label="Plot style">
+          <div class="seg pm" role="group" aria-label="Plot style">
             <button
               type="button"
               aria-pressed={mode === "overlay"}
@@ -277,7 +277,7 @@
     align-items: center;
     min-height: 34px;
     padding: 4px 6px;
-    border-radius: 8px;
+    border-radius: var(--r-xs);
     cursor: pointer;
     color: var(--muted);
     font-weight: 800;

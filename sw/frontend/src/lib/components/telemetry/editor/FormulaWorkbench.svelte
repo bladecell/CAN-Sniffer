@@ -187,16 +187,16 @@
   .tok.var {
     width: 48px;
     height: 48px;
-    border-radius: 10px;
-    background: #dde4f6;
-    color: #27345c;
-    box-shadow: inset 0 0 0 2px #6d7fb8;
+    border-radius: var(--r-xs);
+    background: var(--var-bg);
+    color: var(--var-fg);
+    box-shadow: inset 0 0 0 2px var(--var-ring);
     font-size: 1.1rem;
   }
   .tok.fn {
     height: 48px;
     padding: 0 16px 0 12px;
-    border-radius: 24px;
+    border-radius: 99px;
     background: transparent;
     color: var(--accent-text);
     box-shadow: inset 0 0 0 2px var(--accent);
@@ -215,23 +215,11 @@
     font-weight: 700;
   }
   .tok.on.var {
-    background: #27345c;
-    color: #dde4f6;
+    background: var(--var-fg);
+    color: var(--var-bg);
   }
   .tok.on.fn {
     background: color-mix(in oklch, var(--accent) 17%, transparent);
-  }
-  @media (prefers-color-scheme: dark) {
-    :global(html:not([data-theme='light'])) .tok.var {
-      background: #2d3550;
-      color: #dbe2fa;
-      box-shadow: inset 0 0 0 2px #7f90cc;
-    }
-  }
-  :global(html[data-theme='dark']) .tok.var {
-    background: #2d3550;
-    color: #dbe2fa;
-    box-shadow: inset 0 0 0 2px #7f90cc;
   }
   .tok:focus-visible {
     outline: none;
@@ -240,7 +228,7 @@
   .help {
     margin: 0;
     padding: 10px 14px;
-    border-radius: 12px;
+    border-radius: var(--r-sm);
     background: var(--ctl);
     font-size: 0.875rem;
     line-height: 1.45;
@@ -248,28 +236,6 @@
   /* Idle: no text, so no box, no height and no flex gap. The live region stays in the DOM. */
   .help:empty {
     display: none;
-  }
-  .in {
-    box-sizing: border-box;
-    width: 100%;
-    min-height: var(--ctl-h);
-    padding: 0 14px;
-    border: 0;
-    border-radius: var(--r-ctl);
-    background: var(--ctl);
-    color: var(--ctl-text);
-    font: inherit;
-  }
-  .in::placeholder {
-    color: var(--ctl-sub);
-    opacity: 1;
-  }
-  .in[aria-invalid='true'] {
-    box-shadow: inset 0 0 0 2px var(--crit);
-  }
-  .in:focus-visible {
-    outline: none;
-    background: var(--ctl-h2);
   }
   .mono {
     font-family: var(--mono);
@@ -281,7 +247,7 @@
     gap: 12px;
     min-height: 56px;
     padding: 10px 14px;
-    border-radius: 12px;
+    border-radius: var(--r-sm);
     background: color-mix(in oklch, var(--accent) 17%, transparent);
   }
   .res.bad {

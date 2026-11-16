@@ -100,14 +100,8 @@ import { connectionStore } from "$lib/connectionStore.svelte";
     --card-height: 160px;
     --card-max-width: calc((2 * var(--card-min-width)) + var(--card-gap));
 
-    --backdrop-filter: blur(var(--blur)) saturate(1.35);
-    --backdrop-filter-background: var(--float);
 
-    --normal-color: var(--ok);
-    --warning-color: var(--warn);
-    --error-color: var(--crit);
-
-    --grid-border-radius: 12px;
+    --grid-border-radius: var(--r-sm);
   }
 
   :global(html) {

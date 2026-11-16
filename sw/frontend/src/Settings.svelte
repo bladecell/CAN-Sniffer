@@ -6,6 +6,7 @@
   import { ACCENTS } from "$lib/appearance";
   import { appearance } from "$lib/appearance.svelte";
   import { settingsStore } from "$lib/settingsStore.svelte";
+  import { trackStuck } from "$lib/layers";
   import { vehicleStore } from "$lib/vehicleStore.svelte";
   import { GROUP, GROUP_IDS, RAIL, bitrateLabel, groupShown, type GroupId } from "$lib/settingsModel";
   import AppearanceGroup from "$lib/components/settings/AppearanceGroup.svelte";
@@ -86,7 +87,7 @@
   <div class="st-search">
     <Icon name="magnifying-glass" size={18} />
     <input
-      class="st-in"
+      class="in"
       type="search"
       placeholder="Search settings"
       aria-label="Search settings"
@@ -101,15 +102,15 @@
 {#snippet chips()}
   <div class="st-chips">
     {#if connectionStore.connected}
-      <span class="st-chip c-ok"><Icon name="circle-check" size={14} />Connected</span>
+      <span class="chip c-ok"><Icon name="circle-check" size={14} />Connected</span>
     {:else}
-      <span class="st-chip"><Icon name="circle" size={14} />Not connected</span>
+      <span class="chip"><Icon name="circle" size={14} />Not connected</span>
     {/if}
     {#if vehicleStore.system.app_version}
-      <span class="st-chip">Firmware {vehicleStore.system.app_version}</span>
+      <span class="chip">Firmware {vehicleStore.system.app_version}</span>
     {/if}
     {#if settingsStore.restartRequired}
-      <span class="st-chip c-warn"><Icon name="triangle-exclamation" size={14} />Restart required</span>
+      <span class="chip c-warn"><Icon name="triangle-exclamation" size={14} />Restart required</span>
     {/if}
   </div>
 {/snippet}
@@ -130,13 +131,13 @@
   {:else if !canUse}
     <div class="st-none">
       <p>Log in to read and change these settings.</p>
-      <button type="button" class="st-btn pri" onclick={() => auth.ensureLogin()}>Log in</button>
+      <button type="button" class="btn pri" onclick={() => auth.ensureLogin()}>Log in</button>
     </div>
   {:else if doc === null}
     {#if settingsStore.loadError}
       <div class="st-none">
         <p role="alert">Settings could not be read: {settingsStore.loadError}</p>
-        <button type="button" class="st-btn" onclick={() => settingsStore.load()}>Try again</button>
+        <button type="button" class="btn" onclick={() => settingsStore.load()}>Try again</button>
       </div>
     {:else}
       <p class="st-none">{reading()}</p>
@@ -227,8 +228,8 @@
     </div>
   {:else}
     <div class="st-phone st-slide">
-      <div class="st-drill-head st-float">
-        <button type="button" class="st-btn icon" aria-label="Back to Settings" onclick={() => (openId = null)}>
+      <div class="st-drill-head float-layer rest-top" {@attach trackStuck}>
+        <button type="button" class="btn icon" aria-label="Back to Settings" onclick={() => (openId = null)}>
           <Icon name="chevron-down" size={18} />
         </button>
         <h2>{GROUP[openId].title}</h2>
@@ -255,7 +256,7 @@
     color: var(--ctl-sub);
     pointer-events: none;
   }
-  .st-search .st-in {
+  .st-search .in {
     width: 100%;
     padding-left: 44px;
   }
@@ -269,7 +270,7 @@
       display: none;
     }
     .st-phone-card {
-      border-radius: 24px;
+      border-radius: var(--r-card);
       padding: 20px;
     }
     .st-search :global(svg) {

@@ -16,11 +16,16 @@
 	--r-card: 28px;
 	--r-ctl: 16px;
 	--r-float: 28px;
+	--r-sm: 12px;
+	--r-xs: 8px;
+	--r-track: 18px;
 	--ctl-h: 48px;
 	--btn-px: 22px;
 	--pad-card: 26px;
 	--blur: 26px;
 	--float-blur: blur(var(--blur)) saturate(1.35);
+	/* A control fill on its own float layer (a button that floats over a scroller). */
+	--float-ctl: linear-gradient(var(--ctl), var(--ctl)), var(--float);
 	--ctl-bd: transparent;
 	--ah: 55;
 	--ac: 0.17;
@@ -54,12 +59,15 @@
 	--bg: #f0e8dc;
 	--text: #1e1a16;
 	--muted: #3d342c;
-	--card: rgba(255, 255, 255, 0.58);
-	--card2: rgba(255, 255, 255, 0.6);
-	--row: rgba(255, 255, 255, 0.5);
+	--card: rgb(255 255 255 / calc(0.58 * var(--k-card, 1)));
+	--card2: rgb(255 255 255 / calc(0.6 * var(--k-inner, 1)));
+	--row: rgb(255 255 255 / calc(0.5 * var(--k-inner, 1)));
 	--hov: rgba(255, 255, 255, 0.88);
-	--float: rgba(252, 248, 242, 0.84);
+	--float: rgb(252 248 242 / calc(0.72 * var(--k-float, 1)));
 	--float-solid: #fcf8f2;
+	--var-fg: #27345c;
+	--var-bg: #dde4f6;
+	--var-ring: #6d7fb8;
 	--scrim: rgba(40, 22, 8, 0.42);
 	--shadow-float: 0 16px 44px rgba(80, 40, 10, 0.22);
 	--grid: rgba(60, 45, 30, 0.24);
@@ -97,13 +105,16 @@
 		--bg: #120e0b;
 		--text: #f3ede6;
 		--muted: #c2b8ac;
-		--card: rgba(30, 22, 16, 0.5);
-		--card2: rgba(255, 235, 215, 0.09);
-		--row: rgba(255, 235, 215, 0.07);
+		--card: rgb(30 22 16 / calc(0.5 * var(--k-card, 1)));
+		--card2: rgb(255 235 215 / calc(0.09 * var(--k-inner, 1)));
+		--row: rgb(255 235 215 / calc(0.07 * var(--k-inner, 1)));
 		--hov: rgba(255, 235, 215, 0.14);
-		--float: rgba(36, 28, 22, 0.8);
+		--float: rgb(36 28 22 / calc(0.62 * var(--k-float, 1)));
 		--float-solid: #241c16;
-		--scrim: rgba(5, 2, 0, 0.6);
+		--var-fg: #dbe2fa;
+		--var-bg: #2d3550;
+		--var-ring: #7f90cc;
+		--scrim: rgba(5, 2, 0, 0.45);
 		--shadow-float: 0 18px 50px rgba(0, 0, 0, 0.55);
 		--grid: rgba(255, 240, 225, 0.2);
 		--hair: rgba(255, 240, 225, 0.16);
@@ -140,13 +151,16 @@
 	--bg: #120e0b;
 	--text: #f3ede6;
 	--muted: #c2b8ac;
-	--card: rgba(30, 22, 16, 0.5);
-	--card2: rgba(255, 235, 215, 0.09);
-	--row: rgba(255, 235, 215, 0.07);
+	--card: rgb(30 22 16 / calc(0.5 * var(--k-card, 1)));
+	--card2: rgb(255 235 215 / calc(0.09 * var(--k-inner, 1)));
+	--row: rgb(255 235 215 / calc(0.07 * var(--k-inner, 1)));
 	--hov: rgba(255, 235, 215, 0.14);
-	--float: rgba(36, 28, 22, 0.8);
+	--float: rgb(36 28 22 / calc(0.62 * var(--k-float, 1)));
 	--float-solid: #241c16;
-	--scrim: rgba(5, 2, 0, 0.6);
+	--var-fg: #dbe2fa;
+	--var-bg: #2d3550;
+	--var-ring: #7f90cc;
+	--scrim: rgba(5, 2, 0, 0.45);
 	--shadow-float: 0 18px 50px rgba(0, 0, 0, 0.55);
 	--grid: rgba(255, 240, 225, 0.2);
 	--hair: rgba(255, 240, 225, 0.16);
@@ -196,7 +210,7 @@
 		--ctl-sub: #fff;
 		--ctl-sel: #fff;
 		--ctl-crit: #fff;
-		--card: rgba(30, 22, 16, 0.62);
+		--card: rgb(30 22 16 / calc(0.62 * var(--k-card, 1)));
 		--track: #b5aca1;
 	}
 }
@@ -207,7 +221,7 @@
 	--ctl-sub: #fff;
 	--ctl-sel: #fff;
 	--ctl-crit: #fff;
-	--card: rgba(30, 22, 16, 0.62);
+	--card: rgb(30 22 16 / calc(0.62 * var(--k-card, 1)));
 	--track: #b5aca1;
 }
 
@@ -259,10 +273,6 @@
 	--pico-table-row-stripped-background-color: var(--card2);
 	--pico-modal-overlay-background-color: var(--scrim);
 	--pico-modal-overlay-backdrop-filter: none;
-	--overlay-1: var(--card2);
-	--overlay-2: var(--hov);
-	--status-err-text: var(--crit);
-	--status-warn-text: var(--warn);
 }
 
 html {
@@ -291,57 +301,179 @@ body::before {
 	border-radius: var(--r-card);
 }
 
-/* Segmented control: fill, no border; selected is bold with a 3px accent bar. */
+/* Segmented control (DESIGN.md, Components): the only one. Track --ctl; the selected item is an opaque pill with a 3px accent bar.
+   Selected item: aria-checked (radiogroup), aria-pressed (toggle group), aria-selected (tablist) or aria-current (nav).
+   Modifiers: .sm, .eq (equal widths, fills its field), .scroll (one row, scrolls sideways). */
+[role='group'].seg,
 .seg {
-	display: inline-flex;
-	gap: 2px;
-	padding: 3px;
-	border-radius: calc(var(--r-ctl) + 2px);
-	background: var(--ctl);
-	max-width: 100%;
+  display: inline-flex;
+  flex-wrap: wrap;
+  width: auto;
+  max-width: 100%;
+  margin: 0;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--r-track);
+  background: var(--ctl);
 }
-.seg button {
-	position: relative;
-	margin: 0;
-	min-height: calc(var(--ctl-h) - 8px);
-	padding: 0 16px;
-	border: 0;
-	border-radius: var(--r-ctl);
-	background: transparent;
-	color: var(--ctl-sub);
-	font-weight: 700;
-	display: inline-flex;
-	align-items: center;
-	gap: 6px;
+.seg > button,
+[role='group'].seg > button {
+  position: relative;
+  box-sizing: border-box;
+  flex: none;
+  min-width: 44px;
+  min-height: calc(var(--ctl-h) - 8px);
+  margin: 0;
+  padding: 0 16px;
+  border: 0;
+  border-radius: calc(var(--r-track) - 3px);
+  background: transparent;
+  color: var(--ctl-sub);
+  font: 700 1rem/1.2 var(--font);
+  white-space: nowrap;
+  cursor: pointer;
 }
-.seg button::after {
-	content: '';
-	position: absolute;
-	left: 22%;
-	right: 22%;
-	bottom: 3px;
-	height: 3px;
-	border-radius: 3px;
-	background: var(--accent);
-	transform: scaleX(0);
-	transition: transform 0.2s var(--ease-out);
+.seg > button::after {
+  content: '';
+  position: absolute;
+  left: 22%;
+  right: 22%;
+  bottom: 3px;
+  height: 3px;
+  border-radius: 3px;
+  background: var(--accent);
+  transform: scaleX(0);
+  transition: transform 0.2s var(--ease-out);
 }
-.seg button[aria-checked='true'] {
-	color: var(--ctl-sel);
-	font-weight: 800;
+.seg > button:is([aria-checked='true'], [aria-pressed='true'], [aria-selected='true'], [aria-current='true']) {
+  background: var(--float-solid);
+  color: var(--ctl-text);
+  font-weight: 800;
 }
-.seg button[aria-checked='true']::after {
-	transform: scaleX(1);
+.seg > button:is([aria-checked='true'], [aria-pressed='true'], [aria-selected='true'], [aria-current='true'])::after {
+  transform: scaleX(1);
+}
+.seg > button:disabled,
+.seg > button[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 @media (hover: hover) {
-	.seg button:hover {
-		color: var(--ctl-text);
-	}
+  .seg > button:hover:not(:disabled) {
+    color: var(--ctl-text);
+  }
+}
+.seg.sm > button {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 0.9rem;
+}
+.seg.eq {
+  display: flex;
+  flex-wrap: nowrap;
+}
+.seg.eq > button {
+  flex: 1 1 0;
+  padding: 0 6px;
+}
+.seg.scroll {
+  flex-wrap: nowrap;
+  align-items: center;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.seg.scroll::-webkit-scrollbar {
+  display: none;
 }
 @media (pointer: coarse) {
-	.seg button {
-		min-height: 44px;
-	}
+  .seg > button,
+  .seg.sm > button {
+    min-height: 44px;
+  }
+}
+
+/* Text input (DESIGN.md, Input): fill, no border, no Pico validation icon. `:root` outranks Pico's input rules. Invalid: 2px crit ring. Modifiers: .mono, .num (tabular figures). */
+:root .in {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--ctl-h);
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: var(--ctl);
+  background-image: none;
+  box-shadow: none;
+  color: var(--ctl-text);
+  font: inherit;
+}
+:root .in::placeholder {
+  color: var(--ctl-sub);
+  opacity: 1;
+}
+:root .in {
+  margin: 0;
+}
+:root .in[aria-invalid='true'] {
+  box-shadow: inset 0 0 0 2px var(--crit);
+  background-image: none;
+}
+:root .in:disabled {
+  opacity: 0.55;
+}
+.in.mono {
+  font-family: var(--mono);
+}
+.in.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Status chip (DESIGN.md, Components): icon + label, translucent fill, pill. Colour is never the only signal.
+   Tones: c-ok, c-warn, c-crit, c-perm; none = plain. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 11px 2px 9px;
+  border-radius: 99px;
+  background: var(--ctl);
+  color: var(--ctl-sub);
+  font-size: 0.8rem;
+  font-weight: 800;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.chip > svg {
+  width: 1em;
+  height: 1em;
+  flex: none;
+}
+.chip.c-ok {
+  background: var(--ok-f);
+  color: var(--ok);
+}
+.chip.c-warn {
+  background: var(--warn-f);
+  color: var(--warn);
+}
+.chip.c-crit {
+  background: var(--crit-f);
+  color: var(--crit);
+}
+.chip.c-perm {
+  background: var(--perm-f);
+  color: var(--perm);
+}
+/* Tag: a short count or unit next to a label. */
+.tag {
+  display: inline-block;
+  padding: 0 8px;
+  border-radius: 99px;
+  background: var(--ctl);
+  color: var(--ctl-sub);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.7;
 }
 
 /* Accent swatch: 44px circle, check when selected, 3px accent bar below. */
@@ -378,310 +510,7 @@ body::before {
 
 img,
 video {
-	border-radius: 0.5rem;
-}
-
-.btn {
-	padding: 0px;
-	background: none;
-	border: none;
-	box-shadow: none;
-}
-
-.editor {
-	width: 600px;
-	height: 300px;
-	padding: 1rem;
-	border-radius: 0.5rem;
-}
-
-.interval {
-	display: flex;
-	align-items: center;
-
-	div {
-		width: 100px;
-		font-size: 2rem;
-		text-align: center;
-	}
-}
-
-.pokemon-search {
-	input {
-		padding: 1rem;
-		border-radius: 1rem;
-	}
-
-	img {
-		width: 200px;
-		display: block;
-		justify-self: center;
-		image-rendering: pixelated;
-	}
-}
-
-.shuffle {
-	text-align: center;
-
-	.items {
-		width: 600px;
-		display: grid;
-		grid-template-columns: repeat(5, 1fr);
-		gap: 0.5rem;
-		color: orangered;
-		font-size: 3rem;
-		font-weight: 700;
-		text-shadow: 2px 2px 0px #000;
-
-		.item {
-			display: grid;
-			place-content: center;
-			aspect-ratio: 1;
-			background: #1a202b;
-			border: 1px solid #232b3a;
-			border-radius: 1rem;
-		}
-	}
-
-	button {
-		margin-top: 1rem;
-		font-size: 2rem;
-	}
-}
-
-.cells {
-	display: grid;
-	grid-template-columns: repeat(10, 1fr);
-	gap: 0.5rem;
-
-	.cell {
-		padding: 1rem;
-		border: 1px solid #ccc;
-	}
-}
-
-.pokemon-details {
-	text-align: center;
-
-	img {
-		width: 200px;
-		display: block;
-		justify-self: center;
-		image-rendering: pixelated;
-	}
-}
-
-.ghost {
-	font-size: 4rem;
-}
-
-.mouse {
-	width: 100svw;
-	height: 100svh;
-	display: grid;
-	place-content: center;
-}
-
-.player {
-	width: 400px;
-
-	video {
-		width: 100%;
-	}
-
-	.controls {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		margin-top: 0.5rem;
-
-		button {
-			padding: 0px;
-			background: none;
-			border: none;
-			box-shadow: none;
-		}
-
-		input[type='range'] {
-			margin: 0px;
-		}
-	}
-}
-
-.textarea {
-	position: relative;
-	display: inline-block;
-	padding: 0.5rem;
-	border: 1px solid orangered;
-
-	.text {
-		font-size: 2rem;
-	}
-
-	.size {
-		position: absolute;
-		left: 50%;
-		bottom: 0px;
-		padding: 0.5rem;
-		translate: -50% 100%;
-		color: black;
-		background: orangered;
-		font-weight: 700;
-		white-space: pre;
-	}
-}
-
-.todos {
-	ul {
-		padding: 0px;
-
-		li {
-			display: flex;
-			gap: 0.5rem;
-			align-items: center;
-
-			input[type='checkbox'] {
-				aspect-ratio: 1;
-				margin: 0px;
-			}
-
-			input[type='text'] {
-				margin-bottom: 0px;
-			}
-		}
-	}
-
-	.filters {
-		display: flex;
-		gap: 0.5rem;
-	}
-}
-
-.posts {
-	display: flex;
-	gap: 4rem;
-
-	section {
-		display: grid;
-		grid-template-columns: repeat(2, 400px);
-		gap: 2rem;
-		margin: 0px;
-
-		article {
-			margin: 0px;
-		}
-	}
-
-	.archive {
-		section {
-			display: block;
-			width: 240px;
-
-			article {
-				margin-bottom: 1rem;
-			}
-		}
-	}
-}
-
-.message {
-	font-size: 4rem;
-
-	span {
-		display: inline-block;
-	}
-}
-
-.stagger {
-	width: 400px;
-	display: grid;
-	grid-template-columns: repeat(10, 1fr);
-	gap: 1rem;
-}
-
-.box {
-	width: 100px;
-	height: 100px;
-	margin-bottom: 2rem;
-	background-color: orangered;
-	border-radius: 1rem;
-}
-
-.pokemon-data {
-	width: 600px;
-
-	summary {
-		text-transform: capitalize;
-	}
-
-	.data {
-		max-height: 400px;
-		overflow-y: scroll;
-	}
-
-	button {
-		width: 100%;
-	}
-}
-
-.timeline {
-	label {
-		display: flex;
-		gap: 0.5rem;
-	}
-}
-
-body:has(.scroll) {
-	height: 8000px;
-}
-
-.scroll {
-	position: fixed;
-	top: 50%;
-	left: 50%;
-	translate: -50% -50%;
-	font-size: 8vw;
-	font-weight: 700;
-}
-
-.grid-item-resizer {
-	-webkit-user-select: none;
-	-moz-user-select: none;
-	user-select: none;
-	touch-action: none;
-	position: absolute;
-	width: 20px !important;
-	height: 20px !important;
-	right: 0;
-	bottom: 0;
-	cursor: se-resize;
-	background: none;
-	outline: none;
-	border: none;
-}
-
-
-.grid-item-resizer::after {
-	content: "";
-	position: absolute;
-	right: 3px;
-	bottom: 3px;
-	width: 5px;
-	height: 5px;
-	border-right: 2px solid oklch(1 0 0 / 0.3);
-	border-bottom: 2px solid oklch(1 0 0 / 0.3);
-}
-
-.grid-item-preview {
-	background-color: color-mix(in srgb, var(--pico-primary) 20%, transparent);
-	border: 2px dashed var(--pico-primary);
-	border-radius: 8px;
-}
-
-.item-default {
-  border-radius: 12px !important;
-  overflow: hidden !important; 
-  box-shadow: var(--pico-card-box-shadow) !important;
+	border-radius: var(--r-xs);
 }
 
 /* Dashboard Card Base Styles */
@@ -694,7 +523,7 @@ body:has(.scroll) {
   flex-direction: column;
   padding: 16px;
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--r-sm);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
   overflow: hidden;
   background: color-mix(in srgb, var(--module-accent, #10b981) 5%, transparent);
@@ -721,7 +550,7 @@ body:has(.scroll) {
   justify-content: center;
   height: 48px;
   width: 48px;
-  border-radius: 10px;
+  border-radius: var(--r-xs);
   transition: transform 0.2s ease;
   background: color-mix(in srgb, var(--module-accent, #10b981) 20%, transparent);
 }
@@ -741,14 +570,14 @@ body:has(.scroll) {
 
 .dashboard-card-label {
   font-size: 0.75rem;
-  color: var(--pico-muted-color);
+  color: var(--muted);
   font-weight: 500;
 }
 
 .dashboard-card-subtitle {
   font-size: 0.65rem;
   letter-spacing: 0.05em;
-  font-family: var(--pico-font-family-monospace);
+  font-family: var(--mono);
   color: color-mix(in srgb, var(--module-accent, #10b981) 70%, transparent);
 }
 
@@ -778,108 +607,149 @@ body:has(.scroll) {
   font-size: 2rem;
   font-weight: 700;
   line-height: 1;
-  font-family: var(--pico-font-family-monospace);
+  font-family: var(--mono);
 }
 
 .dashboard-card-unit {
   font-size: 1rem;
   font-weight: 400;
-  color: var(--pico-muted-color);
-  font-family: var(--pico-font-family-monospace);
+  color: var(--muted);
+  font-family: var(--mono);
 }
 
-/* Layering rule (DESIGN.md): every surface that sits above other content gets this one floating style.
-   Sticky or fixed bars, popovers, toasts, dialogs, the nav dock, the Sheet's glass (dialog.overlay.sheet::before:
-   the Sheet itself is not blurred, so its layers keep theirs). Cards and rows in page flow never use it. */
+/* Float layer (DESIGN.md, Surfaces): the one style for every surface that sits above other content. Nav dock, toasts,
+   dialogs, popovers, tooltips and bars over a scroller use the class; nothing restates the recipe. Cards and rows in
+   page flow never use it. Gecko drops the blur when an ancestor scrolls, clips, transforms or is blurred (lib/layers.ts). */
 .float-layer,
-.tel-float,
-.dock,
-dialog.overlay,
-dialog.overlay.sheet::before,
-.popup,
-.selpop,
-.tip {
+.popup {
   background: var(--float);
   -webkit-backdrop-filter: var(--float-blur);
   backdrop-filter: var(--float-blur);
-}
-.float-layer,
-.tel-float,
-.dock,
-dialog.overlay,
-.popup,
-.selpop,
-.tip {
   box-shadow: var(--shadow-float);
 }
-/* The one popup surface: select lists, menus, colour and icon pickers, hints. Glass above, hairline edge, float radius.
-   Components add their own size, padding and position only. */
+/* The one popup surface: select lists, menus, colour and icon pickers, hints. Float layer plus a hairline edge and the
+   float radius. Components add their own size, padding and position only. */
 .popup {
   border: 1px solid var(--hair);
   border-radius: var(--r-float);
   color: var(--text);
 }
+/* A bar at the edge of a scroller floats only while content is under it. At rest it shows the surface it sits on
+   (--rest-fill, none by default), so a header or footer does not read as a second, denser surface. The scroller writes
+   data-under on the shared parent (lib/layers.ts: trackUnder, trackStuck). */
+.float-layer:is(.rest-top, .rest-bottom) {
+  transition:
+    background-color 0.2s var(--ease-out),
+    box-shadow 0.2s var(--ease-out);
+}
+:not([data-under~='top']) > .float-layer.rest-top,
+:not([data-under~='bottom']) > .float-layer.rest-bottom {
+  background: var(--rest-fill, transparent);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+/* No backdrop-filter: every float fill becomes solid. One override, so no component needs its own fallback. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .float-layer,
-  .tel-float,
-  .dock,
-  dialog.overlay,
-  dialog.overlay.sheet::before,
-  .popup,
-  .selpop,
-  .tip {
-    background: var(--float-solid);
+  :root:root:root {
+    --float: var(--float-solid);
   }
 }
 
-/* Floating overlays only (nav, toast, popover, modal, tooltip). In-flow cards use a translucent fill with no blur (DESIGN.md). */
-.blur-background {
-	backdrop-filter: var(
-      --backdrop-filter,
-      blur(10px) saturate(1.2)
-    ) !important;
-    -webkit-backdrop-filter: var(
-      --backdrop-filter,
-      blur(10px) saturate(1.2)
-    ) !important;
-    background-color: var(
-      --backdrop-filter-background,
-      oklch(1 0 0 / 0.01)
-    ) !important;
-    border: 0 !important;
-	box-shadow: var(--pico-box-shadow) !important;
-	border-radius: 12px;
+/* Button (DESIGN.md, Buttons): the only button recipe. Variants: .pri, .danger (text), .fill-crit (solid), .sm, .icon.
+   The element prefix outranks Pico's [type=submit] (full width) and button rules. */
+button.btn,
+a.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-sizing: border-box;
+  width: auto;
+  min-height: var(--ctl-h);
+  margin: 0;
+  padding: 0 var(--btn-px);
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: var(--ctl);
+  box-shadow: none;
+  color: var(--ctl-text);
+  font: 700 1rem/1.2 var(--font);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s;
 }
-
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    border: var(--pico-border-width) solid var(--pico-form-element-border-color);
-    background-color: rgba(var(--color), 0.1);
-    border: none;
-    color: rgb(var(--color));
-    height: 40px;
-    margin: 0;
-    padding: 0 1rem;
+@media (hover: hover) {
+  .btn:hover:not(:disabled):not([aria-disabled='true']) {
+    background: var(--ctl-h2);
   }
-
-  .btn :global(svg) {
-    margin: 0 !important;
+}
+.btn:active:not(:disabled) {
+  filter: brightness(0.94);
+}
+.btn.pri {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 800;
+}
+@media (hover: hover) {
+  .btn.pri:hover:not(:disabled):not([aria-disabled='true']) {
+    background: var(--accent);
+    filter: brightness(1.06);
   }
-
-  .btn:hover {
-    background-color: rgba(var(--color), 0.2);
+}
+.btn.danger {
+  color: var(--ctl-crit);
+}
+.btn.fill-crit {
+  background: var(--crit-solid);
+  color: var(--on-crit);
+  font-weight: 800;
+}
+@media (hover: hover) {
+  .btn.fill-crit:hover:not(:disabled):not([aria-disabled='true']) {
+    background: var(--crit-solid);
+    filter: brightness(1.06);
   }
-
-  .btn:active {
-    transform: scale(0.98);
+}
+.btn.sm {
+  min-height: calc(var(--ctl-h) - 8px);
+  padding: 0 12px;
+  font-size: 0.9rem;
+}
+.btn.icon {
+  width: var(--ctl-h);
+  padding: 0;
+}
+.btn:disabled,
+.btn[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: not-allowed;
+  filter: none;
+}
+.btn > svg {
+  flex: none;
+}
+.btn .badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: var(--r-xs);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 0.7rem;
+}
+@media (pointer: coarse) {
+  .btn,
+  .btn.sm {
+    min-height: 44px;
   }
-.dropdown-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 99;
+  .btn.icon {
+    width: 44px;
+  }
 }
 
 /* One focus ring for every element (DESIGN.md, Accessibility) */
@@ -896,19 +766,6 @@ dialog.overlay,
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
-  }
-}
-
-/* Touch: bigger hit area for the grid resize handle */
-@media (pointer: coarse) {
-  .grid-item-resizer {
-    width: 36px !important;
-    height: 36px !important;
-  }
-
-  .grid-item-resizer::after {
-    right: 6px;
-    bottom: 6px;
   }
 }
 

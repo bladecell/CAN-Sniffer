@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
-  import { measureHeight } from "$lib/layers";
+  import { measureHeight, trackUnder } from "$lib/layers";
 
   /**
    * One PID sidebar tab. The header and footer are float layers that sit beside the scroller, not inside it,
@@ -16,10 +16,10 @@
 </script>
 
 <div class="sb-panel">
-  <div class="sb-top float-layer" {@attach measureHeight("--sb-head")}>
+  <div class="sb-top float-layer rest-top" {@attach measureHeight("--sb-head")}>
     {@render header()}
   </div>
-  <div class="sb-body">
+  <div class="sb-body" {@attach trackUnder}>
     {@render children()}
   </div>
   {#if footer}

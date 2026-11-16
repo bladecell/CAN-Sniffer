@@ -179,13 +179,13 @@
   <div class="toolbar">
     <div class="toolbar-actions" bind:this={toolbarRef}>
       {#if onImport}
-        <button class="toolbar-btn" onclick={onImport}>
+        <button class="btn sm" onclick={onImport}>
           <Icon name="import" size={14} />
           Import
         </button>
       {/if}
       {#if onExport}
-        <button class="toolbar-btn" onclick={onExport}>
+        <button class="btn sm" onclick={onExport}>
           <Icon name="export" size={14} />
           Export
         </button>
@@ -194,7 +194,7 @@
       <!-- FILTER MENU WRAPPER -->
       <div class="popover-container">
         <button
-          class="toolbar-btn"
+          class="btn sm"
           class:active={activePopover === "filter" || filterRules.length > 0}
           onclick={() => togglePopover("filter")}
         >
@@ -205,7 +205,7 @@
         </button>
 
         {#if activePopover === "filter"}
-          <div class="popover-menu filter-menu blur-background">
+          <div class="popover-menu filter-menu popup">
             <div class="popover-header">Filter by</div>
 
             <div class="filter-rules">
@@ -237,7 +237,7 @@
                   />
 
                   <button
-                    class="btn icon-btn"
+                    class="btn sm icon rule-remove"
                     onclick={() => removeFilter(rule.id)}
                     title="Remove rule"
                   >
@@ -252,11 +252,11 @@
             </div>
 
             <div class="popover-footer">
-              <button class="btn btn-primary" onclick={addFilter}
+              <button class="btn sm pri" onclick={addFilter}
                 >Add filter</button
               >
               {#if filterRules.length > 0}
-                <button class="btn btn-ghost" onclick={resetFilters}
+                <button class="btn sm" onclick={resetFilters}
                   >Reset filters</button
                 >
               {/if}
@@ -268,7 +268,7 @@
       <!-- VIEW MENU WRAPPER -->
       <div class="popover-container">
         <button
-          class="toolbar-btn"
+          class="btn sm"
           class:active={activePopover === "view" || hiddenColumns.size > 0}
           onclick={() => togglePopover("view")}
         >
@@ -280,7 +280,7 @@
         </button>
 
         {#if activePopover === "view"}
-          <div class="popover-menu view-menu blur-background">
+          <div class="popover-menu view-menu popup">
             <div class="column-list">
               {#each columns as col (col.key)}
                 <button
@@ -408,7 +408,7 @@
                       class="badge"
                       style:--badge-color={col.colorKey && row[col.colorKey]
                         ? row[col.colorKey]
-                        : "rgba(255, 255, 255, 0.5)"}
+                        : "var(--muted)"}
                     >
                       {row[col.key]}
                     </span>
@@ -503,7 +503,7 @@
           <tr>
             <td
               colspan={activeColumns.length}
-              style="text-align: center; padding: 2rem; color: var(--pico-muted-color);"
+              style="text-align: center; padding: 2rem; color: var(--muted);"
             >
               No matching data found
             </td>
@@ -535,7 +535,7 @@
   .toolbar {
     display: flex;
     padding: 0.75rem 1rem;
-    border-bottom: 1px solid var(--overlay-1);
+    border-bottom: 1px solid var(--hair);
     background: transparent;
   }
 
@@ -544,40 +544,14 @@
     gap: 0.5rem;
   }
 
-  .toolbar-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    background: transparent;
-    border: 1px solid var(--overlay-2);
-    color: var(--pico-color);
-    padding: 0.35rem 0.75rem;
-    border-radius: 6px;
-    font-size: 0.75rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background 0.2s var(--ease-out), color 0.2s var(--ease-out), border-color 0.2s var(--ease-out), opacity 0.2s var(--ease-out), transform 0.2s var(--ease-out);
-  }
-
-  .toolbar-btn:hover:not(:disabled) {
-    background: var(--overlay-1);
-    border-color: rgba(255, 255, 255, 0.2);
-  }
-
-  .toolbar-btn.active {
-    background: var(--overlay-2);
-    border-color: rgba(255, 255, 255, 0.25);
-  }
-
-  .toolbar-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+  .btn.active {
+    background: var(--ctl-h2);
   }
 
   .badge-count {
-    background: rgba(255, 255, 255, 0.15);
+    background: var(--ctl);
     padding: 0.1rem 0.4rem;
-    border-radius: 10px;
+    border-radius: var(--r-xs);
     font-size: 0.65rem;
     margin-left: 0.2rem;
   }
@@ -592,7 +566,7 @@
     top: calc(100% + 0.5rem);
     left: 0;
     z-index: 50;
-    color: #fff;
+    color: var(--text);
     font-size: 0.8rem;
   }
 
@@ -609,7 +583,7 @@
     font-size: 0.95rem;
     font-weight: 600;
     margin-bottom: 1.25rem;
-    color: rgba(255, 255, 255, 0.9);
+    color: var(--text);
   }
 
   .filter-rules {
@@ -631,7 +605,7 @@
   .filter-label {
     width: 50px;
     flex: 0 0 auto;
-    color: rgba(255, 255, 255, 0.5);
+    color: var(--muted);
     font-weight: 500;
     white-space: nowrap;
     margin: 0; /* Ensure no stray margins push the text around */
@@ -644,15 +618,15 @@
   }
 
   .filter-select :global(.select-menu-trigger) {
-    background: var(--overlay-1);
-    border: 1px solid var(--overlay-2);
-    color: #fff;
+    background: var(--card2);
+    border: 1px solid var(--hair);
+    color: var(--text);
     padding: 0 0.6rem;
     height: 34px;
     min-height: 0;
     border-radius: 4px;
     font-size: 0.75rem;
-    font-family: var(--pico-font-family-monospace);
+    font-family: var(--mono);
     outline: none;
     box-shadow: none !important;
     box-sizing: border-box;
@@ -661,7 +635,7 @@
   }
 
   .filter-select :global(.select-menu-trigger:focus) {
-    border-color: var(--pico-primary);
+    border-color: var(--accent-text);
   }
 
   @media (pointer: coarse) {
@@ -672,14 +646,14 @@
 
   .filter-input-text {
     flex: 1 1 0;
-    background: var(--overlay-1);
-    border: 1px solid var(--overlay-2);
-    color: #fff;
+    background: var(--card2);
+    border: 1px solid var(--hair);
+    color: var(--text);
     padding: 0 0.6rem;
     height: 34px;
     border-radius: 4px;
     font-size: 0.75rem;
-    font-family: var(--pico-font-family-monospace);
+    font-family: var(--mono);
     outline: none;
     box-sizing: border-box;
     transition: border-color 0.2s;
@@ -687,25 +661,11 @@
   }
 
   .filter-input-text:focus {
-    border-color: var(--pico-primary);
-  }
-
-  .icon-btn {
-    --color: 238, 64, 46;
-    cursor: pointer;
-
-    /* Force exact height matching the inputs and make it a perfect square */
-    height: 34px;
-    width: 34px;
-    box-sizing: border-box;
-    padding: 0;
-
-    flex: 0 0 auto;
-    transition: background 0.2s var(--ease-out), color 0.2s var(--ease-out), border-color 0.2s var(--ease-out), opacity 0.2s var(--ease-out), transform 0.2s var(--ease-out);
+    border-color: var(--accent-text);
   }
 
   .empty-state {
-    color: rgba(255, 255, 255, 0.4);
+    color: var(--muted);
     font-style: italic;
     margin: 0;
   }
@@ -715,32 +675,12 @@
     align-items: center;
     gap: 0.75rem;
     padding-top: 1.25rem;
-    border-top: 1px solid var(--overlay-1);
+    border-top: 1px solid var(--hair);
   }
 
-  .btn-primary {
-    --color: 57, 241, 166;
-    font-size: 0.75rem;
-    font-weight: 600;
-    cursor: pointer;
-  }
-
-  .toolbar-btn:focus-visible,
   .column-toggle-btn:focus-visible {
-    outline: 2px solid var(--pico-primary);
+    outline: 2px solid var(--accent);
     outline-offset: 2px;
-  }
-
-  .btn-ghost {
-    background: transparent;
-    color: rgba(255, 255, 255, 0.6);
-    font-size: 0.75rem;
-    cursor: pointer;
-  }
-
-  .btn-ghost:hover {
-    color: #fff;
-    background: var(--overlay-1);
   }
 
   /* View Menu Specific */
@@ -762,7 +702,7 @@
     align-items: center;
     background: transparent;
     border: none;
-    color: rgba(255, 255, 255, 0.8);
+    color: var(--text);
     padding: 0.6rem 0.5rem;
     border-radius: 4px;
     cursor: pointer;
@@ -771,8 +711,8 @@
   }
 
   .column-toggle-btn:hover {
-    background: var(--overlay-1);
-    color: #fff;
+    background: var(--card2);
+    color: var(--text);
   }
 
   /* --- TABLE STYLES --- */
@@ -823,8 +763,8 @@
   th {
     text-transform: uppercase;
     font-size: 0.7rem;
-    color: var(--pico-muted-color);
-    border-bottom: 1px solid var(--overlay-2);
+    color: var(--muted);
+    border-bottom: 1px solid var(--hair);
     padding: 0.75rem;
     text-align: left;
   }
@@ -838,8 +778,8 @@
   }
 
   .sortable-header:hover {
-    color: var(--pico-color);
-    background-color: rgba(255, 255, 255, 0.02);
+    color: var(--text);
+    background-color: var(--card2);
   }
 
   .header-content {
@@ -857,7 +797,7 @@
 
   .sort-indicator.active {
     opacity: 1;
-    color: var(--pico-primary);
+    color: var(--accent-text);
   }
 
   .sortable-header:hover .sort-indicator:not(.active) {
@@ -866,7 +806,7 @@
 
   td {
     padding: 0.75rem !important;
-    border-bottom: 1px solid var(--overlay-1);
+    border-bottom: 1px solid var(--hair);
     word-break: break-word;
     overflow-wrap: break-word;
     vertical-align: middle;
@@ -883,32 +823,31 @@
   }
 
   tbody tr:not(.selected):hover td {
-    background-color: var(--overlay-1) !important;
+    background-color: var(--card2) !important;
   }
 
   tbody tr.selected td {
     background-color: color-mix(
       in srgb,
-      var(--pico-primary) 15%,
+      var(--accent) 15%,
       transparent
     ) !important;
   }
 
   tbody tr.selected td:first-child {
-    box-shadow: inset 4px 0 0 0 var(--pico-primary) !important;
+    box-shadow: inset 4px 0 0 0 var(--accent) !important;
   }
 
   /* --- CELL FORMATTING --- */
   .tooltip-text {
     cursor: help;
-    border-bottom: 1px dotted var(--pico-muted-color);
+    border-bottom: 1px dotted var(--muted);
   }
 
   .type-code {
-    --code-color: 255, 158, 100;
-    font-family: var(--pico-font-family-monospace, monospace);
-    background: rgba(var(--code-color), 0.1);
-    color: rgb(var(--code-color));
+    font-family: var(--mono);
+    background: var(--warn-f);
+    color: var(--warn);
 
     white-space: nowrap;
     overflow: hidden;
@@ -924,7 +863,7 @@
 
   .badge {
     padding: 0.2rem 0.6rem;
-    border-radius: 12px;
+    border-radius: var(--r-sm);
     font-size: 0.7rem;
     font-weight: 500;
     background: color-mix(in srgb, var(--badge-color) 15%, transparent);
@@ -933,19 +872,19 @@
   }
 
   td input[type="checkbox"]:focus-visible {
-    outline: 2px solid var(--pico-primary) !important;
+    outline: 2px solid var(--accent) !important;
     outline-offset: 2px;
   }
 
   .sortable-header:focus-visible,
   tbody tr:focus-visible {
-    outline: 2px solid var(--pico-primary);
+    outline: 2px solid var(--accent);
     outline-offset: -2px;
   }
 
   table {
-    --pico-tooltip-background-color: var(--backdrop-filter-background);
-    --pico-tooltip-color: #ffffff;
+    --pico-tooltip-background-color: var(--float);
+    --pico-tooltip-color: var(--text);
   }
 
   .control-wrapper {
@@ -961,10 +900,10 @@
   }
 
   :global(td [data-tooltip]::before) {
-    backdrop-filter: var(--backdrop-filter) !important;
-    -webkit-backdrop-filter: var(--backdrop-filter) !important;
-    border: 1px solid rgba(255, 255, 255, 0.15) !important;
-    color: #ffffff !important;
+    backdrop-filter: var(--float-blur) !important;
+    -webkit-backdrop-filter: var(--float-blur) !important;
+    border: 1px solid var(--hair) !important;
+    color: var(--text) !important;
     font-weight: 500 !important;
   }
 
@@ -977,8 +916,8 @@
       transform: translate(-50%, -50%);
       width: 90vw;
       box-shadow:
-        0 0 0 100vw rgba(0, 0, 0, 0.5),
-        0 10px 30px rgba(0, 0, 0, 0.5);
+        0 0 0 100vw var(--scrim),
+        var(--shadow-float);
     }
 
     .filter-label {
@@ -993,10 +932,9 @@
       margin-bottom: 0.25rem !important;
     }
 
-    .icon-btn {
+    .rule-remove {
       /* Push the trash can to the far right on mobile */
       margin-left: auto;
-      padding: 0.5rem;
     }
   }
 </style>

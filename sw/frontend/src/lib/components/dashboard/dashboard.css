@@ -1,51 +1,5 @@
 /* Shared vocabulary for the dashboard page and its sheets. Global, prefixed db-. Tokens come from app.css. */
 
-.db-seg {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 2px;
-  padding: 3px;
-  border-radius: 18px;
-  background: var(--ctl);
-}
-.db-seg > button {
-  min-width: 44px;
-  min-height: 44px;
-  padding: 0 14px;
-  border: 0;
-  border-radius: 15px;
-  background: none;
-  color: var(--ctl-text);
-  font: 700 0.95rem/1 var(--font);
-  cursor: pointer;
-}
-.db-seg > button {
-  position: relative;
-}
-.db-seg > button[aria-checked="true"] {
-  background: var(--float-solid);
-  font-weight: 800;
-}
-.db-seg > button[aria-checked="true"]::after {
-  content: "";
-  position: absolute;
-  left: 28%;
-  right: 28%;
-  bottom: 4px;
-  height: 3px;
-  border-radius: 3px;
-  background: var(--accent);
-}
-/* Equal-width segments that fill their field (Width, Height). */
-.db-seg.eq {
-  display: flex;
-  flex-wrap: nowrap;
-}
-.db-seg.eq > button {
-  flex: 1 1 0;
-  padding: 0 6px;
-}
-.db-seg > button:focus-visible,
 .db-icon:focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
@@ -71,22 +25,6 @@
   color: var(--crit);
   font-size: 0.9rem;
   font-weight: 700;
-}
-
-.db-input {
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 44px;
-  padding: 0 12px;
-  border: 1px solid var(--hair);
-  border-radius: var(--r-ctl);
-  background: var(--ctl);
-  color: var(--text);
-  font: 600 1rem/1.2 var(--font);
-}
-.db-input:focus-visible {
-  outline: 3px solid var(--focus);
-  outline-offset: 1px;
 }
 
 .db-icon {
@@ -127,7 +65,7 @@
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--hair);
-  border-radius: 18px;
+  border-radius: var(--r-track);
   background: var(--card);
 }
 

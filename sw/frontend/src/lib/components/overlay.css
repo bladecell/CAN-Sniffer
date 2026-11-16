@@ -45,18 +45,7 @@ dialog.overlay.dialog {
 dialog.overlay.dialog[open] {
   animation: overlay-dialog-in 0.4s var(--ease-out);
 }
-/* Glass (DESIGN.md, Dialog): the dialog is the float layer itself. Nothing above it is a blurred ancestor. */
-dialog.overlay.dialog {
-  background: var(--float);
-  -webkit-backdrop-filter: var(--float-blur);
-  backdrop-filter: var(--float-blur);
-  box-shadow: var(--shadow-float);
-}
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  dialog.overlay.dialog {
-    background: var(--float-solid);
-  }
-}
+/* Glass (DESIGN.md, Dialog): the dialog is the float layer itself (class float-layer). Nothing above it is a blurred ancestor. */
 
 /*
  * Sheet: bottom sheet, centred on wide screens, full width on phones. Three parts, each a sibling of the others:
@@ -85,11 +74,6 @@ dialog.overlay.sheet[open] {
    blurs what is behind the sheet, with the same fill, so the boundaries line up without a seam. */
 dialog.overlay.sheet {
   background: transparent;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-dialog.overlay.sheet::before {
-  content: none;
 }
 /* The body's top corners match the top layer's. Without them the body's square corner shows past the rounded top layer. */
 dialog.overlay.sheet > .body {
@@ -116,12 +100,6 @@ dialog.overlay.sheet.flat > .body::before {
   background: var(--float);
   -webkit-backdrop-filter: var(--float-blur);
   backdrop-filter: var(--float-blur);
-}
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  dialog.overlay.sheet > .body,
-  dialog.overlay.sheet.flat > .body::before {
-    background: var(--float-solid);
-  }
 }
 
 .overlay .grab {
@@ -215,8 +193,8 @@ dialog.overlay.sheet.flat > .body {
   padding-top: var(--sheet-head, 0px);
   padding-bottom: calc(22px + env(safe-area-inset-bottom));
 }
-/* Footer: one full-width backing layer (as the PIDs phone action bar), so rows scrolling beneath cannot be read through
-   the buttons. The backing is a ::before, so the buttons keep their own blur (nested blur would drop it). */
+/* Footer: one full-width float layer behind the buttons, shown only while content is under it (data-under, app.css).
+   It is a ::before, so the buttons keep their own blur (nested blur would drop it). */
 dialog.overlay.sheet > footer {
   position: absolute;
   left: 0;
@@ -231,67 +209,39 @@ dialog.overlay.sheet > footer::before {
   position: absolute;
   inset: 0;
   z-index: -1;
-  background: color-mix(in srgb, var(--float-solid) 92%, transparent);
+  background: var(--float);
   -webkit-backdrop-filter: var(--float-blur);
   backdrop-filter: var(--float-blur);
+  transition: background-color 0.2s var(--ease-out);
 }
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  dialog.overlay.sheet > footer::before {
-    background: var(--float-solid);
-  }
+dialog.overlay.sheet:not([data-under~='bottom']) > footer::before {
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 .sheet > footer button {
   pointer-events: auto;
 }
-.sheet > footer button:not(.pri) {
+.sheet > footer button:not(.pri):not(.fill-crit) {
   /* Control fill over the float layer: the blur shows through the fill (DESIGN.md, layering rule). */
-  background: linear-gradient(var(--ctl), var(--ctl)), var(--float);
+  background: var(--float-ctl);
   -webkit-backdrop-filter: var(--float-blur);
   backdrop-filter: var(--float-blur);
   box-shadow: var(--shadow-float);
 }
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .sheet > footer button:not(.pri) {
-    background: linear-gradient(var(--ctl), var(--ctl)), var(--float-solid);
-  }
-}
-.sheet > footer button.pri {
+.sheet > footer button:is(.pri, .fill-crit) {
   box-shadow: var(--shadow-float);
 }
-/* Sheet footer buttons: one look for every sheet (PID editor, import, dashboard and card sheets). Glass comes from the rules above. */
-.sheet > footer :is(.btn, .rv-btn) {
-  flex: none;
-  width: auto;
-  margin: 0;
-  min-height: 48px;
-  padding: 0 24px;
-  border: 0;
-  border-radius: 14px;
-  background: var(--ctl);
-  color: var(--ctl-text);
-  font: 750 1rem/1 var(--font);
-  cursor: pointer;
-}
-.sheet > footer :is(.btn, .rv-btn).pri {
-  background: var(--accent);
-  color: var(--on-accent);
-  font-weight: 800;
-}
-.sheet > footer :is(.btn, .rv-btn):disabled,
-.sheet > footer :is(.btn, .rv-btn)[aria-disabled='true'] {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
 /* A disabled primary stays solid: a translucent button would show the fields under it. */
-.sheet > footer :is(.btn, .rv-btn).pri:disabled,
-.sheet > footer :is(.btn, .rv-btn).pri[aria-disabled='true'] {
+.sheet > footer .btn.pri:disabled,
+.sheet > footer .btn.pri[aria-disabled='true'] {
   opacity: 1;
   background: var(--ctl);
   color: var(--ctl-sub);
 }
 /* Phone: the sheet's buttons share the width. */
 @media (max-width: 640px) {
-  .sheet > footer :is(.btn, .rv-btn) {
+  .sheet > footer .btn {
     flex: 1 1 0;
     padding: 0 12px;
   }
@@ -313,64 +263,10 @@ dialog.overlay.sheet > footer::before {
   font-size: 0.85rem;
   font-weight: 700;
 }
-.overlay input:not([type="checkbox"]):not([type="radio"]):not([type="color"]) {
-  box-sizing: border-box;
-  width: 100%;
-  min-height: var(--ctl-h);
-  margin: 0 0 14px;
-  padding: 0 14px;
-  border: 0;
-  border-radius: var(--r-ctl);
-  background: var(--ctl);
-  color: var(--ctl-text);
-  font: inherit;
-  box-shadow: none;
+/* A field in a dialog or sheet sits 14px above the next label. */
+:root .overlay .in {
+  margin-bottom: 14px;
 }
-.overlay input::placeholder {
-  color: var(--ctl-sub);
-}
-.overlay .btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  box-sizing: border-box;
-  width: auto;
-  min-height: var(--ctl-h);
-  margin: 0;
-  padding: 0 22px;
-  border: 0;
-  border-radius: var(--r-ctl);
-  background: var(--ctl);
-  color: var(--ctl-text);
-  font: 700 1rem/1 var(--font);
-  cursor: pointer;
-  transition: background-color 0.15s;
-}
-.overlay .btn:hover {
-  background: var(--ctl-h2);
-}
-.overlay .btn:active {
-  filter: brightness(0.94);
-}
-.overlay .btn.pri {
-  background: var(--accent);
-  color: var(--on-accent);
-  font-weight: 800;
-}
-.overlay .btn.pri:hover {
-  filter: brightness(1.06);
-}
-.overlay .btn.danger {
-  background: var(--crit-solid);
-  color: var(--on-crit);
-  font-weight: 800;
-}
-.overlay .btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
 @keyframes overlay-dialog-in {
   from {
     opacity: 0;
@@ -419,5 +315,5 @@ dialog.overlay.sheet > footer::before {
 .sheet > .grab.handle:focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: -3px;
-  border-radius: 8px;
+  border-radius: var(--r-xs);
 }

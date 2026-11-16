@@ -247,19 +247,14 @@
     width: 100%;
     min-height: 48px;
     margin: 0;
-    padding: var(--pico-form-element-spacing-vertical) var(--pico-form-element-spacing-horizontal);
-    background-color: var(--pico-form-element-background-color);
-    border: var(--pico-border-width) solid var(--pico-form-element-border-color);
-    border-radius: var(--pico-border-radius);
-    color: var(--pico-form-element-color);
+    padding: 0 14px;
+    background-color: var(--ctl);
+    border: 0;
+    border-radius: var(--r-ctl);
+    color: var(--ctl-text);
     cursor: pointer;
     text-align: left;
-    transition: background-color var(--pico-transition), border-color var(--pico-transition), color var(--pico-transition), box-shadow var(--pico-transition);
-  }
-
-  .select-menu-trigger:focus {
-    box-shadow: var(--pico-form-element-focus-color) 0 0 0 0.125rem;
-    border-color: var(--pico-form-element-active-border-color);
+    transition: background-color 0.15s;
   }
 
   .select-menu-trigger:disabled {
@@ -286,7 +281,7 @@
   }
 
   .select-menu-placeholder {
-    color: var(--pico-muted-color);
+    color: var(--ctl-sub);
   }
 
   /* The list is portalled out of its field, which resets its controls (Field.svelte). Reset the options here. */
@@ -318,7 +313,7 @@
     padding: 8px 12px;
     background: none;
     border: none;
-    border-radius: 12px;
+    border-radius: var(--r-sm);
     color: var(--text);
     cursor: pointer;
     text-align: left;
@@ -327,7 +322,7 @@
 
   .select-menu-option:not(:disabled):hover,
   .select-menu-option:not(:disabled):focus-visible {
-    background-color: var(--overlay-1);
+    background-color: var(--hov);
   }
 
   .select-menu-option:focus-visible {
@@ -335,8 +330,8 @@
   }
 
   .select-menu-option.active {
-    background-color: rgba(from var(--pico-primary) r g b / 0.1);
-    color: var(--pico-primary);
+    color: var(--accent-text);
+    font-weight: 800;
   }
 
   .select-menu-option:disabled {
@@ -357,7 +352,7 @@
     padding: 0;
     background: none;
     border: 0;
-    border-radius: 14px;
+    border-radius: calc(var(--r-ctl) - 2px);
     color: var(--text);
     cursor: pointer;
   }

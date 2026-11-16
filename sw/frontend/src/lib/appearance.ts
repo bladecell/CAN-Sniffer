@@ -17,15 +17,35 @@ export const ACCENT_IDS: readonly Accent[] = ACCENTS.map((a) => a.id);
 export const CONTROL_FILLS = ["clear", "strong"] as const;
 export type ControlFill = (typeof CONTROL_FILLS)[number];
 
+/** Surface transparency, 0 (most opaque) to 100 (most see-through). 50 is the designed look. */
+export const GLASS_MIN = 0;
+export const GLASS_MAX = 100;
+export const GLASS_DEFAULT = 50;
+
 export interface Appearance {
   theme: Theme;
   accent: Accent;
   ctl: ControlFill;
+  glass: number;
 }
 
-export const DEFAULT_APPEARANCE: Appearance = { theme: "system", accent: "orange", ctl: "clear" };
+export const DEFAULT_APPEARANCE: Appearance = { theme: "system", accent: "orange", ctl: "clear", glass: GLASS_DEFAULT };
 
-export const STORAGE_KEYS = { theme: "cs-theme", accent: "cs-accent", ctl: "cs-ctl" } as const;
+export const STORAGE_KEYS = { theme: "cs-theme", accent: "cs-accent", ctl: "cs-ctl", glass: "cs-glass" } as const;
+
+/** A whole number in 0..100, or the default for anything else (NaN, text, out of range is clamped). */
+export function parseGlass(value: unknown): number {
+  const n = typeof value === "number" ? value : typeof value === "string" && value.trim() !== "" ? Number(value) : NaN;
+  return Number.isFinite(n) ? Math.round(Math.min(GLASS_MAX, Math.max(GLASS_MIN, n))) : GLASS_DEFAULT;
+}
+
+/** Multiples of each tier's designed alpha (app.css multiplies them in). One slider, three tiers that respond differently:
+ * floats keep most of their body so text stays readable, cards swing the most, inner rows and panels follow half way. */
+export function glassFactors(level: number): { float: number; card: number; inner: number } {
+  const t = (parseGlass(level) - GLASS_DEFAULT) / GLASS_DEFAULT; // -1 opaque .. 1 clear
+  const lerp = (up: number, down: number) => Math.round((1 - t * (t < 0 ? up : down)) * 1000) / 1000;
+  return { float: lerp(0.2, 0.4), card: lerp(0.8, 0.6), inner: lerp(0.5, 0.5) };
+}
 
 /** Returns `value` when it is one of `options`, otherwise `fallback`. */
 function pick<T extends string>(options: readonly T[], value: unknown, fallback: T): T {
@@ -37,6 +57,7 @@ export function parseAppearance(raw: Partial<Record<keyof Appearance, unknown>>)
     theme: pick(THEMES, raw.theme, DEFAULT_APPEARANCE.theme),
     accent: pick(ACCENT_IDS, raw.accent, DEFAULT_APPEARANCE.accent),
     ctl: pick(CONTROL_FILLS, raw.ctl, DEFAULT_APPEARANCE.ctl),
+    glass: parseGlass(raw.glass),
   };
 }
 
@@ -52,23 +73,31 @@ export function readAppearance(store: Pick<Storage, "getItem"> | null): Appearan
     theme: get(STORAGE_KEYS.theme),
     accent: get(STORAGE_KEYS.accent),
     ctl: get(STORAGE_KEYS.ctl),
+    glass: get(STORAGE_KEYS.glass),
   });
 }
 
 export function writeAppearance(store: Pick<Storage, "setItem"> | null, value: Appearance): void {
   for (const key of Object.keys(STORAGE_KEYS) as (keyof Appearance)[]) {
     try {
-      store?.setItem(STORAGE_KEYS[key], value[key]);
+      store?.setItem(STORAGE_KEYS[key], String(value[key]));
     } catch {
       // Storage full or blocked: the choice still applies for this page load.
     }
   }
 }
 
-export function applyAppearance(root: { dataset: DOMStringMap }, value: Appearance): void {
+export function applyAppearance(
+  root: { dataset: DOMStringMap; style?: Pick<CSSStyleDeclaration, "setProperty"> },
+  value: Appearance,
+): void {
   root.dataset.theme = value.theme;
   root.dataset.accent = value.accent;
   root.dataset.ctl = value.ctl;
+  const k = glassFactors(value.glass);
+  root.style?.setProperty("--k-float", String(k.float));
+  root.style?.setProperty("--k-card", String(k.card));
+  root.style?.setProperty("--k-inner", String(k.inner));
 }
 
 /** The option after `current` for an arrow key (wrapping), or undefined for any other key. */

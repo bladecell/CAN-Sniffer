@@ -4,7 +4,9 @@ import {
   DEFAULT_APPEARANCE,
   STORAGE_KEYS,
   applyAppearance,
+  glassFactors,
   nextOption,
+  parseGlass,
   parseAppearance,
   readAppearance,
   writeAppearance,
@@ -24,7 +26,7 @@ function fakeStore(initial: Record<string, string> = {}) {
 describe("parseAppearance", () => {
   test("uses the defaults when nothing is stored", () => {
     expect(parseAppearance({})).toEqual(DEFAULT_APPEARANCE);
-    expect(DEFAULT_APPEARANCE).toEqual({ theme: "system", accent: "orange", ctl: "clear" });
+    expect(DEFAULT_APPEARANCE).toEqual({ theme: "system", accent: "orange", ctl: "clear", glass: 50 });
   });
 
   test("keeps valid values", () => {
@@ -32,6 +34,7 @@ describe("parseAppearance", () => {
       theme: "dark",
       accent: "rose",
       ctl: "strong",
+      glass: 50,
     });
   });
 
@@ -46,7 +49,7 @@ describe("parseAppearance", () => {
 describe("readAppearance", () => {
   test("reads the three storage keys", () => {
     const store = fakeStore({ "cs-theme": "light", "cs-accent": "teal", "cs-ctl": "strong" });
-    expect(readAppearance(store)).toEqual({ theme: "light", accent: "teal", ctl: "strong" });
+    expect(readAppearance(store)).toEqual({ theme: "light", accent: "teal", ctl: "strong", glass: 50 });
   });
 
   test("falls back to defaults when storage is missing or throws", () => {
@@ -63,10 +66,11 @@ describe("readAppearance", () => {
 describe("writeAppearance", () => {
   test("writes all three keys", () => {
     const store = fakeStore();
-    writeAppearance(store, { theme: "dark", accent: "blue", ctl: "strong" });
+    writeAppearance(store, { theme: "dark", accent: "blue", ctl: "strong", glass: 30 });
     expect(store.data.get(STORAGE_KEYS.theme)).toBe("dark");
     expect(store.data.get(STORAGE_KEYS.accent)).toBe("blue");
     expect(store.data.get(STORAGE_KEYS.ctl)).toBe("strong");
+    expect(store.data.get(STORAGE_KEYS.glass)).toBe("30");
   });
 
   test("does not throw when storage refuses writes", () => {
@@ -81,7 +85,7 @@ describe("writeAppearance", () => {
 
   test("a written value reads back unchanged", () => {
     const store = fakeStore();
-    const value = { theme: "system", accent: "violet", ctl: "clear" } as const;
+    const value = { theme: "system", accent: "violet", ctl: "clear", glass: 80 } as const;
     writeAppearance(store, value);
     expect(readAppearance(store)).toEqual(value);
   });
@@ -90,7 +94,7 @@ describe("writeAppearance", () => {
 describe("applyAppearance", () => {
   test("sets data-theme, data-accent and data-ctl on the root element", () => {
     const root = { dataset: {} as DOMStringMap };
-    applyAppearance(root, { theme: "light", accent: "green", ctl: "strong" });
+    applyAppearance(root, { theme: "light", accent: "green", ctl: "strong", glass: 50 });
     expect(root.dataset).toEqual({ theme: "light", accent: "green", ctl: "strong" });
   });
 });
@@ -122,5 +126,25 @@ describe("ACCENTS", () => {
       "rose",
       "neutral",
     ]);
+  });
+});
+
+describe("glass", () => {
+  test("parseGlass clamps, rounds and rejects junk", () => {
+    expect(parseGlass("70")).toBe(70);
+    expect(parseGlass(120)).toBe(100);
+    expect(parseGlass(-5)).toBe(0);
+    expect(parseGlass(33.6)).toBe(34);
+    for (const bad of ["", "abc", NaN, null, undefined, [], {}]) expect(parseGlass(bad)).toBe(50);
+  });
+
+  test("factors are 1 at the default and tiers differ elsewhere", () => {
+    expect(glassFactors(50)).toEqual({ float: 1, card: 1, inner: 1 });
+    const clear = glassFactors(100);
+    expect(clear.card).toBeLessThan(clear.inner);
+    expect(clear.inner).toBeLessThan(clear.float);
+    const solid = glassFactors(0);
+    expect(solid.card).toBeGreaterThan(solid.inner);
+    expect(solid.inner).toBeGreaterThan(solid.float);
   });
 });

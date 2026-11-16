@@ -14,11 +14,11 @@
 </script>
 
 {#if count > 0}
-  <div class="st-apply st-float" role="status">
+  <div class="st-apply float-layer" role="status">
     <span><b>{count}</b> unsaved {count === 1 ? "change" : "changes"}</span>
     <div class="actions">
-      <button type="button" class="st-btn" onclick={onRevert} disabled={busy}>Revert</button>
-      <button type="button" class="st-btn pri" onclick={onApply} disabled={busy || blocked}>
+      <button type="button" class="btn" onclick={onRevert} disabled={busy}>Revert</button>
+      <button type="button" class="btn pri" onclick={onApply} disabled={busy || blocked}>
         {#if busy}<Icon name="reload" size={16} />{/if}Apply
       </button>
     </div>

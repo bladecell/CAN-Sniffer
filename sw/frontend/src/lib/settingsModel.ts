@@ -22,6 +22,7 @@ export const ROW = {
   theme: { title: "Theme", kw: "system light dark appearance" },
   accent: { title: "Accent", kw: "colour color orange yellow green teal blue violet rose neutral" },
   ctl: { title: "Control fill", kw: "strong clear contrast button field" },
+  glass: { title: "Transparency", kw: "glass blur opaque see-through surfaces cards" },
   hotspotName: { title: "Network name", kw: "ssid hotspot access point" },
   hotspotPassword: { title: "Password", kw: "hotspot wpa key" },
   channel: { title: "Channel", kw: "wifi radio 2.4 ghz" },
@@ -51,7 +52,7 @@ export const ROW = {
 } satisfies Record<string, RowMeta>;
 
 export const GROUP: Record<GroupId, GroupMeta> = {
-  look: { id: "look", title: "Appearance", icon: "palette", kw: "theme accent colour control fill dark light", rows: [ROW.theme, ROW.accent, ROW.ctl] },
+  look: { id: "look", title: "Appearance", icon: "palette", kw: "theme accent colour control fill dark light transparency", rows: [ROW.theme, ROW.accent, ROW.ctl, ROW.glass] },
   wifi: {
     id: "wifi",
     title: "Wi-Fi",

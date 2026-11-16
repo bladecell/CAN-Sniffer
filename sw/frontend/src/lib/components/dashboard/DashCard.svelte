@@ -205,7 +205,7 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
-    border-radius: 22px;
+    border-radius: var(--r-card);
     background: var(--card);
   }
   .db-card:not(.edit) {

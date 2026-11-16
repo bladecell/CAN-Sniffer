@@ -50,7 +50,7 @@
 </script>
 
 <div class="db-field db-span">
-  <h3 class="db-h3">{title} <span class="db-tag">{rows.length} of {max}</span></h3>
+  <h3 class="db-h3">{title} <span class="tag">{rows.length} of {max}</span></h3>
   {#if rows.length === 0}
     <div class="db-empty">{emptyHint}</div>
   {:else}
@@ -80,7 +80,7 @@
           <div class="db-mn">
             {#if r.color}<i class="db-sw" style:background={r.color}></i>{/if}
             <span class="db-nm" title={r.name}>{r.name}</span>
-            {#if r.unit}<span class="db-tag">{r.unit}</span>{/if}
+            {#if r.unit}<span class="tag">{r.unit}</span>{/if}
           </div>
           <div class="db-ac">
             <button type="button" class="db-ib" aria-label="Move {r.name} up" aria-disabled={i === 0} onclick={() => i > 0 && onMove(i, -1)}>
@@ -120,16 +120,8 @@
     font-size: 1rem;
     font-weight: 800;
   }
-  .db-tag {
-    display: inline-block;
+  .tag {
     flex: none;
-    padding: 0 9px;
-    border-radius: 99px;
-    background: var(--ctl);
-    color: var(--ctl-sub);
-    font-size: 0.72rem;
-    font-weight: 800;
-    line-height: 1.7;
   }
   .db-items {
     display: grid;
@@ -145,7 +137,7 @@
     align-items: center;
     gap: 8px;
     padding: 6px 8px 6px 4px;
-    border-radius: 18px;
+    border-radius: var(--r-track);
     background: var(--row);
   }
   .db-grip {
@@ -194,7 +186,7 @@
     margin: 0;
     padding: 0;
     border: 0;
-    border-radius: 14px;
+    border-radius: calc(var(--r-ctl) - 2px);
     background: none;
     color: var(--ctl-text);
     cursor: pointer;
@@ -215,7 +207,7 @@
   }
   .db-empty {
     padding: 18px 14px;
-    border-radius: 18px;
+    border-radius: var(--r-track);
     background: var(--row);
     color: var(--muted);
     font-weight: 600;

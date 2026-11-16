@@ -18,14 +18,14 @@
 </script>
 
 <Field id="db-size-w" label="Width, columns">
-  <div class="db-seg eq" role="radiogroup" aria-label="Width, columns">
+  <div class="seg eq" role="radiogroup" aria-label="Width, columns">
     {#each cols as v (v)}
       <button type="button" role="radio" aria-checked={w === v} tabindex={w === v ? 0 : -1} onclick={() => onChange(v, h)}>{v}</button>
     {/each}
   </div>
 </Field>
 <Field id="db-size-h" label="Height, rows">
-  <div class="db-seg eq" role="radiogroup" aria-label="Height, rows">
+  <div class="seg eq" role="radiogroup" aria-label="Height, rows">
     {#each rows as v (v)}
       <button type="button" role="radio" aria-checked={h === v} tabindex={h === v ? 0 : -1} onclick={() => onChange(w, v)}>{v}</button>
     {/each}

@@ -23,7 +23,7 @@
   onCancel={onCancel}
 >
   <div class="pw">
-    <input
+    <input class="in"
       type={shown ? "text" : "password"}
       autocomplete="off"
       autocapitalize="off"

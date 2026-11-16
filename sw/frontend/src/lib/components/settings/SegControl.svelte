@@ -24,7 +24,7 @@
   }
 </script>
 
-<div class="st-seg" role="radiogroup" aria-label={label}>
+<div class="seg" role="radiogroup" aria-label={label}>
   {#each options as o (o.value)}
     <button
       type="button"

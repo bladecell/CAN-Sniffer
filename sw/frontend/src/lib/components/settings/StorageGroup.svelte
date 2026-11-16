@@ -100,7 +100,7 @@
             <i style="width: {view.percent}%"></i>
           </div>
         {:else if card.kind === "busy" || card.kind === "error"}
-          <button type="button" class="st-btn sm" onclick={loadCard}><Icon name="reload" size={16} />Check again</button>
+          <button type="button" class="btn sm" onclick={loadCard}><Icon name="reload" size={16} />Check again</button>
         {/if}
       </SettingRow>
     {/if}
@@ -115,7 +115,7 @@
     {#if doc && show(ROW.pidFolder)}
       <SettingRow title={ROW.pidFolder.title} hint="Where Open file and Save selected look for .json files." stack error={built.errors.pid_def_path}>
         <input
-          class="st-in mono"
+          class="in mono"
           type="text"
           aria-label={ROW.pidFolder.title}
           value={draft}
@@ -126,7 +126,7 @@
     {/if}
     {#if show(ROW.sdFormat)}
       <SettingRow title={ROW.sdFormat.title} hint="Erases every file on the card. Trips and PID files are lost.">
-        <button type="button" class="st-btn danger" onclick={() => (confirmFormat = true)} disabled={formatting}>
+        <button type="button" class="btn danger" onclick={() => (confirmFormat = true)} disabled={formatting}>
           <Icon name="trash" size={16} />Format…
         </button>
       </SettingRow>

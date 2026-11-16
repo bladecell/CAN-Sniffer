@@ -103,7 +103,7 @@
   </button>
   <input
     {id}
-    class="in"
+    class="val"
     type="text"
     inputmode="decimal"
     role="spinbutton"
@@ -157,11 +157,11 @@
     opacity: 0.6;
   }
   /* The value sits on the stepper's own fill, as in the mockup. */
-  .step .in {
+  .step .val {
     background: transparent !important;
     color: var(--ctl-text);
   }
-  .in {
+  .val {
     box-sizing: border-box;
     width: 100%;
     min-width: 0;
@@ -175,7 +175,7 @@
     text-align: center;
     outline: 0;
   }
-  .in::placeholder {
+  .val::placeholder {
     color: var(--ctl-sub);
     opacity: 1;
   }
@@ -206,7 +206,7 @@
   .step:focus-within {
     background: var(--ctl-h2);
   }
-  .in:focus-visible {
+  .val:focus-visible {
     outline: none;
   }
 </style>

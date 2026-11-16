@@ -137,7 +137,7 @@
   <div class="pal" role="radiogroup" aria-label="Palette">
     {#each PALETTE as hex (hex)}
       {@const selected = current === hex}
-      <button type="button" role="radio" aria-checked={selected} aria-label={hex} class="chip" onclick={() => setColor(hex)}>
+      <button type="button" role="radio" aria-checked={selected} aria-label={hex} class="cp-chip" onclick={() => setColor(hex)}>
         <span class="dot" style="--cv: {hex}">{#if selected}<Icon name="check" size={18} />{/if}</span>
       </button>
     {/each}
@@ -177,7 +177,7 @@
     height: 44px;
     padding: 0;
     border: 0;
-    border-radius: 12px;
+    border-radius: var(--r-sm);
     background: transparent;
     color: var(--ctl-text);
     cursor: pointer;
@@ -192,7 +192,7 @@
   }
   .swbtn:focus-visible,
   .cchev:focus-visible,
-  .chip:focus-visible {
+  .cp-chip:focus-visible {
     outline: none;
     background: var(--ctl-h2);
   }
@@ -205,7 +205,7 @@
   .sw {
     width: 26px;
     height: 26px;
-    border-radius: 8px;
+    border-radius: var(--r-xs);
     background: var(--cv);
   }
   .hexin {
@@ -266,13 +266,13 @@
     gap: 8px;
     margin-bottom: 10px;
   }
-  .chip {
+  .cp-chip {
     display: grid;
     place-items: center;
     height: 44px;
     padding: 0;
     border: 0;
-    border-radius: 12px;
+    border-radius: var(--r-sm);
     background: transparent;
     cursor: pointer;
   }
@@ -281,7 +281,7 @@
     place-items: center;
     width: 100%;
     height: 100%;
-    border-radius: 12px;
+    border-radius: var(--r-sm);
     background: var(--cv);
     color: #fff;
     box-shadow: inset 0 0 0 1.5px rgba(0, 0, 0, 0.3);
@@ -308,7 +308,7 @@
   }
   .rng::-webkit-slider-runnable-track {
     height: 14px;
-    border-radius: 7px;
+    border-radius: var(--r-xs);
     background: var(--track);
     box-shadow: inset 0 0 0 1.5px rgba(0, 0, 0, 0.25);
   }
@@ -325,7 +325,7 @@
   }
   .rng::-moz-range-track {
     height: 14px;
-    border-radius: 7px;
+    border-radius: var(--r-xs);
     background: var(--track);
   }
   .rng::-moz-range-thumb {

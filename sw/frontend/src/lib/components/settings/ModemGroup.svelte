@@ -18,12 +18,12 @@
     {/if}
     {#if show(ROW.apn)}
       <SettingRow title={ROW.apn.title} tag="HW v2" disabled>
-        <input class="st-in" type="text" placeholder="Not available" disabled aria-label={ROW.apn.title} />
+        <input class="in" type="text" placeholder="Not available" disabled aria-label={ROW.apn.title} />
       </SettingRow>
     {/if}
     {#if show(ROW.mqtt)}
       <SettingRow title={ROW.mqtt.title} tag="HW v2" disabled>
-        <input class="st-in mono" type="text" placeholder="Not available" disabled aria-label={ROW.mqtt.title} />
+        <input class="in mono" type="text" placeholder="Not available" disabled aria-label={ROW.mqtt.title} />
       </SettingRow>
     {/if}
     {#if show(ROW.gnss)}

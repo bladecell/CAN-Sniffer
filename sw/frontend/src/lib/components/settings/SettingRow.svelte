@@ -22,7 +22,7 @@
 
 <div class="st-row" class:stack class:dis={disabled} class:inl={inline} class:boxed aria-disabled={disabled || undefined}>
   <div class="st-text">
-    <span class="st-lab">{title}{#if tag}<span class="st-tag">{tag}</span>{/if}</span>
+    <span class="st-lab">{title}{#if tag}<span class="tag">{tag}</span>{/if}</span>
     {#if hint}<span class="st-hint">{hint}</span>{/if}
     {#if error}<span class="st-bad" role="alert">{error}</span>{/if}
   </div>

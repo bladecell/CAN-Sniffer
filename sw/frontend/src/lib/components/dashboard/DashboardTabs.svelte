@@ -35,7 +35,7 @@
 </script>
 
 <div class="db-tabs-row">
-  <div class="db-tabs" role="tablist" aria-label="Dashboards" bind:this={strip}>
+  <div class="seg scroll db-tabs" role="tablist" aria-label="Dashboards" bind:this={strip}>
     {#each dashboards as d (d.id)}
       {#if editing && d.id === activeId}
         <div class="db-tab-cur">
@@ -57,7 +57,6 @@
         <button
           type="button"
           role="tab"
-          class="db-tab"
           data-tab={d.id}
           aria-selected={d.id === activeId}
           tabindex={d.id === activeId ? 0 : -1}
@@ -83,50 +82,10 @@
     min-width: 0;
   }
   .db-tabs {
-    box-sizing: border-box;
-    align-items: center;
     flex: 1 1 auto;
-    display: flex;
-    gap: 2px;
     min-width: 0;
     padding: 3px 5px;
     scroll-padding-inline: 8px;
-    border-radius: 18px;
-    background: var(--ctl);
-    overflow-x: auto;
-    scrollbar-width: none;
-    -webkit-overflow-scrolling: touch;
-  }
-  .db-tabs::-webkit-scrollbar {
-    display: none;
-  }
-  .db-tab {
-    position: relative;
-    flex: none;
-    height: 44px;
-    margin: 0;
-    padding: 0 16px;
-    border: 0;
-    border-radius: 15px;
-    background: none;
-    color: var(--ctl-text);
-    font: 700 0.95rem/1 var(--font);
-    white-space: nowrap;
-    cursor: pointer;
-  }
-  .db-tab[aria-selected="true"] {
-    font-weight: 800;
-    background: var(--float-solid);
-  }
-  .db-tab[aria-selected="true"]::after {
-    content: "";
-    position: absolute;
-    left: 22%;
-    right: 22%;
-    bottom: 3px;
-    height: 3px;
-    border-radius: 3px;
-    background: var(--accent);
   }
   /* Edit mode: the selected tab is one pill holding the name and the pencil, so the pill and underline move to the wrapper. */
   .db-tab-cur {
@@ -135,7 +94,7 @@
     align-items: center;
     flex: none;
     height: 44px;
-    border-radius: 15px;
+    border-radius: calc(var(--r-track) - 3px);
     background: var(--float-solid);
   }
   .db-tab-cur::after {
@@ -148,13 +107,16 @@
     border-radius: 3px;
     background: var(--accent);
   }
-  .db-tab-cur > .db-tab[aria-selected="true"] {
-    padding-right: 4px;
+  .db-tab-cur > .db-tab {
+    height: 44px;
+    margin: 0;
+    padding: 0 4px 0 16px;
+    border: 0;
     background: none;
     color: var(--text);
-  }
-  .db-tab-cur > .db-tab[aria-selected="true"]::after {
-    content: none;
+    font: 800 1rem/1.2 var(--font);
+    white-space: nowrap;
+    cursor: pointer;
   }
   .db-tab-pencil {
     flex: none;
@@ -165,7 +127,7 @@
     margin: 0 4px 0 0;
     padding: 0;
     border: 0;
-    border-radius: 15px;
+    border-radius: calc(var(--r-track) - 3px);
     background: none;
     color: var(--text);
     cursor: pointer;
@@ -189,7 +151,7 @@
     margin: 0;
     padding: 0;
     border: 0;
-    border-radius: 16px;
+    border-radius: var(--r-ctl);
     background: var(--ctl);
     color: var(--ctl-text);
     cursor: pointer;

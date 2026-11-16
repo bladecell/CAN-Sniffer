@@ -100,7 +100,7 @@
   align-items: center;
   gap: 10px;
 }
-.rv-actions > .rv-btn {
+.rv-actions > .btn {
   flex: 1 1 140px;
 }
 .rv-chips {
@@ -121,108 +121,9 @@
   }
 }
 
-/* Status, chip and tag vocabulary. */
-.rv-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 11px 2px 9px;
-  border-radius: 99px;
-  font-size: 0.8rem;
-  font-weight: 800;
-  line-height: 1.5;
-  white-space: nowrap;
-  background: var(--ctl);
-  color: var(--ctl-sub);
-}
-.rv-chip .ic {
-  width: 1em;
-  height: 1em;
-}
-.rv-chip.c-crit {
-  background: var(--crit-f);
-  color: var(--crit);
-}
-.rv-chip.c-warn {
-  background: var(--warn-f);
-  color: var(--warn);
-}
-.rv-chip.c-ok {
-  background: var(--ok-f);
-  color: var(--ok);
-}
-.rv-chip.c-perm {
-  background: var(--perm-f);
-  color: var(--perm);
-}
-
-/* Buttons: fill, no border. Text is --ctl-text; the accent is only the primary fill. */
-button.rv-btn,
-a.rv-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  box-sizing: border-box;
-  min-height: var(--ctl-h);
-  margin: 0;
-  padding: 0 22px;
-  border: 0;
-  border-radius: var(--r-ctl);
-  background: var(--ctl);
-  color: var(--ctl-text);
-  font: 700 1rem/1.2 var(--font);
-  white-space: nowrap;
-  text-decoration: none;
-  cursor: pointer;
-  transition: background-color 0.15s;
-}
-@media (hover: hover) {
-  button.rv-btn:hover {
-    background: var(--ctl-h2);
-  }
-}
-button.rv-btn:active {
-  filter: brightness(0.94);
-}
-.rv-btn.pri {
-  background: var(--accent);
-  color: var(--on-accent);
-  font-weight: 800;
-}
-.rv-btn.danger {
-  color: var(--ctl-crit);
-}
-.rv-btn.fill-crit {
-  background: var(--crit-solid);
-  color: var(--on-crit);
-  font-weight: 800;
-}
-.rv-btn.sm {
-  min-height: calc(var(--ctl-h) - 8px);
-  padding: 0 12px;
-  font-size: 0.9rem;
-}
-.rv-btn[aria-disabled='true'] {
-  opacity: 0.55;
-  cursor: not-allowed;
-  filter: none;
-}
-.rv-btn svg {
-  flex: none;
-}
-button.rv-btn:focus-visible,
 button.rv-row:focus-visible {
   outline: 3px solid var(--focus);
-  outline-offset: 2px;
-}
-button.rv-row:focus-visible {
   outline-offset: -3px;
-}
-@media (pointer: coarse) {
-  button.rv-btn {
-    min-height: 44px;
-  }
 }
 
 /* Two-column master-detail from 860px; phone shows the accordion instead. */
@@ -454,11 +355,11 @@ button.rv-row {
   .rv-head,
   .rv-note {
     padding: 20px;
-    border-radius: 24px;
+    border-radius: var(--r-card);
   }
   .rv-list {
     padding: var(--pad-list);
-    border-radius: 24px;
+    border-radius: var(--r-card);
   }
   .rv-split {
     gap: 14px;
@@ -472,8 +373,7 @@ button.rv-row {
     animation: none;
   }
   .rv-row::before,
-  .rv-row-chev,
-  button.rv-btn {
+  .rv-row-chev {
     transition: none;
   }
 }

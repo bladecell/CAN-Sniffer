@@ -1,199 +1,27 @@
 /* Telemetry control vocabulary (DESIGN.md, Components). Global, prefixed tel-, imported once by Telemetry.svelte. */
 
-/* Buttons: fill, no border. Text is --ctl-text; the accent is only the primary fill. */
-.tel-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  box-sizing: border-box;
-  min-height: var(--ctl-h);
-  margin: 0;
-  padding: 0 var(--btn-px);
-  border: 0;
-  border-radius: var(--r-ctl);
-  background: var(--ctl);
-  color: var(--ctl-text);
-  font: 700 1rem/1.2 var(--font);
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background-color 0.15s;
-}
-@media (hover: hover) {
-  .tel-btn:hover {
-    background: var(--ctl-h2);
-  }
-}
-.tel-btn:active {
-  filter: brightness(0.94);
-}
-.tel-btn.pri {
-  background: var(--accent);
-  color: var(--on-accent);
-  font-weight: 800;
-}
-.tel-btn.danger {
-  color: var(--ctl-crit);
-}
-.tel-btn.sm {
-  min-height: calc(var(--ctl-h) - 8px);
-  padding: 0 12px;
-  font-size: 0.9rem;
-}
-@media (pointer: coarse) {
-  .tel-btn.sm {
-    min-height: 44px;
-  }
-}
-.tel-btn.icon {
-  width: var(--ctl-h);
-  padding: 0;
-}
-.tel-btn[aria-disabled='true'] {
-  opacity: 0.55;
-  cursor: not-allowed;
-  filter: none;
-}
-.tel-btn :global(svg) {
-  flex: none;
-}
-.tel-btn :global(.badge) {
-  display: inline-grid;
-  place-items: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 4px;
-  border-radius: 9px;
-  background: var(--accent);
-  color: var(--on-accent);
-  font-size: 0.7rem;
-}
-@media (pointer: coarse) {
-  .tel-btn {
-    min-height: 44px;
-  }
-  .tel-btn.icon {
-    width: 44px;
-  }
-}
-
-/* Status chips (fixed status colours, always with icon or label) and count tags. */
-.tel-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 11px 2px 9px;
-  border-radius: 99px;
-  font-size: 0.8rem;
-  font-weight: 800;
-  line-height: 1.5;
-  white-space: nowrap;
-}
-.tel-chip :global(svg) {
-  width: 1em;
-  height: 1em;
-  flex: none;
-}
-.tel-chip.k-ok {
-  background: var(--ok-f);
-  color: var(--ok);
-}
-.tel-chip.k-warn {
-  background: var(--warn-f);
-  color: var(--warn);
-}
-.tel-chip.k-crit {
-  background: var(--crit-f);
-  color: var(--crit);
-}
-.tel-chip.k-plain {
-  background: var(--ctl);
-  color: var(--ctl-sub);
-}
-/* Floating layers only (shared style in app.css): popovers, tray. Never in-flow controls. */
-.tel-float {
-  color: var(--text);
-  border-radius: var(--r-float);
-}
-
-/* Segmented control: selected is bold with a 3px accent bar, text stays plain. */
-/* Segmented control (mockup .seg). The pressed item is a float chip with a short accent underline, never a fill. */
-/* [role=group] from Pico stretches and grows its items; the segment keeps its content width. */
-[role='group'].tel-seg {
-  display: inline-flex;
-  width: max-content;
-  flex: none;
-  margin: 0;
-  gap: 2px;
-  padding: 3px;
-  border-radius: var(--r-ctl);
-  background: var(--ctl);
-}
-[role='group'].tel-seg > button {
-  flex: none;
-  border-radius: calc(var(--r-ctl) - 3px);
-}
-.tel-seg button {
-  position: relative;
-  box-sizing: border-box;
-  min-height: 40px;
-  margin: 0;
-  padding: 0 16px;
-  border: 0;
-  border-radius: calc(var(--r-ctl) - 3px);
-  background: transparent;
-  color: var(--ctl-sub);
-  font: inherit;
-  font-weight: 700;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.tel-seg button:hover {
-  background: var(--ctl-h2);
-  color: var(--ctl-text);
-}
-.tel-seg button[aria-pressed='true'] {
-  background: var(--float-solid);
-  color: var(--ctl-text);
-  font-weight: 800;
-}
-.tel-seg button[aria-pressed='true']::after {
-  content: '';
-  position: absolute;
-  left: 14px;
-  right: 14px;
-  bottom: 4px;
-  height: 3px;
-  border-radius: 2px;
-  background: var(--accent);
-}
-.tel-seg.sm button {
-  min-height: 34px;
-  padding: 0 12px;
-  font-size: 0.9rem;
-}
 /* Plot tools: 40 px tall, 4 px padding (mockup .seg.pm). */
-.tel-seg.pm {
+.seg.pm {
   height: 40px;
   padding: 4px;
 }
-.tel-seg.pm button {
+.seg.pm > button,
+[role='group'].seg.pm > button {
   min-height: 32px;
   min-width: 40px;
   padding: 0 8px;
 }
-.tel-seg.pm button[aria-pressed='true']::after {
+.seg.pm > button::after {
   left: 12px;
   right: 12px;
   bottom: 3px;
 }
 @media (pointer: coarse) {
-  .tel-seg button,
-  .tel-seg.sm button,
-  .tel-seg.pm button {
+  .seg.pm > button,
+  [role='group'].seg.pm > button {
     min-height: 44px;
   }
-  .tel-seg.pm {
+  .seg.pm {
     height: 52px;
   }
 }
@@ -204,27 +32,6 @@ button:focus:not(:focus-visible),
 [role='group']:has(button:focus:not(:focus-visible)) {
   outline: none;
   box-shadow: none;
-}
-
-/* Text input in a control fill. */
-.tel-in {
-  box-sizing: border-box;
-  width: 100%;
-  min-height: var(--ctl-h);
-  margin: 0;
-  padding: 0 12px;
-  border: 0;
-  border-radius: var(--r-ctl);
-  background: var(--ctl);
-  color: var(--ctl-text);
-  font: inherit;
-}
-.tel-in::placeholder {
-  color: var(--ctl-sub);
-  opacity: 1;
-}
-.tel-in[aria-invalid='true'] {
-  box-shadow: inset 0 0 0 2px var(--crit);
 }
 
 /* Selected row marker: 3px accent bar, no tint. */
@@ -295,7 +102,7 @@ dialog.overlay .edform input:not([type='checkbox']):not([type='radio']):not([typ
 .sb-body::-webkit-scrollbar {
   display: none;
 }
-/* Sticky PIDs header: the shared float layer (blur, translucent float), placed over the top of the tab. Rows scroll under it blurred. */
+/* PIDs header: a float layer (app.css) over the top of the tab. At rest it shows the card; rows scroll under it blurred. */
 .sb-top {
   position: absolute;
   top: 0;
@@ -307,14 +114,6 @@ dialog.overlay .edform input:not([type='checkbox']):not([type='radio']):not([typ
   margin: 0;
   padding: 14px 14px 6px;
   border-radius: var(--r-card) var(--r-card) 0 0;
-  background: var(--float);
-  -webkit-backdrop-filter: blur(var(--blur)) saturate(1.35);
-  backdrop-filter: blur(var(--blur)) saturate(1.35);
-}
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .sb-top {
-    background: var(--float-solid);
-  }
 }
 .sb-top h2 {
   margin: 0;
@@ -350,7 +149,7 @@ dialog.overlay .edform input:not([type='checkbox']):not([type='radio']):not([typ
   min-height: 44px;
   padding: 0 10px;
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--r-sm);
   background: none;
   color: var(--accent-text);
   font: 800 0.9rem/1 var(--font);
@@ -385,10 +184,10 @@ dialog.overlay .edform input:not([type='checkbox']):not([type='radio']):not([typ
 .sb-foot > * {
   pointer-events: auto;
 }
-.sb-foot > .tel-btn:only-child {
+.sb-foot > .btn:only-child {
   grid-column: 1 / -1;
 }
-.sb-foot .tel-btn {
+.sb-foot .btn {
   min-height: var(--ctl-h);
   padding: 0 14px;
   box-shadow: var(--shadow-float);
@@ -396,29 +195,24 @@ dialog.overlay .edform input:not([type='checkbox']):not([type='radio']):not([typ
   text-align: center;
   line-height: 1.2;
 }
-.sb-foot .tel-btn:not(.pri):not(.rm) {
-  background: linear-gradient(var(--ctl), var(--ctl)), var(--float);
-  -webkit-backdrop-filter: blur(var(--blur)) saturate(1.35);
-  backdrop-filter: blur(var(--blur)) saturate(1.35);
+.sb-foot .btn:not(.pri):not(.rm) {
+  background: var(--float-ctl);
+  -webkit-backdrop-filter: var(--float-blur);
+  backdrop-filter: var(--float-blur);
 }
-.sb-foot .tel-btn.rm {
+.sb-foot .btn.rm {
   background: var(--crit);
   color: var(--bg);
   font-weight: 800;
 }
-.sb-foot .tel-btn[aria-disabled='true'] {
+.sb-foot .btn[aria-disabled='true'] {
   opacity: 0.55;
 }
 /* Phone sheet: two footer buttons side by side, each label on one line (the mockup's .s-foot .btn). */
-.sb.bar .sb-foot .tel-btn {
+.sb.bar .sb-foot .btn {
   padding: 0 8px;
   font-size: 0.9rem;
   white-space: nowrap;
-}
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .sb-foot .tel-btn:not(.pri):not(.rm) {
-    background: linear-gradient(var(--ctl), var(--ctl)), var(--float-solid);
-  }
 }
 
 .sb-group {
@@ -436,7 +230,7 @@ dialog.overlay .edform input:not([type='checkbox']):not([type='radio']):not([typ
   margin: 0;
   padding: 0 6px;
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--r-sm);
   background: none;
   color: var(--text);
   font: 800 0.95rem/1.2 var(--font);
@@ -650,7 +444,7 @@ dialog.overlay .edform input:not([type='checkbox']):not([type='radio']):not([typ
 .sb-note {
   margin: 0;
   padding: 10px 12px;
-  border-radius: 12px;
+  border-radius: var(--r-sm);
   background: var(--ctl);
   font-size: 0.85rem;
   font-weight: 600;
@@ -687,14 +481,14 @@ dialog.overlay .edform input:not([type='checkbox']):not([type='radio']):not([typ
 .sb-panel :focus-visible:not(dialog *) {
   outline: none;
 }
-.sb .switch button:focus-visible,
+.sb :is(.switch, .seg) button:focus-visible,
 .sb-gh:focus-visible,
 .sb-txt:focus-visible,
 .sb-row:has(.sb-main:focus-visible) .sb-slide,
 .sb-row:has(.sra:focus-visible) .sb-slide {
   background: var(--hov);
 }
-.sb-foot .tel-btn:focus-visible {
+.sb-foot .btn:focus-visible {
   filter: brightness(0.92);
 }
 /* Sidebar: no outlines, no rings, no focus rings from Pico or the global :focus-visible rule.
@@ -845,10 +639,6 @@ dialog.overlay .edform input:not([type='checkbox']):not([type='radio']):not([typ
 .tel-msg.warn {
   color: var(--warn);
 }
-/* Pico draws a validation icon on touched or aria-invalid=false inputs. The telemetry fields are plain fills, so it goes. */
-input.tel-in {
-  background-image: none;
-}
 
 /* Phone PID sheet (bar variant). One height on every tab: the same as the PIDs list, so switching tabs does not
    resize the sheet; each tab scrolls inside it and empty states sit in the middle of that space. */
@@ -865,7 +655,7 @@ input.tel-in {
 dialog.sheet:has(.sb.bar) > .body {
   padding-bottom: 0;
 }
-dialog.sheet .sheet-head:has(.switch.bar) {
+dialog.sheet .sheet-head:has(.seg.stack) {
   padding-bottom: 0;
 }
 .sb.bar {
@@ -890,26 +680,21 @@ dialog.sheet:has(.sb.bar) .grab.handle:focus-visible::before {
 /* Phone PID sheet glass: the head, the body and the action bar are sibling glass layers with one fill and blur (Sheet's
    overlay.css), so the boundaries line up. The bottom buttons are translucent floats with their own blur, so rows
    scrolling under them are blurred rather than showing through a solid fill. */
-dialog.sheet:has(.sb.bar) .sb-foot .tel-btn {
+dialog.sheet:has(.sb.bar) .sb-foot .btn {
   backdrop-filter: var(--float-blur);
   -webkit-backdrop-filter: var(--float-blur);
   box-shadow: var(--shadow-float);
 }
-dialog.sheet:has(.sb.bar) .sb-foot .tel-btn:not(.pri):not(.rm) {
+dialog.sheet:has(.sb.bar) .sb-foot .btn:not(.pri):not(.rm) {
   background: var(--float);
   color: var(--text);
 }
-dialog.sheet:has(.sb.bar) .sb-foot .tel-btn.pri {
+dialog.sheet:has(.sb.bar) .sb-foot .btn.pri {
   /* Darker than the accent: white label on it passes 4.5:1 over the bar (light theme 4.3:1 at the plain accent). */
   background: color-mix(in srgb, var(--accent) 84%, #000);
   color: var(--on-accent);
 }
-dialog.sheet:has(.sb.bar) .sb-foot .tel-btn.rm {
+dialog.sheet:has(.sb.bar) .sb-foot .btn.rm {
   background: color-mix(in oklch, var(--crit) 88%, transparent);
   color: var(--bg);
-}
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  dialog.sheet:has(.sb.bar) .sb-foot .tel-btn:not(.pri):not(.rm) {
-    background: var(--float-solid);
-  }
 }

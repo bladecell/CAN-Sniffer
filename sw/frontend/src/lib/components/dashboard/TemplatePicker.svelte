@@ -42,7 +42,7 @@
           </span>
         {/each}
       </span>
-      <span class="tp-name">{t.name}{#if t.id === TEMPLATES[0].id}<span class="tp-tag">Default</span>{/if}</span>
+      <span class="tp-name">{t.name}{#if t.id === TEMPLATES[0].id}<span class="tag">Default</span>{/if}</span>
       <span class="tp-sum">{t.summary}</span>
     </button>
   {/each}
@@ -61,7 +61,7 @@
     min-height: 44px;
     padding: 12px;
     border: 0;
-    border-radius: 18px;
+    border-radius: var(--r-track);
     background: var(--ctl);
     color: var(--ctl-text);
     text-align: left;
@@ -97,15 +97,6 @@
     gap: 8px;
     font-weight: 800;
     font-size: 0.95rem;
-  }
-  .tp-tag {
-    padding: 0 8px;
-    border-radius: 99px;
-    background: var(--ctl);
-    color: var(--ctl-sub);
-    font-size: 0.72rem;
-    font-weight: 800;
-    line-height: 1.7;
   }
   .tp-sum {
     color: var(--muted);

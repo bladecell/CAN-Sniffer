@@ -243,22 +243,22 @@
   {:else if listing.kind === "nocard"}
     <div class="sb-empty">
       <b>No SD card</b>The slot is empty, or the card could not be read. Insert a FAT card and wait a few seconds. The PIDs on the device are not affected.
-      <div class="sb-act"><button type="button" class="tel-btn" onclick={() => load(folder)}>Check again</button></div>
+      <div class="sb-act"><button type="button" class="btn" onclick={() => load(folder)}>Check again</button></div>
     </div>
   {:else if listing.kind === "missing"}
     <div class="sb-empty">
       <b>Folder not found</b><span class="tel-mono">{folder}</span> is not on the card. Choose another folder in Settings.
-      <div class="sb-act"><button type="button" class="tel-btn" onclick={onSettings}><Icon name="sliders" size={18} />Open Settings</button></div>
+      <div class="sb-act"><button type="button" class="btn" onclick={onSettings}><Icon name="sliders" size={18} />Open Settings</button></div>
     </div>
   {:else if listing.kind === "error"}
     <div class="sb-empty">
       <b>Could not read the folder</b>{listing.reason}
-      <div class="sb-act"><button type="button" class="tel-btn" onclick={() => load(folder)}>Try again</button></div>
+      <div class="sb-act"><button type="button" class="btn" onclick={() => load(folder)}>Try again</button></div>
     </div>
   {:else if files.length === 0}
     <div class="sb-empty">
       <b>No .json files here</b><span class="tel-mono">{folder}</span> has none. Save the selected PIDs as a new file, or pick another folder.
-      <div class="sb-act"><button type="button" class="tel-btn" onclick={onSettings}><Icon name="sliders" size={18} />Open Settings</button></div>
+      <div class="sb-act"><button type="button" class="btn" onclick={onSettings}><Icon name="sliders" size={18} />Open Settings</button></div>
     </div>
   {:else}
     <ul class="sb-list" aria-label=".json files in {folder}">
@@ -293,14 +293,14 @@
 
   {#snippet footer()}
     {#if !phone}
-      <button type="button" class="tel-btn pri" aria-disabled={!canOpen} onclick={() => openFile()}>Open file</button>
+      <button type="button" class="btn pri" aria-disabled={!canOpen} onclick={() => openFile()}>Open file</button>
     {/if}
-    <button type="button" class="tel-btn" class:pri={phone} aria-disabled={!canSave} onclick={() => canSave && (confirm = "overwrite")}>
+    <button type="button" class="btn" class:pri={phone} aria-disabled={!canSave} onclick={() => canSave && (confirm = "overwrite")}>
       Save selected PIDs
     </button>
-    <button type="button" class="tel-btn" aria-disabled={!canNew} onclick={() => canNew && (newOpen = true)}>New file</button>
+    <button type="button" class="btn" aria-disabled={!canNew} onclick={() => canNew && (newOpen = true)}>New file</button>
     {#if !phone}
-      <button type="button" class="tel-btn danger" aria-disabled={!canDelete} onclick={() => canDelete && (confirm = "delete")}>
+      <button type="button" class="btn danger" aria-disabled={!canDelete} onclick={() => canDelete && (confirm = "delete")}>
         Delete file
       </button>
     {/if}
@@ -349,7 +349,7 @@
     <div class="nf-row">
       <input
         id="nf-name"
-        class="tel-in tel-mono"
+        class="in tel-mono"
         bind:value={newName}
         maxlength="40"
         autocomplete="off"
@@ -373,7 +373,7 @@
   .sb-act {
     margin-top: 14px;
   }
-  .sb-empty .tel-btn {
+  .sb-empty .btn {
     display: inline-flex;
   }
   .sb-main.file {

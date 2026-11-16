@@ -32,7 +32,7 @@
   const titleId = `${uid}-title`;
 </script>
 
-<dialog use:overlay={{ open, dismissible: true, onClose: onCancel }} class="overlay dialog" aria-labelledby={titleId}>
+<dialog use:overlay={{ open, dismissible: true, onClose: onCancel }} class="overlay dialog float-layer" aria-labelledby={titleId}>
   <div class="content">
     <h2 id={titleId}>{title}</h2>
     {#if message}
@@ -42,7 +42,7 @@
     <div class="actions">
       <!-- svelte-ignore a11y_autofocus -->
       <button type="button" class="btn" autofocus onclick={() => onCancel?.()}>{cancelLabel}</button>
-      <button type="button" class="btn" class:pri={!danger} class:danger onclick={onConfirm}>{confirmLabel}</button>
+      <button type="button" class="btn" class:pri={!danger} class:fill-crit={danger} onclick={onConfirm}>{confirmLabel}</button>
     </div>
   </div>
 </dialog>

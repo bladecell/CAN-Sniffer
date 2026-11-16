@@ -131,7 +131,7 @@
     border-radius: 50%;
     background: var(--float-solid);
     transition:
-      transform 0.2s var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1)),
+      transform 0.2s var(--ease-out),
       background-color 0.2s;
   }
 

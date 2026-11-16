@@ -103,8 +103,8 @@
   .sb.bar :global(.sb-body) {
     padding-top: 8px;
   }
-  /* Phone sheet action bar (New PID / Remove): one layer that runs to the sheet's edges. Its fill is nearly opaque and
-     its blur is full strength, so rows scrolling beneath it cannot be read through it. The offsets take the panel's
+  /* Phone sheet action bar (New PID / Remove): one float layer that runs to the sheet's edges, shown only while rows
+     are under it (data-under, app.css). The offsets take the panel's
      22 px inset to the sheet edge; the buttons keep their old place (36 px sides, 22 px from the bottom). */
   .sb.bar :global(.sb-foot) {
     left: -22px;
@@ -118,14 +118,15 @@
     position: absolute;
     inset: 0;
     z-index: -1;
-    background: color-mix(in srgb, var(--float-solid) 92%, transparent);
-    -webkit-backdrop-filter: blur(var(--blur)) saturate(1.35);
-    backdrop-filter: blur(var(--blur)) saturate(1.35);
+    background: var(--float);
+    -webkit-backdrop-filter: var(--float-blur);
+    backdrop-filter: var(--float-blur);
+    transition: background-color 0.2s var(--ease-out);
   }
-  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    .sb.bar :global(.sb-foot)::before {
-      background: var(--float-solid);
-    }
+  .sb.bar :global(.sb-panel:not([data-under~='bottom']) > .sb-foot)::before {
+    background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
   /* The phone sheet already shows the tab name as its title. */
   .sb.bar :global(.sb-top h2) {

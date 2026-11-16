@@ -23,9 +23,8 @@
     gap: 0.75rem;
     margin: 0 0 1rem;
     padding: 0.75rem 1rem;
-    border-radius: var(--pico-border-radius);
-    border: 1px solid var(--warning-color, #f59e0b);
-    background: var(--pico-background-color);
+    border-radius: var(--r-card);
+    background: var(--warn-f);
   }
   .ap-open p {
     margin: 0;

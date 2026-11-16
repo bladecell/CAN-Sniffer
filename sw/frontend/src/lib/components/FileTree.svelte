@@ -278,10 +278,9 @@ import { firmwareApi } from "$lib/firmwareApi.svelte";
   /* Adapted from Uiverse.io snippet to match PicoCSS glassmorphism dark theme */
   .tree-container {
     width: 100%;
-    border: 1px solid var(--pico-border-color);
-    border-radius: var(--pico-border-radius);
+    border-radius: var(--r-ctl);
+    background: var(--card2);
     padding: 1rem;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
   }
 
   .tree-root-ul,
@@ -309,7 +308,7 @@ import { firmwareApi } from "$lib/firmwareApi.svelte";
     top: -4px;
     bottom: 0;
     width: 1px;
-    background-color: var(--pico-muted-color);
+    background-color: var(--muted);
     opacity: 0.3;
   }
 
@@ -320,7 +319,7 @@ import { firmwareApi } from "$lib/firmwareApi.svelte";
     top: 15px;
     width: 14px;
     height: 1px;
-    background-color: var(--pico-muted-color);
+    background-color: var(--muted);
     opacity: 0.3;
   }
 
@@ -337,7 +336,7 @@ import { firmwareApi } from "$lib/firmwareApi.svelte";
     padding: 4px 8px;
     border-radius: 4px;
     font-size: 0.9rem;
-    color: var(--pico-color);
+    color: var(--text);
     transition: background-color 0.2s, color 0.2s;
     user-select: none;
     text-decoration: none;
@@ -355,12 +354,12 @@ import { firmwareApi } from "$lib/firmwareApi.svelte";
   .file-item.is-clickable {
     cursor: pointer;
     opacity: 1;
-    color: var(--pico-primary); /* Highlight valid files in orange */
+    color: var(--accent-text);
   }
 
   .tree-label:hover,
   .file-item.is-clickable:hover {
-    background-color: rgb(from var(--pico-form-element-background-color) r g b / 0.3);
+    background-color: var(--hov);
   }
 
   :global(.folder-open-icon) {
@@ -372,7 +371,7 @@ import { firmwareApi } from "$lib/firmwareApi.svelte";
 
   .tree-toggle:checked ~ .tree-label :global(.folder-open-icon) {
     display: block;
-    color: var(--pico-primary);
+    color: var(--accent-text);
   }
   
   .tree-toggle:checked ~ .tree-label :global(.folder-closed-icon) {
@@ -420,7 +419,7 @@ import { firmwareApi } from "$lib/firmwareApi.svelte";
     border: none;
     padding: 2px 4px;
     margin: 0;
-    color: var(--pico-muted-color);
+    color: var(--muted);
     cursor: pointer;
     border-radius: 4px;
     display: flex;
@@ -433,18 +432,18 @@ import { firmwareApi } from "$lib/firmwareApi.svelte";
     opacity: 1;
   }
   .icon-action-btn:hover {
-    background: rgb(from var(--pico-primary) r g b / 0.2) !important;
-    color: var(--pico-primary) !important;
+    background: var(--hov) !important;
+    color: var(--accent-text) !important;
   }
   .icon-action-btn.delete-btn:hover {
-    background: rgb(from var(--pico-del-color, #f95050) r g b / 0.2) !important;
-    color: var(--pico-del-color, #f95050) !important;
+    background: var(--crit-f) !important;
+    color: var(--crit) !important;
   }
 .new-folder-input {
-    background: transparent;
-    border: 1px solid var(--pico-primary);
-    color: var(--pico-color);
-    border-radius: 4px;
+    background: var(--ctl);
+    border: 0;
+    color: var(--ctl-text);
+    border-radius: var(--r-ctl);
     padding: 2px 4px;
     font-size: 0.9rem;
     height: 24px;
@@ -452,17 +451,16 @@ import { firmwareApi } from "$lib/firmwareApi.svelte";
     width: 150px;
     margin-top: 2px;
     margin-bottom: 2px;
-    box-shadow: 0 0 0 2px rgba(from var(--pico-primary) r g b / 0.2);
   }
 
   .is-creating {
     opacity: 1;
   }
 .confirm-yes-btn {
-    color: var(--pico-del-color, #f95050) !important;
+    color: var(--crit) !important;
   }
   .confirm-yes-btn:hover {
-    background: rgb(from var(--pico-del-color, #f95050) r g b / 0.2) !important;
+    background: var(--crit-f) !important;
   }
 
   @media (max-width: 768px) {

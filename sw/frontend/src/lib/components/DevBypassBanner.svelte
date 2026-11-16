@@ -12,9 +12,8 @@
   .dev-bypass {
     margin: 0 0 1rem;
     padding: 0.75rem 1rem;
-    border-radius: var(--pico-border-radius);
-    border: 2px solid var(--error-color, #ef4444);
-    background: var(--pico-background-color);
-    color: var(--error-color, #ef4444);
+    border-radius: var(--r-card);
+    background: var(--crit-f);
+    color: var(--crit);
   }
 </style>

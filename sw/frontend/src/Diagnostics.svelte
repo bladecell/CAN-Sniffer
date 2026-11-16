@@ -68,19 +68,19 @@
       <p class="rv-meta">
         <span>VIN <span class="rv-vin">{vin || "not read yet"}</span></span>
         {#if vin}
-          <button type="button" class="rv-btn sm" onclick={copyVin}>Copy VIN</button>
+          <button type="button" class="btn sm" onclick={copyVin}>Copy VIN</button>
         {/if}
       </p>
     {/snippet}
 
     {#snippet actions()}
-      <button type="button" class="rv-btn pri" aria-disabled={scanning} onclick={scan}>
+      <button type="button" class="btn pri" aria-disabled={scanning} onclick={scan}>
         <Icon name="magnifying-glass" size={16} />
         Scan vehicle
       </button>
       <button
         type="button"
-        class="rv-btn danger"
+        class="btn danger"
         class:fill-crit={armed}
         onclick={vehicleStore.pressClearDTCs}
         onblur={vehicleStore.cancelClearDTCs}
@@ -108,7 +108,7 @@
     <StateNote title="No answer from the vehicle" icon="alert-circle" tone="warn" role="alert">
       <p class="rv-muted">The CAN bus is not connected or the ignition is off. Check that the sniffer is plugged into the OBD-II port and the key is in the ON position, then scan again.</p>
       <div class="rv-acts">
-        <button type="button" class="rv-btn pri" onclick={scan}>
+        <button type="button" class="btn pri" onclick={scan}>
           <Icon name="magnifying-glass" size={16} />
           Try again
         </button>
@@ -118,7 +118,7 @@
     <StateNote title="No fault codes stored" icon="circle-check" tone="ok" role="status">
       <p class="rv-muted">The ECU reported zero codes in modes 03, 07 and 10. Scan again after a drive if the check-engine light was on.</p>
       <div class="rv-acts">
-        <button type="button" class="rv-btn pri" onclick={scan}>
+        <button type="button" class="btn pri" onclick={scan}>
           <Icon name="magnifying-glass" size={16} />
           Scan vehicle
         </button>
@@ -149,11 +149,11 @@
       {#snippet detail(r: DtcRow, full: boolean)}
         {#if full}<h2>{r.code}</h2>{/if}
         <div class="rv-chips">
-          <span class="rv-chip {GROUP_CHIP[r.group]}">
+          <span class="chip {GROUP_CHIP[r.group]}">
             <Icon name={GROUP_ICON[r.group]} size={14} />
             {r.groupLabel}
           </span>
-          <span class="rv-chip c-plain">{r.priority}</span>
+          <span class="chip c-plain">{r.priority}</span>
         </div>
         {#if r.description}
           <p class="rv-lede">{r.description}</p>
@@ -165,7 +165,7 @@
           <dd>Mode {r.mode}, {r.groupLabel.toLowerCase()}</dd>
         </dl>
         <div class="rv-acts">
-          <a class="rv-btn" href={lookupUrl(r.code)} target="_blank" rel="noreferrer">Look up {r.code}</a>
+          <a class="btn" href={lookupUrl(r.code)} target="_blank" rel="noreferrer">Look up {r.code}</a>
         </div>
       {/snippet}
     </MasterDetail>

@@ -19,38 +19,38 @@
   );
 
   const MODE_MAP: Record<string, { label: string; color: string }> = {
-    "3": { label: "Confirmed", color: "#f87171" },
-    "7": { label: "Pending", color: "#fbbf24" },
-    "10": { label: "Permanent", color: "#d4d4d8" },
-    "0x03": { label: "Confirmed", color: "#f87171" },
-    "0x07": { label: "Pending", color: "#fbbf24" },
-    "0x0a": { label: "Permanent", color: "#d4d4d8" },
+    "3": { label: "Confirmed", color: "var(--crit)" },
+    "7": { label: "Pending", color: "var(--warn)" },
+    "10": { label: "Permanent", color: "var(--perm)" },
+    "0x03": { label: "Confirmed", color: "var(--crit)" },
+    "0x07": { label: "Pending", color: "var(--warn)" },
+    "0x0a": { label: "Permanent", color: "var(--perm)" },
   };
 
   const modeData = $derived(
     MODE_MAP[String(mode).toLowerCase()] ?? {
       label: `Mode ${mode}`,
-      color: "#9ca3af",
+      color: "var(--muted)",
     },
   );
 
   const priorityData = $derived.by(() => {
-    if (override) return { label: override, color: "#d27a01" };
+    if (override) return { label: override, color: "var(--warn)" };
 
     const c = safeCode.toUpperCase();
 
     if (c === "P0524" || c === "P0217")
-      return { label: "Stop Safely", color: "#ef4444" };
-    if (c.startsWith("P030")) return { label: "Urgent", color: "#f97316" };
+      return { label: "Stop Safely", color: "var(--crit)" };
+    if (c.startsWith("P030")) return { label: "Urgent", color: "var(--warn)" };
     if (c.startsWith("P07") || c.startsWith("P08"))
-      return { label: "Service Trans", color: "#eab308" };
+      return { label: "Service Trans", color: "var(--warn)" };
     if (c.startsWith("P01") || c.startsWith("P04") || c.startsWith("P02"))
-      return { label: "Attend Soon", color: "rgb(210, 122, 1)" };
-    if (c.startsWith("U")) return { label: "Network", color: "#a855f7" };
+      return { label: "Attend Soon", color: "var(--warn)" };
+    if (c.startsWith("U")) return { label: "Network", color: "var(--perm)" };
     if (c.startsWith("B") || c.startsWith("C"))
-      return { label: "Inspect", color: "#3b82f6" };
+      return { label: "Inspect", color: "var(--accent-text)" };
 
-    return { label: "Logged", color: "#94a3b8" };
+    return { label: "Logged", color: "var(--muted)" };
   });
 </script>
 
@@ -143,7 +143,7 @@
   }
 
   .dtc-description-well {
-    background: rgba(0, 0, 0, 0.15);
+    background: var(--card2);
     border-left: 3px solid var(--well-accent);
     padding: 8px 10px;
     border-radius: 0 6px 6px 0;
@@ -155,7 +155,7 @@
     font-size: 0.85rem;
     font-weight: 500;
     line-height: 1.4;
-    color: #f3f4f6; /* High contrast off-white */
+    color: var(--text);
     display: -webkit-box;
     -webkit-line-clamp: 3;
     line-clamp: 3;
@@ -174,9 +174,9 @@
     align-items: center;
     gap: 8px;
     padding: 6px 12px;
-    background: rgba(15, 56, 136, 0.25);
-    color: rgb(189, 188, 188);
-    border-radius: 20px;
+    background: var(--ctl);
+    color: var(--ctl-sub);
+    border-radius: var(--r-sm);
     text-decoration: none;
     font-size: 0.8rem;
     font-weight: 500;

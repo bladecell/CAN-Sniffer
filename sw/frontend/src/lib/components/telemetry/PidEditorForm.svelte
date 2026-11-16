@@ -381,29 +381,6 @@
     font-size: 0.8125rem;
     line-height: 1.35;
   }
-  .in {
-    box-sizing: border-box;
-    width: 100%;
-    min-height: var(--ctl-h);
-    padding: 0 14px;
-    border: 0;
-    border-radius: var(--r-ctl);
-    background: var(--ctl);
-    color: var(--ctl-text);
-    font: inherit;
-  }
-  .in::placeholder {
-    color: var(--ctl-sub);
-    opacity: 1;
-  }
-  .in[aria-invalid="true"] {
-    outline: 2px solid var(--crit);
-    outline-offset: 0;
-  }
-  .in:focus-visible {
-    outline: 3px solid var(--focus);
-    outline-offset: 2px;
-  }
   .mono {
     font-family: var(--mono);
   }

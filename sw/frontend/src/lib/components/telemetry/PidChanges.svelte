@@ -205,7 +205,7 @@
         {#if failure}
           <div class="fail float-layer" role="alert"><b>Apply failed.</b> {failure.reason}</div>
         {/if}
-        <button type="button" class="tel-btn pri" aria-disabled={applyDisabled} onclick={applyChosen}>
+        <button type="button" class="btn pri" aria-disabled={applyDisabled} onclick={applyChosen}>
           <Icon name="reload" size={18} class={applying ? "spin" : ""} />{applyLabel}
         </button>
       </div>
@@ -244,7 +244,7 @@
     padding: 0 12px;
     margin-right: 4px;
     border: 0;
-    border-radius: 12px;
+    border-radius: var(--r-sm);
     background: none;
     color: var(--accent-text);
     font: 800 0.9rem/1 var(--font);
@@ -276,8 +276,8 @@
   }
   .fail {
     padding: 10px 12px;
-    border-radius: 16px;
-    background: linear-gradient(var(--ctl), var(--ctl)), var(--float);
+    border-radius: var(--r-ctl);
+    background: var(--float-ctl);
     box-shadow: inset 0 0 0 2px var(--crit), var(--shadow-float);
     font-size: 0.85rem;
     font-weight: 600;

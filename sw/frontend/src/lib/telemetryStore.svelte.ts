@@ -253,17 +253,11 @@ export function createRowObject(def: PidDefinition, loaded: boolean, selected: b
     get supported() {
       return this.isSupported ? "Yes" : "No";
     },
-    get badgeColor() {
-      return this.isSupported ? "var(--normal-color)" : "var(--error-color)";
-    },
     get isValid() {
       return connectionStore.pids.get(rawPid)?.isValid ?? false;
     },
     get validDisplay() {
       return this.isValid ? "Yes" : "No";
-    },
-    get validBadgeColor() {
-      return this.isValid ? "var(--normal-color)" : "var(--error-color)";
     },
     get isDirty() {
       const original = vehicleStore.pidDefinitions.find((d) => Number(d.pid) === rawPid);
@@ -291,9 +285,6 @@ export function createRowObject(def: PidDefinition, loaded: boolean, selected: b
     },
     get pendingChanges() {
       return this.isDirty ? "Yes" : "No";
-    },
-    get pendingChangesColor() {
-      return this.isDirty ? "var(--pico-primary)" : "rgba(255, 255, 255, 0.2)";
     },
   };
 }

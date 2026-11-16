@@ -108,7 +108,7 @@
     margin: 0;
     padding: 0;
     border: 0;
-    border-radius: 12px;
+    border-radius: var(--r-sm);
     background: none;
     color: var(--muted);
     cursor: pointer;
@@ -118,7 +118,7 @@
     flex: none;
     width: 24px;
     height: 24px;
-    border-radius: 8px;
+    border-radius: var(--r-xs);
   }
   /* Touch: the tap target grows to 44px around the 24px icon. The layout box stays 24px, so the field row does not move. */
   @media (pointer: coarse) {

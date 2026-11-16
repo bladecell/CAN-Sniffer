@@ -17,6 +17,50 @@ export function measureHeight(prop: string) {
 }
 
 /**
+ * Svelte attachment for a scroller: writes data-under="top bottom" on its parent while content is scrolled past that
+ * edge. A float layer beside the scroller (class rest-top or rest-bottom, app.css) floats only while content is under it.
+ */
+export function trackUnder(el: HTMLElement) {
+  const host = el.parentElement;
+  const sync = () => {
+    const under = [el.scrollTop > 1 && "top", el.scrollTop + el.clientHeight < el.scrollHeight - 1 && "bottom"].filter(Boolean).join(" ");
+    if (host && host.dataset.under !== under) host.dataset.under = under;
+  };
+  el.addEventListener("scroll", sync, { passive: true });
+  // The content can grow or shrink without a scroll or a resize of the scroller.
+  const ro = new ResizeObserver(sync);
+  ro.observe(el);
+  const mo = new MutationObserver(sync);
+  mo.observe(el, { childList: true, subtree: true });
+  sync();
+  return () => {
+    el.removeEventListener("scroll", sync);
+    ro.disconnect();
+    mo.disconnect();
+    delete host?.dataset.under;
+  };
+}
+
+/** Svelte attachment for a position:sticky bar on the page: writes data-under="top" on its parent while the bar is pinned. */
+export function trackStuck(el: HTMLElement) {
+  const host = el.parentElement;
+  const top = parseFloat(getComputedStyle(el).top) || 0;
+  // Pinned, the bar's top edge is 1px outside the shrunk root, so it is no longer fully visible.
+  const io = new IntersectionObserver(
+    ([e]) => {
+      if (e.intersectionRatio < 1) host?.setAttribute("data-under", "top");
+      else host?.removeAttribute("data-under");
+    },
+    { rootMargin: `${-top - 1}px 0px 0px 0px`, threshold: 1 },
+  );
+  io.observe(el);
+  return () => {
+    io.disconnect();
+    host?.removeAttribute("data-under");
+  };
+}
+
+/**
  * Svelte action: moves the element out of its scroller. The target is the nearest dialog, else body. A modal makes
  * everything outside it inert, so a popover in a sheet stays inside the sheet's dialog (the dialog is not a scroller,
  * clip or blur). Svelte removes the element with its component.

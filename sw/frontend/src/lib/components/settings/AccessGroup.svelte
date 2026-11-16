@@ -45,9 +45,9 @@
         inline
       >
         {#if auth.view.loggedIn}
-          <button type="button" class="st-btn sm" onclick={() => auth.logout()}>Log out</button>
+          <button type="button" class="btn sm" onclick={() => auth.logout()}>Log out</button>
         {:else if !auth.view.devBypass}
-          <button type="button" class="st-btn sm pri" onclick={() => auth.ensureLogin()}>Log in</button>
+          <button type="button" class="btn sm pri" onclick={() => auth.ensureLogin()}>Log in</button>
         {/if}
       </SettingRow>
     {/if}
@@ -58,7 +58,7 @@
         inline
       >
         {#if auth.view.pinSaved}
-          <button type="button" class="st-btn sm" onclick={() => auth.forgetPin()}>Forget saved PIN</button>
+          <button type="button" class="btn sm" onclick={() => auth.forgetPin()}>Forget saved PIN</button>
         {/if}
       </SettingRow>
     {/if}
@@ -71,14 +71,14 @@
     <h2>Change PIN</h2>
     <div class="st-list">
       <SettingRow title="Current PIN" hint="6 digits">
-        <input class="st-in mono" type="password" inputmode="numeric" autocomplete="current-password" maxlength="6" pattern={PIN_PATTERN} aria-label="Current PIN" bind:value={oldPin} required />
+        <input class="in mono" type="password" inputmode="numeric" autocomplete="current-password" maxlength="6" pattern={PIN_PATTERN} aria-label="Current PIN" bind:value={oldPin} required />
       </SettingRow>
       <SettingRow title="New PIN" hint="6 digits">
-        <input class="st-in mono" type="password" inputmode="numeric" autocomplete="new-password" maxlength="6" pattern={PIN_PATTERN} aria-label="New PIN" bind:value={newPin} required />
+        <input class="in mono" type="password" inputmode="numeric" autocomplete="new-password" maxlength="6" pattern={PIN_PATTERN} aria-label="New PIN" bind:value={newPin} required />
       </SettingRow>
       <SettingRow title="Repeat new PIN" hint="Changing the PIN logs out every session, including this one." error={pinMessage || undefined}>
         <input
-          class="st-in mono"
+          class="in mono"
           type="password"
           inputmode="numeric"
           autocomplete="new-password"
@@ -91,7 +91,7 @@
         />
       </SettingRow>
       <SettingRow title="Forgot the PIN?" hint="Hold the BOOT button on the device for 10 seconds. This clears the PIN, and you can set a new one.">
-        <button type="submit" class="st-btn pri" disabled={!canChange}>Change PIN</button>
+        <button type="submit" class="btn pri" disabled={!canChange}>Change PIN</button>
       </SettingRow>
     </div>
   </form>
