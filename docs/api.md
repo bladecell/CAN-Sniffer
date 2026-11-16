@@ -182,7 +182,7 @@ The request and file format uses different names for the same fields: `desc`, `m
   - Same `sid` as the session (the same page reconnecting), `takeover=1`, no `sid` at all (scripts), or the session has sent nothing for 10 s: the new client replaces it. The old socket gets close code `4001` and is closed.
   - Otherwise the upgrade completes and the new socket is closed at once with close code `4000` (device in use). The frontend then asks "Take over?" and reconnects with `takeover=1`. A page closed with `4000` or `4001` does not reconnect on its own.
 - The frontend sends one ping every 3 s, never while a pong is outstanding, and reconnects when no pong arrives within 6 s. It resets its reconnect backoff on the first pong, and gives up a socket that is not open within 5 s.
-- When a session starts the server starts the 1 Hz CAN status stream and turns the PID stream off (the client asks for it with `0xA0`). Both stop, the CAN raw stream stops and Raw CAN mode ends (the controller returns to Monitor) when the session socket closes or is taken over.
+- When a session starts the server starts the 1 Hz CAN status stream and turns the PID stream off (the client asks for it with `0xA0`). Both stop, the CAN raw stream stops and Raw CAN mode ends (the controller returns to Monitor) when the session socket closes or is taken over. A same-`sid` reconnect while the session is live (a page reload) keeps Raw CAN mode; `takeover=1`, no `sid`, a different `sid` or a stale session end it.
 
 | Type | Direction | Payload | Rate |
 |---|---|---|---|

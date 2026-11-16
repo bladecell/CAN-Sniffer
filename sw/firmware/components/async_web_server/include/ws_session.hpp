@@ -30,6 +30,13 @@ inline Admit admit(const Holder& holder, uint32_t nowMs, uint32_t sid, bool take
     return Admit::busy;
 }
 
+// A replace by the same live session id is a page reload: Raw CAN mode stays on and the new page re-subscribes.
+// Takeover, no sid, a different sid and a stale holder end Raw mode with the replaced session.
+inline bool keepsRawOnReplace(const Holder& holder, uint32_t nowMs, uint32_t sid, bool takeover)
+{
+    return !takeover && sid != 0 && sid == holder.sid && nowMs - holder.lastRxMs < kStaleMs;
+}
+
 // 1 to 8 hex digits, not zero. Anything else is 0 (no session id).
 inline uint32_t parseSid(const char* text)
 {

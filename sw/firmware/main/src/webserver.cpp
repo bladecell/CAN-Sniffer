@@ -1790,23 +1790,23 @@ static void ws_can_raw_stop(int fd)
 }
 
 // Nobody is left to stream to: the PID and raw streams stop, Raw CAN mode ends and the WebSocket sleep hold is released.
-static void ws_streams_stop()
+static void ws_streams_stop(bool keepRaw)
 {
     b_pid_stream_enabled.store(false);
     wsStreamingEnabled.store(false);
     rawSubscribers.clear();
-    can_mode_service::reset(true);  // Raw mode ends with the session
+    if (!keepRaw) { can_mode_service::reset(true); }  // Raw mode ends with the session, except on a same-sid reload
     SUPERVISOR::getInstance().set_sleep_hold(supervisor::kHoldWs, false);
 }
 
 // A WebSocket socket is gone (or replaced). Runs in the httpd task.
-static void ws_session_end(int fd)
+static void ws_session_end(int fd, bool keepRaw = false)
 {
     rawSubscribers.onClose(fd);  // any socket, any reason; the fd may be reused by the next client
     if (fd != wsHolder.fd) { return; }
     wsHolder = {};
     AsyncWebServer::getInstance().setActiveWsClient(-1);
-    ws_streams_stop();
+    ws_streams_stop(keepRaw);
 }
 
 static esp_err_t ws_post_handshake(httpd_req_t* req)
@@ -1834,8 +1834,8 @@ static esp_err_t ws_post_handshake(httpd_req_t* req)
             ESP_LOGI(TAG, "WS client #%d replaces #%d", fd, wsHolder.fd);
             server.wsClose(wsHolder.fd, ws_session::kCloseReplaced);
             // The replaced socket stays open until its close echo. Its raw subscription, PID stream, Raw CAN mode and
-            // sleep hold end now; the new session asks for what it needs.
-            ws_session_end(wsHolder.fd);
+            // sleep hold end now; the new session asks for what it needs. A same-sid reload keeps Raw CAN mode.
+            ws_session_end(wsHolder.fd, ws_session::keepsRawOnReplace(wsHolder, now, sid, takeover));
             break;
         case ws_session::Admit::accept:
             break;
@@ -1873,6 +1873,8 @@ esp_err_t ws_socket_handler(httpd_req_t* req)
     // first ping) so the socket is not reset before the close code arrives.
     if (sockfd != wsHolder.fd)
     {
+        // The close frame already went out with 4000/4001. httpd closes the socket after this echo on its own (measured
+        // on hardware: EOF within 10 ms with and without a reply), so no second close frame is sent.
         if (ws_pkt.type == HTTPD_WS_TYPE_CLOSE) { return ESP_OK; }
         uint8_t sink[16];
         if (ws_pkt.len > sizeof(sink)) { return ESP_FAIL; }

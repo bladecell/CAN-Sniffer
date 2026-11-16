@@ -477,6 +477,19 @@ static void test_session_id_parse_rejects_bad_input()
     TEST_ASSERT_EQUAL(0, ws_session::parseSid("0x12"));
 }
 
+// A same-sid reload keeps Raw CAN mode; takeover, no sid, a different sid and a stale holder end it.
+static void test_replace_keeps_raw_mode_only_for_a_live_same_sid_reload()
+{
+    const ws_session::Holder held{7, 0xAB, 1000};
+    TEST_ASSERT_TRUE(ws_session::keepsRawOnReplace(held, 2000, 0xAB, false));
+    TEST_ASSERT_FALSE(ws_session::keepsRawOnReplace(held, 2000, 0xAB, true));
+    TEST_ASSERT_FALSE(ws_session::keepsRawOnReplace(held, 2000, 0, false));
+    TEST_ASSERT_FALSE(ws_session::keepsRawOnReplace(held, 2000, 0xCD, false));
+    TEST_ASSERT_FALSE(ws_session::keepsRawOnReplace(held, 1000 + ws_session::kStaleMs, 0xAB, false));
+    const ws_session::Holder noSid{7, 0, 1000};
+    TEST_ASSERT_FALSE(ws_session::keepsRawOnReplace(noSid, 2000, 0, false));
+}
+
 // R5: the close reply is empty or a status code, never a length without a payload.
 static void test_close_payload_is_empty_or_a_status_code()
 {
@@ -873,6 +886,7 @@ extern "C" void run_ws_broadcast_tests(void)
     RUN_TEST(test_pid_path_bounds_and_failures_leave_nothing_pending);
     RUN_TEST(test_drain_yields_to_the_queue_under_a_fast_producer);
     RUN_TEST(test_session_admission);
+    RUN_TEST(test_replace_keeps_raw_mode_only_for_a_live_same_sid_reload);
     RUN_TEST(test_session_id_parse_rejects_bad_input);
     RUN_TEST(test_close_payload_is_empty_or_a_status_code);
     RUN_TEST(test_successful_send_does_not_evict);
