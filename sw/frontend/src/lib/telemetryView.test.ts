@@ -1,8 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
-  chartPidsFor,
   definitionsToApply,
-  chipAction,
+  pressRow,
   footerActions,
   groupPids,
   pendingKind,
@@ -146,31 +145,14 @@ describe("pendingKind", () => {
   });
 });
 
-describe("chartPidsFor", () => {
-  test("ticked PIDs win over the active row", () => {
-    expect(chartPidsFor([0x0c, 0x0d], 0x05)).toEqual([0x0c, 0x0d]);
-  });
-
-  test("with nothing ticked, the active row is charted", () => {
-    expect(chartPidsFor([], 0x05)).toEqual([0x05]);
-  });
-
-  test("nothing ticked and no active row charts nothing", () => {
-    expect(chartPidsFor([], null)).toEqual([]);
-  });
-});
-
-describe("chipAction", () => {
-  test("an unpressed chip ticks the PID", () => {
-    expect(chipAction(false, false)).toBe("tick");
-  });
-
-  test("a pressed, ticked PID unticks", () => {
-    expect(chipAction(true, true)).toBe("untick");
-  });
-
-  test("a pressed PID that is only the active row clears the active row", () => {
-    expect(chipAction(true, false)).toBe("clearActive");
+describe("pressRow", () => {
+  test("a press toggles only that row, so several can be selected", () => {
+    const r = [{ selected: false }, { selected: false }, { selected: false }];
+    pressRow(r[0]);
+    pressRow(r[1]);
+    expect(r.map((x) => x.selected)).toEqual([true, true, false]);
+    pressRow(r[0]);
+    expect(r.map((x) => x.selected)).toEqual([false, true, false]);
   });
 });
 

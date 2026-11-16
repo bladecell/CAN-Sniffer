@@ -13,10 +13,10 @@
   import PidEditorActions from "$lib/components/telemetry/editor/PidEditorActions.svelte";
   import PlotCell from "$lib/components/telemetry/PlotCell.svelte";
   import PlotOverview from "$lib/components/telemetry/PlotOverview.svelte";
-  import { chartPidsFor, chipAction } from "$lib/telemetryView";
+  import { pressRow } from "$lib/telemetryView";
   import { TELEMETRY_VIEW, TelemetryView } from "$lib/telemetryChart/viewState.svelte";
   import { PLOT_COUNTS, gridColumns, migratePlotCount, type PlotCount } from "$lib/telemetryChart/layout";
-  import { chartPidsOf, deselectOnEscape, deselectOnPointer } from "$lib/telemetryChart/selection";
+  import { canToggleTicks, chartPidsOf, deselectOnEscape, deselectOnPointer } from "$lib/telemetryChart/selection";
   import { statsColumnPx } from "$lib/telemetryChart/statsColumns";
   import { freezeWin, resumeWin } from "$lib/telemetryChart/window";
   import { formatValue } from "$lib/telemetryChart/math";
@@ -64,14 +64,13 @@
       : null,
   );
 
-  // Ticked PIDs (or the selected row when none is ticked) are what the active plot shows.
+  // With a plot armed, its PIDs are the ticked rows. With none armed, a selection is for Edit and charts nothing.
   $effect(() => {
     const ticked = telemetryStore.local_piddef.filter((r) => r.selected).map((row) => parseInt(row.pid, 16));
-    const currentSelectedPids = chartPidsFor(ticked, selectedRow?.pid ? parseInt(selectedRow.pid, 16) : null);
 
     untrack(() => {
       if (telemetryStore.activeChartIndex >= 0 && telemetryStore.activeChartIndex < telemetryStore.plotCount) {
-        telemetryStore.chartPids[telemetryStore.activeChartIndex] = currentSelectedPids;
+        telemetryStore.chartPids[telemetryStore.activeChartIndex] = ticked;
       }
     });
   });
@@ -151,14 +150,9 @@
   // Phone chips: the loaded PIDs, pressed when they are on the active chart.
   const activeChartPids = $derived(chartPidsOf(telemetryStore.chartPids, telemetryStore.activeChartIndex));
 
-  function toggleChip(pid: number, pressed: boolean) {
-    telemetryStore.ensureActivePlot();
+  function toggleChip(pid: number) {
     const row = telemetryStore.local_piddef.find((r) => parseInt(r.pid, 16) === pid);
-    if (!row) return;
-    const action = chipAction(pressed, row.selected);
-    if (action === "tick") row.selected = true;
-    else if (action === "untick") row.selected = false;
-    else telemetryStore.activeIndex = -1;
+    if (row) pressRow(row);
   }
 
   // Long-press on a phone chip opens that PID's editor; the click that follows is swallowed.
@@ -182,9 +176,9 @@
   function pressEnd() {
     clearTimeout(pressTimer);
   }
-  function chipClick(pid: number, on: boolean) {
+  function chipClick(pid: number) {
     if (pressFired) pressFired = false;
-    else toggleChip(pid, on);
+    else toggleChip(pid);
   }
 
   const editorTitle = $derived(
@@ -233,8 +227,8 @@
             class="tel-pchip"
             aria-pressed={on}
             aria-keyshortcuts="Shift+F10"
-            title="Tap to show or hide. Hold to edit."
-            onclick={() => chipClick(pid, on)}
+            title="Tap to chart it, or select it when no plot is selected. Hold to edit."
+            onclick={() => chipClick(pid)}
             onpointerdown={(e) => pressStart(e, row)}
             onpointermove={pressMove}
             onpointerup={pressEnd}

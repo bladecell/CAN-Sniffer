@@ -11,7 +11,6 @@ import { isValidHex, isValidName, isValidDescription, isModeValidForPid, isLengt
 import { connectionStore } from "./connectionStore.svelte";
 import { vehicleStore } from "./vehicleStore.svelte";
 import { SvelteSet } from "svelte/reactivity";
-import { chartPidsOf, plotForTick } from "$lib/telemetryChart/selection";
 import { DEFAULT_PLOT_COUNT, type PlotCount } from "$lib/telemetryChart/layout";
 
 /** A PID object from a file or the SD card: long or short key names, nothing guaranteed. */
@@ -90,14 +89,6 @@ export class TelemetryStore {
   activeChartIndex = $state(0);
   chartPids = $state<number[][]>(Array.from({ length: DEFAULT_PLOT_COUNT }, () => []));
 
-  /** With no plot selected, selects the first one (the rows show its PIDs) so a tick has somewhere to go. */
-  ensureActivePlot() {
-    const index = plotForTick(this.activeChartIndex, this.plotCount);
-    if (index === this.activeChartIndex) return;
-    this.activeChartIndex = index;
-    const pids = chartPidsOf(this.chartPids, index);
-    for (const row of this.local_piddef) row.selected = pids.includes(parseInt(row.pid, 16));
-  }
   activeIndex = $state(-1);
 
   // --- FORM STATE ---

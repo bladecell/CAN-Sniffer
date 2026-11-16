@@ -4,7 +4,7 @@
   import { vehicleStore } from "$lib/vehicleStore.svelte";
   import { alertStore } from "$lib/alertStore.svelte";
   import { safeHexColor } from "$lib/color";
-  import { footerActions, groupPids, pidHex, removeRows } from "$lib/telemetryView";
+  import { footerActions, groupPids, pidHex, pressRow, removeRows } from "$lib/telemetryView";
   import Icon from "$lib/Icon.svelte";
   import { swipeRow } from "./swipeRow";
   import PidCard from "./PidCard.svelte";
@@ -52,17 +52,15 @@
     unsupported: { name: "circle-minus", cls: "t-muted" },
   };
 
-  // Ticks write the selected plot. With no plot selected the first one is selected first.
+  // With a plot selected, a press ticks the PID onto that plot. With none, a press selects one PID for Edit.
   let noPlot = $derived(!canToggleTicks(telemetryStore.activeChartIndex));
 
   function selectAll(on: boolean) {
-    telemetryStore.ensureActivePlot();
     for (const row of loaded) row.selected = on;
   }
 
-  function tickRow(row: PidRow) {
-    telemetryStore.ensureActivePlot();
-    row.selected = !row.selected;
+  function pressPid(row: PidRow) {
+    pressRow(row);
   }
 
   function removeWhere(matches: (row: PidRow) => boolean, count: number) {
@@ -112,7 +110,7 @@
         name={row.name}
         {hex}
         {phone}
-        onToggle={() => tickRow(row)}
+        onToggle={() => pressPid(row)}
         swipe={swipeRow({ left: () => onEdit(index), right: () => removeOne(row) })}
       >
         {#snippet behind()}
@@ -164,9 +162,11 @@
       {loaded.length} PIDs &middot; {supportedCount} supported &middot; {pendingCount} pending
     </p>
     <div class="sb-selrow">
-      <span class="num">{noPlot ? "No plot selected" : selectedCount ? `${selectedCount} on chart` : "None on chart"}</span>
+      <span class="num">
+        {#if noPlot}{selectedCount ? `${selectedCount} selected` : "No plot selected"}{:else}{selectedCount ? `${selectedCount} on chart` : "None on chart"}{/if}
+      </span>
       <span class="sb-acts">
-        {#if selectedCount < loaded.length}
+        {#if !noPlot && selectedCount < loaded.length}
           <button type="button" class="sb-txt" onclick={() => selectAll(true)}>Select all</button>
         {/if}
         {#if selectedCount > 0}

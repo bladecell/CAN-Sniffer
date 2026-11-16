@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { HINT_GAP_MS, canToggleTicks, plotForTick, chartPidsOf, hintDue, selectPlot, deselectOnEscape, deselectOnPointer } from "./selection";
+import { HINT_GAP_MS, canToggleTicks, chartPidsOf, hintDue, selectPlot, deselectOnEscape, deselectOnPointer } from "./selection";
 
 describe("plot selection", () => {
   test("selecting a plot makes it the one selected; an invalid index changes nothing", () => {
@@ -28,12 +28,6 @@ describe("plot selection", () => {
   test("ticks change only with a plot selected", () => {
     expect(canToggleTicks(-1)).toBe(false);
     expect(canToggleTicks(0)).toBe(true);
-  });
-
-  test("a tick with no plot selected lands on the first plot instead of failing", () => {
-    expect(plotForTick(-1, 2)).toBe(0);
-    expect(plotForTick(1, 2)).toBe(1);
-    expect(plotForTick(-1, 0)).toBe(-1);
   });
 
   test("the list shows the selected plot's PIDs, and none when no plot is selected", () => {

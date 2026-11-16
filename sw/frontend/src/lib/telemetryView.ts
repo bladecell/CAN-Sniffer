@@ -97,19 +97,9 @@ export function pendingKind(loaded: boolean, onDevice: boolean): PendingKind {
   return onDevice ? "modified" : "added";
 }
 
-/** PIDs the active chart shows: the ticked PIDs, or the active row when nothing is ticked. */
-export function chartPidsFor(tickedPids: number[], activeRowPid: number | null): number[] {
-  if (tickedPids.length > 0) return tickedPids;
-  return activeRowPid === null ? [] : [activeRowPid];
-}
-
-/**
- * What a status chip press does. A pressed chip that is not ticked is only on the chart
- * because its row is active, so the active row is cleared.
- */
-export function chipAction(pressed: boolean, ticked: boolean): "tick" | "untick" | "clearActive" {
-  if (!pressed) return "tick";
-  return ticked ? "untick" : "clearActive";
+/** A press on a PID row or chip toggles its tick. Whether that means "on the chart" or just "selected" depends on whether a chart is armed; the caller syncs ticks to the chart only when one is. */
+export function pressRow<T extends { selected: boolean }>(row: T): void {
+  row.selected = !row.selected;
 }
 
 export type FooterAction = "new" | "edit" | "remove";
