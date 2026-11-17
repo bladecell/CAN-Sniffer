@@ -44,7 +44,7 @@
     margin: 0;
   }
   .ce p {
-    margin: 2px 0 0;
+    margin: 2px 12px 0 0;
     font-size: 0.88rem;
   }
   .ce-list {
@@ -56,9 +56,11 @@
   }
   .ce-list li {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
+    gap: 6px 12px;
+    padding-right: 14px;
     padding: 10px 12px;
     border-radius: var(--r-ctl);
     background: var(--row);
@@ -69,11 +71,14 @@
     color: var(--muted);
     font-weight: 600;
   }
+  .ce-list b {
+    white-space: nowrap;
+  }
   .ce-list em {
     font-style: normal;
     color: var(--muted);
     font-weight: 700;
-    text-align: right;
+    text-align: left;
     white-space: nowrap;
   }
 </style>
