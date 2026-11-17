@@ -125,7 +125,7 @@
             <label class="ft-f">
               <span class="muted">Value</span>
               <!-- svelte-ignore a11y_autofocus -->
-              <input class="in mono" bind:value placeholder={hint} autofocus aria-invalid={value !== "" && !valid} />
+              <input class="in mono" bind:value placeholder={hint} autofocus aria-invalid={value !== "" && !valid ? "true" : undefined} />
             </label>
             <button class="btn pri" disabled={!valid}>Add filter</button>
           </form>
