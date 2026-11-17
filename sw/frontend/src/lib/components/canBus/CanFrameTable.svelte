@@ -47,11 +47,11 @@
         <thead>
           <tr>
             <th scope="col">Time (s)</th>
+            <th scope="col">Direction</th>
             <th scope="col">ID</th>
             <th scope="col" class="hide-s">DLC</th>
             <th scope="col">Data</th>
             <th scope="col">Parsed</th>
-            <th scope="col" class="hide-s">Source</th>
           </tr>
         </thead>
         <tbody>
@@ -82,6 +82,7 @@
     }}
   >
     <td class="mono muted">{relTime(row.t, startUs)}</td>
+    <td class="dir" class:tx={row.tx}>{row.tx ? "TX" : "RX"}</td>
     <td class="mono id" style:color="var(--c{idColorIndex(key)})">{formatId(row.id, row.ext)}</td>
     <td class="hide-s">{row.data.length}</td>
     <td class="mono data">
@@ -94,7 +95,6 @@
       {/if}
     </td>
     <td class="mono parsed" class:muted={!row.parsed}>{row.parsed || "-"}</td>
-    <td class="hide-s muted">{row.tx ? "TX" : "RX"}</td>
   </tr>
 {/snippet}
 
@@ -196,7 +196,14 @@
     color: var(--accent-text);
   }
   @media (max-width: 859px) {
-    .hide-s {
+    .dir {
+    font-weight: 600;
+    color: var(--ok);
+  }
+  .dir.tx {
+    color: var(--accent-text);
+  }
+  .hide-s {
       display: none;
     }
   }
