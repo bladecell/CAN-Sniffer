@@ -130,7 +130,7 @@
                     oninput={commit}
                     aria-invalid={invalid(r) ? "true" : undefined}
                   />
-                  <button class="btn sm icon" title="Remove rule" aria-label="Remove rule" onclick={() => removeRule(r.key)}><Icon name="trash" size={14} /></button>
+                  <button type="button" class="ft-ib" title="Remove rule" aria-label="Remove rule" onclick={() => removeRule(r.key)}><Icon name="trash" size={20} /></button>
                 </div>
               {/each}
               {#if draft.length === 0}<p class="muted">No active filters.</p>{/if}
@@ -282,7 +282,34 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.5rem;
+    gap: 8px;
+    padding: 6px 8px 6px 12px;
+    border-radius: var(--r-track);
+    background: var(--row);
+  }
+  .ft-ib {
+    display: grid;
+    flex: none;
+    place-items: center;
+    box-sizing: border-box;
+    width: 44px;
+    height: 44px;
+    min-width: 0;
+    min-height: 0;
+    margin: 0 0 0 auto;
+    padding: 0;
+    border: 0;
+    border-radius: calc(var(--r-ctl) - 2px);
+    background: none;
+    color: var(--ctl-crit);
+    cursor: pointer;
+  }
+  .ft-ib:hover {
+    background: var(--ctl);
+  }
+  .ft-ib:focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: 2px;
   }
   .ft-lbl {
     flex: 0 0 50px;
@@ -327,7 +354,7 @@
         var(--shadow-float);
     }
     .ft-lbl {
-      flex-basis: 100%;
+      flex: 1 1 0;
     }
     .ft-sel,
     .ft-val {
