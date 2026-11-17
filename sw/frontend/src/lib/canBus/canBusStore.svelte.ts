@@ -5,7 +5,9 @@ import { connectionStore, type RawListener } from "$lib/connectionStore.svelte";
 import { firmwareApi } from "$lib/firmwareApi.svelte";
 import type { CanBusStatus, CanModeStatus } from "$lib/types";
 import type { RawStats } from "$lib/wsFrames";
-import { byIdRows, CanModel, ecuRows, logRows, type CanFrame, type EcuRow, type IdView, type LogRow, type TableFilter } from "./canModel";
+import { byIdRows, CanModel, ecuRows, logRows, recentFrames, type CanFrame, type EcuRow, type IdView, type LogRow, type TableFilter } from "./canModel";
+import { findLastMatch, type RuleMatch } from "./canRules";
+import { rulesStore } from "./canRulesStore.svelte";
 import { idKey } from "./canIds";
 
 const VIEW_MS = 100;
@@ -34,6 +36,8 @@ export type TableMode = "log" | "byId";
 export type Snapshot = {
   /** Device time of the first frame, the zero of the time column. */
   startUs: number | null;
+  /** Latest value text per formula rule id. */
+  ruleValues: Map<string, string>;
   rows: LogRow[];
   byId: IdView[];
   ids: IdRow[];
@@ -52,7 +56,7 @@ export type Counters = {
   dropped: { driver: number; ring: number; socket: number } | null;
 };
 
-const emptySnapshot = (): Snapshot => ({ startUs: null, rows: [], byId: [], ids: [], ecus: [], selected: null });
+const emptySnapshot = (): Snapshot => ({ startUs: null, ruleValues: new Map(), rows: [], byId: [], ids: [], ecus: [], selected: null });
 const emptyCounters = (): Counters => ({ now: Date.now(), fps: 0, fpsHistory: [], frames: 0, streaming: false, filterOn: false, load: null, dropped: null });
 
 class CanBusStore {
@@ -72,6 +76,7 @@ class CanBusStore {
 
   private onRaw: RawListener = (frame) => {
     if (frame.kind === "rawBatch") {
+      this.model.setRules(rulesStore.compiled);
       this.model.ingest(frame, Date.now());
       return;
     }
@@ -164,7 +169,12 @@ class CanBusStore {
     }
     ids.sort((a, b) => a.id - b.id || Number(a.ext) - Number(b.ext));
     const selected = this.selectedKey === null ? null : this.detailFor(this.selectedKey);
-    this.snapshot = { startUs: m.startUs, rows: logRows(m, this.filter), byId: byIdRows(m, this.filter), ids, ecus: ecuRows(m, Date.now()), selected };
+    this.snapshot = { startUs: m.startUs, ruleValues: new Map(m.ruleValues), rows: logRows(m, this.filter), byId: byIdRows(m, this.filter), ids, ecus: ecuRows(m, Date.now()), selected };
+  }
+
+  /** The newest frame any id produced that the match accepts (the draft rule preview). */
+  lastMatchFor(match: RuleMatch): CanFrame | null {
+    return findLastMatch(recentFrames(this.model), match);
   }
 
   private detailFor(key: number): IdDetail | null {

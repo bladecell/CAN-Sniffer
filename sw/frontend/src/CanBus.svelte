@@ -10,8 +10,9 @@
   import CanFrameTable from "$lib/components/canBus/CanFrameTable.svelte";
   import CanIdDetails from "$lib/components/canBus/CanIdDetails.svelte";
   import CanEcuIds from "$lib/components/canBus/CanEcuIds.svelte";
+  import CanRules from "$lib/components/canBus/CanRules.svelte";
 
-  type Tab = "ids" | "ecu" | "info";
+  type Tab = "ids" | "ecu" | "info" | "rules";
   let tab = $state<Tab>("ids");
 
   const FILTERS: { id: TableFilter; label: string }[] = [
@@ -24,6 +25,7 @@
     { id: "ids", label: "IDs", icon: "list" },
     { id: "ecu", label: "ECU IDs", icon: "engine" },
     { id: "info", label: "ID details", icon: "circle-info" },
+    { id: "rules", label: "Rules", icon: "filter" },
   ];
 
   function openDetails(key: number) {
@@ -80,6 +82,8 @@
         />
       {:else if tab === "ecu"}
         <CanEcuIds ecus={canBus.snapshot.ecus} now={canBus.counters.now} />
+      {:else if tab === "rules"}
+        <CanRules />
       {:else if tab === "info"}
         <CanIdDetails detail={canBus.snapshot.selected} startUs={canBus.snapshot.startUs} />
       {/if}

@@ -55,6 +55,8 @@ export class CanModel {
   frames = 0;
   /** Frames per second, one entry per tick, newest last. */
   fps: number[] = [];
+  /** Latest value text per formula rule id ("invalid" for a failed formula). */
+  ruleValues = new Map<string, string>();
   /** Session start (device time, µs), the zero of the time column. */
   startUs: number | null = null;
   private rules: CompiledRules = compileRules([]);
@@ -86,6 +88,7 @@ export class CanModel {
     this.startUs ??= f.t;
     this.frames++;
     const result = this.rules.apply(f);
+    for (const v of result.values) this.ruleValues.set(v.ruleId, v.text);
     const key = idKey(f.id, f.ext);
     let entry = this.ids.get(key);
     if (!entry && this.ids.size < MAX_IDS) {
@@ -127,6 +130,7 @@ export class CanModel {
     this.ids.clear();
     this.untracked = 0;
     this.log = [];
+    this.ruleValues.clear();
     this.frames = 0;
     this.fps = [];
     this.startUs = null;
@@ -166,6 +170,11 @@ export function byIdRows(model: CanModel, filter: TableFilter): IdView[] {
   }
   list.sort((a, b) => a.id - b.id || Number(a.ext) - Number(b.ext));
   return list.slice(0, TABLE_ROWS);
+}
+
+/** The newest frames of every id: what a draft rule is previewed against. */
+export function* recentFrames(model: CanModel): Generator<CanFrame> {
+  for (const e of model.ids.values()) yield* e.recent;
 }
 
 export type EcuRow = { id: number; ext: boolean; request: number; dlc: number; hz: number; seenMs: number };

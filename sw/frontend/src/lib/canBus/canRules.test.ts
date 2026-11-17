@@ -36,8 +36,8 @@ describe("compileRules / apply", () => {
       rule({ id: "f", match: exact(0x5a0) }),
       rule({ id: "e", name: "Engine speed", match: exact(0x0c9), formula: "(A*256+B)/4" }),
     ]);
-    expect(c.apply(frame(0x5a0, [1]))).toEqual({ hidden: true, name: "", parsed: "" });
-    expect(c.apply(frame(0x0c9, [0x0b, 0xb8]))).toEqual({ hidden: false, name: "Engine speed", parsed: "Engine speed 750" });
+    expect(c.apply(frame(0x5a0, [1]))).toMatchObject({ hidden: true, name: "", parsed: "" });
+    expect(c.apply(frame(0x0c9, [0x0b, 0xb8]))).toMatchObject({ hidden: false, name: "Engine speed", parsed: "Engine speed 750" });
   });
 
   test("two overlapping rules both apply", () => {

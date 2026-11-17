@@ -38,7 +38,11 @@ export type RuleResult = {
   name: string;
   /** "Name value" per matching formula rule, `invalid` for a failed formula. */
   parsed: string;
+  /** Per matching formula rule: the rule id, its label and the value text. */
+  values: RuleValue[];
 };
+
+export type RuleValue = { ruleId: string; label: string; text: string };
 
 type Compiled = { rule: Rule; formula: CompiledFormula | null };
 
@@ -52,6 +56,7 @@ export function compileRules(rules: readonly Rule[]) {
       let hidden = false;
       let name = "";
       const parts: string[] = [];
+      const values: RuleValue[] = [];
       for (const { rule, formula } of list) {
         if (!matchesFrame(rule.match, f)) continue;
         if (!name && rule.name) name = rule.name;
@@ -61,9 +66,11 @@ export function compileRules(rules: readonly Rule[]) {
         }
         const label = rule.name || "value";
         const r = formula.ok ? formula.run(f.data) : null;
-        parts.push(r?.ok ? `${label} ${formatValue(r.value)}` : `${label} invalid`);
+        const text = r?.ok ? formatValue(r.value) : "invalid";
+        values.push({ ruleId: rule.id, label, text });
+        parts.push(`${label} ${text}`);
       }
-      return { hidden, name, parsed: parts.join(", ") };
+      return { hidden, name, parsed: parts.join(", "), values };
     },
   };
 }
