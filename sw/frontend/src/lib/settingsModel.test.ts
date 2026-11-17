@@ -5,6 +5,7 @@ import {
   buildCanPatch,
   buildHwFilterPatch,
   hwFilterDraft,
+  hwFilterPreview,
   buildPidPathPatch,
   buildWifiPatch,
   checkPassword,
@@ -214,5 +215,27 @@ describe("join password and scan age", () => {
     expect(scanAge(1000, 31000)).toEqual({ seconds: 30, stale: false });
     expect(scanAge(1000, 31001)).toEqual({ seconds: 30, stale: true });
     expect(scanAge(5000, 1000)).toEqual({ seconds: 0, stale: false });
+  });
+});
+
+describe("hardware filter preview", () => {
+  test("a full mask accepts exactly one id", () => {
+    expect(hwFilterPreview("7E8", "7FF", false)).toEqual({ pattern: "111 1110 1000", count: 1 });
+  });
+  test("cleared mask bits are wildcards", () => {
+    expect(hwFilterPreview("7E8", "7F8", false)).toEqual({ pattern: "111 1110 1xxx", count: 8 });
+  });
+  test("a zero mask accepts every id", () => {
+    expect(hwFilterPreview("000", "000", false)).toEqual({ pattern: "xxx xxxx xxxx", count: 2048 });
+  });
+  test("extended ids use 29 bits", () => {
+    const p = hwFilterPreview("18DAF100", "1FFFFF00", true);
+    expect(p?.pattern.replaceAll(" ", "")).toHaveLength(29);
+    expect(p?.count).toBe(256);
+  });
+  test("bad hex or out of range gives null", () => {
+    expect(hwFilterPreview("7E8G", "7FF", false)).toBeNull();
+    expect(hwFilterPreview("800", "7FF", false)).toBeNull();
+    expect(hwFilterPreview("", "7FF", false)).toBeNull();
   });
 });

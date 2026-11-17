@@ -1,13 +1,18 @@
 <script lang="ts">
+  import SegControl from "./SegControl.svelte";
   import SelectMenu from "$lib/components/SelectMenu.svelte";
   import { settingsStore } from "$lib/settingsStore.svelte";
   import Switch from "$lib/components/Switch.svelte";
-  import { BITRATES, GROUP, ROW, bitrateLabel, buildCanPatch, buildHwFilterPatch, hwFilterDraft, anyShown, rowShown, type HwFilterDraft, type RowMeta, type SettingsDoc } from "$lib/settingsModel";
+  import { BITRATES, GROUP, ROW, bitrateLabel, buildCanPatch, buildHwFilterPatch, hwFilterDraft, hwFilterPreview, anyShown, rowShown, type HwFilterDraft, type RowMeta, type SettingsDoc } from "$lib/settingsModel";
   import ApplyBar from "./ApplyBar.svelte";
   import SettingRow from "./SettingRow.svelte";
 
   let { q, doc }: { q: string; doc: SettingsDoc } = $props();
   const show = (row: RowMeta) => rowShown(q, GROUP.vehicle, row);
+  const ID_LENGTHS = [
+    { value: "std", label: "Standard, 11-bit" },
+    { value: "ext", label: "Extended, 29-bit" },
+  ] as const;
   const bitrateOptions = BITRATES.map((bps) => ({ value: bps, label: bitrateLabel(bps) }));
 
   // Queues are text in the draft so a half-typed number can be shown as an error, not clamped.
@@ -20,6 +25,7 @@
   });
   const hw = $derived(doc.can.hwFilter);
   const hwDraft = $derived<HwFilterDraft | null>(hw ? { ...hwFilterDraft(hw), ...hwEdits } : null);
+  const preview = $derived(hwDraft ? hwFilterPreview(hwDraft.id, hwDraft.mask, hwDraft.ext) : null);
   const hwBuilt = $derived(hw && hwDraft ? buildHwFilterPatch(hw, hwDraft) : { patch: {}, errors: {} });
   const canBuilt = $derived(buildCanPatch(doc.can, draft));
   const built = $derived({ patch: { ...canBuilt.patch, ...hwBuilt.patch }, errors: { ...canBuilt.errors, ...hwBuilt.errors } });
@@ -74,13 +80,31 @@
       <SettingRow title={ROW.hwFilter.title} hint="Takes effect after a restart. Frames the controller rejects never reach the CAN Bus page or the poller." error={built.errors.mfilter_cfg}>
         <Switch label="Filter on" checked={hwDraft.on} onchange={(v) => (hwEdits.on = v)} />
       </SettingRow>
-      <SettingRow title="Filter ID and mask" hint="Hex. Bits set in the mask must match the ID.">
-        <div class="hw-fields">
-          <input class="in num mono" type="text" aria-label="Filter ID" value={hwDraft.id} aria-invalid={built.errors.mfilter_cfg ? "true" : undefined} oninput={(e) => (hwEdits.id = e.currentTarget.value)} />
-          <input class="in num mono" type="text" aria-label="Filter mask" value={hwDraft.mask} aria-invalid={built.errors.mfilter_cfg ? "true" : undefined} oninput={(e) => (hwEdits.mask = e.currentTarget.value)} />
-          <Switch label="Extended" checked={hwDraft.ext} onchange={(v) => (hwEdits.ext = v)} />
-        </div>
-      </SettingRow>
+      {#if hwDraft.on}
+        <SettingRow title="Accepted IDs" hint="Hex. A mask bit set to 1 must match the same bit of the ID." stack error={built.errors.mfilter_cfg}>
+          <div class="hw">
+            <SegControl label="ID length" options={ID_LENGTHS} value={hwDraft.ext ? "ext" : "std"} onChange={(v) => (hwEdits.ext = v === "ext")} />
+            <div class="hw-fields">
+              <label class="hw-f">
+                <span class="st-lab">ID</span>
+                <input class="in num mono" type="text" spellcheck="false" autocomplete="off" value={hwDraft.id} aria-invalid={built.errors.mfilter_cfg ? "true" : undefined} oninput={(e) => (hwEdits.id = e.currentTarget.value)} />
+              </label>
+              <label class="hw-f">
+                <span class="st-lab">Mask</span>
+                <input class="in num mono" type="text" spellcheck="false" autocomplete="off" value={hwDraft.mask} aria-invalid={built.errors.mfilter_cfg ? "true" : undefined} oninput={(e) => (hwEdits.mask = e.currentTarget.value)} />
+              </label>
+            </div>
+            <p class="hw-pre" aria-live="polite">
+              {#if preview}
+                <span class="hw-bits mono">{preview.pattern}</span>
+                <span class="hw-count">{preview.count === 1 ? "1 ID" : preview.count === 2 ** (hwDraft.ext ? 29 : 11) ? "Every ID" : `${preview.count.toLocaleString("en")} IDs`}</span>
+              {:else}
+                <span class="muted">Enter hex values to see what passes.</span>
+              {/if}
+            </p>
+          </div>
+        </SettingRow>
+      {/if}
     {/if}
   </div>
 </div>
@@ -92,13 +116,46 @@
 }} onApply={apply} />
 
 <style>
+  .hw {
+    display: grid;
+    gap: 12px;
+    width: 100%;
+    min-width: 0;
+  }
+  .hw :global(.seg) {
+    justify-self: start;
+  }
   .hw-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 12rem));
+    gap: 12px;
+  }
+  .hw-f {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+  }
+  .hw .in {
+    width: 100%;
+  }
+  .hw-pre {
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
-    gap: 10px;
+    align-items: baseline;
+    gap: 6px 14px;
+    margin: 0;
+    padding: 10px 14px;
+    border-radius: var(--r-ctl);
+    background: var(--row);
   }
-  .hw-fields .in {
-    width: 9ch;
+  .hw-bits {
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    color: var(--accent-text);
+  }
+  .hw-count {
+    color: var(--muted);
+    font-weight: 700;
+    font-size: 0.88rem;
   }
 </style>

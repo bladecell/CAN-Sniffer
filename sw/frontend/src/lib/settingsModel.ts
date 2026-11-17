@@ -205,6 +205,27 @@ export function hwFilterDraft(f: HwFilter): HwFilterDraft {
   return { on: f.on, id: hex(f.id), mask: hex(f.mask), ext: f.is_ext };
 }
 
+/**
+ * What an id and mask accept, as a bit pattern (cleared mask bits show as x, grouped by 4 from the right) and a count.
+ * Null while either hex value is empty, malformed or wider than 11 bits (29 when extended).
+ */
+export function hwFilterPreview(id: string, mask: string, ext: boolean): { pattern: string; count: number } | null {
+  const bits = ext ? 29 : 11;
+  const max = ext ? 0x1fffffff : 0x7ff;
+  const i = parseHex(id, max);
+  const m = parseHex(mask, max);
+  if (i === null || m === null) return null;
+  let pattern = "";
+  let free = 0;
+  for (let b = bits - 1; b >= 0; b--) {
+    const care = ((m >>> b) & 1) === 1;
+    if (!care) free++;
+    pattern += care ? String((i >>> b) & 1) : "x";
+    if (b > 0 && b % 4 === 0) pattern += " ";
+  }
+  return { pattern, count: 2 ** free };
+}
+
 /** Changed filter fields only. The mask config goes as one object. Ids are hex, 11 bits (29 when extended). */
 export function buildHwFilterPatch(saved: HwFilter, d: HwFilterDraft): Built {
   const patch: Patch = {};
