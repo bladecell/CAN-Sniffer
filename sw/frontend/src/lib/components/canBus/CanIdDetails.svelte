@@ -17,14 +17,8 @@
     <h2>ID details</h2>
     <p class="muted">Select an ID in the IDs list, then Details, or double-click it.</p>
   {:else}
-    <h2>ID <span class="t-acc mono">{formatId(detail.id, detail.ext)}</span></h2>
+    <h2>ID <span class="idn">{formatId(detail.id, detail.ext)}</span></h2>
     <p class="muted">{detail.name || (detail.ext ? "Extended id" : "Standard id")}</p>
-
-    <div class="chips">
-      <span class="chip c-plain">{hzText(detail.hz)}</span>
-      <span class="chip c-plain">DLC {detail.dlc}</span>
-      <span class="chip c-plain">{detail.count} frames</span>
-    </div>
 
     <div class="bytes" aria-label="Last data bytes">
       {#each Array.from(detail.last.data) as b, i (i)}
@@ -33,6 +27,12 @@
           <b class="mono">{hex(b)}</b>
         </div>
       {/each}
+    </div>
+
+    <div class="chips">
+      <span class="chip hz">{hzText(detail.hz)}</span>
+      <span class="chip c-plain">DLC {detail.dlc}</span>
+      <span class="chip c-plain">{detail.count} frames</span>
     </div>
 
     <h3>Recent values</h3>
@@ -67,8 +67,8 @@
   .bytes {
     display: grid;
     grid-template-columns: repeat(8, minmax(0, 1fr));
-    gap: 4px;
-    margin-top: 6px;
+    gap: 6px;
+    margin: 2px 0;
   }
   .cell {
     padding: 8px 0;
@@ -86,9 +86,19 @@
     font-size: 0.9rem;
   }
   .cell.chg {
-    background: var(--hov);
+    background: color-mix(in srgb, var(--accent) 28%, transparent);
   }
   .cell.chg b {
+    color: var(--accent-text);
+  }
+  .idn {
+    font-family: var(--mono);
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    color: var(--accent-text);
+  }
+  .chip.hz {
+    background: color-mix(in srgb, var(--accent) 24%, transparent);
     color: var(--accent-text);
   }
   h3 {
@@ -106,6 +116,10 @@
   .hist li {
     display: flex;
     gap: 12px;
-    padding: 4px 0;
+    padding: 6px 0;
+    border-top: 1px solid var(--hair);
+  }
+  .hist li:first-child {
+    border-top: 0;
   }
 </style>
