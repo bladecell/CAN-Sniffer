@@ -2,7 +2,7 @@
   import type { LogRow, IdView } from "$lib/canBus/canModel";
   import type { TableMode } from "$lib/canBus/canBusStore.svelte";
   import { relTime } from "$lib/canBus/canFormat";
-  import { formatId, idKey } from "$lib/canBus/canIds";
+  import { formatId, idColorIndex, idKey } from "$lib/canBus/canIds";
 
   type Row = LogRow | IdView;
 
@@ -73,19 +73,19 @@
       if (e.key === "Enter") ondetails(key);
     }}
   >
-    <td class="num muted">{relTime(row.t, startUs)}</td>
-    <td class="mono id">{formatId(row.id, row.ext)}</td>
-    <td class="hide-s num">{row.data.length}</td>
+    <td class="mono muted">{relTime(row.t, startUs)}</td>
+    <td class="mono id" style:color="var(--c{idColorIndex(key)})">{formatId(row.id, row.ext)}</td>
+    <td class="hide-s">{row.data.length}</td>
     <td class="mono data">
       {#if row.rtr}
         <span class="muted">remote request</span>
       {:else}
         {#each Array.from(row.data) as b, i (i)}
-          <span class:chg={(row.changed & (1 << i)) !== 0}>{b.toString(16).toUpperCase().padStart(2, "0")}</span>
+          <span class="byte" class:chg={(row.changed & (1 << i)) !== 0} class:z={b === 0}>{b.toString(16).toUpperCase().padStart(2, "0")}</span>
         {/each}
       {/if}
     </td>
-    <td class="t-acc mono">{row.parsed}</td>
+    <td class="mono parsed" class:muted={!row.parsed}>{row.parsed || "-"}</td>
     <td class="hide-s muted">{row.tx ? "TX" : "RX"}</td>
   </tr>
 {/snippet}
@@ -119,18 +119,18 @@
   .ft-tbl th {
     position: sticky;
     top: 0;
-    padding: 6px 10px;
+    padding: 6px 12px;
     text-align: left;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    font-size: 0.8rem;
-    font-weight: 700;
+    font-size: 0.75rem;
+    font-weight: 800;
     color: var(--muted);
     background: var(--card);
     white-space: nowrap;
   }
   .ft-tbl td {
-    padding: 6px 10px;
+    padding: 9px 12px;
     background: var(--row);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
@@ -152,22 +152,30 @@
   .ft-tbl tr.sel:hover td {
     background: color-mix(in srgb, var(--accent) 24%, var(--hov));
   }
-  .num {
-    text-align: right;
-  }
   .id {
-    font-weight: 700;
+    font-weight: 800;
+    letter-spacing: 0.02em;
   }
-  .data span {
+  .byte {
     display: inline-block;
-    min-width: 2ch;
+    min-width: 2.1ch;
+    padding: 1px 3px;
+    border-radius: 6px;
+    text-align: center;
   }
-  .data span + span {
-    margin-left: 0.4em;
+  .byte + .byte {
+    margin-left: 0.25em;
   }
-  .data .chg {
+  .byte.z {
+    color: var(--muted);
+  }
+  .byte.chg {
+    background: color-mix(in srgb, var(--accent) 30%, transparent);
     color: var(--accent-text);
     font-weight: 800;
+  }
+  .parsed:not(.muted) {
+    color: var(--accent-text);
   }
   @media (max-width: 859px) {
     .hide-s {

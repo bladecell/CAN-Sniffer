@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { IdRow } from "$lib/canBus/canBusStore.svelte";
   import { ACTIVE_MS } from "$lib/canBus/canModel";
-  import { formatId } from "$lib/canBus/canIds";
+  import { formatId, idColorIndex } from "$lib/canBus/canIds";
   import { hzText } from "$lib/canBus/canFormat";
 
   interface Props {
@@ -60,9 +60,11 @@
     class="cl-row"
     class:quiet
     aria-current={selected === r.key ? "true" : undefined}
+    style:--c="var(--c{idColorIndex(r.key)})"
     onclick={() => onselect(r.key)}
     ondblclick={() => ondetails(r.key)}
   >
+    <i aria-hidden="true"></i>
     <span class="cl-id">
       <b class="mono">{formatId(r.id, r.ext)}</b>
       <small>{r.name || (r.ext ? "extended" : "standard")}</small>
@@ -114,10 +116,10 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
     width: 100%;
     min-height: 48px;
-    padding: 8px 12px 8px 14px;
+    padding: 8px 14px 8px 10px;
     border: 0;
     border-radius: var(--r-ctl);
     background: var(--row);
@@ -125,7 +127,18 @@
     text-align: left;
     font: inherit;
   }
+  .cl-row i {
+    align-self: stretch;
+    width: 4px;
+    flex: none;
+    border-radius: 4px;
+    background: var(--c);
+  }
+  .cl-row.quiet i {
+    opacity: 0.4;
+  }
   .cl-id {
+    flex: 1;
     display: grid;
     min-width: 0;
   }

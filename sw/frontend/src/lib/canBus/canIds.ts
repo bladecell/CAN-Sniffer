@@ -31,3 +31,8 @@ export function hexBytes(data: ArrayLike<number>): string {
   for (let i = 0; i < data.length; i++) out += (i ? " " : "") + data[i].toString(16).toUpperCase().padStart(2, "0");
   return out;
 }
+
+/** Colour slot 1..5 (the --c1..--c5 tokens) for an id key, so one id keeps its colour in the list and the table. */
+export function idColorIndex(key: number): number {
+  return (key % 5) + 1;
+}
