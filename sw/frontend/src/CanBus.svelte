@@ -171,6 +171,7 @@
     position: relative;
     width: 40px;
     height: 40px;
+    padding: 0;
     border: 0;
     border-radius: 14px;
     background: transparent;
