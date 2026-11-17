@@ -88,10 +88,13 @@
   .cc p {
     margin: 0;
   }
+  .cc-warn :global(svg) {
+    flex: none;
+  }
   .cc-warn {
     display: flex;
     gap: 8px;
-    align-items: flex-start;
+    align-items: center;
     padding: 8px 12px;
     border-radius: var(--r-ctl);
     background: var(--warn-f, var(--ctl));

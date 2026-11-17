@@ -84,27 +84,36 @@
         <SettingRow title="Accepted IDs" hint="Hex. A mask bit set to 1 must match the same bit of the ID." stack error={built.errors.mfilter_cfg}>
           <div class="hw">
             <div class="hw-fields">
-              <div class="hw-f">
+              <div class="hw-f hw-len">
                 <span class="st-lab">Length</span>
                 <SegControl label="ID length" options={ID_LENGTHS} value={hwDraft.ext ? "ext" : "std"} onChange={(v) => (hwEdits.ext = v === "ext")} />
               </div>
-              <label class="hw-f">
+              <label class="hw-f hw-id">
                 <span class="st-lab">ID</span>
                 <input class="in num mono" type="text" spellcheck="false" autocomplete="off" value={hwDraft.id} aria-invalid={built.errors.mfilter_cfg ? "true" : undefined} oninput={(e) => (hwEdits.id = e.currentTarget.value)} />
               </label>
-              <label class="hw-f">
+              <label class="hw-f hw-id">
                 <span class="st-lab">Mask</span>
                 <input class="in num mono" type="text" spellcheck="false" autocomplete="off" value={hwDraft.mask} aria-invalid={built.errors.mfilter_cfg ? "true" : undefined} oninput={(e) => (hwEdits.mask = e.currentTarget.value)} />
               </label>
             </div>
-            <p class="hw-pre" aria-live="polite">
+            <div class="hw-pre" aria-live="polite">
               {#if preview}
-                <span class="hw-bits mono">{preview.pattern}</span>
+                <div class="hw-bits" role="img" aria-label="Bit pattern {preview.pattern}">
+                  {#each preview.pattern.split(" ") as group, g (g + g)}
+                    <span class="hw-group">
+                      {#each [...group] as bit, b (b)}
+                        <span class="hw-bit" class:hw-one={bit === "1"} class:hw-any={bit === "x"}>{bit}</span>
+                      {/each}
+                    </span>
+                  {/each}
+                </div>
                 <span class="hw-count">{preview.count === 1 ? "1 ID" : preview.count === 2 ** (hwDraft.ext ? 29 : 11) ? "Every ID" : `${preview.count.toLocaleString("en")} IDs`}</span>
+                <span class="hw-legend">1 and 0 must match, x is open</span>
               {:else}
                 <span class="muted">Enter hex values to see what passes.</span>
               {/if}
-            </p>
+            </div>
           </div>
         </SettingRow>
       {/if}
@@ -125,39 +134,90 @@
     width: 100%;
     min-width: 0;
   }
+  /* Length, ID and Mask share one top line: labels align, controls align at --ctl-h. Wraps to two rows when narrow. */
   .hw-fields {
     display: flex;
     flex-wrap: wrap;
-    align-items: flex-end;
+    align-items: start;
     gap: 12px;
   }
   .hw-f {
     display: grid;
-    gap: 4px;
+    gap: 6px;
+    align-content: start;
     min-width: 0;
   }
+  .hw-len {
+    flex: 1 1 15rem;
+  }
+  .hw-id {
+    flex: 1 1 7rem;
+  }
+  .hw-len :global(.seg) {
+    display: flex;
+    width: 100%;
+    min-height: var(--ctl-h);
+    box-sizing: border-box;
+  }
+  .hw-len :global(.seg > button) {
+    flex: 1 1 0;
+    min-height: 0;
+    align-self: stretch;
+    padding: 0 10px;
+  }
   .hw .in {
-    width: 8rem;
-    max-width: 100%;
+    width: 100%;
+    min-height: var(--ctl-h);
   }
   .hw-pre {
     display: flex;
     flex-wrap: wrap;
-    align-items: baseline;
-    gap: 6px 14px;
+    align-items: center;
+    gap: 10px 14px;
     margin: 0;
     padding: 10px 14px;
     border-radius: var(--r-ctl);
     background: var(--row);
   }
   .hw-bits {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+  }
+  .hw-group {
+    display: inline-flex;
+    gap: 3px;
+  }
+  .hw-bit {
+    display: grid;
+    place-items: center;
+    width: 1.3rem;
+    height: 1.7rem;
+    border-radius: 6px;
+    background: var(--ctl);
+    color: var(--ctl-sub);
+    font-family: var(--mono);
+    font-size: 0.85rem;
     font-weight: 800;
-    letter-spacing: 0.06em;
-    color: var(--accent-text);
+  }
+  .hw-bit.hw-one {
+    background: var(--accent);
+    color: var(--on-accent);
+  }
+  .hw-bit.hw-any {
+    background: transparent;
+    box-shadow: inset 0 0 0 1.5px var(--muted);
+    color: var(--muted);
   }
   .hw-count {
+    color: var(--accent-text);
+    font-weight: 800;
+    font-size: 0.9rem;
+    white-space: nowrap;
+  }
+  .hw-legend {
     color: var(--muted);
-    font-weight: 700;
-    font-size: 0.88rem;
+    font-size: 0.82rem;
+    font-weight: 600;
   }
 </style>

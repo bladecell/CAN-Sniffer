@@ -392,9 +392,22 @@
   h1:focus {
     outline: none;
   }
+  /* Phone header, same pattern as CAN Bus: title, then the plot-count control full width, then the two actions side by side. */
   @media (max-width: 859px) {
     .bar h1 {
       font-size: 1.7rem;
+      flex-basis: 100%;
+    }
+    .bar > .seg {
+      flex: 1 1 100%;
+      width: 100%;
+    }
+    .bar > .seg > button {
+      flex: 1 1 0;
+    }
+    .bar > .btn {
+      flex: 1 1 0;
+      justify-content: center;
     }
   }
   /* Header buttons: 46 px tall, 18 px side padding (mockup .btn). */

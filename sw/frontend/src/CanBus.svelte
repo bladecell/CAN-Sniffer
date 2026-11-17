@@ -18,12 +18,12 @@
   let tab = $state<Tab>("ids");
 
   const RAIL: { id: Tab; label: string; icon: string }[] = [
-    { id: "ids", label: "IDs", icon: "waves-sine" },
-    { id: "ecu", label: "ECU IDs", icon: "engine" },
-    { id: "cap", label: "Captures", icon: "sd-card" },
-    { id: "info", label: "ID details", icon: "circle-info" },
-    { id: "send", label: "Send", icon: "upload" },
+    { id: "ids", label: "IDs", icon: "hashtag" },
+    { id: "ecu", label: "ECU IDs", icon: "microchip" },
     { id: "rules", label: "Rules", icon: "filter" },
+    { id: "info", label: "ID details", icon: "circle-info" },
+    { id: "send", label: "Send", icon: "paper-plane" },
+    { id: "cap", label: "Captures", icon: "sd-card" },
   ];
 
   function openDetails(key: number) {
@@ -72,6 +72,7 @@
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <section class="cb" onclick={clearSelection}>
   <div class="cb-ws">
+    <div class="cb-left">
     <nav class="card cb-rail" aria-label="CAN views">
       {#each RAIL as r (r.id)}
         <button aria-current={tab === r.id ? "page" : undefined} aria-label={r.label} title={r.label} onclick={() => (tab = r.id)}>
@@ -101,6 +102,7 @@
         <CanIdDetails detail={canBus.snapshot.selected} startUs={canBus.snapshot.startUs} />
       {/if}
     </aside>
+    </div>
 
     <div class="cb-main">
       <header class="card cb-head">
@@ -119,7 +121,7 @@
             <span>{canBus.logging ? "Pause" : "Start"}</span>
           </button>
           <button class="btn pri" aria-pressed={captures.capturing} disabled={captures.busy} onclick={toggleSave}>
-            <Icon name={captures.capturing ? "square" : "save"} size={16} />
+            <Icon name={captures.capturing ? "square" : "floppy-disks"} size={16} />
             <span>{captures.capturing ? "Stop saving" : "Save to SD"}</span>
           </button>
         </div>
@@ -147,55 +149,83 @@
 </section>
 
 <style>
+  /* Same container tokens as Telemetry (.tel): gap, card padding, sticky top and the 860 px split. */
   .cb {
+    --gap: 20px;
+    --stick: 104px;
     display: grid;
-    gap: var(--gap, 20px);
+    gap: var(--gap);
     min-width: 0;
   }
   .cb-ws {
     display: grid;
     gap: var(--gap, 20px);
-    grid-template-columns: 56px 320px minmax(0, 1fr);
+    grid-template-columns: clamp(380px, 28vw, 400px) minmax(0, 1fr);
     align-items: start;
   }
+  /* Rail and panel share Telemetry's side column: same width, 10 px between them, sticky under the 104 px header. */
+  .cb-left {
+    display: flex;
+    gap: 10px;
+    align-items: stretch;
+    min-width: 0;
+    min-height: 460px;
+  }
+  @media (min-height: 760px) {
+    .cb-left {
+      position: sticky;
+      top: var(--stick);
+      max-height: calc(100dvh - 200px);
+    }
+  }
+  /* Same look as Telemetry's PidTabs rail: 56 px card, 6 px padding, 44x48 buttons, selected = accent icon + bar. */
   .cb-rail {
-    display: grid;
-    gap: 6px;
-    align-content: start;
-    padding: 8px;
-    position: sticky;
-    top: 120px;
+    flex: none;
+    width: 56px;
+    box-sizing: border-box;
+    align-self: flex-start;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px;
+    border-radius: calc(var(--r-float) - 8px);
   }
   .cb-rail button {
     position: relative;
-    width: 40px;
-    height: 40px;
-    padding: 0;
-    border: 0;
-    border-radius: 14px;
-    background: transparent;
-    color: var(--muted);
     display: grid;
     place-items: center;
+    width: 44px;
+    height: 48px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: calc(var(--r-ctl) - 2px);
+    background: none;
+    color: var(--ctl-sub);
+    cursor: pointer;
   }
   .cb-rail button[aria-current] {
-    background: var(--ctl);
     color: var(--accent-text);
   }
   .cb-rail button[aria-current]::before {
     content: '';
     position: absolute;
-    left: -8px;
+    left: -6px;
     top: 22%;
     bottom: 22%;
     width: 3px;
     border-radius: 3px;
     background: var(--accent);
   }
+  @media (hover: hover) {
+    .cb-rail button:hover {
+      background: var(--hov);
+    }
+  }
   .cb-side {
-    padding: 16px;
-    position: sticky;
-    top: 120px;
+    padding: var(--pad-card);
+    flex: 1;
+    overflow: auto;
     min-width: 0;
   }
   .cb-main {
@@ -204,7 +234,7 @@
     min-width: 0;
   }
   .cb-head {
-    padding: 18px 22px;
+    padding: var(--pad-card);
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -250,24 +280,19 @@
     gap: 8px;
   }
 
-  @media (max-width: 1100px) {
-    .cb-ws {
-      grid-template-columns: 56px minmax(0, 1fr);
-    }
-    .cb-side {
-      grid-column: 2;
-      position: static;
-    }
-    .cb-main {
-      grid-column: 1 / -1;
-    }
-  }
   @media (max-width: 859px) {
+    .cb {
+      --gap: 14px;
+    }
     .cb-ws {
       grid-template-columns: minmax(0, 1fr);
     }
+    .cb-left {
+      display: contents;
+    }
     .cb-rail {
-      grid-auto-flow: column;
+      align-self: auto;
+      flex-direction: row;
       justify-content: start;
       position: static;
       width: max-content;
@@ -282,15 +307,35 @@
       width: auto;
       height: 3px;
     }
+    /* Phone order: views, then the header with its actions, the status tiles, the view panel, the frame table.
+       cb-main drops its box so its children join the page grid, like Telemetry's header comes first. */
+    .cb-main {
+      display: contents;
+    }
+    .cb-head {
+      order: 1;
+    }
+    .cb-main > :global(.ct) {
+      order: 2;
+    }
     .cb-side {
+      order: 3;
       grid-column: auto;
       position: static;
     }
-    .cb-head {
-      padding: 14px 16px;
+    .cb-main > :global(.ft) {
+      order: 4;
     }
     .cb-title h1 {
       font-size: 1.7rem;
+    }
+    /* Same phone header as Telemetry: the two actions share a full-width row. */
+    .cb-actions {
+      width: 100%;
+    }
+    .cb-actions .btn {
+      flex: 1 1 0;
+      justify-content: center;
     }
   }
 </style>
