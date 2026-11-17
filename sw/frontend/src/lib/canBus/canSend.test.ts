@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseIntIn, parseSendData, parseSendId, planBody } from "./canSend";
+import { moveAt, parseIntIn, parseSendData, parseSendId, planBody, reorderBy } from "./canSend";
 
 describe("parseSendId", () => {
   test("standard ids only", () => {
@@ -41,5 +41,19 @@ describe("parseIntIn and planBody", () => {
       period_ms: 100,
       repeat: 0,
     });
+  });
+});
+
+describe("sequence order", () => {
+  const list = [{ k: "a" }, { k: "b" }, { k: "c" }];
+  test("moveAt swaps with the neighbour and ignores out of range", () => {
+    expect(moveAt(list, 0, 1).map((x) => x.k)).toEqual(["b", "a", "c"]);
+    expect(moveAt(list, 0, -1)).toBe(list);
+    expect(moveAt(list, 2, 1)).toBe(list);
+  });
+  test("reorderBy follows the ids and refuses a partial list", () => {
+    expect(reorderBy(list, (x) => x.k, ["c", "a", "b"]).map((x) => x.k)).toEqual(["c", "a", "b"]);
+    expect(reorderBy(list, (x) => x.k, ["c", "a"])).toBe(list);
+    expect(reorderBy(list, (x) => x.k, ["c", "a", "zzz"])).toBe(list);
   });
 });

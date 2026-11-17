@@ -39,3 +39,19 @@ export function planBody(frames: readonly SendFrame[], periodMs: number, repeat:
 export function idHex(id: number): string {
   return id.toString(16).toUpperCase().padStart(3, "0");
 }
+
+/** The list with item `i` swapped with its neighbour `d` away; the same list when that is out of range. */
+export function moveAt<T>(list: readonly T[], i: number, d: number): readonly T[] {
+  const j = i + d;
+  if (i < 0 || i >= list.length || j < 0 || j >= list.length) return list;
+  const next = [...list];
+  [next[i], next[j]] = [next[j], next[i]];
+  return next;
+}
+
+/** The list in the order of `keys` (after a drag); the same list unless `keys` names every item once. */
+export function reorderBy<T>(list: readonly T[], keyOf: (item: T) => string, keys: readonly string[]): readonly T[] {
+  const byKey = new Map(list.map((x) => [keyOf(x), x]));
+  const next = keys.flatMap((k) => byKey.get(k) ?? []);
+  return next.length === list.length && new Set(keys).size === list.length ? next : list;
+}

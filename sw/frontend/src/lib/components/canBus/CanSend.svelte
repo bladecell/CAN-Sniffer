@@ -5,14 +5,17 @@
   import { firmwareApi } from "$lib/firmwareApi.svelte";
   import { parseJsonResponse } from "$lib/api";
   import { canBus } from "$lib/canBus/canBusStore.svelte";
-  import { idHex, parseIntIn, parseSendData, parseSendId, planBody, SEND_MAX_FRAMES, SEND_MAX_PERIOD_MS, SEND_MAX_REPEAT, SEND_MIN_PERIOD_MS, type SendFrame } from "$lib/canBus/canSend";
+  import ItemList from "$lib/components/dashboard/ItemList.svelte";
+  import { idHex, moveAt, parseIntIn, parseSendData, parseSendId, planBody, SEND_MAX_FRAMES, SEND_MAX_PERIOD_MS, SEND_MAX_REPEAT, SEND_MIN_PERIOD_MS, reorderBy, type SendFrame } from "$lib/canBus/canSend";
   import type { CanModeStatus, CanSendStatus } from "$lib/types";
 
   let idText = $state("7DF");
   let dataText = $state("02 01 0C 00 00 00 00 00");
   let periodText = $state("");
   let repeatText = $state("1");
-  let frames = $state<SendFrame[]>([]);
+  type Queued = SendFrame & { key: string };
+  let frames = $state<Queued[]>([]);
+  let nextKey = 0;
   let fc = $state(false);
   let confirming = $state(false);
   let busy = $state(false);
@@ -91,7 +94,7 @@
     const id = parseSendId(idText);
     const data = parseSendData(dataText);
     if (!id.ok || !data.ok) return;
-    frames = [...frames, { id: id.value, data: data.value }];
+    frames = [...frames, { id: id.value, data: data.value, key: String(nextKey++) }];
     error = null;
   }
 
@@ -191,19 +194,15 @@
         </div>
       </div>
 
-      <h3>Sequence <span class="muted">{frames.length} of {SEND_MAX_FRAMES} frames</span></h3>
-      {#if frames.length > 0}
-        <ul class="cs-list">
-          {#each frames as f, i (i)}
-            <li>
-              <span class="mono"><b>{idHex(f.id)}</b> {f.data}</span>
-              <button class="btn sm" aria-label="Remove frame" onclick={() => (frames = frames.filter((_, j) => j !== i))}>
-                <Icon name="trash" size={16} />
-              </button>
-            </li>
-          {/each}
-        </ul>
-      {/if}
+      <ItemList
+        title="Sequence"
+        rows={frames.map((f) => ({ id: f.key, name: idHex(f.id), unit: "", detail: f.data }))}
+        max={SEND_MAX_FRAMES}
+        emptyHint="Empty. Send uses the frame above, or add frames to build a sequence."
+        onRemove={(i) => (frames = frames.filter((_, j) => j !== i))}
+        onMove={(i, d) => (frames = [...moveAt(frames, i, d)])}
+        onReorder={(keys) => (frames = [...reorderBy(frames, (f) => f.key, keys)])}
+      />
       <button class="btn" disabled={frames.length >= SEND_MAX_FRAMES} onclick={addFrame}>Add frame to sequence</button>
 
       <label class="cs-check"><input type="checkbox" checked={fc} onchange={(e) => toggleFc(e.currentTarget.checked)} /> ISO-TP flow control (answers first frames with 30 00 00)</label>
@@ -272,26 +271,6 @@
   .cs-form .in {
     width: 100%;
     min-width: 0;
-  }
-  .cs-form h3 {
-    margin: 4px 0 0;
-    font-size: 1rem;
-  }
-  .cs-list {
-    display: grid;
-    gap: 6px;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-  .cs-list li {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 10px;
-    border-radius: var(--r-ctl);
-    background: var(--row);
   }
   .lab {
     display: block;

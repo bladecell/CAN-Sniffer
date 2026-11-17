@@ -12,25 +12,27 @@
     unit: string;
     /** PID colour swatch (CSS colour). */
     color?: string;
+    /** A second line under the row, in monospace (a CAN frame's data). */
+    detail?: string;
   }
 
   interface Props {
     title: string;
     rows: ItemRow[];
-    /** Choices for the add select; disable the ones already used. */
-    options: SelectMenuOption<string>[];
+    /** Choices for the add select; disable the ones already used. Without `onAdd` the add row is not shown. */
+    options?: SelectMenuOption<string>[];
     max: number;
     /** Rows below this count cannot be removed. */
     min?: number;
     emptyHint?: string;
-    onAdd: (key: string) => void;
+    onAdd?: (key: string) => void;
     onRemove: (i: number) => void;
     onMove: (i: number, d: number) => void;
     /** Called when a drag ends, with the row ids in their new order. */
     onReorder: (ids: string[]) => void;
   }
 
-  let { title, rows, options, max, min = 0, emptyHint = "No items yet.", onAdd, onRemove, onMove, onReorder }: Props = $props();
+  let { title, rows, options = [], max, min = 0, emptyHint = "No items yet.", onAdd, onRemove, onMove, onReorder }: Props = $props();
 
   let list = $state<HTMLUListElement>();
   // The order shown while a drag is in flight; null means the rows prop.
@@ -93,10 +95,12 @@
               <Icon name="trash" size={20} />
             </button>
           </div>
+          {#if r.detail}<div class="db-sub">{r.detail}</div>{/if}
         </li>
       {/each}
     </ul>
   {/if}
+  {#if onAdd}
   <div class="db-add-row">
     <div class="db-add-pick">
       {#key rows.length}
@@ -105,6 +109,7 @@
     </div>
     <span class="db-hint">{rows.length >= max ? `Up to ${max} items` : `${rows.length} of ${max} items`}</span>
   </div>
+  {/if}
 </div>
 
 <style>
@@ -134,11 +139,21 @@
   }
   .db-item {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
     padding: 6px 8px 6px 4px;
     border-radius: var(--r-track);
     background: var(--row);
+  }
+  .db-sub {
+    flex: 1 0 100%;
+    padding: 0 8px 6px 52px;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    font-weight: 600;
+    overflow-wrap: anywhere;
   }
   .db-grip {
     background: none;
