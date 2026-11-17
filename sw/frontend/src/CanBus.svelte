@@ -138,9 +138,10 @@
         onmode={(mode) => canBus.setTableMode(mode)}
         onclear={() => canBus.clearTable()}
         filter={canBus.filter}
-        idText={canBus.idText}
+        rules={canBus.rules}
         onfilter={(f) => canBus.setFilter(f)}
-        onidtext={(t) => canBus.setIdText(t)}
+        onaddrule={(r) => canBus.addFilterRule(r)}
+        onremoverule={(k) => canBus.removeFilterRule(k)}
       />
     </div>
   </div>

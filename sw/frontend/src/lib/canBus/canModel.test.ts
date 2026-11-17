@@ -100,12 +100,11 @@ describe("log and table", () => {
     expect(logRows(m, "obd").length).toBe(2);
   });
 
-  test("id text filter matches the formatted id", () => {
+  test("a keep predicate filters both tables", () => {
     const m = new CanModel();
     m.ingest(batch([rec(0x7e8, [1]), rec(0x123, [1])]), 0);
-    expect(logRows(m, "all", "7E").map((r) => r.id)).toEqual([0x7e8]);
-    expect(byIdRows(m, "all", "123").map((r) => r.id)).toEqual([0x123]);
-    expect(logRows(m, "all", "ZZ")).toEqual([]);
+    expect(logRows(m, "all", (f) => f.id === 0x7e8).map((r) => r.id)).toEqual([0x7e8]);
+    expect(byIdRows(m, "all", (f) => f.id === 0x123).map((r) => r.id)).toEqual([0x123]);
   });
 
   test("a formula rule fills the parsed column", () => {

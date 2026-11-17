@@ -2,7 +2,7 @@
 // Counters keep running while the view is paused (the page copies a snapshot, not this object).
 import type { RawBatch } from "../wsFrames";
 import { compileRules, type CompiledRules, type FrameLike } from "./canRules";
-import { formatId, idKey, isObdId, ecuRequestId } from "./canIds";
+import { idKey, isObdId, ecuRequestId } from "./canIds";
 
 /** Rows shown in the table (DESIGN: about 500). The log keeps up to twice that between trims. */
 export const TABLE_ROWS = 500;
@@ -147,20 +147,18 @@ export class CanModel {
 
 export type TableFilter = "all" | "changed" | "obd";
 
-/** `needle` is an upper-case fragment of the formatted id; empty matches all. */
-export function passesFilter(row: { id: number; ext: boolean; changed: number }, filter: TableFilter, needle = ""): boolean {
-  if (needle && !formatId(row.id, row.ext).includes(needle)) return false;
+export function passesFilter(row: { id: number; ext: boolean; changed: number }, filter: TableFilter): boolean {
   if (filter === "changed") return row.changed !== 0;
   if (filter === "obd") return isObdId(row.id, row.ext);
   return true;
 }
 
 /** Newest first, shown rows only (hidden rows are the plain-filter matches), capped at TABLE_ROWS. */
-export function logRows(model: CanModel, filter: TableFilter, needle = ""): LogRow[] {
+export function logRows(model: CanModel, filter: TableFilter, keep: (f: CanFrame) => boolean = () => true): LogRow[] {
   const out: LogRow[] = [];
   for (let i = model.log.length - 1; i >= 0 && out.length < TABLE_ROWS; i--) {
     const row = model.log[i];
-    if (!row.hidden && passesFilter(row, filter, needle)) out.push(row);
+    if (!row.hidden && passesFilter(row, filter) && keep(row)) out.push(row);
   }
   return out;
 }
@@ -169,10 +167,10 @@ export function logRows(model: CanModel, filter: TableFilter, needle = ""): LogR
 export type IdView = CanFrame & { key: number; count: number; hz: number; changed: number; parsed: string; name: string };
 
 /** Sorted by id, shown ids only, capped at TABLE_ROWS. */
-export function byIdRows(model: CanModel, filter: TableFilter, needle = ""): IdView[] {
+export function byIdRows(model: CanModel, filter: TableFilter, keep: (f: CanFrame) => boolean = () => true): IdView[] {
   const list: IdView[] = [];
   for (const [key, e] of model.ids) {
-    if (e.hidden || !passesFilter(e, filter, needle)) continue;
+    if (e.hidden || !passesFilter(e, filter) || !keep(e.last)) continue;
     list.push({ ...e.last, key, count: e.count, hz: e.hz, changed: e.changed, parsed: e.parsed, name: e.name });
   }
   list.sort((a, b) => a.id - b.id || Number(a.ext) - Number(b.ext));

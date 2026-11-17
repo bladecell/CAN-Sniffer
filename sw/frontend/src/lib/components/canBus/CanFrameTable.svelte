@@ -2,6 +2,7 @@
   import type { LogRow, IdView, TableFilter } from "$lib/canBus/canModel";
   import type { TableMode } from "$lib/canBus/canBusStore.svelte";
   import Icon from "$lib/Icon.svelte";
+  import { describeRule, FILTER_FIELDS, opsFor, parseFilterValue, type FilterField, type FilterOp, type FilterRule } from "$lib/canBus/canFilter";
   import { relTime } from "$lib/canBus/canFormat";
   import { measureHeight, trackUnder } from "$lib/layers";
   import { formatId, idColorIndex, idKey } from "$lib/canBus/canIds";
@@ -19,12 +20,13 @@
     onmode: (mode: TableMode) => void;
     onclear: () => void;
     filter: TableFilter;
-    idText: string;
+    rules: FilterRule[];
     onfilter: (filter: TableFilter) => void;
-    onidtext: (text: string) => void;
+    onaddrule: (rule: Omit<FilterRule, "key">) => void;
+    onremoverule: (key: number) => void;
   }
 
-  let { mode, rows, byId, startUs, selected, onselect, ondetails, onmode, onclear, filter, idText, onfilter, onidtext }: Props = $props();
+  let { mode, rows, byId, startUs, selected, onselect, ondetails, onmode, onclear, filter, rules, onfilter, onaddrule, onremoverule }: Props = $props();
 
   // The bar sits beside the scroller (Gecko drops the blur inside one), so mirror its horizontal scroll and scrollbar width.
   function syncBar(el: HTMLElement) {
@@ -49,8 +51,30 @@
     { id: "obd", label: "OBD" },
   ];
 
+  let adding = $state(false);
+  let exclude = $state(false);
+  let field = $state<FilterField>("id");
+  let op = $state<FilterOp>("=");
+  let value = $state("");
+  let wrapEl = $state<HTMLDivElement>();
+  const valid = $derived(parseFilterValue(field, value) !== null);
+  const hint = $derived(field === "dir" ? "RX or TX" : field === "dlc" ? "0-8" : "hex, e.g. 7E8");
+
+  function onField() {
+    if (!opsFor(field).includes(op)) op = "=";
+  }
+
+  function add() {
+    if (!valid) return;
+    onaddrule({ field, op, value: value.trim(), exclude });
+    value = "";
+    adding = false;
+  }
+
   const count = $derived(mode === "log" ? rows.length : byId.length);
 </script>
+
+<svelte:window onpointerdown={(e) => adding && !wrapEl?.contains(e.target as Node) && (adding = false)} />
 
 <section class="card ft" aria-label="Frames">
   <div class="ft-head">
@@ -64,7 +88,49 @@
       {/each}
     </div>
     <div class="ft-tools">
-      <input class="in mono ft-id" placeholder="ID, e.g. 7E8" aria-label="Filter by ID" value={idText} oninput={(e) => onidtext(e.currentTarget.value)} />
+      <div class="ft-add" bind:this={wrapEl}>
+        <button class="btn sm" aria-expanded={adding} aria-haspopup="dialog" onclick={() => (adding = !adding)}>
+          <Icon name="plus" size={16} />
+          <span>Filter</span>
+        </button>
+        {#if adding}
+          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+          <form
+            class="popup ft-pop"
+            aria-label="Add a filter"
+            onsubmit={(e) => {
+              e.preventDefault();
+              add();
+            }}
+            onkeydown={(e) => {
+              if (e.key === "Escape") adding = false;
+            }}
+          >
+            <div class="seg" role="radiogroup" aria-label="Rule type">
+              <button type="button" role="radio" aria-checked={!exclude} onclick={() => (exclude = false)}>Include</button>
+              <button type="button" role="radio" aria-checked={exclude} onclick={() => (exclude = true)}>Exclude</button>
+            </div>
+            <label>
+              <span class="muted">Row</span>
+              <select class="in" bind:value={field} onchange={onField}>
+                {#each FILTER_FIELDS as f (f.id)}<option value={f.id}>{f.label}</option>{/each}
+              </select>
+            </label>
+            <label>
+              <span class="muted">Is</span>
+              <select class="in mono" bind:value={op} aria-label="Operator">
+                {#each opsFor(field) as o (o)}<option value={o}>{o}</option>{/each}
+              </select>
+            </label>
+            <label>
+              <span class="muted">Value</span>
+              <!-- svelte-ignore a11y_autofocus -->
+              <input class="in mono" bind:value placeholder={hint} autofocus aria-invalid={value !== "" && !valid} />
+            </label>
+            <button class="btn pri" disabled={!valid}>Add filter</button>
+          </form>
+        {/if}
+      </div>
       <span class="muted">{count} shown</span>
       <button class="btn sm" disabled={count === 0} onclick={onclear}>
         <Icon name="trash" size={16} />
@@ -73,8 +139,19 @@
     </div>
   </div>
 
+  {#if rules.length}
+    <ul class="ft-chips" aria-label="Active filters">
+      {#each rules as r (r.key)}
+        <li class:ex={r.exclude}>
+          <span>{describeRule(r)}</span>
+          <button aria-label="Remove filter" onclick={() => onremoverule(r.key)}><Icon name="x" size={12} /></button>
+        </li>
+      {/each}
+    </ul>
+  {/if}
+
   {#if count === 0}
-    <p class="muted ft-empty">{idText || filter !== "all" ? "No frames match the filter." : "No frames. Press Start to log the bus."}</p>
+    <p class="muted ft-empty">{rules.length || filter !== "all" ? "No frames match the filter." : "No frames. Press Start to log the bus."}</p>
   {:else}
     <div class="ft-body">
       <div class="ft-bar float-layer rest-top" aria-hidden="true" {@attach measureHeight("--hdr-h")}>
@@ -177,8 +254,54 @@
     align-items: center;
     gap: 6px;
   }
-  .ft-id {
-    width: 130px;
+  .ft-add {
+    position: relative;
+  }
+  .ft-pop {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 6px);
+    z-index: 20;
+    width: 260px;
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+  }
+  .ft-pop label {
+    display: grid;
+    gap: 4px;
+  }
+  .ft-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0;
+    padding: 0 4px 8px;
+    list-style: none;
+  }
+  .ft-chips li {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px 4px 10px;
+    border-radius: 999px;
+    background: var(--ctl);
+    font-size: 0.85rem;
+  }
+  .ft-chips li.ex {
+    color: var(--crit);
+  }
+  .ft-chips button {
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
   }
   .ft-empty {
     margin: 12px;
