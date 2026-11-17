@@ -46,12 +46,12 @@
       <table class="ft-tbl">
         <thead>
           <tr>
-            <th scope="col">Time (s)</th>
-            <th scope="col">Direction</th>
-            <th scope="col">ID</th>
-            <th scope="col" class="hide-s">DLC</th>
-            <th scope="col">Data</th>
-            <th scope="col">Parsed</th>
+            <th scope="col" class="float-layer">Time (s)</th>
+            <th scope="col" class="float-layer">Direction</th>
+            <th scope="col" class="float-layer">ID</th>
+            <th scope="col" class="float-layer hide-s">DLC</th>
+            <th scope="col" class="float-layer">Data</th>
+            <th scope="col" class="float-layer">Parsed</th>
           </tr>
         </thead>
         <tbody>
@@ -144,7 +144,7 @@
     font-size: 0.75rem;
     font-weight: 800;
     color: var(--muted);
-    background: var(--card);
+    box-shadow: none;
     white-space: nowrap;
   }
   .ft-tbl td {
