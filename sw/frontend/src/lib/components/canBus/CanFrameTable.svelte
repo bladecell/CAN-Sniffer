@@ -207,7 +207,7 @@
           </div>
         {/if}
       </div>
-      <span class="muted">{count} shown{held ? ", paused while scrolled" : ""}</span>
+      <span class="muted">{count} shown</span>
       <button class="btn sm" disabled={count === 0} onclick={() => {
           held = null;
           onclear();
