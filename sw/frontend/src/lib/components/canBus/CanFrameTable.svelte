@@ -44,14 +44,14 @@
   {:else}
     <div class="ft-scroll">
       <table class="ft-tbl">
-        <thead>
+        <thead class="float-layer">
           <tr>
-            <th scope="col" class="float-layer">Time (s)</th>
-            <th scope="col" class="float-layer">Direction</th>
-            <th scope="col" class="float-layer">ID</th>
-            <th scope="col" class="float-layer hide-s">DLC</th>
-            <th scope="col" class="float-layer">Data</th>
-            <th scope="col" class="float-layer">Parsed</th>
+            <th scope="col">Time (s)</th>
+            <th scope="col">Direction</th>
+            <th scope="col">ID</th>
+            <th scope="col" class="hide-s">DLC</th>
+            <th scope="col">Data</th>
+            <th scope="col">Parsed</th>
           </tr>
         </thead>
         <tbody>
@@ -134,9 +134,13 @@
     border-spacing: 0 4px;
     font-size: 0.92rem;
   }
-  .ft-tbl th {
+  .ft-tbl thead {
     position: sticky;
     top: 0;
+    z-index: 2;
+    box-shadow: none;
+  }
+  .ft-tbl th {
     padding: 6px 12px;
     text-align: left;
     text-transform: uppercase;
@@ -144,7 +148,6 @@
     font-size: 0.75rem;
     font-weight: 800;
     color: var(--muted);
-    box-shadow: none;
     white-space: nowrap;
   }
   .ft-tbl td {
