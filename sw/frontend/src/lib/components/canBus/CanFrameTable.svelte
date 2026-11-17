@@ -112,7 +112,26 @@
     commit();
   }
 
-  const count = $derived(mode === "log" ? rows.length : byId.length);
+  // Scrolled away from the top: hold the rows so new frames do not push them around. Back at the top, it follows the bus again.
+  let held = $state.raw<{ rows: LogRow[]; byId: IdView[] } | null>(null);
+  const shownRows = $derived(held?.rows ?? rows);
+  const shownById = $derived(held?.byId ?? byId);
+
+  // A new view (table, filter, rules) must not show the old frozen rows.
+  $effect(() => {
+    mode;
+    filter;
+    rules;
+    held = null;
+  });
+
+  function onScroll(e: Event) {
+    const top = (e.currentTarget as HTMLElement).scrollTop;
+    if (top > 4 && !held) held = { rows, byId };
+    else if (top <= 4 && held) held = null;
+  }
+
+  const count = $derived(mode === "log" ? shownRows.length : shownById.length);
 </script>
 
 <svelte:window
@@ -188,8 +207,11 @@
           </div>
         {/if}
       </div>
-      <span class="muted">{count} shown</span>
-      <button class="btn sm" disabled={count === 0} onclick={onclear}>
+      <span class="muted">{count} shown{held ? ", paused while scrolled" : ""}</span>
+      <button class="btn sm" disabled={count === 0} onclick={() => {
+          held = null;
+          onclear();
+        }}>
         <Icon name="trash" size={16} />
         <span>Clear</span>
       </button>
@@ -207,7 +229,7 @@
         </div>
         </div>
       </div>
-      <div class="ft-scroll" {@attach trackUnder} {@attach syncBar}>
+      <div class="ft-scroll" onscroll={onScroll} {@attach trackUnder} {@attach syncBar}>
       <table class="ft-tbl">
         <colgroup>
           {#each vis as c, i (c.key)}<col style:width={i === vis.length - 1 ? undefined : `${c.w}px`} />{/each}
@@ -219,11 +241,11 @@
         </thead>
         <tbody>
           {#if mode === "log"}
-            {#each rows as row (row)}
+            {#each shownRows as row (row)}
               {@render line(row)}
             {/each}
           {:else}
-            {#each byId as row (row.key)}
+            {#each shownById as row (row.key)}
               {@render line(row)}
             {/each}
           {/if}
