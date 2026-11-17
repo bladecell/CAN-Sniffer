@@ -3,6 +3,7 @@
   import type { TableMode } from "$lib/canBus/canBusStore.svelte";
   import Icon from "$lib/Icon.svelte";
   import { relTime } from "$lib/canBus/canFormat";
+  import { measureHeight, trackUnder } from "$lib/layers";
   import { formatId, idColorIndex, idKey } from "$lib/canBus/canIds";
 
   type Row = LogRow | IdView;
@@ -20,6 +21,23 @@
   }
 
   let { mode, rows, byId, startUs, selected, onselect, ondetails, onmode, onclear }: Props = $props();
+
+  // The bar sits beside the scroller (Gecko drops the blur inside one), so mirror its horizontal scroll and scrollbar width.
+  function syncBar(el: HTMLElement) {
+    const host = el.parentElement;
+    const sync = () => {
+      host?.style.setProperty("--sl", `${-el.scrollLeft}px`);
+      host?.style.setProperty("--sbw", `${el.offsetWidth - el.clientWidth}px`);
+    };
+    el.addEventListener("scroll", sync, { passive: true });
+    const ro = new ResizeObserver(sync);
+    ro.observe(el);
+    sync();
+    return () => {
+      el.removeEventListener("scroll", sync);
+      ro.disconnect();
+    };
+  }
 
   const count = $derived(mode === "log" ? rows.length : byId.length);
 </script>
@@ -42,9 +60,30 @@
   {#if count === 0}
     <p class="muted ft-empty">No frames. Press Start to log the bus.</p>
   {:else}
-    <div class="ft-scroll">
+    <div class="ft-body">
+      <div class="ft-bar float-layer rest-top" aria-hidden="true" {@attach measureHeight("--hdr-h")}>
+        <div class="ft-clip">
+        <div class="ft-cols">
+          <span>Time (s)</span>
+          <span>Direction</span>
+          <span>ID</span>
+          <span class="hide-s">DLC</span>
+          <span>Data</span>
+          <span>Parsed</span>
+        </div>
+        </div>
+      </div>
+      <div class="ft-scroll" {@attach trackUnder} {@attach syncBar}>
       <table class="ft-tbl">
-        <thead class="float-layer">
+        <colgroup>
+          <col class="w-t" />
+          <col class="w-d" />
+          <col class="w-i" />
+          <col class="w-l hide-s" />
+          <col class="w-b" />
+          <col />
+        </colgroup>
+        <thead class="sr-only">
           <tr>
             <th scope="col">Time (s)</th>
             <th scope="col">Direction</th>
@@ -66,6 +105,7 @@
           {/if}
         </tbody>
       </table>
+      </div>
     </div>
   {/if}
 </section>
@@ -124,31 +164,78 @@
   .ft-empty {
     margin: 12px;
   }
+  .ft-body {
+    --w-t: 84px;
+    --w-d: 92px;
+    --w-i: 92px;
+    --w-l: 56px;
+    --w-b: 300px;
+    --min: calc(var(--w-t) + var(--w-d) + var(--w-i) + var(--w-l) + var(--w-b) + 140px);
+    position: relative;
+  }
   .ft-scroll {
     overflow: auto;
     max-height: 60vh;
+    padding-top: var(--hdr-h, 30px);
   }
-  .ft-tbl {
-    width: 100%;
-    border-collapse: separate;
-    border-spacing: 0 4px;
-    font-size: 0.92rem;
-  }
-  .ft-tbl thead {
-    position: sticky;
+  .ft-bar {
+    position: absolute;
     top: 0;
+    left: 0;
+    right: var(--sbw, 0px);
     z-index: 2;
+    border-radius: var(--r-ctl);
     box-shadow: none;
+    pointer-events: none;
   }
-  .ft-tbl th {
+  .ft-clip {
+    overflow: hidden;
+    border-radius: inherit;
+  }
+  .ft-cols {
+    display: grid;
+    grid-template-columns: var(--w-t) var(--w-d) var(--w-i) var(--w-l) var(--w-b) 1fr;
+    min-width: var(--min);
+    margin-left: var(--sl, 0px);
+  }
+  .ft-cols span {
     padding: 6px 12px;
-    text-align: left;
     text-transform: uppercase;
     letter-spacing: 0.04em;
     font-size: 0.75rem;
     font-weight: 800;
     color: var(--muted);
     white-space: nowrap;
+  }
+  .ft-tbl {
+    width: 100%;
+    min-width: var(--min);
+    table-layout: fixed;
+    border-collapse: separate;
+    border-spacing: 0 4px;
+    font-size: 0.92rem;
+  }
+  .w-t {
+    width: var(--w-t);
+  }
+  .w-d {
+    width: var(--w-d);
+  }
+  .w-i {
+    width: var(--w-i);
+  }
+  .w-l {
+    width: var(--w-l);
+  }
+  .w-b {
+    width: var(--w-b);
+  }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
   }
   .ft-tbl td {
     padding: 9px 12px;
@@ -198,16 +285,22 @@
   .parsed:not(.muted) {
     color: var(--accent-text);
   }
-  @media (max-width: 859px) {
-    .dir {
+  .dir {
     font-weight: 600;
     color: var(--ok);
   }
   .dir.tx {
     color: var(--accent-text);
   }
-  .hide-s {
+  @media (max-width: 859px) {
+    .hide-s {
       display: none;
+    }
+    .ft-body {
+      --min: calc(var(--w-t) + var(--w-d) + var(--w-i) + var(--w-b) + 140px);
+    }
+    .ft-cols {
+      grid-template-columns: var(--w-t) var(--w-d) var(--w-i) var(--w-b) 1fr;
     }
   }
 </style>
