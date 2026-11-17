@@ -30,11 +30,13 @@
   }
 
   // The sender status is an open read: poll it while this tab is open.
-  $effect(() => {
-    void readSender();
-    const timer = setInterval(() => void readSender(), 1000);
-    return () => clearInterval(timer);
-  });
+  $effect(() =>
+    untrack(() => {
+      void readSender();
+      const timer = setInterval(() => void readSender(), 1000);
+      return () => clearInterval(timer);
+    }),
+  );
 
   // Leaving the tab (or the page) ends Raw mode and stops any running plan. The device also ends Raw on close.
   // Only a running plan and Raw mode need a call: both are gated, so an idle tab must not ask for a login.
