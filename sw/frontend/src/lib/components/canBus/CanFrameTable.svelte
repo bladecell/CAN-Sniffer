@@ -176,6 +176,7 @@
   .ft-scroll {
     overflow: auto;
     max-height: 60vh;
+    border-radius: var(--r-ctl);
     padding-top: var(--hdr-h, 30px);
   }
   .ft-bar {
