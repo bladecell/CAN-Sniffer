@@ -10,15 +10,8 @@ import { byIdRows, CanModel, ecuRows, logRows, recentFrames, type CanFrame, type
 import { findLastMatch, type RuleMatch } from "./canRules";
 import { rulesStore } from "./canRulesStore.svelte";
 import { idKey } from "./canIds";
-import { captureActive, KEEP_KEY, readKeep, storeKeep } from "./captureRetention";
+import { captureRecords } from "./captureRetention";
 
-const storedKeep = (): string | null => {
-  try {
-    return localStorage.getItem(KEEP_KEY);
-  } catch {
-    return null;
-  }
-};
 
 const VIEW_MS = 100;
 const SECOND_MS = 1000;
@@ -72,7 +65,8 @@ const emptyCounters = (): Counters => ({ now: Date.now(), fps: 0, fpsHistory: []
 class CanBusStore {
   filter = $state<TableFilter>("all");
   tableMode = $state<TableMode>("log");
-  paused = $state(false);
+  /** Logging: the stream feeds the table. Off by default, not Raw mode (Monitor, polling unchanged). */
+  logging = $state(false);
   selectedKey = $state<number | null>(null);
   snapshot = $state.raw<Snapshot>(emptySnapshot());
   counters = $state.raw<Counters>(emptyCounters());
@@ -83,8 +77,11 @@ class CanBusStore {
 
   private model = new CanModel();
   private statsMs = 0;
+  private capture: { release: () => void; unsubscribe: () => void; second: ReturnType<typeof setInterval> } | null = null;
+  private view: ReturnType<typeof setInterval> | null = null;
 
   private onRaw: RawListener = (frame) => {
+    if (!captureRecords(this.logging, connectionStore.session === "active")) return;
     if (frame.kind === "rawBatch") {
       this.model.setRules(rulesStore.compiled);
       this.model.ingest(frame, Date.now());
@@ -95,14 +92,8 @@ class CanBusStore {
     this.refreshCounters();
   };
 
-  /** Log in background: the stream keeps feeding the model after the page is left. Default off. */
-  keepInBackground = $state(readKeep(storedKeep()));
-  private pageOpen = false;
-  private capture: { release: () => void; unsubscribe: () => void; second: ReturnType<typeof setInterval> } | null = null;
-  private view: ReturnType<typeof setInterval> | null = null;
-
   constructor() {
-    // A session that ends (replaced or parked) stops the device stream. Drop the frames with it, so no old table survives.
+    // A session that ends (replaced or parked) stops the device stream. Logging ends and the table is dropped with it.
     $effect.root(() => {
       $effect(() => {
         if (connectionStore.session !== "active") untrack(() => this.dropCapture());
@@ -110,38 +101,24 @@ class CanBusStore {
     });
   }
 
-  /** The page is open: the table refreshes and the stream runs. Returns the detach for the page's teardown. */
+  /** The page is open: the table refreshes. Returns the teardown for the page; logging keeps running after it. */
   attach(): () => void {
-    this.pageOpen = true;
     this.startView();
-    this.settle();
     return () => {
-      this.pageOpen = false;
       if (this.view) clearInterval(this.view);
       this.view = null;
-      this.settle();
     };
   }
 
-  setKeepInBackground(on: boolean) {
-    this.keepInBackground = on;
-    try {
-      localStorage.setItem(KEEP_KEY, storeKeep(on));
-    } catch {
-      // Not saved: the toggle is off again on the next visit.
-    }
-    this.settle();
-  }
-
-  /** The stream runs only while captureActive says so; the view timer only while the page is open. */
-  private settle() {
-    if (captureActive(this.keepInBackground, this.pageOpen)) this.startCapture();
+  /** Start and Pause. Start keeps the table that is there; Pause stops the stream and keeps the rows. */
+  setLogging(on: boolean) {
+    this.logging = on;
+    if (on) this.startCapture();
     else this.stopCapture();
   }
 
   private startCapture() {
     if (this.capture) return;
-    this.model.reset();
     this.statsMs = 0;
     const release = connectionStore.acquireRawStream();
     const unsubscribe = connectionStore.subscribeRaw((f) => this.onRaw(f));
@@ -164,9 +141,11 @@ class CanBusStore {
     this.capture.unsubscribe();
     this.capture.release();
     this.capture = null;
+    this.refreshCounters();
   }
 
   private dropCapture() {
+    this.logging = false;
     this.stopCapture();
     this.model.reset();
     this.refreshSnapshot();
@@ -175,14 +154,9 @@ class CanBusStore {
   private startView() {
     if (this.view) return;
     this.view = setInterval(() => {
-      if (!this.paused) this.refreshSnapshot();
+      this.refreshSnapshot();
     }, VIEW_MS);
     this.refreshSnapshot();
-  }
-
-  togglePause() {
-    this.paused = !this.paused;
-    if (!this.paused) this.refreshSnapshot();
   }
 
   setFilter(filter: TableFilter) {
@@ -215,8 +189,13 @@ class CanBusStore {
   }
 
   private refreshCounters() {
-    const s = this.stats;
     const now = Date.now();
+    // Not logging: the rates and the drop counters are not running, so they read empty rather than stale.
+    if (!this.logging) {
+      this.counters = { ...emptyCounters(), now, frames: this.model.frames };
+      return;
+    }
+    const s = this.stats;
     this.counters = {
       now,
       fps: this.model.fps.at(-1) ?? 0,

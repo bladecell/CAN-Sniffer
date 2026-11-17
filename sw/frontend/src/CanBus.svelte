@@ -3,7 +3,6 @@
   import Icon from "$lib/Icon.svelte";
   import { alertStore } from "$lib/alertStore.svelte";
   import { connectionStore } from "$lib/connectionStore.svelte";
-  import Switch from "$lib/components/Switch.svelte";
   import { canBus } from "$lib/canBus/canBusStore.svelte";
   import type { TableFilter } from "$lib/canBus/canModel";
   import CanTiles from "$lib/components/canBus/CanTiles.svelte";
@@ -52,10 +51,10 @@
   const statusText = $derived(
     !connectionStore.connected
       ? "Not connected"
-      : !canBus.counters.streaming
-        ? "Waiting for frames"
-        : canBus.paused
-          ? "Paused"
+      : !canBus.logging
+        ? "Not logging"
+        : !canBus.counters.streaming
+          ? "Waiting for frames"
           : "Live",
   );
   const bitrateText = $derived(canBus.bus ? `${canBus.bus.bitrate / 1000} kbit/s` : "Bitrate unknown");
@@ -121,10 +120,9 @@
               <button role="radio" aria-checked={canBus.filter === f.id} onclick={() => canBus.setFilter(f.id)}>{f.label}</button>
             {/each}
           </div>
-          <Switch label="Log in background" checked={canBus.keepInBackground} onchange={(on) => canBus.setKeepInBackground(on)} />
-          <button class="btn" aria-pressed={canBus.paused} onclick={() => canBus.togglePause()}>
-            <Icon name={canBus.paused ? "play" : "pause"} size={16} />
-            <span>{canBus.paused ? "Resume" : "Pause"}</span>
+          <button class="btn" aria-pressed={canBus.logging} onclick={() => canBus.setLogging(!canBus.logging)}>
+            <Icon name={canBus.logging ? "pause" : "play"} size={16} />
+            <span>{canBus.logging ? "Pause" : "Start"}</span>
           </button>
           <button class="btn pri" aria-pressed={captures.capturing} disabled={captures.busy} onclick={toggleSave}>
             <Icon name={captures.capturing ? "square" : "save"} size={16} />

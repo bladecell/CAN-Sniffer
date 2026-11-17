@@ -32,7 +32,7 @@
   </div>
 
   {#if count === 0}
-    <p class="muted ft-empty">No frames yet. The table fills while the bus talks.</p>
+    <p class="muted ft-empty">No frames. Press Start to log the bus.</p>
   {:else}
     <div class="ft-scroll">
       <table class="ft-tbl">
