@@ -45,6 +45,29 @@
     };
   }
 
+  // Column visibility (DataTable "View" menu). The last shown column takes the spare width.
+  const COLS = [
+    { key: "t", label: "Time (s)", w: 84 },
+    { key: "d", label: "Direction", w: 92 },
+    { key: "i", label: "ID", w: 92 },
+    { key: "l", label: "DLC", w: 56 },
+    { key: "b", label: "Data", w: 300 },
+    { key: "p", label: "Parsed", w: 140 },
+  ] as const;
+  let hidden = $state<Set<string>>(new Set());
+  let viewing = $state(false);
+  let viewEl = $state<HTMLDivElement>();
+  const vis = $derived(COLS.filter((c) => !hidden.has(c.key)));
+  const show = $derived(Object.fromEntries(COLS.map((c) => [c.key, !hidden.has(c.key)])) as Record<(typeof COLS)[number]["key"], boolean>);
+  const cols = $derived(vis.map((c, i) => (i === vis.length - 1 ? "1fr" : `${c.w}px`)).join(" "));
+  const minW = $derived(vis.reduce((n, c) => n + c.w, 0));
+
+  function toggleCol(key: string) {
+    const next = new Set(hidden);
+    if (!next.delete(key)) next.add(key);
+    hidden = next;
+  }
+
   const FILTERS: { id: TableFilter; label: string }[] = [
     { id: "all", label: "All" },
     { id: "changed", label: "Changed" },
@@ -92,7 +115,13 @@
   const count = $derived(mode === "log" ? rows.length : byId.length);
 </script>
 
-<svelte:window onpointerdown={(e) => adding && !wrapEl?.contains(e.target as Node) && !(e.target as Element).closest(".select-menu-list") && (adding = false)} />
+<svelte:window
+  onpointerdown={(e) => {
+    const t = e.target as Element;
+    if (adding && !wrapEl?.contains(t) && !t.closest(".select-menu-list")) adding = false;
+    if (viewing && !viewEl?.contains(t)) viewing = false;
+  }}
+/>
 
 <section class="card ft" aria-label="Frames">
   <div class="ft-head">
@@ -142,6 +171,23 @@
           </div>
         {/if}
       </div>
+      <div class="ft-add" bind:this={viewEl}>
+        <button class="btn sm" aria-expanded={viewing} aria-haspopup="menu" onclick={() => (viewing = !viewing)}>
+          <Icon name="eye" size={16} />
+          <span>View</span>
+          {#if hidden.size > 0}<span class="ft-badge">{hidden.size}</span>{/if}
+        </button>
+        {#if viewing}
+          <div class="popup ft-view" role="menu" tabindex="-1" onkeydown={(e) => e.key === "Escape" && (viewing = false)}>
+            {#each COLS as c (c.key)}
+              <button type="button" role="menuitemcheckbox" aria-checked={!hidden.has(c.key)} class="ft-col" onclick={() => toggleCol(c.key)}>
+                <span>{c.label}</span>
+                {#if !hidden.has(c.key)}<Icon name="check" size={14} />{/if}
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </div>
       <span class="muted">{count} shown</span>
       <button class="btn sm" disabled={count === 0} onclick={onclear}>
         <Icon name="trash" size={16} />
@@ -153,37 +199,22 @@
   {#if count === 0}
     <p class="muted ft-empty">{draft.length || filter !== "all" ? "No frames match the filter." : "No frames. Press Start to log the bus."}</p>
   {:else}
-    <div class="ft-body">
+    <div class="ft-body" style:--cols={cols} style:--min="{minW}px">
       <div class="ft-bar float-layer rest-top" aria-hidden="true" {@attach measureHeight("--hdr-h")}>
         <div class="ft-clip">
         <div class="ft-cols">
-          <span>Time (s)</span>
-          <span>Direction</span>
-          <span>ID</span>
-          <span class="hide-s">DLC</span>
-          <span>Data</span>
-          <span>Parsed</span>
+          {#each vis as c (c.key)}<span>{c.label}</span>{/each}
         </div>
         </div>
       </div>
       <div class="ft-scroll" {@attach trackUnder} {@attach syncBar}>
       <table class="ft-tbl">
         <colgroup>
-          <col class="w-t" />
-          <col class="w-d" />
-          <col class="w-i" />
-          <col class="w-l hide-s" />
-          <col class="w-b" />
-          <col />
+          {#each vis as c, i (c.key)}<col style:width={i === vis.length - 1 ? undefined : `${c.w}px`} />{/each}
         </colgroup>
         <thead class="sr-only">
           <tr>
-            <th scope="col">Time (s)</th>
-            <th scope="col">Direction</th>
-            <th scope="col">ID</th>
-            <th scope="col" class="hide-s">DLC</th>
-            <th scope="col">Data</th>
-            <th scope="col">Parsed</th>
+            {#each vis as c (c.key)}<th scope="col">{c.label}</th>{/each}
           </tr>
         </thead>
         <tbody>
@@ -214,11 +245,11 @@
       if (e.key === "Enter") ondetails(key);
     }}
   >
-    <td class="mono muted">{relTime(row.t, startUs)}</td>
-    <td class="dir" class:tx={row.tx}>{row.tx ? "TX" : "RX"}</td>
-    <td class="mono id" style:color="var(--c{idColorIndex(key)})">{formatId(row.id, row.ext)}</td>
-    <td class="hide-s">{row.data.length}</td>
-    <td class="mono data">
+    {#if show.t}<td class="mono muted">{relTime(row.t, startUs)}</td>{/if}
+    {#if show.d}<td class="dir" class:tx={row.tx}>{row.tx ? "TX" : "RX"}</td>{/if}
+    {#if show.i}<td class="mono id" style:color="var(--c{idColorIndex(key)})">{formatId(row.id, row.ext)}</td>{/if}
+    {#if show.l}<td>{row.data.length}</td>{/if}
+    {#if show.b}<td class="mono data">
       {#if row.rtr}
         <span class="muted">remote request</span>
       {:else}
@@ -226,8 +257,8 @@
           <span class="byte" class:chg={(row.changed & (1 << i)) !== 0} class:z={b === 0}>{b.toString(16).toUpperCase().padStart(2, "0")}</span>
         {/each}
       {/if}
-    </td>
-    <td class="mono parsed" class:muted={!row.parsed}>{row.parsed || "-"}</td>
+    </td>{/if}
+    {#if show.p}<td class="mono parsed" class:muted={!row.parsed}>{row.parsed || "-"}</td>{/if}
   </tr>
 {/snippet}
 
@@ -332,6 +363,33 @@
     padding-top: 1rem;
     border-top: 1px solid var(--hair);
   }
+  .ft-view {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 6px);
+    z-index: 50;
+    width: 220px;
+    padding: 0.5rem;
+    display: flex;
+    flex-direction: column;
+  }
+  .ft-col {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 0;
+    padding: 0.6rem 0.5rem;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text);
+    font-size: 0.85rem;
+    text-align: left;
+    cursor: pointer;
+  }
+  .ft-col:hover {
+    background: var(--hov);
+  }
   .ft-badge {
     background: var(--ctl);
     padding: 0.1rem 0.4rem;
@@ -368,12 +426,6 @@
     margin: 12px;
   }
   .ft-body {
-    --w-t: 84px;
-    --w-d: 92px;
-    --w-i: 92px;
-    --w-l: 56px;
-    --w-b: 300px;
-    --min: calc(var(--w-t) + var(--w-d) + var(--w-i) + var(--w-l) + var(--w-b) + 140px);
     position: relative;
   }
   .ft-scroll {
@@ -398,7 +450,7 @@
   }
   .ft-cols {
     display: grid;
-    grid-template-columns: var(--w-t) var(--w-d) var(--w-i) var(--w-l) var(--w-b) 1fr;
+    grid-template-columns: var(--cols);
     min-width: var(--min);
     margin-left: var(--sl, 0px);
   }
@@ -418,21 +470,6 @@
     border-collapse: separate;
     border-spacing: 0 4px;
     font-size: 0.92rem;
-  }
-  .w-t {
-    width: var(--w-t);
-  }
-  .w-d {
-    width: var(--w-d);
-  }
-  .w-i {
-    width: var(--w-i);
-  }
-  .w-l {
-    width: var(--w-l);
-  }
-  .w-b {
-    width: var(--w-b);
   }
   .sr-only {
     position: absolute;
@@ -495,16 +532,5 @@
   }
   .dir.tx {
     color: var(--accent-text);
-  }
-  @media (max-width: 859px) {
-    .hide-s {
-      display: none;
-    }
-    .ft-body {
-      --min: calc(var(--w-t) + var(--w-d) + var(--w-i) + var(--w-b) + 140px);
-    }
-    .ft-cols {
-      grid-template-columns: var(--w-t) var(--w-d) var(--w-i) var(--w-b) 1fr;
-    }
   }
 </style>
