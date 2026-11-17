@@ -117,6 +117,13 @@ class CanBusStore {
     else this.stopCapture();
   }
 
+  /** Clear: the rows and the id list start over. Logging stays as it is. */
+  clearTable() {
+    this.model.reset();
+    this.refreshCounters();
+    this.refreshSnapshot();
+  }
+
   private startCapture() {
     if (this.capture) return;
     this.statsMs = 0;

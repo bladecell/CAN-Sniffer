@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { LogRow, IdView } from "$lib/canBus/canModel";
   import type { TableMode } from "$lib/canBus/canBusStore.svelte";
+  import Icon from "$lib/Icon.svelte";
   import { relTime } from "$lib/canBus/canFormat";
   import { formatId, idColorIndex, idKey } from "$lib/canBus/canIds";
 
@@ -15,9 +16,10 @@
     onselect: (key: number) => void;
     ondetails: (key: number) => void;
     onmode: (mode: TableMode) => void;
+    onclear: () => void;
   }
 
-  let { mode, rows, byId, startUs, selected, onselect, ondetails, onmode }: Props = $props();
+  let { mode, rows, byId, startUs, selected, onselect, ondetails, onmode, onclear }: Props = $props();
 
   const count = $derived(mode === "log" ? rows.length : byId.length);
 </script>
@@ -28,7 +30,13 @@
       <button role="radio" aria-checked={mode === "log"} onclick={() => onmode("log")}>Log</button>
       <button role="radio" aria-checked={mode === "byId"} onclick={() => onmode("byId")}>By ID</button>
     </div>
-    <span class="muted">{count} shown</span>
+    <div class="ft-tools">
+      <span class="muted">{count} shown</span>
+      <button class="btn sm" disabled={count === 0} onclick={onclear}>
+        <Icon name="trash" size={16} />
+        <span>Clear</span>
+      </button>
+    </div>
   </div>
 
   {#if count === 0}
@@ -102,6 +110,16 @@
     justify-content: space-between;
     gap: 10px;
     padding: 4px 4px 8px;
+  }
+  .ft-tools {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .ft-tools .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
   }
   .ft-empty {
     margin: 12px;

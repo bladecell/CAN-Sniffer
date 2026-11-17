@@ -142,6 +142,7 @@
         onselect={(key) => canBus.select(key)}
         ondetails={openDetails}
         onmode={(mode) => canBus.setTableMode(mode)}
+        onclear={() => canBus.clearTable()}
       />
     </div>
   </div>

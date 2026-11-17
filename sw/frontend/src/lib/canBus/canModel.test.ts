@@ -32,6 +32,20 @@ describe("time", () => {
   });
 });
 
+describe("clearing the table", () => {
+  test("reset empties the log and the clock restarts on the next frame", () => {
+    const m = new CanModel();
+    m.ingest(batch([rec(1, [0]), rec(2, [0], 50)], 1000), 0);
+    m.reset();
+    expect(m.log).toEqual([]);
+    expect(m.ids.size).toBe(0);
+    expect(m.startUs).toBeNull();
+    m.ingest(batch([rec(3, [1])], 9000), 0);
+    expect(m.startUs).toBe(9000);
+    expect(m.log).toHaveLength(1);
+  });
+});
+
 describe("changed bytes and ids", () => {
   test("changedMask marks differing bytes; first frame has none", () => {
     expect(changedMask([1, 2, 3], [1, 9, 3])).toBe(0b010);
