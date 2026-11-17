@@ -8,7 +8,7 @@ import { connectionStore } from "$lib/connectionStore.svelte";
   import Settings from "./Settings.svelte";
   import Diagnostics from "./Diagnostics.svelte";
   import Telemetry from "./Telemetry.svelte";
-  import CanLogging from "./CanLogging.svelte";
+  import CanBus from "./CanBus.svelte";
   import { onMount } from "svelte";
   import Toast from "./lib/components/Toast.svelte";
   import AuthDialog from "./lib/components/AuthDialog.svelte";
@@ -63,7 +63,7 @@ import { connectionStore } from "$lib/connectionStore.svelte";
   {:else if activeTab === "diagnostics"}
     <Diagnostics />
   {:else if activeTab === "can-logging"}
-    <CanLogging />
+    <CanBus />
   {:else if activeTab === "telemetry"}
     <Telemetry />
   {/if}

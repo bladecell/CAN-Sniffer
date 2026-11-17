@@ -1,6 +1,6 @@
 import { sdCardFileEndpoint } from "./api";
 import type {
-  CanBusStatus, RecorderStatus, RecorderTrips, DtcDescriptionResponse, DtcResponse, Obd2StatusWire, PidDataWire, PidDefinitionWire,
+  CanBusStatus, CanModeStatus, RecorderStatus, RecorderTrips, DtcDescriptionResponse, DtcResponse, Obd2StatusWire, PidDataWire, PidDefinitionWire,
   SDCardInfo, SdTreeNode, SystemStatus,
 } from "./types";
 
@@ -25,6 +25,7 @@ export function createFirmwareApi(deps: FirmwareApiDeps) {
     system: () => open<SystemStatus>("/api/v1/system"),
     reboot: () => gated<Json>("/api/v1/system/reboot", body("POST")),
     canBus: () => open<CanBusStatus>("/api/v1/can_bus"),
+    canMode: () => open<CanModeStatus>("/api/v1/can/mode"),
     obd2: () => open<Obd2StatusWire>("/api/v1/obd2"),
     setAutoPoll: (on: boolean) => open<{ auto_poll: boolean; polling: boolean }>("/api/v1/obd2", body("PATCH", { auto_poll: on })),
     pidDefinitions: () => open<{ data: PidDefinitionWire[]; count: number }>("/api/v1/pid_def"),

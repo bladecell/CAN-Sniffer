@@ -3,6 +3,9 @@ import { alertStore } from "./alertStore.svelte";
 import type { WsCanStatus } from "./types";
 import { auth } from "./auth.svelte";
 import { parseWsFrame, type WsFrame } from "./wsFrames";
+
+/** Raw CAN batches and stats, for the CAN Bus page (docs/api.md, 0x10 and 0x11). */
+export type RawListener = (frame: Extract<WsFrame, { kind: "rawBatch" | "rawStats" }>) => void;
 import { dispatchToListeners } from "./dispatch";
 import { jitter, reconnectDelay } from "./backoff";
 import { createHeartbeat, CONNECT_TIMEOUT_MS } from "./heartbeat";
@@ -14,7 +17,7 @@ import { notifyConnectionDrop, notifyConnectionOpen } from "./connectionEvents";
 import { recordingStore } from "./recordingStore.svelte";
 import { closeOutcome, sessionId, wsUrl, type SessionState } from "./wsSession";
 
-export const COMMANDS = { START_LOG: 0xa0, STOP_LOG: 0xa1, PING_REQUEST: 0xa2, PING_RESPONSE: 0xa3 };
+export const COMMANDS = { START_LOG: 0xa0, STOP_LOG: 0xa1, PING_REQUEST: 0xa2, PING_RESPONSE: 0xa3, START_RAW: 0xb0, STOP_RAW: 0xb1 };
 export type MessageListener = (update: { pid: number; value: number; timestamp: number }) => void;
 export class ConnectionStore {
     connected = $state(false);
@@ -37,6 +40,13 @@ export class ConnectionStore {
         () => { this.sendByte(COMMANDS.START_LOG); this.isStreaming = true; },
         () => { this.sendByte(COMMANDS.STOP_LOG); this.isStreaming = false; },
     );
+
+    // The raw CAN stream is per socket and off for a new one: it is started again on every open while anything wants it.
+    private rawRefs = createStreamRefCount(
+        () => this.sendByte(COMMANDS.START_RAW),
+        () => this.sendByte(COMMANDS.STOP_RAW),
+    );
+    private rawListeners = new Set<RawListener>();
 
     private sid: string | null = null;
     connectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -121,6 +131,7 @@ export class ConnectionStore {
             this.outageAlerted = false;
             // A new session starts with the stream off.
             if (this.streamRefs.count() > 0) this.sendByte(COMMANDS.START_LOG);
+            if (this.rawRefs.count() > 0) this.sendByte(COMMANDS.START_RAW);
             this.isStreaming = this.streamRefs.count() > 0;
 
             this.heartbeat.start();
@@ -250,6 +261,17 @@ export class ConnectionStore {
 
     }
 
+    /** Ask for the raw CAN stream (read-only, Monitor mode). Returns a release function. */
+    acquireRawStream(): () => void {
+        return this.rawRefs.acquire();
+    }
+
+    /** Receives every raw batch and stats frame of the session. Returns the unsubscribe function. */
+    subscribeRaw(listener: RawListener): () => void {
+        this.rawListeners.add(listener);
+        return () => this.rawListeners.delete(listener);
+    }
+
     /** Ask for the PID stream. Returns a release function; call it when the view goes away. */
     acquireStream(): () => void {
         return this.streamRefs.acquire();
@@ -276,6 +298,10 @@ export class ConnectionStore {
                 break;
             case "recorder":
                 recordingStore.applyFrame(frame);
+                break;
+            case "rawBatch":
+            case "rawStats":
+                for (const listener of this.rawListeners) listener(frame);
                 break;
             case "pong":
                 break;

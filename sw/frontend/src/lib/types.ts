@@ -111,6 +111,14 @@ export type CanBusState = "not_initialized" | "bus_off" | "not_connected" | "con
 export type TwaiErrorState = "error_active" | "error_warning" | "error_passive" | "bus_off";
 
 /** `GET /can_bus` */
+/** GET /api/v1/can/mode. `mode` is `monitor` or `raw`; unknown names are kept as strings. */
+export interface CanModeStatus {
+  mode: "monitor" | "raw" | (string & {});
+  isotp_flow_control: boolean;
+  obd_parsing: boolean;
+  modes: string[];
+}
+
 export interface CanBusStatus {
   state: CanBusState | (string & {}); // unknown future states are kept as strings
   bitrate: number;
