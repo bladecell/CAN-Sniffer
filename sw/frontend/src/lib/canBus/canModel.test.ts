@@ -168,3 +168,12 @@ describe("by-id table", () => {
     expect(byIdRows(m, "all").length).toBe(TABLE_ROWS);
   });
 });
+
+describe("activeLimitMs", () => {
+  test("keeps 3 s for fast ids and stretches for slow ones", async () => {
+    const { activeLimitMs } = await import("./canModel");
+    expect(activeLimitMs(0)).toBe(3000);
+    expect(activeLimitMs(100)).toBe(3000);
+    expect(activeLimitMs(4000)).toBe(10000);
+  });
+});

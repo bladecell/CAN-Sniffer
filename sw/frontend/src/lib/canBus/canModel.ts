@@ -12,6 +12,8 @@ const RECENT = 5;
 const FPS_HISTORY = 60;
 /** An id seen this recently (ms, client clock) counts as active. */
 export const ACTIVE_MS = 3000;
+/** An id stays active for a few of its own periods, so a slow signal (one frame every 4 s) does not flip to silent between frames. */
+export const activeLimitMs = (gapMs: number) => Math.max(ACTIVE_MS, 2.5 * gapMs);
 /** An ECU id silent for this long leaves the ECU list. */
 export const ECU_AGE_MS = 60_000;
 
@@ -36,6 +38,8 @@ export type IdEntry = {
   parsed: string;
   /** Client clock (ms) of the last frame. */
   seenMs: number;
+  /** Client-clock gap (ms) between the last two frames, 0 until a second frame arrives. */
+  gapMs: number;
 };
 
 /** Bit i of the result is set when byte i differs. A DLC change counts every byte past the shorter frame. */
@@ -92,7 +96,7 @@ export class CanModel {
     const key = idKey(f.id, f.ext);
     let entry = this.ids.get(key);
     if (!entry && this.ids.size < MAX_IDS) {
-      entry = { id: f.id, ext: f.ext, count: 0, window: 0, hz: 0, last: f, recent: [], changed: 0, hidden: false, name: "", parsed: "", seenMs: nowMs };
+      entry = { id: f.id, ext: f.ext, count: 0, window: 0, hz: 0, last: f, recent: [], changed: 0, hidden: false, name: "", parsed: "", seenMs: nowMs, gapMs: 0 };
       this.ids.set(key, entry);
     }
     if (!entry) this.untracked++;
@@ -108,6 +112,7 @@ export class CanModel {
       entry.hidden = result.hidden;
       entry.name = result.name || entry.name;
       entry.parsed = result.parsed;
+      if (entry.count > 1) entry.gapMs = nowMs - entry.seenMs;
       entry.seenMs = nowMs;
     }
     this.log.push({ ...f, changed, parsed: result.parsed, hidden: result.hidden });

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { IdRow } from "$lib/canBus/canBusStore.svelte";
-  import { ACTIVE_MS } from "$lib/canBus/canModel";
+  import { activeLimitMs } from "$lib/canBus/canModel";
   import { formatId, idColorIndex } from "$lib/canBus/canIds";
   import { hzText } from "$lib/canBus/canFormat";
 
@@ -17,9 +17,10 @@
   let text = $state("");
   const needle = $derived(text.replace(/\s/g, "").toUpperCase());
   const shown = $derived(needle ? ids.filter((r) => formatId(r.id, r.ext).includes(needle)) : ids);
-  const active = $derived(shown.filter((r) => now - r.seenMs < ACTIVE_MS));
-  const silent = $derived(shown.filter((r) => now - r.seenMs >= ACTIVE_MS));
-  const silentTotal = $derived(ids.filter((r) => now - r.seenMs >= ACTIVE_MS).length);
+  const isActive = (r: IdRow) => now - r.seenMs < activeLimitMs(r.gapMs);
+  const active = $derived(shown.filter(isActive));
+  const silent = $derived(shown.filter((r) => !isActive(r)));
+  const silentTotal = $derived(ids.filter((r) => !isActive(r)).length);
 </script>
 
 <div class="cl">
@@ -69,7 +70,7 @@
       <b class="mono">{formatId(r.id, r.ext)}</b>
       <small>{r.name || (r.ext ? "extended" : "standard")}</small>
     </span>
-    <em>{quiet ? "silent" : hzText(r.hz)}</em>
+    <em>{quiet ? "silent" : hzText(r.gapMs > 1000 ? 1000 / r.gapMs : r.hz)}</em>
   </button>
 {/snippet}
 

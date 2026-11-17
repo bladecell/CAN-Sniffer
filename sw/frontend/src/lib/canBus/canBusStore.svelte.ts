@@ -18,7 +18,7 @@ const SECOND_MS = 1000;
 /** Stats frames come once a second; no frame for this long means the stream is not running. */
 const STATS_STALE_MS = 3000;
 
-export type IdRow = { key: number; id: number; ext: boolean; count: number; hz: number; name: string; seenMs: number; hidden: boolean };
+export type IdRow = { key: number; id: number; ext: boolean; count: number; hz: number; name: string; seenMs: number; gapMs: number; hidden: boolean };
 
 export type IdDetail = {
   key: number;
@@ -219,7 +219,7 @@ class CanBusStore {
     const m = this.model;
     const ids: IdRow[] = [];
     for (const e of m.ids.values()) {
-      ids.push({ key: idKey(e.id, e.ext), id: e.id, ext: e.ext, count: e.count, hz: e.hz, name: e.name, seenMs: e.seenMs, hidden: e.hidden });
+      ids.push({ key: idKey(e.id, e.ext), id: e.id, ext: e.ext, count: e.count, hz: e.hz, name: e.name, seenMs: e.seenMs, gapMs: e.gapMs, hidden: e.hidden });
     }
     ids.sort((a, b) => a.id - b.id || Number(a.ext) - Number(b.ext));
     const selected = this.selectedKey === null ? null : this.detailFor(this.selectedKey);
