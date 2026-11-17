@@ -39,7 +39,7 @@
   }
 
   // The page owns the raw stream: it starts on mount and stops (0xB1) when the page goes away.
-  $effect(() => canBus.start());
+  $effect(() => untrack(() => canBus.start()));
 
   // Bus status is read on every open and whenever the CAN state changes (GET /can_bus, GET /can/mode).
   $effect(() => {
@@ -61,7 +61,7 @@
   const modeText = $derived(canBus.mode ? (canBus.mode.mode === "raw" ? "Raw" : "Monitor") : "Mode unknown");
 
   // The capture status is an open read; watched while the page is open.
-  $effect(() => captures.watch());
+  $effect(() => untrack(() => captures.watch()));
 
   async function toggleSave() {
     const wasCapturing = captures.capturing;
