@@ -58,8 +58,3 @@ export function compileFilters(rules: FilterRule[]): (f: FrameView) => boolean {
       return r.exclude ? !hit : hit;
     });
 }
-
-export function describeRule(r: FilterRule): string {
-  const label = FILTER_FIELDS.find((f) => f.id === r.field)?.label.replace(" (hex)", "") ?? r.field;
-  return `${r.exclude ? "Exclude" : "Include"} ${label} ${r.op} ${r.value.trim().toUpperCase()}`;
-}

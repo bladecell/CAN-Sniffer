@@ -67,7 +67,6 @@ class CanBusStore {
   filter = $state<TableFilter>("all");
   /** Table filter rules (canFilter.ts). */
   rules = $state.raw<FilterRule[]>([]);
-  private ruleSeq = 0;
   tableMode = $state<TableMode>("log");
   /** Logging: the stream feeds the table. Off by default, not Raw mode (Monitor, polling unchanged). */
   logging = $state(false);
@@ -175,13 +174,8 @@ class CanBusStore {
     this.refreshSnapshot();
   }
 
-  addFilterRule(rule: Omit<FilterRule, "key">) {
-    this.rules = [...this.rules, { ...rule, key: ++this.ruleSeq }];
-    this.refreshSnapshot();
-  }
-
-  removeFilterRule(key: number) {
-    this.rules = this.rules.filter((r) => r.key !== key);
+  setFilterRules(rules: FilterRule[]) {
+    this.rules = rules;
     this.refreshSnapshot();
   }
 

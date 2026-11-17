@@ -3,7 +3,7 @@
   import type { TableMode } from "$lib/canBus/canBusStore.svelte";
   import Icon from "$lib/Icon.svelte";
   import SelectMenu from "$lib/components/SelectMenu.svelte";
-  import { describeRule, FILTER_FIELDS, opsFor, parseFilterValue, type FilterField, type FilterOp, type FilterRule } from "$lib/canBus/canFilter";
+  import { FILTER_FIELDS, opsFor, parseFilterValue, type FilterField, type FilterOp, type FilterRule } from "$lib/canBus/canFilter";
   import { relTime } from "$lib/canBus/canFormat";
   import { measureHeight, trackUnder } from "$lib/layers";
   import { formatId, idColorIndex, idKey } from "$lib/canBus/canIds";
@@ -23,11 +23,10 @@
     filter: TableFilter;
     rules: FilterRule[];
     onfilter: (filter: TableFilter) => void;
-    onaddrule: (rule: Omit<FilterRule, "key">) => void;
-    onremoverule: (key: number) => void;
+    onrules: (rules: FilterRule[]) => void;
   }
 
-  let { mode, rows, byId, startUs, selected, onselect, ondetails, onmode, onclear, filter, rules, onfilter, onaddrule, onremoverule }: Props = $props();
+  let { mode, rows, byId, startUs, selected, onselect, ondetails, onmode, onclear, filter, rules, onfilter, onrules }: Props = $props();
 
   // The bar sits beside the scroller (Gecko drops the blur inside one), so mirror its horizontal scroll and scrollbar width.
   function syncBar(el: HTMLElement) {
@@ -52,27 +51,42 @@
     { id: "obd", label: "OBD" },
   ];
 
+  // The popup edits a local copy (DataTable pattern); every change pushes the whole list to the store.
   let adding = $state(false);
-  let exclude = $state(false);
-  let field = $state<FilterField>("id");
-  let op = $state<FilterOp>("=");
-  let value = $state("");
+  // svelte-ignore state_referenced_locally
+  let seq = rules.reduce((m, r) => Math.max(m, r.key), 0);
+  // svelte-ignore state_referenced_locally
+  let draft = $state<FilterRule[]>(rules.map((r) => ({ ...r })));
   let wrapEl = $state<HTMLDivElement>();
-  const valid = $derived(parseFilterValue(field, value) !== null);
-  const hint = $derived(field === "dir" ? "RX or TX" : field === "dlc" ? "0-8" : "hex, e.g. 7E8");
 
+  const modeOptions = [
+    { value: false, label: "Include" },
+    { value: true, label: "Exclude" },
+  ];
   const fieldOptions = FILTER_FIELDS.map((f) => ({ value: f.id, label: f.label }));
-  const opOptions = $derived(opsFor(field).map((o) => ({ value: o, label: o })));
+  const hintFor = (field: FilterField) => (field === "dir" ? "RX or TX" : field === "dlc" ? "0-8" : "hex, e.g. 7E8");
+  const invalid = (r: FilterRule) => r.value.trim() !== "" && parseFilterValue(r.field, r.value) === null;
 
-  function onField() {
-    if (!opsFor(field).includes(op)) op = "=";
+  const commit = () => onrules(draft.map((r) => ({ ...r })));
+
+  function addRule() {
+    draft.push({ key: ++seq, field: "id", op: "=", value: "", exclude: false });
+    commit();
   }
 
-  function add() {
-    if (!valid) return;
-    onaddrule({ field, op, value: value.trim(), exclude });
-    value = "";
-    adding = false;
+  function removeRule(key: number) {
+    draft = draft.filter((r) => r.key !== key);
+    commit();
+  }
+
+  function resetRules() {
+    draft = [];
+    commit();
+  }
+
+  function onField(r: FilterRule) {
+    if (!opsFor(r.field).includes(r.op)) r.op = "=";
+    commit();
   }
 
   const count = $derived(mode === "log" ? rows.length : byId.length);
@@ -94,41 +108,38 @@
     <div class="ft-tools">
       <div class="ft-add" bind:this={wrapEl}>
         <button class="btn sm" aria-expanded={adding} aria-haspopup="dialog" onclick={() => (adding = !adding)}>
-          <Icon name="plus" size={16} />
+          <Icon name="filter" size={16} />
           <span>Filter</span>
+          {#if draft.length > 0}<span class="ft-badge">{draft.length}</span>{/if}
         </button>
         {#if adding}
-          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-          <form
-            class="popup ft-pop"
-            aria-label="Add a filter"
-            onsubmit={(e) => {
-              e.preventDefault();
-              add();
-            }}
-            onkeydown={(e) => {
-              if (e.key === "Escape") adding = false;
-            }}
-          >
-            <div class="seg" role="radiogroup" aria-label="Rule type">
-              <button type="button" role="radio" aria-checked={!exclude} onclick={() => (exclude = false)}>Include</button>
-              <button type="button" role="radio" aria-checked={exclude} onclick={() => (exclude = true)}>Exclude</button>
+          <div class="popup ft-pop" role="dialog" aria-label="Filters" tabindex="-1" onkeydown={(e) => e.key === "Escape" && (adding = false)}>
+            <div class="ft-pop-h">Filter by</div>
+            <div class="ft-rules">
+              {#each draft as r, i (r.key)}
+                <div class="ft-rule">
+                  <span class="ft-lbl muted">{i === 0 ? "Where" : "And"}</span>
+                  <div class="ft-sel"><SelectMenu ariaLabel="Include or exclude" options={modeOptions} bind:value={r.exclude} onChange={commit} /></div>
+                  <div class="ft-sel"><SelectMenu ariaLabel="Row" options={fieldOptions} bind:value={r.field} onChange={() => onField(r)} /></div>
+                  <div class="ft-sel ft-op"><SelectMenu ariaLabel="Operator" options={opsFor(r.field).map((o) => ({ value: o, label: o }))} bind:value={r.op} onChange={commit} /></div>
+                  <input
+                    class="in mono ft-val"
+                    aria-label="Value"
+                    placeholder={hintFor(r.field)}
+                    bind:value={r.value}
+                    oninput={commit}
+                    aria-invalid={invalid(r) ? "true" : undefined}
+                  />
+                  <button class="btn sm icon" title="Remove rule" aria-label="Remove rule" onclick={() => removeRule(r.key)}><Icon name="trash" size={14} /></button>
+                </div>
+              {/each}
+              {#if draft.length === 0}<p class="muted">No active filters.</p>{/if}
             </div>
-            <div class="ft-f">
-              <span class="muted">Row</span>
-              <SelectMenu ariaLabel="Row" options={fieldOptions} bind:value={field} onChange={onField} />
+            <div class="ft-foot">
+              <button class="btn sm pri" onclick={addRule}>Add filter</button>
+              {#if draft.length > 0}<button class="btn sm" onclick={resetRules}>Reset filters</button>{/if}
             </div>
-            <div class="ft-f">
-              <span class="muted">Is</span>
-              <SelectMenu ariaLabel="Operator" options={opOptions} bind:value={op} />
-            </div>
-            <label class="ft-f">
-              <span class="muted">Value</span>
-              <!-- svelte-ignore a11y_autofocus -->
-              <input class="in mono" bind:value placeholder={hint} autofocus aria-invalid={value !== "" && !valid ? "true" : undefined} />
-            </label>
-            <button class="btn pri" disabled={!valid}>Add filter</button>
-          </form>
+          </div>
         {/if}
       </div>
       <span class="muted">{count} shown</span>
@@ -139,19 +150,8 @@
     </div>
   </div>
 
-  {#if rules.length}
-    <ul class="ft-chips" aria-label="Active filters">
-      {#each rules as r (r.key)}
-        <li class:ex={r.exclude}>
-          <span>{describeRule(r)}</span>
-          <button aria-label="Remove filter" onclick={() => onremoverule(r.key)}><Icon name="x" size={12} /></button>
-        </li>
-      {/each}
-    </ul>
-  {/if}
-
   {#if count === 0}
-    <p class="muted ft-empty">{rules.length || filter !== "all" ? "No frames match the filter." : "No frames. Press Start to log the bus."}</p>
+    <p class="muted ft-empty">{draft.length || filter !== "all" ? "No frames match the filter." : "No frames. Press Start to log the bus."}</p>
   {:else}
     <div class="ft-body">
       <div class="ft-bar float-layer rest-top" aria-hidden="true" {@attach measureHeight("--hdr-h")}>
@@ -261,47 +261,81 @@
     position: absolute;
     right: 0;
     top: calc(100% + 6px);
-    z-index: 20;
-    width: 260px;
-    display: grid;
-    gap: 10px;
-    padding: 12px;
-  }
-  .ft-f {
-    display: grid;
-    gap: 4px;
-  }
-  .ft-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin: 0;
-    padding: 0 4px 8px;
-    list-style: none;
-  }
-  .ft-chips li {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 6px 4px 10px;
-    border-radius: 999px;
-    background: var(--ctl);
+    z-index: 50;
+    width: max-content;
+    min-width: min(620px, calc(100vw - 2rem));
+    max-width: calc(100vw - 2rem);
+    padding: 1.25rem;
     font-size: 0.85rem;
   }
-  .ft-chips li.ex {
-    color: var(--crit);
+  .ft-pop-h {
+    font-weight: 600;
+    margin-bottom: 1rem;
   }
-  .ft-chips button {
-    display: grid;
-    place-items: center;
-    width: 20px;
-    height: 20px;
-    padding: 0;
-    border: 0;
-    border-radius: 50%;
-    background: transparent;
-    color: inherit;
-    cursor: pointer;
+  .ft-rules {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+  .ft-rule {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .ft-lbl {
+    flex: 0 0 50px;
+  }
+  .ft-sel {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .ft-op {
+    flex: 0 0 90px;
+  }
+  .ft-val {
+    flex: 1 1 0;
+    min-width: 0;
+    margin: 0;
+  }
+  .ft-foot {
+    display: flex;
+    gap: 0.75rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--hair);
+  }
+  .ft-badge {
+    background: var(--ctl);
+    padding: 0.1rem 0.4rem;
+    border-radius: var(--r-xs);
+    font-size: 0.65rem;
+  }
+  @media (max-width: 768px) {
+    .ft-pop {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      right: auto;
+      transform: translate(-50%, -50%);
+      width: 90vw;
+      min-width: 0;
+      max-height: 85vh;
+      overflow-y: auto;
+      box-shadow:
+        0 0 0 100vw var(--scrim),
+        var(--shadow-float);
+    }
+    .ft-lbl {
+      flex-basis: 100%;
+    }
+    .ft-sel,
+    .ft-val {
+      flex: 1 1 100%;
+    }
+    .ft-op {
+      flex: 1 1 100%;
+    }
   }
   .ft-empty {
     margin: 12px;

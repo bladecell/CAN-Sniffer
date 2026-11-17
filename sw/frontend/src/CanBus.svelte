@@ -140,8 +140,7 @@
         filter={canBus.filter}
         rules={canBus.rules}
         onfilter={(f) => canBus.setFilter(f)}
-        onaddrule={(r) => canBus.addFilterRule(r)}
-        onremoverule={(k) => canBus.removeFilterRule(k)}
+        onrules={(r) => canBus.setFilterRules(r)}
       />
     </div>
   </div>
