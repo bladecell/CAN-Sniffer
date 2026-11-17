@@ -273,6 +273,15 @@
       width: max-content;
       max-width: 100%;
     }
+    /* Phone: the rail is a horizontal bar, so the marker sits under the selected button. */
+    .cb-rail button[aria-current]::before {
+      left: 22%;
+      right: 22%;
+      top: auto;
+      bottom: -6px;
+      width: auto;
+      height: 3px;
+    }
     .cb-side {
       grid-column: auto;
       position: static;
