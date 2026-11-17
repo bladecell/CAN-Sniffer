@@ -38,6 +38,11 @@
     tab = "info";
   }
 
+  // A click on empty space (not a row, the side panel or a control) clears the selection.
+  function clearSelection(e: MouseEvent) {
+    if (canBus.selectedKey !== null && !(e.target as Element).closest("tr, .cl-row, .cb-side, button, input, select, a, label")) canBus.select(null);
+  }
+
   // The page attaches on mount. The stream stops on leave (0xB1) unless "Log in background" is on.
   $effect(() => untrack(() => canBus.attach()));
 
@@ -71,7 +76,8 @@
   }
 </script>
 
-<section class="cb">
+<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+<section class="cb" onclick={clearSelection}>
   <div class="cb-ws">
     <nav class="card cb-rail" aria-label="CAN views">
       {#each RAIL as r (r.id)}
