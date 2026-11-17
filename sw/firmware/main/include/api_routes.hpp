@@ -53,6 +53,12 @@ constexpr unsigned kUriHandlerHeadroom = 8;
   X("/api/v1/can/send",             POST,   p_can_send_handler,              1)                \
   X("/api/v1/can/send",             GET,    g_can_send_handler,              0)                \
   X("/api/v1/can/send/stop",        POST,   p_can_send_stop_handler,         1)                \
+  X("/api/v1/can/capture",          GET,    g_can_capture_handler,           0)                \
+  X("/api/v1/can/capture/start",    POST,   p_can_capture_start_handler,     1)                \
+  X("/api/v1/can/capture/stop",     POST,   p_can_capture_stop_handler,      1)                \
+  X("/api/v1/can/captures",         GET,    g_can_captures_handler,          1)                \
+  X("/api/v1/can/captures/*",       GET,    g_can_capture_file_handler,      1)                \
+  X("/api/v1/can/captures/*",       DELETE, d_can_capture_file_handler,      1)                \
   X("/api/v1/system",               GET,    g_system_index_handler,          0)                \
   X("/api/v1/system/reboot",        POST,   p_system_reboot_index_handler,   1)                \
   X("/api/v1/system/sleep",         POST,   p_system_sleep_index_handler,    1)                \

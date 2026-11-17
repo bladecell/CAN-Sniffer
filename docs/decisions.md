@@ -335,3 +335,9 @@ User decisions.
 Implements UI3e-D4 and D1.
 - **Policy:** `POST /can/send` takes any 11-bit ID (0 to 2047) and 1 to 8 data bytes. The SID allow-list, the single-frame PCI check and `403 SERVICE_BLOCKED` are removed. Extended-ID TX is not built: the OBD2 TX path and the TX-done match are standard-ID only, and the page does not need it for v1.
 - **Sender:** body with `frames`, `period_ms` (10 ms to 1 h, required) and `repeat` (0 to 65535, 0 = until stopped). Own task, alive only while a plan runs. Not counted as Raw activity, so the 300 s idle timeout also ends a forever plan. One plan at a time. New routes `GET /can/send` (status, open) and `POST /can/send/stop` (gated). `kMaxUriHandlers` raised 64 to 72 for these and the capture routes.
+
+## 2026-11-17: SD capture of the raw stream (UI3e-8, UI3e-16)
+- **Source:** the drain task's delivered batches, not a second ring. Cost: capture sees exactly what the stream shows (drop counters apply) and needs the stream on, so it ends when the last socket closes. Gain: no second tap, no second ring in RAM.
+- **Not on the drain task:** SD writes can take tens of ms (a wedged card was seen on V1_1), so rows go through a stream buffer to a task that writes, like the recorder. A full buffer drops whole batches and counts them.
+- **Format:** `t_us` relative to the first frame (no 32-bit wrap to explain), hex ids, contiguous hex data. 8 MiB cap per file, no rotation: a capture that hits it ends with `ended:"limit"`.
+- **Routes:** own `/can/capture*` and `/can/captures*` routes with a strict `cap_NNNNNN.csv` name check, not the generic SD file routes, so the page needs no path handling and a hostile name never reaches the card. Start, stop, list, download and delete are gated; the status read is open.

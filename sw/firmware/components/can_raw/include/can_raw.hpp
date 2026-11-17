@@ -2,6 +2,7 @@
 // ring while a client has the stream on, and hands batches to a transport sink. The transport (WebSocket) lives in
 // main; this component knows nothing about it. See docs/architecture.md (CAN raw stream) and docs/api.md (0x10, 0x11).
 #pragma once
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 
@@ -15,6 +16,12 @@ public:
   // lock held; must not block for long. `frames` is the number of frames in `data` (0 for a stats frame). `targetFd` -1:
   // every subscribed client; >= 0: only that socket.
   using SinkFn = can_raw::SinkResult (*)(void* arg, const uint8_t* data, size_t len, size_t frames, int targetFd);
+
+  // Sees every batch the drain task has delivered or dropped for good (not one the transport asked to retry), on the drain task
+  // with no CanRaw lock held. Must not block for long and must not call back into CanRaw. `frames` is the frame count of the
+  // 0x10 batch in `data`. nullptr removes it.
+  using BatchObserverFn = void (*)(const uint8_t* data, size_t len, size_t frames);
+  void setBatchObserver(BatchObserverFn fn) { observer_.store(fn); }
 
   static CanRaw& getInstance();
 
@@ -56,4 +63,5 @@ private:
   bool          initialized_   = false;
   volatile bool taskRunning_   = false;
   volatile bool stopRequested_ = false;
+  std::atomic<BatchObserverFn> observer_{nullptr};
 };

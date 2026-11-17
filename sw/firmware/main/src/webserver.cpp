@@ -18,6 +18,7 @@
 #include "auth.hpp"
 #include "auth_http.hpp"
 #include "async_web_server.hpp"
+#include "can_capture.hpp"
 #include "can_mode_service.hpp"
 #include "can_raw.hpp"
 #include "supervisor.hpp"
@@ -102,6 +103,8 @@ static esp_err_t to_esp_err(http_parse::Result r)
         default: return ESP_ERR_INVALID_ARG;
     }
 }
+
+static esp_err_t sd_file_stream(httpd_req_t* req, const char* path_buf, bool download);
 
 // Extracts, percent-decodes and validates an SD-card route suffix (http_parse::sdRestPath).
 static esp_err_t get_sd_rest_path(httpd_req_t* req, const char* api_route, char* out, size_t out_size,
@@ -882,6 +885,72 @@ esp_err_t p_can_send_stop_handler(httpd_req_t* req, void* arg)
     return send_json_response(req, m_can_sender_stop());
 }
 
+esp_err_t g_can_capture_handler(httpd_req_t* req, void* arg)
+{
+    return send_json_response(req, m_can_capture_get());
+}
+
+esp_err_t p_can_capture_start_handler(httpd_req_t* req, void* arg)
+{
+    return send_json_response(req, m_can_capture_start());
+}
+
+esp_err_t p_can_capture_stop_handler(httpd_req_t* req, void* arg)
+{
+    return send_json_response(req, m_can_capture_stop());
+}
+
+esp_err_t g_can_captures_handler(httpd_req_t* req, void* arg)
+{
+    return send_json_response(req, m_can_captures_get());
+}
+
+// The capture name from /api/v1/can/captures/<name>[?query]: at most 14 characters before the query, no decoding (a '%'
+// fails the name check). False: not a valid capture name.
+static bool capture_name_from_uri(const httpd_req_t* req, char* out, size_t cap)
+{
+    static const char prefix[] = "/api/v1/can/captures/";
+    if (req == nullptr || strncmp(req->uri, prefix, sizeof(prefix) - 1) != 0)
+    {
+        return false;
+    }
+    const char*  name = req->uri + sizeof(prefix) - 1;
+    const size_t len  = strcspn(name, "?");
+    if (len == 0 || len >= cap)
+    {
+        return false;
+    }
+    memcpy(out, name, len);
+    out[len] = '\0';
+    char path[48];
+    return can_capture_service::pathFor(out, path, sizeof(path));
+}
+
+esp_err_t g_can_capture_file_handler(httpd_req_t* req, void* arg)
+{
+    char name[24];
+    char path[48];
+    if (!capture_name_from_uri(req, name, sizeof(name)) || !can_capture_service::pathFor(name, path, sizeof(path)))
+    {
+        return AsyncWebServer::sendError(req, 400, "Name must be cap_NNNNNN.csv", http_error::kBadPath);
+    }
+    if (httpd_resp_set_hdr(req, "X-Content-Type-Options", "nosniff") != ESP_OK || httpd_resp_set_hdr(req, "Cache-Control", "no-store") != ESP_OK)
+    {
+        return ESP_FAIL;
+    }
+    return sd_file_stream(req, path, true);
+}
+
+esp_err_t d_can_capture_file_handler(httpd_req_t* req, void* arg)
+{
+    char name[24];
+    if (!capture_name_from_uri(req, name, sizeof(name)))
+    {
+        return AsyncWebServer::sendError(req, 400, "Name must be cap_NNNNNN.csv", http_error::kBadPath);
+    }
+    return send_json_response(req, m_can_capture_delete(name));
+}
+
 esp_err_t g_recorder_trips_handler(httpd_req_t* req, void* arg)
 {
     return send_json_response(req, m_recorder_trips_get());
@@ -1358,7 +1427,12 @@ esp_err_t g_sd_card_file_read_handler(httpd_req_t* req, void* arg)
     {
         return AsyncWebServer::sendError(req, 400, "Invalid SD card path", http_error::kBadPath);
     }
+    return sd_file_stream(req, path_buf, download);
+}
 
+// Streams one SD file as the response. `path_buf` is already validated (relative to the mount point).
+static esp_err_t sd_file_stream(httpd_req_t* req, const char* path_buf, bool download)
+{
     // Keep this bounded lease through stat, open, every read/send, and close.
     // SDCard's lower-level calls take the same recursive mutex, so another SD
     // request cannot unmount or mutate the file while its response is active.
@@ -2236,6 +2310,8 @@ esp_err_t setup_web_server()
 esp_err_t stop_web_server()
 {
     constexpr int kTaskExitPolls = 100;  // 10 ms each
+
+    (void)can_capture_service::stop();  // a capture reads the raw stream; it ends first (best effort, it ends by itself too)
 
     // First, so the raw stream stops sending before the server goes. ESP_ERR_TIMEOUT: retry, nothing else was touched.
     if (const esp_err_t rawErr = CanRaw::getInstance().deinit(); rawErr != ESP_OK)

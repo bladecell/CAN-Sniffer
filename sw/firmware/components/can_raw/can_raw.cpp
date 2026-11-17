@@ -243,8 +243,17 @@ void CanRaw::taskLoop()
         sched, static_cast<uint32_t>(pdTICKS_TO_MS(xTaskGetTickCount())), [this] { return sendStats(); },
         [this]
         {
-          return gCore.pump([this](const uint8_t* d, size_t n, size_t frames) { return sink_(sinkArg_, d, n, frames, -1); },
-                            CanDriver::getInstance().getRxDropped(), kBatchesPerWake);
+          return gCore.pump(
+              [this](const uint8_t* d, size_t n, size_t frames)
+              {
+                const can_raw::SinkResult r = sink_(sinkArg_, d, n, frames, -1);
+                if (r != can_raw::SinkResult::busy)
+                {
+                  if (const BatchObserverFn o = observer_.load()) { o(d, n, frames); }
+                }
+                return r;
+              },
+              CanDriver::getInstance().getRxDropped(), kBatchesPerWake);
         });
     vTaskDelay(pdMS_TO_TICKS(kPumpPeriodMs));
   }

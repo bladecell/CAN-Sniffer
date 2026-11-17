@@ -29,6 +29,8 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "http_error.hpp"
+#include "can_capture.hpp"
+#include "can_capture_core.hpp"
 #include "can_mode_http.hpp"
 #include "can_mode_service.hpp"
 #include "keep_awake_http.hpp"
@@ -2401,6 +2403,120 @@ MiddlewareJsonResult m_can_send(const cJSON* payload)
         return json_result(json_error_body("A CAN mode change is in progress", "BUSY"), 503);
     }
     return result;
+}
+
+static MiddlewareJsonResult can_capture_status_result()
+{
+    const can_capture_service::Status st   = can_capture_service::status();
+    cJSON*                            root = cJSON_CreateObject();
+    if (root == nullptr)
+    {
+        return json_result(nullptr, 500);
+    }
+    cJSON_AddStringToObject(root, "state", st.running ? "capturing" : "idle");
+    if (st.file[0] != '\0')
+    {
+        cJSON_AddStringToObject(root, "file", st.file);
+    }
+    cJSON_AddNumberToObject(root, "rows", st.rows);
+    cJSON_AddNumberToObject(root, "bytes", st.bytes);
+    cJSON_AddNumberToObject(root, "dropped", st.dropped);
+    if (st.ended != nullptr)
+    {
+        cJSON_AddStringToObject(root, "ended", st.ended);
+    }
+    if (st.error != nullptr)
+    {
+        cJSON_AddStringToObject(root, "error", st.error);
+    }
+    return json_result(root, 200);
+}
+
+MiddlewareJsonResult m_can_capture_get()
+{
+    return can_capture_status_result();
+}
+
+MiddlewareJsonResult m_can_capture_start()
+{
+    using S = can_capture_service::Start;
+    switch (can_capture_service::start())
+    {
+        case S::started: return can_capture_status_result();
+        case S::streamOff: return json_result(json_error_body("The raw stream is off; subscribe with 0xB0 first", "STREAM_OFF"), 409);
+        case S::running: return json_result(json_error_body("A capture is running", "CAPTURE_RUNNING"), 409);
+        case S::noCard: return json_result(json_error_body("No SD card, or it is busy", "NO_SD"), 503);
+        case S::noMemory: return json_result(json_error_body("No memory for the capture", "NO_MEMORY"), 503);
+        default: return json_result(json_error_body("The capture file could not be created", "SD_ERROR"), 503);
+    }
+}
+
+MiddlewareJsonResult m_can_capture_stop()
+{
+    if (can_capture_service::stop() != ESP_OK)
+    {
+        return json_result(json_error_body("The capture is still closing; try again", "BUSY"), 503);
+    }
+    return can_capture_status_result();
+}
+
+MiddlewareJsonResult m_can_captures_get()
+{
+    static can_capture_service::FileInfo files[can_capture::kMaxListed];
+    size_t                               count     = 0;
+    bool                                 truncated = false;
+    const esp_err_t                      err       = can_capture_service::list(files, can_capture::kMaxListed, count, truncated);
+    if (err != ESP_OK)
+    {
+        return json_result(json_error_body("The SD card could not be read", "NO_SD"), 503);
+    }
+    cJSON* root = cJSON_CreateObject();
+    cJSON* list = cJSON_AddArrayToObject(root, "captures");
+    if (root == nullptr || list == nullptr)
+    {
+        cJSON_Delete(root);
+        return json_result(nullptr, 500);
+    }
+    for (size_t i = 0; i < count; i++)
+    {
+        cJSON* item = cJSON_CreateObject();
+        if (item == nullptr)
+        {
+            cJSON_Delete(root);
+            return json_result(nullptr, 500);
+        }
+        cJSON_AddItemToArray(list, item);
+        if (cJSON_AddStringToObject(item, "name", files[i].name) == nullptr || cJSON_AddNumberToObject(item, "bytes", files[i].bytes) == nullptr)
+        {
+            cJSON_Delete(root);
+            return json_result(nullptr, 500);
+        }
+    }
+    cJSON_AddBoolToObject(root, "truncated", truncated);
+    return json_result(root, 200);
+}
+
+MiddlewareJsonResult m_can_capture_delete(const char* name)
+{
+    using R = can_capture_service::Remove;
+    switch (can_capture_service::remove(name))
+    {
+        case R::removed:
+        {
+            cJSON* root = cJSON_CreateObject();
+            if (root == nullptr)
+            {
+                return json_result(nullptr, 500);
+            }
+            cJSON_AddStringToObject(root, "status", "deleted");
+            return json_result(root, 200);
+        }
+        case R::badName: return json_result(json_error_body("Name must be cap_NNNNNN.csv", "BAD_NAME"), 400);
+        case R::notFound: return json_result(json_error_body("No such capture", "NOT_FOUND"), 404);
+        case R::inUse: return json_result(json_error_body("That capture is running; stop it first", "CAPTURE_RUNNING"), 409);
+        case R::noCard: return json_result(json_error_body("No SD card, or it is busy", "NO_SD"), 503);
+        default: return json_result(json_error_body("The file could not be deleted", "SD_ERROR"), 500);
+    }
 }
 
 MiddlewareJsonResult m_recorder_stop()

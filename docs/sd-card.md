@@ -11,13 +11,15 @@ Settings are not on the card. Wi-Fi, CAN and supervisor settings are in NVS (nam
 │   ├── pid_def.json     PID config JSON (pid-config.md). Written by POST /api/v1/pid_def/save. Path is configurable
 │   └── dtcs.bin         DTC description database (binary, below). Copied on by the user, never written by the firmware. Path is configurable
 └── logs/                created on every mount if missing
-    └── trips/           created by the recorder on its first write
-        ├── trip_000001.csv     one trip: long-format samples (below)
-        └── trip_000001.json    its sidecar
+    ├── trips/           created by the recorder on its first write
+    │   ├── trip_000001.csv     one trip: long-format samples (below)
+    │   └── trip_000001.json    its sidecar
+    └── captures/        created by the first CAN capture
+        └── cap_000001.csv      one raw CAN capture (below)
 ```
 The paths of the two files are `pid_def_path` and `dtc_desc_path` in NVS. Defaults are in `sw/firmware/main/include/supervisor.hpp`. The REST file calls (`api.md`) can read, write, copy and delete any path on the card, so other files may exist.
 
-The recorder (`components/recorder/`) is the only writer under `/logs/trips/`.
+The recorder (`components/recorder/`) is the only writer under `/logs/trips/`; the CAN capture (`main/src/can_capture.cpp`) is the only writer under `/logs/captures/`.
 
 ## Behaviour without a card
 No card, or a card that is unreadable, never stops the boot: the SD step succeeds even with an empty slot, and mounting is retried by the 1 s card-detect loop. Per feature:
@@ -72,3 +74,21 @@ Rows are appended in batches (every 10 s or 8 KB, `kFlushMs` and `kBatchBytes` i
 **Card problems.** No card at start, or a card that cannot create the first file: `start` fails (503) and the state is `error` with `last_error`. Card removed or full while recording: the state becomes `error` with `last_error`, rows are buffered (8 KB) then dropped and counted, and the write is retried every 2 s; when it works again recording resumes in a new trip file. The recorder never stops the device or other features.
 
 **Float format caveat.** The firmware links Picolibc. The CSV relies on its `snprintf` handling `%.8g` for floats. This is verified under glibc on the host only; check a real trip file on the device after a firmware or toolchain change.
+
+## CAN captures (raw stream)
+Decision: `decisions.md`, UI3e-D4. Start, stop, list, download and delete over REST (`api.md`, CAN view mode, Capture).
+
+**Names.** `/logs/captures/cap_NNNNNN.csv`, N a zero-padded 6-digit counter from 000001 to 999999. Each start scans the folder for the highest number and takes the next; it never overwrites (an existing file with that name refuses the start). A folder with 2000 or more entries refuses a new capture, and so does a counter past 999999. Only names of exactly this shape are accepted from a URL, so a path never reaches the card from a request.
+
+**CSV.** Header `t_us,id,ext,rtr,dir,dlc,data`, then one row per frame, LF line endings:
+- `t_us`: microseconds since the first frame of this capture (decimal; the 32-bit device clock of the stream is unwrapped). A TX frame's time is the TX-done time, so it can be a few microseconds before the RX frame written just before it.
+- `id`: upper-case hex without prefix, 3 digits for a standard frame and 8 for an extended one.
+- `ext`, `rtr`: `1` or `0`.
+- `dir`: `RX` or `TX`.
+- `dlc`: data bytes, 0 to 8 (0 for a remote frame).
+- `data`: the bytes as contiguous upper-case hex, empty for 0 bytes.
+Example: `250,7DF,0,0,TX,3,02010C`.
+
+**Writing.** Rows go from the stream's drain task into a 6 KiB queue and a 4 KiB buffer, and the capture task appends them with one open, write, `fsync` and close per flush (2 KiB or 1 s). After a power cut up to about 1 s of rows is lost and the last row can be cut short. A full queue drops the whole batch and counts the rows (`dropped`). The file ends at 8 MiB (`kMaxFileBytes`), cut at a row boundary, with `ended:"limit"`.
+
+**Card problems.** No card, a busy card (1 s lease), a full card or a failed write ends the capture with `ended:"error"` (`NO_SD` or `SD_ERROR`); queued rows that were not written are lost. Nothing is retried and nothing else stops. A card removed mid-capture is the same.

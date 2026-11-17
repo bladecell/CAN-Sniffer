@@ -19,6 +19,7 @@ void run_http_body_policy_tests(void);
 void run_error_policy_tests(void);
 void run_supervisor_core_tests(void);
 void run_can_raw_tests(void);
+void run_can_capture_tests(void);
 void run_can_mode_tests(void);
 void run_raw_tx_policy_tests(void);
 void run_raw_flow_control_tests(void);
@@ -94,6 +95,7 @@ void app_main(void)
     run_recorder_core_tests();
     run_recorder_http_tests();
     run_can_raw_tests();
+    run_can_capture_tests();
     run_can_mode_tests();
     run_raw_tx_policy_tests();
     run_raw_flow_control_tests();

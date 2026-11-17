@@ -83,6 +83,11 @@ MiddlewareJsonResult m_can_mode_set(const cJSON* payload);
 MiddlewareJsonResult m_can_send(const cJSON* payload);
 MiddlewareJsonResult m_can_sender_get();
 MiddlewareJsonResult m_can_sender_stop();
+MiddlewareJsonResult m_can_capture_get();
+MiddlewareJsonResult m_can_capture_start();
+MiddlewareJsonResult m_can_capture_stop();
+MiddlewareJsonResult m_can_captures_get();
+MiddlewareJsonResult m_can_capture_delete(const char* name);
 esp_err_t recorder_state_packet_get(uint8_t* out_packet);
 
 MiddlewareJsonResult m_settings_get();
