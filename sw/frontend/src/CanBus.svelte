@@ -3,6 +3,7 @@
   import Icon from "$lib/Icon.svelte";
   import { alertStore } from "$lib/alertStore.svelte";
   import { connectionStore } from "$lib/connectionStore.svelte";
+  import Switch from "$lib/components/Switch.svelte";
   import { canBus } from "$lib/canBus/canBusStore.svelte";
   import type { TableFilter } from "$lib/canBus/canModel";
   import CanTiles from "$lib/components/canBus/CanTiles.svelte";
@@ -38,8 +39,8 @@
     tab = "info";
   }
 
-  // The page owns the raw stream: it starts on mount and stops (0xB1) when the page goes away.
-  $effect(() => untrack(() => canBus.start()));
+  // The page attaches on mount. The stream stops on leave (0xB1) unless "Log in background" is on.
+  $effect(() => untrack(() => canBus.attach()));
 
   // Bus status is read on every open and whenever the CAN state changes (GET /can_bus, GET /can/mode).
   $effect(() => {
@@ -120,6 +121,7 @@
               <button role="radio" aria-checked={canBus.filter === f.id} onclick={() => canBus.setFilter(f.id)}>{f.label}</button>
             {/each}
           </div>
+          <Switch label="Log in background" checked={canBus.keepInBackground} onchange={(on) => canBus.setKeepInBackground(on)} />
           <button class="btn" aria-pressed={canBus.paused} onclick={() => canBus.togglePause()}>
             <Icon name={canBus.paused ? "play" : "pause"} size={16} />
             <span>{canBus.paused ? "Resume" : "Pause"}</span>

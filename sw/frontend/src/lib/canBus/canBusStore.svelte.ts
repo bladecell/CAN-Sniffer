@@ -1,6 +1,7 @@
 // CAN Bus page state: the raw stream into the capture model, a 10 Hz view snapshot, and the 1 Hz counters.
 // Pause freezes the snapshot only. The model keeps counting, so the rates and drop counters stay live.
 import { parseJsonResponse } from "$lib/api";
+import { untrack } from "svelte";
 import { connectionStore, type RawListener } from "$lib/connectionStore.svelte";
 import { firmwareApi } from "$lib/firmwareApi.svelte";
 import type { CanBusStatus, CanModeStatus } from "$lib/types";
@@ -9,6 +10,15 @@ import { byIdRows, CanModel, ecuRows, logRows, recentFrames, type CanFrame, type
 import { findLastMatch, type RuleMatch } from "./canRules";
 import { rulesStore } from "./canRulesStore.svelte";
 import { idKey } from "./canIds";
+import { captureActive, KEEP_KEY, readKeep, storeKeep } from "./captureRetention";
+
+const storedKeep = (): string | null => {
+  try {
+    return localStorage.getItem(KEEP_KEY);
+  } catch {
+    return null;
+  }
+};
 
 const VIEW_MS = 100;
 const SECOND_MS = 1000;
@@ -85,31 +95,89 @@ class CanBusStore {
     this.refreshCounters();
   };
 
-  /** Starts the raw stream and the timers. Returns the stop function for the page's teardown. */
-  start(): () => void {
+  /** Log in background: the stream keeps feeding the model after the page is left. Default off. */
+  keepInBackground = $state(readKeep(storedKeep()));
+  private pageOpen = false;
+  private capture: { release: () => void; unsubscribe: () => void; second: ReturnType<typeof setInterval> } | null = null;
+  private view: ReturnType<typeof setInterval> | null = null;
+
+  constructor() {
+    // A session that ends (replaced or parked) stops the device stream. Drop the frames with it, so no old table survives.
+    $effect.root(() => {
+      $effect(() => {
+        if (connectionStore.session !== "active") untrack(() => this.dropCapture());
+      });
+    });
+  }
+
+  /** The page is open: the table refreshes and the stream runs. Returns the detach for the page's teardown. */
+  attach(): () => void {
+    this.pageOpen = true;
+    this.startView();
+    this.settle();
+    return () => {
+      this.pageOpen = false;
+      if (this.view) clearInterval(this.view);
+      this.view = null;
+      this.settle();
+    };
+  }
+
+  setKeepInBackground(on: boolean) {
+    this.keepInBackground = on;
+    try {
+      localStorage.setItem(KEEP_KEY, storeKeep(on));
+    } catch {
+      // Not saved: the toggle is off again on the next visit.
+    }
+    this.settle();
+  }
+
+  /** The stream runs only while captureActive says so; the view timer only while the page is open. */
+  private settle() {
+    if (captureActive(this.keepInBackground, this.pageOpen)) this.startCapture();
+    else this.stopCapture();
+  }
+
+  private startCapture() {
+    if (this.capture) return;
     this.model.reset();
     this.statsMs = 0;
     const release = connectionStore.acquireRawStream();
     const unsubscribe = connectionStore.subscribeRaw((f) => this.onRaw(f));
     let last = Date.now();
-    const viewTimer = setInterval(() => {
-      if (!this.paused) this.refreshSnapshot();
-    }, VIEW_MS);
-    const secondTimer = setInterval(() => {
+    // Rates keep counting while nobody watches, so the table is current when the page opens again.
+    const second = setInterval(() => {
       const now = Date.now();
       this.model.tick((now - last) / SECOND_MS);
       last = now;
       this.refreshCounters();
     }, SECOND_MS);
+    this.capture = { release, unsubscribe, second };
     this.refreshCounters();
-    this.refreshSnapshot();
     void this.refreshBus();
-    return () => {
-      clearInterval(viewTimer);
-      clearInterval(secondTimer);
-      unsubscribe();
-      release();
-    };
+  }
+
+  private stopCapture() {
+    if (!this.capture) return;
+    clearInterval(this.capture.second);
+    this.capture.unsubscribe();
+    this.capture.release();
+    this.capture = null;
+  }
+
+  private dropCapture() {
+    this.stopCapture();
+    this.model.reset();
+    this.refreshSnapshot();
+  }
+
+  private startView() {
+    if (this.view) return;
+    this.view = setInterval(() => {
+      if (!this.paused) this.refreshSnapshot();
+    }, VIEW_MS);
+    this.refreshSnapshot();
   }
 
   togglePause() {
