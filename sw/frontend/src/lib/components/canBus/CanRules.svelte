@@ -6,6 +6,7 @@
   import { hexBytes } from "$lib/canBus/canIds";
   import { helperFormula } from "$lib/canBus/canRuleHelper";
   import { RULE_CAP, type Rule } from "$lib/canBus/canRules";
+  import { parseRules, RULES_MAX_BYTES } from "$lib/canBus/canRulesIo";
 
   let form = $state<RuleForm>(emptyForm());
   let editingId = $state<string | null>(null);
@@ -13,6 +14,7 @@
   let error = $state<string | null>(null);
   let helper = $state({ start: "0", length: "1", order: "be" as "be" | "le" });
   let helperError = $state<string | null>(null);
+  let fileNote = $state<{ ok: boolean; text: string } | null>(null);
 
   const full = $derived(rulesStore.list.length >= RULE_CAP && editingId === null);
 
@@ -74,6 +76,34 @@
     form.bytes = [...form.bytes, { index: String(index), value: "00", mask: "FF" }];
   }
 
+  function exportFile() {
+    const url = URL.createObjectURL(new Blob([rulesStore.exportText()], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "can-rules.json";
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  /** Import replaces the rules. One bad rule in the file saves nothing, and the reason says which one. */
+  async function importFile(e: Event) {
+    const input = e.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = "";
+    if (!file) return;
+    if (file.size > RULES_MAX_BYTES) {
+      fileNote = { ok: false, text: "File is larger than 64 KB. Nothing was saved." };
+      return;
+    }
+    const parsed = parseRules(await file.text());
+    if (!parsed.ok) {
+      fileNote = { ok: false, text: parsed.reason };
+      return;
+    }
+    rulesStore.replaceAll(parsed.rules);
+    fileNote = { ok: true, text: `${parsed.rules.length} rules imported` };
+  }
+
   /** Writes the formula for the chosen bytes. The formula field stays editable. */
   function writeHelperFormula() {
     const spec = { start: Number(helper.start), length: Number(helper.length), order: helper.order };
@@ -96,6 +126,14 @@
     </div>
     <span class="muted">{rulesStore.list.length} of {RULE_CAP}</span>
   </div>
+
+  <div class="cr-actions">
+    <button class="btn sm" disabled={rulesStore.list.length === 0} aria-disabled={rulesStore.list.length === 0} onclick={exportFile}>Export</button>
+    <label class="btn sm cr-import">Import<input type="file" accept="application/json,.json" onchange={importFile} /></label>
+  </div>
+  {#if fileNote}
+    <p class:t-crit={!fileNote.ok} class:t-ok={fileNote.ok} role="status">{fileNote.text}</p>
+  {/if}
 
   {#if rulesStore.list.length === 0 && !open}
     <p class="muted">No rules yet.</p>
@@ -270,6 +308,17 @@
   .cr-bytes {
     display: grid;
     gap: 8px;
+  }
+  .cr-import {
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+  }
+  .cr-import input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
   }
   .cr-check {
     display: flex;
