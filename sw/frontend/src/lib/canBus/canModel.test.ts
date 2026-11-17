@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { CanModel, changedMask, ecuRows, logRows, MAX_IDS, TABLE_ROWS } from "./canModel";
+import { byIdRows, CanModel, changedMask, ecuRows, logRows, MAX_IDS, TABLE_ROWS } from "./canModel";
 import { compileRules, type Rule } from "./canRules";
 import { ecuRequestId, isObdId } from "./canIds";
 import type { RawBatch, RawRecord } from "../wsFrames";
@@ -126,5 +126,24 @@ describe("ecu ids (passive)", () => {
     expect(isObdId(0x7df, false)).toBe(true);
     expect(isObdId(0x3e8, false)).toBe(false);
     expect(isObdId(0x18db33f1, true)).toBe(true);
+  });
+});
+
+describe("by-id table", () => {
+  test("one row per shown id, sorted, with the last frame and changed bytes", () => {
+    const m = new CanModel();
+    m.setRules(compileRules([{ id: "h", name: "", match: { id: 0x5a0, ext: false, idMask: 0x7ff, bytes: [] }, formula: "" }]));
+    m.ingest(batch([rec(0x300, [1]), rec(0x100, [1, 2]), rec(0x100, [1, 9]), rec(0x5a0, [0])]), 0);
+    const rows = byIdRows(m, "all");
+    expect(rows.map((r) => r.id)).toEqual([0x100, 0x300]);
+    expect(rows[0].data[1]).toBe(9);
+    expect(rows[0].changed).toBe(0b10);
+    expect(byIdRows(m, "changed").map((r) => r.id)).toEqual([0x100]);
+  });
+
+  test("capped at the table size", () => {
+    const m = new CanModel();
+    for (let i = 0; i < 700; i++) m.ingest(batch([rec(i, [0])]), 0);
+    expect(byIdRows(m, "all").length).toBe(TABLE_ROWS);
   });
 });

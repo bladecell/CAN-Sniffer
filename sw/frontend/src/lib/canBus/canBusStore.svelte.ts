@@ -5,7 +5,7 @@ import { connectionStore, type RawListener } from "$lib/connectionStore.svelte";
 import { firmwareApi } from "$lib/firmwareApi.svelte";
 import type { CanBusStatus, CanModeStatus } from "$lib/types";
 import type { RawStats } from "$lib/wsFrames";
-import { CanModel, ecuRows, logRows, type CanFrame, type EcuRow, type LogRow, type TableFilter } from "./canModel";
+import { byIdRows, CanModel, ecuRows, logRows, type CanFrame, type EcuRow, type IdView, type LogRow, type TableFilter } from "./canModel";
 import { idKey } from "./canIds";
 
 const VIEW_MS = 100;
@@ -29,10 +29,13 @@ export type IdDetail = {
   recent: CanFrame[];
 };
 
+export type TableMode = "log" | "byId";
+
 export type Snapshot = {
   /** Device time of the first frame, the zero of the time column. */
   startUs: number | null;
   rows: LogRow[];
+  byId: IdView[];
   ids: IdRow[];
   ecus: EcuRow[];
   selected: IdDetail | null;
@@ -49,11 +52,12 @@ export type Counters = {
   dropped: { driver: number; ring: number; socket: number } | null;
 };
 
-const emptySnapshot = (): Snapshot => ({ startUs: null, rows: [], ids: [], ecus: [], selected: null });
+const emptySnapshot = (): Snapshot => ({ startUs: null, rows: [], byId: [], ids: [], ecus: [], selected: null });
 const emptyCounters = (): Counters => ({ now: Date.now(), fps: 0, fpsHistory: [], frames: 0, streaming: false, filterOn: false, load: null, dropped: null });
 
 class CanBusStore {
   filter = $state<TableFilter>("all");
+  tableMode = $state<TableMode>("log");
   paused = $state(false);
   selectedKey = $state<number | null>(null);
   snapshot = $state.raw<Snapshot>(emptySnapshot());
@@ -113,6 +117,11 @@ class CanBusStore {
     this.refreshSnapshot();
   }
 
+  setTableMode(mode: TableMode) {
+    this.tableMode = mode;
+    this.refreshSnapshot();
+  }
+
   select(key: number | null) {
     this.selectedKey = key;
     this.refreshSnapshot();
@@ -155,7 +164,7 @@ class CanBusStore {
     }
     ids.sort((a, b) => a.id - b.id || Number(a.ext) - Number(b.ext));
     const selected = this.selectedKey === null ? null : this.detailFor(this.selectedKey);
-    this.snapshot = { startUs: m.startUs, rows: logRows(m, this.filter), ids, ecus: ecuRows(m), selected };
+    this.snapshot = { startUs: m.startUs, rows: logRows(m, this.filter), byId: byIdRows(m, this.filter), ids, ecus: ecuRows(m), selected };
   }
 
   private detailFor(key: number): IdDetail | null {

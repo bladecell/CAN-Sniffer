@@ -30,6 +30,8 @@ export type IdEntry = {
   changed: number;
   hidden: boolean;
   name: string;
+  /** Parsed values of the last frame. */
+  parsed: string;
   /** Client clock (ms) of the last frame. */
   seenMs: number;
 };
@@ -85,7 +87,7 @@ export class CanModel {
     const key = idKey(f.id, f.ext);
     let entry = this.ids.get(key);
     if (!entry && this.ids.size < MAX_IDS) {
-      entry = { id: f.id, ext: f.ext, count: 0, window: 0, hz: 0, last: f, recent: [], changed: 0, hidden: false, name: "", seenMs: nowMs };
+      entry = { id: f.id, ext: f.ext, count: 0, window: 0, hz: 0, last: f, recent: [], changed: 0, hidden: false, name: "", parsed: "", seenMs: nowMs };
       this.ids.set(key, entry);
     }
     if (!entry) this.untracked++;
@@ -100,6 +102,7 @@ export class CanModel {
       entry.changed = changed;
       entry.hidden = result.hidden;
       entry.name = result.name || entry.name;
+      entry.parsed = result.parsed;
       entry.seenMs = nowMs;
     }
     this.log.push({ ...f, changed, parsed: result.parsed, hidden: result.hidden });
@@ -147,6 +150,20 @@ export function logRows(model: CanModel, filter: TableFilter): LogRow[] {
     if (!row.hidden && passesFilter(row, filter)) out.push(row);
   }
   return out;
+}
+
+/** One row of the by-ID table: the last frame of an id, with its rate and changed bytes. */
+export type IdView = CanFrame & { key: number; count: number; hz: number; changed: number; parsed: string; name: string };
+
+/** Sorted by id, shown ids only, capped at TABLE_ROWS. */
+export function byIdRows(model: CanModel, filter: TableFilter): IdView[] {
+  const list: IdView[] = [];
+  for (const [key, e] of model.ids) {
+    if (e.hidden || !passesFilter(e, filter)) continue;
+    list.push({ ...e.last, key, count: e.count, hz: e.hz, changed: e.changed, parsed: e.parsed, name: e.name });
+  }
+  list.sort((a, b) => a.id - b.id || Number(a.ext) - Number(b.ext));
+  return list.slice(0, TABLE_ROWS);
 }
 
 export type EcuRow = { id: number; ext: boolean; request: number; dlc: number; hz: number; seenMs: number };

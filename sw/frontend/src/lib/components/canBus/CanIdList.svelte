@@ -9,9 +9,10 @@
     now: number;
     selected: number | null;
     onselect: (key: number) => void;
+    ondetails: (key: number) => void;
   }
 
-  let { ids, now, selected, onselect }: Props = $props();
+  let { ids, now, selected, onselect, ondetails }: Props = $props();
 
   let text = $state("");
   const needle = $derived(text.replace(/\s/g, "").toUpperCase());
@@ -25,8 +26,9 @@
   <div class="cl-top">
     <div>
       <h2>IDs</h2>
-      <p class="muted">{ids.length} seen · {silentTotal} silent</p>
+      <p class="muted">{ids.length} seen · {silentTotal} silent. Click selects, double-click opens details.</p>
     </div>
+    <button class="btn sm" disabled={selected === null} onclick={() => selected !== null && ondetails(selected)}>Details</button>
   </div>
   <input class="in mono" placeholder="Filter, e.g. 7E8" aria-label="Filter IDs" bind:value={text} />
 
@@ -59,6 +61,7 @@
     class:quiet
     aria-current={selected === r.key ? "true" : undefined}
     onclick={() => onselect(r.key)}
+    ondblclick={() => ondetails(r.key)}
   >
     <b class="mono">{formatId(r.id, r.ext)}</b>
     <span class="muted">{r.ext ? "extended" : "standard"}</span>

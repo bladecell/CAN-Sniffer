@@ -8,8 +8,9 @@
   import CanTiles from "$lib/components/canBus/CanTiles.svelte";
   import CanIdList from "$lib/components/canBus/CanIdList.svelte";
   import CanFrameTable from "$lib/components/canBus/CanFrameTable.svelte";
+  import CanIdDetails from "$lib/components/canBus/CanIdDetails.svelte";
 
-  type Tab = "ids";
+  type Tab = "ids" | "info";
   let tab = $state<Tab>("ids");
 
   const FILTERS: { id: TableFilter; label: string }[] = [
@@ -18,7 +19,15 @@
     { id: "obd", label: "OBD" },
   ];
 
-  const RAIL: { id: Tab; label: string; icon: string }[] = [{ id: "ids", label: "IDs", icon: "list" }];
+  const RAIL: { id: Tab; label: string; icon: string }[] = [
+    { id: "ids", label: "IDs", icon: "list" },
+    { id: "info", label: "ID details", icon: "circle-info" },
+  ];
+
+  function openDetails(key: number) {
+    canBus.select(key);
+    tab = "info";
+  }
 
   // The page owns the raw stream: it starts on mount and stops (0xB1) when the page goes away.
   $effect(() => canBus.start());
@@ -65,7 +74,10 @@
           now={canBus.counters.now}
           selected={canBus.selectedKey}
           onselect={(key) => canBus.select(key)}
+          ondetails={openDetails}
         />
+      {:else if tab === "info"}
+        <CanIdDetails detail={canBus.snapshot.selected} startUs={canBus.snapshot.startUs} />
       {/if}
     </aside>
 
@@ -100,10 +112,14 @@
       <CanTiles />
 
       <CanFrameTable
+        mode={canBus.tableMode}
         rows={canBus.snapshot.rows}
+        byId={canBus.snapshot.byId}
         startUs={canBus.snapshot.startUs}
         selected={canBus.selectedKey}
         onselect={(key) => canBus.select(key)}
+        ondetails={openDetails}
+        onmode={(mode) => canBus.setTableMode(mode)}
       />
     </div>
   </div>
