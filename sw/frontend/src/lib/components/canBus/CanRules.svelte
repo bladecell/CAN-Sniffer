@@ -4,12 +4,15 @@
   import { MAX_BYTE_FIELDS, emptyForm, formFromRule, matchSummary, ruleFromForm, type RuleForm } from "$lib/canBus/canRuleForm";
   import { compileFormula, FRAME_LETTERS } from "$lib/editor/formulaTest";
   import { hexBytes } from "$lib/canBus/canIds";
+  import { helperFormula } from "$lib/canBus/canRuleHelper";
   import { RULE_CAP, type Rule } from "$lib/canBus/canRules";
 
   let form = $state<RuleForm>(emptyForm());
   let editingId = $state<string | null>(null);
   let open = $state(false);
   let error = $state<string | null>(null);
+  let helper = $state({ start: "0", length: "1", order: "be" as "be" | "le" });
+  let helperError = $state<string | null>(null);
 
   const full = $derived(rulesStore.list.length >= RULE_CAP && editingId === null);
 
@@ -69,6 +72,14 @@
     const used = new Set(form.bytes.map((b) => Number(b.index)));
     const index = [0, 1, 2, 3, 4, 5, 6, 7].find((n) => !used.has(n)) ?? 0;
     form.bytes = [...form.bytes, { index: String(index), value: "00", mask: "FF" }];
+  }
+
+  /** Writes the formula for the chosen bytes. The formula field stays editable. */
+  function writeHelperFormula() {
+    const spec = { start: Number(helper.start), length: Number(helper.length), order: helper.order };
+    const written = helperFormula(spec);
+    helperError = written.ok ? null : written.reason;
+    if (written.ok) form.formula = written.formula;
   }
 
   function ruleValue(rule: Rule): string {
@@ -148,6 +159,25 @@
         {/each}
         <button type="button" class="btn sm" disabled={form.bytes.length >= MAX_BYTE_FIELDS} onclick={addByte}>Add byte match</button>
       </div>
+
+      <div class="cr-row">
+        <div>
+          <label class="lab" for="cr-hs">Start byte</label>
+          <input id="cr-hs" class="in mono" inputmode="numeric" bind:value={helper.start} />
+        </div>
+        <div>
+          <label class="lab" for="cr-hl">Length (bytes)</label>
+          <input id="cr-hl" class="in mono" inputmode="numeric" bind:value={helper.length} />
+        </div>
+      </div>
+      <div class="seg" role="radiogroup" aria-label="Byte order">
+        <button type="button" role="radio" aria-checked={helper.order === "be"} onclick={() => (helper.order = "be")}>Big endian</button>
+        <button type="button" role="radio" aria-checked={helper.order === "le"} onclick={() => (helper.order = "le")}>Little endian</button>
+      </div>
+      <button type="button" class="btn sm" onclick={writeHelperFormula}>Write formula from bytes</button>
+      {#if helperError}
+        <p class="t-crit" role="alert">{helperError}</p>
+      {/if}
 
       <label class="lab" for="cr-formula">Formula (bytes A to H)</label>
       <input id="cr-formula" class="in mono" bind:value={form.formula} placeholder="empty = plain filter" />
