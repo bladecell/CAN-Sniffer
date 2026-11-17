@@ -25,7 +25,7 @@
   ];
 
   const RAIL: { id: Tab; label: string; icon: string }[] = [
-    { id: "ids", label: "IDs", icon: "list" },
+    { id: "ids", label: "IDs", icon: "waves-sine" },
     { id: "ecu", label: "ECU IDs", icon: "engine" },
     { id: "cap", label: "Captures", icon: "sd-card" },
     { id: "info", label: "ID details", icon: "circle-info" },

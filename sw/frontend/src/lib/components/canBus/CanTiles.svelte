@@ -8,6 +8,7 @@
   const dropped = $derived(canBus.counters.dropped);
   const droppedTotal = $derived(dropped ? dropped.driver + dropped.ring + dropped.socket : null);
   const node = $derived(canBus.bus?.node_status);
+  const stateTone = (s: string | undefined) => (s === "error_active" ? "t-ok" : s === "bus_off" ? "t-crit" : s ? "t-warn" : "");
 </script>
 
 <div class="ct">
@@ -32,7 +33,7 @@
   </section>
   <section class="card ct-tile" aria-label="Bus state">
     <small>State</small>
-    <b>{twaiLabel(node?.twai_error_state)}</b>
+    <b class={stateTone(node?.twai_error_state)}>{twaiLabel(node?.twai_error_state)}</b>
     <span class="muted">{node ? `TEC ${node.tx_error_count} · REC ${node.rx_error_count}` : connectionStore.wsCanStatus.state}</span>
   </section>
 </div>

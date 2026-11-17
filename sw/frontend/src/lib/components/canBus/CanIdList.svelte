@@ -63,8 +63,10 @@
     onclick={() => onselect(r.key)}
     ondblclick={() => ondetails(r.key)}
   >
-    <b class="mono">{formatId(r.id, r.ext)}</b>
-    <span class="muted">{r.ext ? "extended" : "standard"}</span>
+    <span class="cl-id">
+      <b class="mono">{formatId(r.id, r.ext)}</b>
+      <small>{r.name || (r.ext ? "extended" : "standard")}</small>
+    </span>
     <em>{quiet ? "silent" : hzText(r.hz)}</em>
   </button>
 {/snippet}
@@ -109,10 +111,10 @@
   }
   .cl-row {
     position: relative;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    display: flex;
+    justify-content: space-between;
     align-items: center;
-    gap: 2px 10px;
+    gap: 10px;
     width: 100%;
     min-height: 48px;
     padding: 8px 12px 8px 14px;
@@ -123,16 +125,24 @@
     text-align: left;
     font: inherit;
   }
-  .cl-row b {
+  .cl-id {
+    display: grid;
+    min-width: 0;
+  }
+  .cl-id b {
     font-size: 0.95rem;
   }
-  .cl-row span {
+  .cl-id small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--muted);
     font-size: 0.8rem;
     font-weight: 600;
   }
   .cl-row em {
-    grid-row: span 2;
-    align-self: center;
+    flex-shrink: 0;
+    white-space: nowrap;
     font-style: normal;
     font-variant-numeric: tabular-nums;
     font-weight: 700;
@@ -143,16 +153,8 @@
   }
   .cl-row[aria-current='true'] {
     background: var(--hov);
-  }
-  .cl-row[aria-current='true']::before {
-    content: '';
-    position: absolute;
-    left: 4px;
-    top: 24%;
-    bottom: 24%;
-    width: 3px;
-    border-radius: 3px;
-    background: var(--accent);
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
   }
   .cl-row[aria-current='true'] b {
     color: var(--accent-text);
