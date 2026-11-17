@@ -11,8 +11,9 @@
   import CanIdDetails from "$lib/components/canBus/CanIdDetails.svelte";
   import CanEcuIds from "$lib/components/canBus/CanEcuIds.svelte";
   import CanRules from "$lib/components/canBus/CanRules.svelte";
+  import CanSend from "$lib/components/canBus/CanSend.svelte";
 
-  type Tab = "ids" | "ecu" | "info" | "rules";
+  type Tab = "ids" | "ecu" | "info" | "send" | "rules";
   let tab = $state<Tab>("ids");
 
   const FILTERS: { id: TableFilter; label: string }[] = [
@@ -25,6 +26,7 @@
     { id: "ids", label: "IDs", icon: "list" },
     { id: "ecu", label: "ECU IDs", icon: "engine" },
     { id: "info", label: "ID details", icon: "circle-info" },
+    { id: "send", label: "Send", icon: "upload" },
     { id: "rules", label: "Rules", icon: "filter" },
   ];
 
@@ -82,6 +84,8 @@
         />
       {:else if tab === "ecu"}
         <CanEcuIds ecus={canBus.snapshot.ecus} now={canBus.counters.now} />
+      {:else if tab === "send"}
+        <CanSend />
       {:else if tab === "rules"}
         <CanRules />
       {:else if tab === "info"}

@@ -111,6 +111,15 @@ export type CanBusState = "not_initialized" | "bus_off" | "not_connected" | "con
 export type TwaiErrorState = "error_active" | "error_warning" | "error_passive" | "bus_off";
 
 /** `GET /can_bus` */
+/** GET /api/v1/can/send: the firmware sender (one plan at a time). */
+export interface CanSendStatus {
+  running: boolean;
+  sent: number;
+  total: number;
+  period_ms: number;
+  error?: string;
+}
+
 /** GET /api/v1/can/mode. `mode` is `monitor` or `raw`; unknown names are kept as strings. */
 export interface CanModeStatus {
   mode: "monitor" | "raw" | (string & {});

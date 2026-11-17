@@ -1,6 +1,6 @@
 import { sdCardFileEndpoint } from "./api";
 import type {
-  CanBusStatus, CanModeStatus, RecorderStatus, RecorderTrips, DtcDescriptionResponse, DtcResponse, Obd2StatusWire, PidDataWire, PidDefinitionWire,
+  CanBusStatus, CanModeStatus, CanSendStatus, RecorderStatus, RecorderTrips, DtcDescriptionResponse, DtcResponse, Obd2StatusWire, PidDataWire, PidDefinitionWire,
   SDCardInfo, SdTreeNode, SystemStatus,
 } from "./types";
 
@@ -26,6 +26,13 @@ export function createFirmwareApi(deps: FirmwareApiDeps) {
     reboot: () => gated<Json>("/api/v1/system/reboot", body("POST")),
     canBus: () => open<CanBusStatus>("/api/v1/can_bus"),
     canMode: () => open<CanModeStatus>("/api/v1/can/mode"),
+    setCanMode: (mode: { mode: "monitor" | "raw"; isotp_flow_control?: boolean }) => gated<CanModeStatus>("/api/v1/can/mode", body("POST", mode)),
+    canSend: () => open<CanSendStatus>("/api/v1/can/send"),
+    /** One frame: `{status:"sent"}` once the frame left the controller. */
+    sendCanFrame: (frame: { id: number; data: string }) => gated<Json>("/api/v1/can/send", body("POST", frame)),
+    /** A sender plan: `{frames, period_ms, repeat}`. The reply is the sender status. */
+    sendCanPlan: (plan: unknown) => gated<CanSendStatus>("/api/v1/can/send", body("POST", plan)),
+    stopCanSend: () => gated<CanSendStatus>("/api/v1/can/send/stop", body("POST")),
     obd2: () => open<Obd2StatusWire>("/api/v1/obd2"),
     setAutoPoll: (on: boolean) => open<{ auto_poll: boolean; polling: boolean }>("/api/v1/obd2", body("PATCH", { auto_poll: on })),
     pidDefinitions: () => open<{ data: PidDefinitionWire[]; count: number }>("/api/v1/pid_def"),
