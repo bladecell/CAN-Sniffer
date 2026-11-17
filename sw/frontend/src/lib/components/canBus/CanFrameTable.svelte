@@ -2,6 +2,7 @@
   import type { LogRow, IdView, TableFilter } from "$lib/canBus/canModel";
   import type { TableMode } from "$lib/canBus/canBusStore.svelte";
   import Icon from "$lib/Icon.svelte";
+  import SelectMenu from "$lib/components/SelectMenu.svelte";
   import { describeRule, FILTER_FIELDS, opsFor, parseFilterValue, type FilterField, type FilterOp, type FilterRule } from "$lib/canBus/canFilter";
   import { relTime } from "$lib/canBus/canFormat";
   import { measureHeight, trackUnder } from "$lib/layers";
@@ -60,6 +61,9 @@
   const valid = $derived(parseFilterValue(field, value) !== null);
   const hint = $derived(field === "dir" ? "RX or TX" : field === "dlc" ? "0-8" : "hex, e.g. 7E8");
 
+  const fieldOptions = FILTER_FIELDS.map((f) => ({ value: f.id, label: f.label }));
+  const opOptions = $derived(opsFor(field).map((o) => ({ value: o, label: o })));
+
   function onField() {
     if (!opsFor(field).includes(op)) op = "=";
   }
@@ -74,7 +78,7 @@
   const count = $derived(mode === "log" ? rows.length : byId.length);
 </script>
 
-<svelte:window onpointerdown={(e) => adding && !wrapEl?.contains(e.target as Node) && (adding = false)} />
+<svelte:window onpointerdown={(e) => adding && !wrapEl?.contains(e.target as Node) && !(e.target as Element).closest(".select-menu-list") && (adding = false)} />
 
 <section class="card ft" aria-label="Frames">
   <div class="ft-head">
@@ -110,19 +114,15 @@
               <button type="button" role="radio" aria-checked={!exclude} onclick={() => (exclude = false)}>Include</button>
               <button type="button" role="radio" aria-checked={exclude} onclick={() => (exclude = true)}>Exclude</button>
             </div>
-            <label>
+            <div class="ft-f">
               <span class="muted">Row</span>
-              <select class="in" bind:value={field} onchange={onField}>
-                {#each FILTER_FIELDS as f (f.id)}<option value={f.id}>{f.label}</option>{/each}
-              </select>
-            </label>
-            <label>
+              <SelectMenu ariaLabel="Row" options={fieldOptions} bind:value={field} onChange={onField} />
+            </div>
+            <div class="ft-f">
               <span class="muted">Is</span>
-              <select class="in mono" bind:value={op} aria-label="Operator">
-                {#each opsFor(field) as o (o)}<option value={o}>{o}</option>{/each}
-              </select>
-            </label>
-            <label>
+              <SelectMenu ariaLabel="Operator" options={opOptions} bind:value={op} />
+            </div>
+            <label class="ft-f">
               <span class="muted">Value</span>
               <!-- svelte-ignore a11y_autofocus -->
               <input class="in mono" bind:value placeholder={hint} autofocus aria-invalid={value !== "" && !valid} />
@@ -267,7 +267,7 @@
     gap: 10px;
     padding: 12px;
   }
-  .ft-pop label {
+  .ft-f {
     display: grid;
     gap: 4px;
   }
