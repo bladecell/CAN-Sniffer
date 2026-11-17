@@ -15,6 +15,7 @@
   let helper = $state({ start: "0", length: "1", order: "be" as "be" | "le" });
   let helperError = $state<string | null>(null);
   let fileNote = $state<{ ok: boolean; text: string } | null>(null);
+  let fileInput = $state<HTMLInputElement>();
 
   const full = $derived(rulesStore.list.length >= RULE_CAP && editingId === null);
 
@@ -124,12 +125,13 @@
       <h2>Rules</h2>
       <p class="muted">A rule matches frames and can parse a value. A match with no formula hides those frames. Every matching rule applies.</p>
     </div>
-    <span class="muted">{rulesStore.list.length} of {RULE_CAP}</span>
+    <span class="muted cr-count">{rulesStore.list.length} of {RULE_CAP}</span>
   </div>
 
   <div class="cr-actions">
     <button class="btn sm" disabled={rulesStore.list.length === 0} aria-disabled={rulesStore.list.length === 0} onclick={exportFile}>Export</button>
-    <label class="btn sm cr-import">Import<input type="file" accept="application/json,.json" onchange={importFile} /></label>
+    <button class="btn sm" onclick={() => fileInput?.click()}>Import</button>
+    <input bind:this={fileInput} class="cr-file" type="file" accept="application/json,.json" onchange={importFile} />
   </div>
   {#if fileNote}
     <p class:t-crit={!fileNote.ok} class:t-ok={fileNote.ok} role="status">{fileNote.text}</p>
@@ -311,16 +313,11 @@
     display: grid;
     gap: 8px;
   }
-  .cr-import {
-    position: relative;
-    overflow: hidden;
-    cursor: pointer;
+  .cr-file {
+    display: none;
   }
-  .cr-import input {
-    position: absolute;
-    inset: 0;
-    opacity: 0;
-    cursor: pointer;
+  .cr-count {
+    white-space: nowrap;
   }
   .cr-check {
     display: flex;
