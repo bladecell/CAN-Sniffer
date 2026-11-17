@@ -1,3 +1,4 @@
+import { parseHex } from "./canBus/canRuleForm";
 // Settings screen model: groups, rows, search, field checks and PATCH builders. Pure, so it runs under bun test.
 // Limits mirror docs/api.md (Settings rules). The firmware still validates everything; these checks only stop bad
 // input before it leaves the browser.
@@ -37,6 +38,7 @@ export const ROW = {
   bitrate: { title: "Bitrate", kw: "baud speed kbps can bus obd" },
   rxQueue: { title: "Receive queue", kw: "frames buffer rx" },
   txQueue: { title: "Transmit queue", kw: "frames buffer tx send" },
+  hwFilter: { title: "Hardware filter", kw: "filter mask acceptance id can controller" },
   autoPoll: { title: "Auto poll", kw: "keep polling resume ignition trip" },
   sdUsage: { title: "Card usage", kw: "storage capacity sd used full" },
   pidFolder: { title: "PID library folder", kw: "pid json library path" },
@@ -61,7 +63,7 @@ export const GROUP: Record<GroupId, GroupMeta> = {
     rows: [ROW.hotspotName, ROW.hotspotPassword, ROW.channel, ROW.join, ROW.networks, ROW.staSsid, ROW.staPassword],
   },
   modem: { id: "modem", title: "Cellular & GNSS", icon: "waves-sine", kw: "lte gnss mqtt apn cellular modem", rows: [ROW.modem, ROW.apn, ROW.mqtt, ROW.gnss] },
-  vehicle: { id: "vehicle", title: "Vehicle & CAN", icon: "engine", kw: "bitrate baud queue obd vin poll can", rows: [ROW.bitrate, ROW.rxQueue, ROW.txQueue] },
+  vehicle: { id: "vehicle", title: "Vehicle & CAN", icon: "engine", kw: "bitrate baud queue obd vin poll can filter mask acceptance", rows: [ROW.bitrate, ROW.rxQueue, ROW.txQueue, ROW.hwFilter] },
   recorder: { id: "recorder", title: "Recorder", icon: "route", kw: "recorder trip start polling", rows: [ROW.autoPoll] },
   storage: { id: "storage", title: "Storage", icon: "sd-card", kw: "sd card storage format folder library", rows: [ROW.sdUsage, ROW.pidFolder, ROW.sdFormat] },
   access: { id: "access", title: "Access", icon: "lock", kw: "pin login log out password", rows: [ROW.session, ROW.savedPin, ROW.changePin] },
@@ -137,9 +139,17 @@ export const bitrateLabel = (bps: number): string => (bps >= 1000000 ? `${bps / 
 
 export const CHANNELS = Array.from({ length: 13 }, (_, i) => i + 1);
 
+/** The controller acceptance filter (`can.filter`, `can.mfilter_cfg`). Applied at boot. */
+export interface HwFilter {
+  on: boolean;
+  id: number;
+  mask: number;
+  is_ext: boolean;
+}
+
 export interface SettingsDoc {
   wifi: { ssid: string; channel: number; mode: number; sta_ssid: string };
-  can: { bitrate: number; rx_queue_size: number; tx_queue_depth: number };
+  can: { bitrate: number; rx_queue_size: number; tx_queue_depth: number; hwFilter: HwFilter | null };
   system: { pid_def_path: string };
 }
 
@@ -166,9 +176,49 @@ export function parseSettingsDoc(raw: unknown): SettingsDoc | null {
   if (pid_def_path === null) return null;
   return {
     wifi: { ssid, channel, mode, sta_ssid },
-    can: { bitrate, rx_queue_size, tx_queue_depth },
+    can: { bitrate, rx_queue_size, tx_queue_depth, hwFilter: parseHwFilter(c) },
     system: { pid_def_path },
   };
+}
+
+/** Null when the filter keys are missing or the wrong type: the row is then not shown. */
+function parseHwFilter(c: Record<string, unknown>): HwFilter | null {
+  const m = c.mfilter_cfg;
+  if (typeof c.filter !== "boolean" || !isObject(m) || typeof m.is_ext !== "boolean") return null;
+  const id = num(m.id);
+  const mask = num(m.mask);
+  if (id === null || mask === null) return null;
+  return { on: c.filter, id, mask, is_ext: m.is_ext };
+}
+
+export interface HwFilterDraft {
+  on: boolean;
+  /** Hex text, as the CAN Bus page shows ids. */
+  id: string;
+  mask: string;
+  ext: boolean;
+}
+
+export function hwFilterDraft(f: HwFilter): HwFilterDraft {
+  const digits = f.is_ext ? 8 : 3;
+  const hex = (v: number) => v.toString(16).toUpperCase().padStart(digits, "0");
+  return { on: f.on, id: hex(f.id), mask: hex(f.mask), ext: f.is_ext };
+}
+
+/** Changed filter fields only. The mask config goes as one object. Ids are hex, 11 bits (29 when extended). */
+export function buildHwFilterPatch(saved: HwFilter, d: HwFilterDraft): Built {
+  const patch: Patch = {};
+  const errors: Record<string, string> = {};
+  if (d.on !== saved.on) patch.filter = d.on;
+  const max = d.ext ? 0x1fffffff : 0x7ff;
+  const id = parseHex(d.id, max);
+  const mask = parseHex(d.mask, max);
+  if (id === null || mask === null) {
+    errors.mfilter_cfg = `ID and mask: hex up to ${d.ext ? "8" : "3"} digits`;
+  } else if (id !== saved.id || mask !== saved.mask || d.ext !== saved.is_ext) {
+    patch.mfilter_cfg = { id, mask, is_ext: d.ext };
+  }
+  return { patch, errors };
 }
 
 export interface WifiDraft {
@@ -184,7 +234,8 @@ export function wifiDraft(s: SettingsDoc["wifi"]): WifiDraft {
   return { ssid: s.ssid, password: "", channel: s.channel, join: s.mode === 1 || s.mode === 3, staSsid: s.sta_ssid, staPassword: "" };
 }
 
-export type Patch = Record<string, string | number>;
+export type MFilterPatch = { id: number; mask: number; is_ext: boolean };
+export type Patch = Record<string, string | number | boolean | MFilterPatch>;
 export interface Built {
   patch: Patch;
   errors: Record<string, string>;

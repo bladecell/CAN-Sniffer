@@ -3,6 +3,8 @@ import {
   GROUP,
   GROUP_IDS,
   buildCanPatch,
+  buildHwFilterPatch,
+  hwFilterDraft,
   buildPidPathPatch,
   buildWifiPatch,
   checkPassword,
@@ -134,9 +136,20 @@ describe("wire guards", () => {
   test("parseSettingsDoc keeps the fields the screen uses", () => {
     expect(parseSettingsDoc(raw)).toEqual({
       wifi: { ssid: "CAN-Sniffer", channel: 6, mode: 2, sta_ssid: "" },
-      can: { bitrate: 500000, rx_queue_size: 20, tx_queue_depth: 20 },
+      can: { bitrate: 500000, rx_queue_size: 20, tx_queue_depth: 20, hwFilter: null },
       system: { pid_def_path: "/sdcard/pid.json" },
     });
+  });
+
+  test("hardware filter is read when the firmware sends it, and the patch sends only changes", () => {
+    const withFilter = { ...raw, can: { ...raw.can, filter: true, mfilter_cfg: { id: 0x700, mask: 0x700, is_ext: false } } };
+    const doc = parseSettingsDoc(withFilter);
+    expect(doc?.can.hwFilter).toEqual({ on: true, id: 0x700, mask: 0x700, is_ext: false });
+    const saved = doc!.can.hwFilter!;
+    expect(buildHwFilterPatch(saved, hwFilterDraft(saved))).toEqual({ patch: {}, errors: {} });
+    expect(buildHwFilterPatch(saved, { ...hwFilterDraft(saved), on: false }).patch).toEqual({ filter: false });
+    expect(buildHwFilterPatch(saved, { ...hwFilterDraft(saved), id: "7E8" }).patch).toEqual({ mfilter_cfg: { id: 0x7e8, mask: 0x700, is_ext: false } });
+    expect(buildHwFilterPatch(saved, { ...hwFilterDraft(saved), mask: "zz" }).errors.mfilter_cfg).toBeDefined();
   });
 
   test("parseSettingsDoc rejects missing sections and wrong types", () => {

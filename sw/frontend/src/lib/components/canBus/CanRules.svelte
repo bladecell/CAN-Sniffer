@@ -139,6 +139,8 @@
     <p class="muted">No rules yet.</p>
   {/if}
 
+  <p class="muted">The hardware filter is in <a href="#settings">Settings</a>.</p>
+
   <ul class="cr-list">
     {#each rulesStore.list as rule (rule.id)}
       <li>

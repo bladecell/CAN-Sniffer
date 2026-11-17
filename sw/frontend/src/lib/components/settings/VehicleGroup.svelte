@@ -1,7 +1,8 @@
 <script lang="ts">
   import SelectMenu from "$lib/components/SelectMenu.svelte";
   import { settingsStore } from "$lib/settingsStore.svelte";
-  import { BITRATES, GROUP, ROW, bitrateLabel, buildCanPatch, anyShown, rowShown, type RowMeta, type SettingsDoc } from "$lib/settingsModel";
+  import Switch from "$lib/components/Switch.svelte";
+  import { BITRATES, GROUP, ROW, bitrateLabel, buildCanPatch, buildHwFilterPatch, hwFilterDraft, anyShown, rowShown, type HwFilterDraft, type RowMeta, type SettingsDoc } from "$lib/settingsModel";
   import ApplyBar from "./ApplyBar.svelte";
   import SettingRow from "./SettingRow.svelte";
 
@@ -11,22 +12,30 @@
 
   // Queues are text in the draft so a half-typed number can be shown as an error, not clamped.
   let edits = $state<{ bitrate?: number; rx?: string; tx?: string }>({});
+  let hwEdits = $state<Partial<HwFilterDraft>>({});
   const draft = $derived({
     bitrate: edits.bitrate ?? doc.can.bitrate,
     rx: edits.rx ?? String(doc.can.rx_queue_size),
     tx: edits.tx ?? String(doc.can.tx_queue_depth),
   });
-  const built = $derived(buildCanPatch(doc.can, draft));
+  const hw = $derived(doc.can.hwFilter);
+  const hwDraft = $derived<HwFilterDraft | null>(hw ? { ...hwFilterDraft(hw), ...hwEdits } : null);
+  const hwBuilt = $derived(hw && hwDraft ? buildHwFilterPatch(hw, hwDraft) : { patch: {}, errors: {} });
+  const canBuilt = $derived(buildCanPatch(doc.can, draft));
+  const built = $derived({ patch: { ...canBuilt.patch, ...hwBuilt.patch }, errors: { ...canBuilt.errors, ...hwBuilt.errors } });
   const count = $derived(Object.keys(built.patch).length);
   const blocked = $derived(Object.keys(built.errors).length > 0);
 
   async function apply() {
     if (blocked || count === 0) return;
-    if (await settingsStore.save("can", built.patch)) edits = {};
+    if (await settingsStore.save("can", built.patch)) {
+      edits = {};
+      hwEdits = {};
+    }
   }
 </script>
 
-{#if anyShown(q, GROUP.vehicle, [ROW.bitrate, ROW.rxQueue, ROW.txQueue])}
+{#if anyShown(q, GROUP.vehicle, [ROW.bitrate, ROW.rxQueue, ROW.txQueue, ROW.hwFilter])}
 <div class="st-sec">
   <h2>Bus</h2>
   <div class="st-list">
@@ -61,8 +70,35 @@
         />
       </SettingRow>
     {/if}
+    {#if hwDraft && show(ROW.hwFilter)}
+      <SettingRow title={ROW.hwFilter.title} hint="Takes effect after a restart. Frames the controller rejects never reach the CAN Bus page or the poller." error={built.errors.mfilter_cfg}>
+        <Switch label="Filter on" checked={hwDraft.on} onchange={(v) => (hwEdits.on = v)} />
+      </SettingRow>
+      <SettingRow title="Filter ID and mask" hint="Hex. Bits set in the mask must match the ID.">
+        <div class="hw-fields">
+          <input class="in num mono" type="text" aria-label="Filter ID" value={hwDraft.id} aria-invalid={built.errors.mfilter_cfg ? "true" : undefined} oninput={(e) => (hwEdits.id = e.currentTarget.value)} />
+          <input class="in num mono" type="text" aria-label="Filter mask" value={hwDraft.mask} aria-invalid={built.errors.mfilter_cfg ? "true" : undefined} oninput={(e) => (hwEdits.mask = e.currentTarget.value)} />
+          <Switch label="Extended" checked={hwDraft.ext} onchange={(v) => (hwEdits.ext = v)} />
+        </div>
+      </SettingRow>
+    {/if}
   </div>
 </div>
 {/if}
 
-<ApplyBar {count} busy={settingsStore.saving} {blocked} onRevert={() => (edits = {})} onApply={apply} />
+<ApplyBar {count} busy={settingsStore.saving} {blocked} onRevert={() => {
+  edits = {};
+  hwEdits = {};
+}} onApply={apply} />
+
+<style>
+  .hw-fields {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+  }
+  .hw-fields .in {
+    width: 9ch;
+  }
+</style>
