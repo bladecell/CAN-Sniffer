@@ -1,6 +1,6 @@
 import { sdCardFileEndpoint } from "./api";
 import type {
-  CanBusStatus, CanModeStatus, CanSendStatus, RecorderStatus, RecorderTrips, DtcDescriptionResponse, DtcResponse, Obd2StatusWire, PidDataWire, PidDefinitionWire,
+  CanBusStatus, CanModeStatus, CanSendStatus, CaptureList, CaptureStatus, RecorderStatus, RecorderTrips, DtcDescriptionResponse, DtcResponse, Obd2StatusWire, PidDataWire, PidDefinitionWire,
   SDCardInfo, SdTreeNode, SystemStatus,
 } from "./types";
 
@@ -28,6 +28,12 @@ export function createFirmwareApi(deps: FirmwareApiDeps) {
     canMode: () => open<CanModeStatus>("/api/v1/can/mode"),
     setCanMode: (mode: { mode: "monitor" | "raw"; isotp_flow_control?: boolean }) => gated<CanModeStatus>("/api/v1/can/mode", body("POST", mode)),
     canSend: () => open<CanSendStatus>("/api/v1/can/send"),
+    canCapture: () => open<CaptureStatus>("/api/v1/can/capture"),
+    startCapture: () => gated<CaptureStatus>("/api/v1/can/capture/start", body("POST")),
+    stopCapture: () => gated<CaptureStatus>("/api/v1/can/capture/stop", body("POST")),
+    captureList: () => gated<CaptureList>("/api/v1/can/captures"),
+    downloadCapture: (name: string) => gated(`/api/v1/can/captures/${encodeURIComponent(name)}`),
+    deleteCapture: (name: string) => gated<Json>(`/api/v1/can/captures/${encodeURIComponent(name)}`, body("DELETE")),
     /** One frame: `{status:"sent"}` once the frame left the controller. */
     sendCanFrame: (frame: { id: number; data: string }) => gated<Json>("/api/v1/can/send", body("POST", frame)),
     /** A sender plan: `{frames, period_ms, repeat}`. The reply is the sender status. */

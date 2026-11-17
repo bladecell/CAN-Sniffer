@@ -12,8 +12,10 @@
   import CanEcuIds from "$lib/components/canBus/CanEcuIds.svelte";
   import CanRules from "$lib/components/canBus/CanRules.svelte";
   import CanSend from "$lib/components/canBus/CanSend.svelte";
+  import CanCaptures from "$lib/components/canBus/CanCaptures.svelte";
+  import { captures } from "$lib/canBus/captureStore.svelte";
 
-  type Tab = "ids" | "ecu" | "info" | "send" | "rules";
+  type Tab = "ids" | "ecu" | "cap" | "info" | "send" | "rules";
   let tab = $state<Tab>("ids");
 
   const FILTERS: { id: TableFilter; label: string }[] = [
@@ -25,6 +27,7 @@
   const RAIL: { id: Tab; label: string; icon: string }[] = [
     { id: "ids", label: "IDs", icon: "list" },
     { id: "ecu", label: "ECU IDs", icon: "engine" },
+    { id: "cap", label: "Captures", icon: "sd-card" },
     { id: "info", label: "ID details", icon: "circle-info" },
     { id: "send", label: "Send", icon: "upload" },
     { id: "rules", label: "Rules", icon: "filter" },
@@ -57,9 +60,14 @@
   const bitrateText = $derived(canBus.bus ? `${canBus.bus.bitrate / 1000} kbit/s` : "Bitrate unknown");
   const modeText = $derived(canBus.mode ? (canBus.mode.mode === "raw" ? "Raw" : "Monitor") : "Mode unknown");
 
-  function saveToSd() {
-    // Captures need firmware support that is not built yet (UI3e-16).
-    alertStore.add("Saving to the SD card is not available yet", "warning");
+  // The capture status is an open read; watched while the page is open.
+  $effect(() => captures.watch());
+
+  async function toggleSave() {
+    const wasCapturing = captures.capturing;
+    const err = await captures.toggle();
+    if (err) alertStore.add(err, "error");
+    else if (!wasCapturing) alertStore.add("Saving the raw stream to the SD card", "success");
   }
 </script>
 
@@ -84,6 +92,8 @@
         />
       {:else if tab === "ecu"}
         <CanEcuIds ecus={canBus.snapshot.ecus} now={canBus.counters.now} />
+      {:else if tab === "cap"}
+        <CanCaptures />
       {:else if tab === "send"}
         <CanSend />
       {:else if tab === "rules"}
@@ -114,9 +124,9 @@
             <Icon name={canBus.paused ? "play" : "pause"} size={16} />
             <span>{canBus.paused ? "Resume" : "Pause"}</span>
           </button>
-          <button class="btn pri" aria-disabled="true" onclick={saveToSd}>
-            <Icon name="save" size={16} />
-            Save to SD
+          <button class="btn pri" aria-pressed={captures.capturing} disabled={captures.busy} onclick={toggleSave}>
+            <Icon name={captures.capturing ? "square" : "save"} size={16} />
+            <span>{captures.capturing ? "Stop saving" : "Save to SD"}</span>
           </button>
         </div>
       </header>
@@ -238,9 +248,6 @@
     display: inline-flex;
     align-items: center;
     gap: 8px;
-  }
-  .cb-actions .btn[aria-disabled='true'] {
-    opacity: 0.55;
   }
 
   @media (max-width: 1100px) {

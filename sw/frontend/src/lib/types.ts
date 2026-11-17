@@ -111,6 +111,23 @@ export type CanBusState = "not_initialized" | "bus_off" | "not_connected" | "con
 export type TwaiErrorState = "error_active" | "error_warning" | "error_passive" | "bus_off";
 
 /** `GET /can_bus` */
+/** GET /api/v1/can/capture: the SD capture of the raw stream. `file` is the current or last capture. */
+export interface CaptureStatus {
+  state: "capturing" | "idle";
+  file?: string;
+  rows: number;
+  bytes: number;
+  dropped: number;
+  ended?: "stop" | "stream" | "limit" | "error";
+  error?: "NO_SD" | "SD_ERROR";
+}
+
+/** GET /api/v1/can/captures, newest first. */
+export interface CaptureList {
+  captures: { name: string; bytes: number }[];
+  truncated: boolean;
+}
+
 /** GET /api/v1/can/send: the firmware sender (one plan at a time). */
 export interface CanSendStatus {
   running: boolean;
