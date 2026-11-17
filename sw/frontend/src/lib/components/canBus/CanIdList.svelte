@@ -152,9 +152,7 @@
     color: var(--muted);
   }
   .cl-row[aria-current='true'] {
-    background: var(--hov);
-    outline: 2px solid var(--accent);
-    outline-offset: -2px;
+    background: color-mix(in srgb, var(--accent) 24%, var(--hov));
   }
   .cl-row[aria-current='true'] b {
     color: var(--accent-text);

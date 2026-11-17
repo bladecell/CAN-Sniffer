@@ -148,9 +148,9 @@
   .ft-tbl tbody tr:hover td {
     background: var(--hov);
   }
-  .ft-tbl tr.sel td {
-    outline: 2px solid var(--accent);
-    outline-offset: -2px;
+  .ft-tbl tr.sel td,
+  .ft-tbl tr.sel:hover td {
+    background: color-mix(in srgb, var(--accent) 24%, var(--hov));
   }
   .num {
     text-align: right;
