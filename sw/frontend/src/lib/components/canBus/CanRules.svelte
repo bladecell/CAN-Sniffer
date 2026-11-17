@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Icon from "$lib/Icon.svelte";
   import { canBus } from "$lib/canBus/canBusStore.svelte";
   import { rulesStore } from "$lib/canBus/canRulesStore.svelte";
   import { MAX_BYTE_FIELDS, emptyForm, formFromRule, matchSummary, ruleFromForm, type RuleForm } from "$lib/canBus/canRuleForm";
@@ -145,15 +146,15 @@
 
   <ul class="cr-list">
     {#each rulesStore.list as rule (rule.id)}
-      <li>
+      <li class:cr-editing={open && editingId === rule.id}>
         <span>
           <b>{rule.name || "Unnamed"}</b>
           <small class="mono">{matchSummary(rule.match)}{rule.formula ? ` · ${rule.formula}` : ""}</small>
         </span>
         <em class:t-acc={rule.formula !== "" && ruleValue(rule) !== "invalid"} class:t-crit={ruleValue(rule) === "invalid"}>{ruleValue(rule)}</em>
         <span class="cr-actions">
-          <button class="btn sm" onclick={() => startEdit(rule)}>Edit</button>
-          <button class="btn sm" onclick={() => rulesStore.remove(rule.id)}>Delete</button>
+          <button class="btn sm" aria-label="Edit {rule.name || "unnamed rule"}" onclick={() => startEdit(rule)}>Edit</button>
+          <button class="btn sm" aria-label="Delete {rule.name || "unnamed rule"}" onclick={() => rulesStore.remove(rule.id)}>Delete</button>
         </span>
       </li>
     {/each}
@@ -161,29 +162,38 @@
 
   {#if open}
     <form class="cr-form" onsubmit={submit} novalidate>
-      <h3>{editingId === null ? "New rule" : "Edit rule"}</h3>
-      <label class="lab" for="cr-name">Name</label>
-      <input id="cr-name" class="in" maxlength="40" bind:value={form.name} />
-
-      <div class="cr-row">
-        <div>
-          <label class="lab" for="cr-id">ID (hex)</label>
-          <input id="cr-id" class="in mono" bind:value={form.id} placeholder="545" />
-        </div>
-        <div>
-          <label class="lab" for="cr-mask">Mask (hex)</label>
-          <input id="cr-mask" class="in mono" bind:value={form.idMask} placeholder="exact" />
-        </div>
+      <h3>{editingId === null ? "New rule" : `Editing ${form.name || "unnamed rule"}`}</h3>
+      <div>
+        <label class="lab" for="cr-name">Name</label>
+        <input id="cr-name" class="in" maxlength="40" bind:value={form.name} />
       </div>
 
-      <label class="cr-check"><input type="checkbox" bind:checked={form.ext} /> Extended id</label>
+      <section class="cr-sec" aria-labelledby="cr-s-match">
+        <h4 id="cr-s-match">Frame match</h4>
+        <div class="cr-row cr-3">
+          <div>
+            <label class="lab" for="cr-id">ID (hex)</label>
+            <input id="cr-id" class="in mono" bind:value={form.id} placeholder="545" />
+          </div>
+          <div>
+            <label class="lab" for="cr-mask">ID mask</label>
+            <input id="cr-mask" class="in mono" bind:value={form.idMask} placeholder="exact" />
+          </div>
+          <div>
+            <label class="lab" for="cr-dlc">DLC</label>
+            <input id="cr-dlc" class="in mono" inputmode="numeric" bind:value={form.dlc} placeholder="any" />
+          </div>
+        </div>
+        <label class="cr-check"><input type="checkbox" bind:checked={form.ext} /> Extended id</label>
+      </section>
 
-      <label class="lab" for="cr-dlc">DLC</label>
-      <input id="cr-dlc" class="in mono" inputmode="numeric" bind:value={form.dlc} placeholder="any" />
-
-      <div class="cr-bytes">
+      <section class="cr-sec" aria-labelledby="cr-s-bytes">
+        <h4 id="cr-s-bytes">Byte matches</h4>
+        {#if form.bytes.length === 0}
+          <p class="muted">None. Every frame with this ID matches.</p>
+        {/if}
         {#each form.bytes as b, i (i)}
-          <div class="cr-row">
+          <div class="cr-row cr-byte">
             <div>
               <label class="lab" for="cr-bi-{i}">Byte</label>
               <input id="cr-bi-{i}" class="in mono" inputmode="numeric" bind:value={b.index} />
@@ -196,42 +206,50 @@
               <label class="lab" for="cr-bm-{i}">Mask</label>
               <input id="cr-bm-{i}" class="in mono" bind:value={b.mask} />
             </div>
-            <button type="button" class="btn sm" aria-label="Remove byte match" onclick={() => removeByte(i)}>Remove</button>
+            <button type="button" class="btn icon danger" aria-label="Remove byte match {i + 1}" onclick={() => removeByte(i)}>
+              <Icon name="trash" size={20} />
+            </button>
           </div>
         {/each}
-        <button type="button" class="btn sm" disabled={form.bytes.length >= MAX_BYTE_FIELDS} onclick={addByte}>Add byte match</button>
-      </div>
+        <button type="button" class="btn" disabled={form.bytes.length >= MAX_BYTE_FIELDS} onclick={addByte}>Add byte match</button>
+      </section>
 
-      <div class="cr-row">
-        <div>
-          <label class="lab" for="cr-hs">Start byte</label>
-          <input id="cr-hs" class="in mono" inputmode="numeric" bind:value={helper.start} />
+      <section class="cr-sec" aria-labelledby="cr-s-value">
+        <h4 id="cr-s-value">Value</h4>
+        <p class="muted">Pick bytes to write the formula, or type your own below.</p>
+        <div class="cr-row">
+          <div>
+            <label class="lab" for="cr-hs">Start byte</label>
+            <input id="cr-hs" class="in mono" inputmode="numeric" bind:value={helper.start} />
+          </div>
+          <div>
+            <label class="lab" for="cr-hl">Length (bytes)</label>
+            <input id="cr-hl" class="in mono" inputmode="numeric" bind:value={helper.length} />
+          </div>
         </div>
-        <div>
-          <label class="lab" for="cr-hl">Length (bytes)</label>
-          <input id="cr-hl" class="in mono" inputmode="numeric" bind:value={helper.length} />
+        <div class="seg eq" role="radiogroup" aria-label="Byte order">
+          <button type="button" role="radio" aria-checked={helper.order === "be"} onclick={() => (helper.order = "be")}>Big endian</button>
+          <button type="button" role="radio" aria-checked={helper.order === "le"} onclick={() => (helper.order = "le")}>Little endian</button>
         </div>
-      </div>
-      <div class="seg" role="radiogroup" aria-label="Byte order">
-        <button type="button" role="radio" aria-checked={helper.order === "be"} onclick={() => (helper.order = "be")}>Big endian</button>
-        <button type="button" role="radio" aria-checked={helper.order === "le"} onclick={() => (helper.order = "le")}>Little endian</button>
-      </div>
-      <button type="button" class="btn sm" onclick={writeHelperFormula}>Write formula from bytes</button>
-      {#if helperError}
-        <p class="t-crit" role="alert">{helperError}</p>
-      {/if}
+        <button type="button" class="btn" onclick={writeHelperFormula}>Write formula from bytes</button>
+        {#if helperError}
+          <p class="t-crit" role="alert">{helperError}</p>
+        {/if}
 
-      <label class="lab" for="cr-formula">Formula (bytes A to H)</label>
-      <input id="cr-formula" class="in mono" bind:value={form.formula} placeholder="empty = plain filter" />
-      {#if preview}
-        <p class="muted">Preview on the last matched frame: <b class="t-acc mono">{preview.text}</b></p>
-      {/if}
+        <div>
+          <label class="lab" for="cr-formula">Formula (bytes A to H)</label>
+          <input id="cr-formula" class="in mono" bind:value={form.formula} placeholder="empty = plain filter" />
+        </div>
+        {#if preview}
+          <p class="muted">Preview on the last matched frame: <b class="t-acc mono">{preview.text}</b></p>
+        {/if}
+      </section>
 
       {#if error}
         <p class="t-crit" role="alert">{error}</p>
       {/if}
 
-      <div class="cr-actions">
+      <div class="cr-actions cr-submit">
         <button type="submit" class="btn pri" aria-disabled={full}>{editingId === null ? "Add rule" : "Save rule"}</button>
         <button type="button" class="btn" onclick={close}>Cancel</button>
       </div>
@@ -295,13 +313,32 @@
     flex-wrap: wrap;
     gap: 8px;
   }
+  .cr-list li.cr-editing {
+    box-shadow: inset 0 0 0 2px var(--accent);
+  }
   .cr-form {
+    display: grid;
+    gap: 14px;
+    min-width: 0;
+    padding: 14px;
+    border-radius: var(--r-track);
+    background: var(--card2);
+  }
+  .cr-form h3 {
+    margin: 0;
+    font-size: 1.1rem;
+  }
+  .cr-sec {
     display: grid;
     gap: 8px;
     min-width: 0;
+    padding-top: 14px;
+    border-top: 1px solid var(--hair);
   }
-  .cr-form h3 {
-    margin: 4px 0 0;
+  .cr-sec h4 {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 800;
   }
   .cr-row {
     display: grid;
@@ -309,9 +346,11 @@
     gap: 8px;
     align-items: end;
   }
-  .cr-bytes {
-    display: grid;
-    gap: 8px;
+  .cr-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .cr-byte {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) var(--ctl-h);
   }
   .cr-file {
     display: none;
@@ -327,11 +366,46 @@
   }
   .lab {
     display: block;
+    margin-bottom: 4px;
     font-size: 0.85rem;
     font-weight: 700;
   }
   .cr-form .in {
+    box-sizing: border-box;
+    height: var(--ctl-h);
     width: 100%;
     min-width: 0;
+  }
+  /* Buttons match the input height (--ctl-h), so a row of controls reads as one line. */
+  .cr .btn {
+    min-height: var(--ctl-h);
+  }
+  .cr .btn.icon {
+    width: var(--ctl-h);
+  }
+  .cr-form .btn:not(.icon),
+  .cr-form .seg {
+    width: 100%;
+  }
+  .cr-submit .btn {
+    flex: 1 1 0;
+    width: auto;
+  }
+  .cr-form .seg {
+    box-sizing: border-box;
+    min-height: var(--ctl-h);
+  }
+  .cr-form .seg > button {
+    padding: 0 10px;
+  }
+  .cr p,
+  .cr-list li > span,
+  .cr-list b {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .cr-head h2,
+  .cr-form h3 {
+    overflow-wrap: anywhere;
   }
 </style>
