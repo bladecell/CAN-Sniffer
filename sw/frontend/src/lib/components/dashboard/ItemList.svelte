@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Snippet } from "svelte";
   import { dragHandle, dragHandleZone, type DndEvent } from "svelte-dnd-action";
   import Icon from "$lib/Icon.svelte";
   import { reduced } from "./flip";
@@ -30,9 +31,13 @@
     onMove: (i: number, d: number) => void;
     /** Called when a drag ends, with the row ids in their new order. */
     onReorder: (ids: string[]) => void;
+    /** Accordion rows: tapping a row's name opens `body` under it. Without `body` rows do not open. */
+    body?: Snippet<[ItemRow, number]>;
+    openId?: string | null;
+    onToggle?: (id: string) => void;
   }
 
-  let { title, rows, options = [], max, min = 0, emptyHint = "No items yet.", onAdd, onRemove, onMove, onReorder }: Props = $props();
+  let { title, rows, options = [], max, min = 0, emptyHint = "No items yet.", onAdd, onRemove, onMove, onReorder, body, openId = null, onToggle }: Props = $props();
 
   let list = $state<HTMLUListElement>();
   // The order shown while a drag is in flight; null means the rows prop.
@@ -79,11 +84,18 @@
           >
             <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><circle cx="9" cy="6" r="1.8" /><circle cx="15" cy="6" r="1.8" /><circle cx="9" cy="12" r="1.8" /><circle cx="15" cy="12" r="1.8" /><circle cx="9" cy="18" r="1.8" /><circle cx="15" cy="18" r="1.8" /></svg>
           </button>
-          <div class="db-mn">
+          {#snippet label()}
             {#if r.color}<i class="db-sw" style:background={r.color}></i>{/if}
             <span class="db-nm" title={r.name}>{r.name}</span>
             {#if r.unit}<span class="tag">{r.unit}</span>{/if}
-          </div>
+          {/snippet}
+          {#if body && onToggle}
+            <button type="button" class="db-mn db-open" aria-expanded={openId === r.id} aria-controls="db-body-{r.id}" onclick={() => onToggle(r.id)}>
+              {@render label()}
+            </button>
+          {:else}
+            <div class="db-mn">{@render label()}</div>
+          {/if}
           <div class="db-ac">
             <button type="button" class="db-ib" aria-label="Move {r.name} up" aria-disabled={i === 0} onclick={() => i > 0 && onMove(i, -1)}>
               <Icon name="chevron-down" size={20} class="up" />
@@ -95,7 +107,11 @@
               <Icon name="trash" size={20} />
             </button>
           </div>
-          {#if r.detail}<div class="db-sub">{r.detail}</div>{/if}
+          {#if body && openId === r.id}
+            <div class="db-body" id="db-body-{r.id}">{@render body(r, i)}</div>
+          {:else if r.detail}
+            <div class="db-sub">{r.detail}</div>
+          {/if}
         </li>
       {/each}
     </ul>
@@ -175,6 +191,36 @@
     min-width: 0;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .db-open {
+    flex-wrap: nowrap;
+    min-height: 44px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-size: 0.95rem;
+    font-weight: 800;
+    text-align: left;
+    cursor: pointer;
+  }
+  .db-open:focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: 2px;
+  }
+  .db-open .db-nm {
+    text-decoration: underline dotted;
+    text-underline-offset: 4px;
+  }
+  .db-open[aria-expanded="true"] .db-nm {
+    color: var(--accent-text);
+    text-decoration-style: solid;
+  }
+  .db-body {
+    flex: 1 0 100%;
+    padding: 0 8px 8px;
   }
   .db-sw {
     flex: none;

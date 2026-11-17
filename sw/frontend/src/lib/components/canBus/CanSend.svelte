@@ -16,6 +16,8 @@
   type Queued = SendFrame & { key: string };
   let frames = $state<Queued[]>([]);
   let nextKey = 0;
+  let openKey = $state<string | null>(null);
+  let rowError = $state<string | null>(null);
   let fc = $state(false);
   let confirming = $state(false);
   let busy = $state(false);
@@ -94,8 +96,26 @@
     const id = parseSendId(idText);
     const data = parseSendData(dataText);
     if (!id.ok || !data.ok) return;
-    frames = [...frames, { id: id.value, data: data.value, key: String(nextKey++) }];
+    const key = String(nextKey++);
+    frames = [...frames, { id: id.value, data: data.value, key }];
+    openKey = key;
     error = null;
+  }
+
+  /** Edits one queued frame in place. A bad value keeps the old one and says why. */
+  function editFrame(key: string, field: "id" | "data", text: string) {
+    const parsed = field === "id" ? parseSendId(text) : parseSendData(text);
+    if (!parsed.ok) {
+      rowError = parsed.reason;
+      return;
+    }
+    rowError = null;
+    frames = frames.map((f) => (f.key === key ? { ...f, [field]: parsed.value } : f));
+  }
+
+  function toggleRow(key: string) {
+    openKey = openKey === key ? null : key;
+    rowError = null;
   }
 
   async function send() {
@@ -145,6 +165,25 @@
     }
   }
 </script>
+
+{#snippet body(row: { id: string })}
+  {@const f = frames.find((q) => q.key === row.id)}
+  {#if f}
+  <div class="cs-edit">
+    <div>
+      <label class="lab" for="cs-fid-{row.id}">ID (hex)</label>
+      <input id="cs-fid-{row.id}" class="in mono" value={idHex(f.id)} onchange={(e) => editFrame(row.id, "id", e.currentTarget.value)} />
+    </div>
+    <div>
+      <label class="lab" for="cs-fd-{row.id}">Data (hex)</label>
+      <input id="cs-fd-{row.id}" class="in mono" value={f.data} onchange={(e) => editFrame(row.id, "data", e.currentTarget.value)} />
+    </div>
+    {#if rowError}
+      <p class="t-crit" role="alert">{rowError}</p>
+    {/if}
+  </div>
+  {/if}
+{/snippet}
 
 <div class="cs">
   <div>
@@ -202,6 +241,9 @@
         onRemove={(i) => (frames = frames.filter((_, j) => j !== i))}
         onMove={(i, d) => (frames = [...moveAt(frames, i, d)])}
         onReorder={(keys) => (frames = [...reorderBy(frames, (f) => f.key, keys)])}
+        openId={openKey}
+        onToggle={toggleRow}
+        {body}
       />
       <button class="btn" disabled={frames.length >= SEND_MAX_FRAMES} onclick={addFrame}>Add frame to sequence</button>
 
@@ -242,10 +284,13 @@
   .cs p {
     margin: 0;
   }
+  .cs-warn :global(svg) {
+    flex: none;
+  }
   .cs-warn {
     display: flex;
     gap: 8px;
-    align-items: flex-start;
+    align-items: center;
     padding: 8px 12px;
     border-radius: var(--r-ctl);
     background: var(--warn-f, var(--ctl));
@@ -269,11 +314,14 @@
     min-width: 0;
   }
   .cs-form .in {
+    box-sizing: border-box;
+    height: var(--ctl-h);
     width: 100%;
     min-width: 0;
   }
   .lab {
     display: block;
+    margin-bottom: 4px;
     font-size: 0.85rem;
     font-weight: 700;
   }
@@ -282,6 +330,18 @@
     gap: 8px;
     align-items: center;
     font-weight: 600;
+  }
+  .cs-form .chip {
+    justify-self: start;
+  }
+  .cs-edit {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    gap: 8px;
+  }
+  .cs-edit p {
+    grid-column: 1 / -1;
+    overflow-wrap: anywhere;
   }
   .cs-q {
     font-weight: 700;
