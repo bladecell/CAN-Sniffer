@@ -4,7 +4,6 @@
   import { alertStore } from "$lib/alertStore.svelte";
   import { connectionStore } from "$lib/connectionStore.svelte";
   import { canBus } from "$lib/canBus/canBusStore.svelte";
-  import type { TableFilter } from "$lib/canBus/canModel";
   import CanTiles from "$lib/components/canBus/CanTiles.svelte";
   import CanIdList from "$lib/components/canBus/CanIdList.svelte";
   import CanFrameTable from "$lib/components/canBus/CanFrameTable.svelte";
@@ -17,12 +16,6 @@
 
   type Tab = "ids" | "ecu" | "cap" | "info" | "send" | "rules";
   let tab = $state<Tab>("ids");
-
-  const FILTERS: { id: TableFilter; label: string }[] = [
-    { id: "all", label: "All" },
-    { id: "changed", label: "Changed" },
-    { id: "obd", label: "OBD" },
-  ];
 
   const RAIL: { id: Tab; label: string; icon: string }[] = [
     { id: "ids", label: "IDs", icon: "waves-sine" },
@@ -121,11 +114,6 @@
           </p>
         </div>
         <div class="cb-actions">
-          <div class="seg" role="radiogroup" aria-label="Show">
-            {#each FILTERS as f (f.id)}
-              <button role="radio" aria-checked={canBus.filter === f.id} onclick={() => canBus.setFilter(f.id)}>{f.label}</button>
-            {/each}
-          </div>
           <button class="btn" aria-pressed={canBus.logging} onclick={() => canBus.setLogging(!canBus.logging)}>
             <Icon name={canBus.logging ? "pause" : "play"} size={16} />
             <span>{canBus.logging ? "Pause" : "Start"}</span>
@@ -149,6 +137,10 @@
         ondetails={openDetails}
         onmode={(mode) => canBus.setTableMode(mode)}
         onclear={() => canBus.clearTable()}
+        filter={canBus.filter}
+        idText={canBus.idText}
+        onfilter={(f) => canBus.setFilter(f)}
+        onidtext={(t) => canBus.setIdText(t)}
       />
     </div>
   </div>

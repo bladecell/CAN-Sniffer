@@ -64,6 +64,8 @@ const emptyCounters = (): Counters => ({ now: Date.now(), fps: 0, fpsHistory: []
 
 class CanBusStore {
   filter = $state<TableFilter>("all");
+  /** Id text filter for the table, e.g. "7E8". */
+  idText = $state("");
   tableMode = $state<TableMode>("log");
   /** Logging: the stream feeds the table. Off by default, not Raw mode (Monitor, polling unchanged). */
   logging = $state(false);
@@ -171,6 +173,11 @@ class CanBusStore {
     this.refreshSnapshot();
   }
 
+  setIdText(text: string) {
+    this.idText = text;
+    this.refreshSnapshot();
+  }
+
   setTableMode(mode: TableMode) {
     this.tableMode = mode;
     this.refreshSnapshot();
@@ -222,8 +229,9 @@ class CanBusStore {
       ids.push({ key: idKey(e.id, e.ext), id: e.id, ext: e.ext, count: e.count, hz: e.hz, name: e.name, seenMs: e.seenMs, gapMs: e.gapMs, hidden: e.hidden });
     }
     ids.sort((a, b) => a.id - b.id || Number(a.ext) - Number(b.ext));
+    const needle = this.idText.trim().toUpperCase();
     const selected = this.selectedKey === null ? null : this.detailFor(this.selectedKey);
-    this.snapshot = { startUs: m.startUs, ruleValues: new Map(m.ruleValues), rows: logRows(m, this.filter), byId: byIdRows(m, this.filter), ids, ecus: ecuRows(m, Date.now()), selected };
+    this.snapshot = { startUs: m.startUs, ruleValues: new Map(m.ruleValues), rows: logRows(m, this.filter, needle), byId: byIdRows(m, this.filter, needle), ids, ecus: ecuRows(m, Date.now()), selected };
   }
 
   /** The newest frame any id produced that the match accepts (the draft rule preview). */

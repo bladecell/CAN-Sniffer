@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { LogRow, IdView } from "$lib/canBus/canModel";
+  import type { LogRow, IdView, TableFilter } from "$lib/canBus/canModel";
   import type { TableMode } from "$lib/canBus/canBusStore.svelte";
   import Icon from "$lib/Icon.svelte";
   import { relTime } from "$lib/canBus/canFormat";
@@ -18,9 +18,13 @@
     ondetails: (key: number) => void;
     onmode: (mode: TableMode) => void;
     onclear: () => void;
+    filter: TableFilter;
+    idText: string;
+    onfilter: (filter: TableFilter) => void;
+    onidtext: (text: string) => void;
   }
 
-  let { mode, rows, byId, startUs, selected, onselect, ondetails, onmode, onclear }: Props = $props();
+  let { mode, rows, byId, startUs, selected, onselect, ondetails, onmode, onclear, filter, idText, onfilter, onidtext }: Props = $props();
 
   // The bar sits beside the scroller (Gecko drops the blur inside one), so mirror its horizontal scroll and scrollbar width.
   function syncBar(el: HTMLElement) {
@@ -39,6 +43,12 @@
     };
   }
 
+  const FILTERS: { id: TableFilter; label: string }[] = [
+    { id: "all", label: "All" },
+    { id: "changed", label: "Changed" },
+    { id: "obd", label: "OBD" },
+  ];
+
   const count = $derived(mode === "log" ? rows.length : byId.length);
 </script>
 
@@ -48,7 +58,13 @@
       <button role="radio" aria-checked={mode === "log"} onclick={() => onmode("log")}>Log</button>
       <button role="radio" aria-checked={mode === "byId"} onclick={() => onmode("byId")}>By ID</button>
     </div>
+    <div class="seg" role="radiogroup" aria-label="Show">
+      {#each FILTERS as f (f.id)}
+        <button role="radio" aria-checked={filter === f.id} onclick={() => onfilter(f.id)}>{f.label}</button>
+      {/each}
+    </div>
     <div class="ft-tools">
+      <input class="in mono ft-id" placeholder="ID, e.g. 7E8" aria-label="Filter by ID" value={idText} oninput={(e) => onidtext(e.currentTarget.value)} />
       <span class="muted">{count} shown</span>
       <button class="btn sm" disabled={count === 0} onclick={onclear}>
         <Icon name="trash" size={16} />
@@ -58,7 +74,7 @@
   </div>
 
   {#if count === 0}
-    <p class="muted ft-empty">No frames. Press Start to log the bus.</p>
+    <p class="muted ft-empty">{idText || filter !== "all" ? "No frames match the filter." : "No frames. Press Start to log the bus."}</p>
   {:else}
     <div class="ft-body">
       <div class="ft-bar float-layer rest-top" aria-hidden="true" {@attach measureHeight("--hdr-h")}>
@@ -160,6 +176,9 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
+  }
+  .ft-id {
+    width: 130px;
   }
   .ft-empty {
     margin: 12px;

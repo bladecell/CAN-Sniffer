@@ -100,6 +100,14 @@ describe("log and table", () => {
     expect(logRows(m, "obd").length).toBe(2);
   });
 
+  test("id text filter matches the formatted id", () => {
+    const m = new CanModel();
+    m.ingest(batch([rec(0x7e8, [1]), rec(0x123, [1])]), 0);
+    expect(logRows(m, "all", "7E").map((r) => r.id)).toEqual([0x7e8]);
+    expect(byIdRows(m, "all", "123").map((r) => r.id)).toEqual([0x123]);
+    expect(logRows(m, "all", "ZZ")).toEqual([]);
+  });
+
   test("a formula rule fills the parsed column", () => {
     const m = new CanModel();
     m.setRules(compileRules([{ id: "e", name: "Engine speed", match: { id: 0xc9, ext: false, idMask: 0x7ff, bytes: [] }, formula: "(A*256+B)/4" }]));
