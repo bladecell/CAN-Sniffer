@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { byIdRows, CanModel, changedMask, ecuRows, logRows, MAX_IDS, TABLE_ROWS } from "./canModel";
+import { byIdRows, CanModel, changedMask, ECU_AGE_MS, ecuRows, logRows, MAX_IDS, TABLE_ROWS } from "./canModel";
 import { compileRules, type Rule } from "./canRules";
 import { ecuRequestId, isObdId } from "./canIds";
 import type { RawBatch, RawRecord } from "../wsFrames";
@@ -119,7 +119,14 @@ describe("ecu ids (passive)", () => {
   test("ecuRows lists only response-pattern ids, sorted", () => {
     const m = new CanModel();
     m.ingest(batch([rec(0x7e9, [1]), rec(0x7e8, [1, 2]), rec(0x3e8, [1]), rec(0x18daf110, [1], 0, { ext: true })]), 0);
-    expect(ecuRows(m).map((r) => r.id)).toEqual([0x7e8, 0x7e9, 0x18daf110]);
+    expect(ecuRows(m, 0).map((r) => r.id)).toEqual([0x7e8, 0x7e9, 0x18daf110]);
+  });
+
+  test("an ECU silent past the age limit leaves the list", () => {
+    const m = new CanModel();
+    m.ingest(batch([rec(0x7e8, [1])]), 1000);
+    expect(ecuRows(m, 1000 + ECU_AGE_MS).length).toBe(1);
+    expect(ecuRows(m, 1000 + ECU_AGE_MS + 1).length).toBe(0);
   });
 
   test("OBD id detection", () => {

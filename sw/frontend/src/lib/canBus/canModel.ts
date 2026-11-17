@@ -12,6 +12,8 @@ const RECENT = 5;
 const FPS_HISTORY = 60;
 /** An id seen this recently (ms, client clock) counts as active. */
 export const ACTIVE_MS = 3000;
+/** An ECU id silent for this long leaves the ECU list. */
+export const ECU_AGE_MS = 60_000;
 
 export type CanFrame = FrameLike & { t: number; rtr: boolean; tx: boolean; data: Uint8Array };
 export type LogRow = CanFrame & { changed: number; parsed: string; hidden: boolean };
@@ -168,12 +170,12 @@ export function byIdRows(model: CanModel, filter: TableFilter): IdView[] {
 
 export type EcuRow = { id: number; ext: boolean; request: number; dlc: number; hz: number; seenMs: number };
 
-/** Passive: the ids that follow the OBD response pattern, from what the bus already carries. */
-export function ecuRows(model: CanModel): EcuRow[] {
+/** Passive: the ids that follow the OBD response pattern, seen within ECU_AGE_MS. Nothing is sent. */
+export function ecuRows(model: CanModel, nowMs: number): EcuRow[] {
   const out: EcuRow[] = [];
   for (const e of model.ids.values()) {
     const request = ecuRequestId(e.id, e.ext);
-    if (request === null) continue;
+    if (request === null || nowMs - e.seenMs > ECU_AGE_MS) continue;
     out.push({ id: e.id, ext: e.ext, request, dlc: e.last.data.length, hz: e.hz, seenMs: e.seenMs });
   }
   return out.sort((a, b) => a.id - b.id || Number(a.ext) - Number(b.ext));

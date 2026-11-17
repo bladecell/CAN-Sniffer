@@ -164,7 +164,7 @@ class CanBusStore {
     }
     ids.sort((a, b) => a.id - b.id || Number(a.ext) - Number(b.ext));
     const selected = this.selectedKey === null ? null : this.detailFor(this.selectedKey);
-    this.snapshot = { startUs: m.startUs, rows: logRows(m, this.filter), byId: byIdRows(m, this.filter), ids, ecus: ecuRows(m), selected };
+    this.snapshot = { startUs: m.startUs, rows: logRows(m, this.filter), byId: byIdRows(m, this.filter), ids, ecus: ecuRows(m, Date.now()), selected };
   }
 
   private detailFor(key: number): IdDetail | null {
