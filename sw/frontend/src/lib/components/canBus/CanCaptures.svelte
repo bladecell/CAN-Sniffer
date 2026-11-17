@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import Icon from "$lib/Icon.svelte";
   import { auth } from "$lib/auth.svelte";
   import { captures } from "$lib/canBus/captureStore.svelte";
@@ -9,7 +10,7 @@
 
   // The list is gated: read it once the tab opens and the user is logged in.
   $effect(() => {
-    if (auth.canUseGated) void captures.refreshList();
+    if (auth.canUseGated) untrack(() => void captures.refreshList());
   });
 
   const last = $derived(captures.status ? captureEndedText(captures.status.ended, captures.status.error) : "");
