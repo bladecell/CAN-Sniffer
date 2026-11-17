@@ -83,8 +83,11 @@
       {#if hwDraft.on}
         <SettingRow title="Accepted IDs" hint="Hex. A mask bit set to 1 must match the same bit of the ID." stack error={built.errors.mfilter_cfg}>
           <div class="hw">
-            <SegControl label="ID length" options={ID_LENGTHS} value={hwDraft.ext ? "ext" : "std"} onChange={(v) => (hwEdits.ext = v === "ext")} />
             <div class="hw-fields">
+              <div class="hw-f">
+                <span class="st-lab">Length</span>
+                <SegControl label="ID length" options={ID_LENGTHS} value={hwDraft.ext ? "ext" : "std"} onChange={(v) => (hwEdits.ext = v === "ext")} />
+              </div>
               <label class="hw-f">
                 <span class="st-lab">ID</span>
                 <input class="in num mono" type="text" spellcheck="false" autocomplete="off" value={hwDraft.id} aria-invalid={built.errors.mfilter_cfg ? "true" : undefined} oninput={(e) => (hwEdits.id = e.currentTarget.value)} />
@@ -122,12 +125,10 @@
     width: 100%;
     min-width: 0;
   }
-  .hw :global(.seg) {
-    justify-self: start;
-  }
   .hw-fields {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 12rem));
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
     gap: 12px;
   }
   .hw-f {
@@ -136,7 +137,8 @@
     min-width: 0;
   }
   .hw .in {
-    width: 100%;
+    width: 8rem;
+    max-width: 100%;
   }
   .hw-pre {
     display: flex;
