@@ -330,3 +330,8 @@ User decisions.
 - Two volatile holds stop the automatic inactivity sleep: a user hold (`POST /system/keep_awake`, gated, `{"enabled":bool}`) and a WebSocket hold (a client is connected). Each lasts at most 30 minutes from the moment it was set, is never persisted, and is cleared when the device sleeps.
 - A low battery does not override the holds (kept simple; the drain risk is bounded by the 30 minutes per set). Raw CAN mode sets no hold. Manual `POST /system/sleep` always sleeps.
 - **Review fixes (2026-10-30):** the WebSocket hold is armed at most once per wake period (any unauthenticated client can request it, so the 30 minute cap must not be renewable by reconnecting); expired holds are cleared when seen so the 32-bit clock cannot revive them. In Raw mode OBD2 sends nothing of its own: the REST routes were not the only senders (bus-connect recovery, discovery, connect callbacks, queued one-shots), so one flag now gates them all.
+
+## 2026-11-17: Raw send widened, firmware sender (UI3e-9)
+Implements UI3e-D4 and D1.
+- **Policy:** `POST /can/send` takes any 11-bit ID (0 to 2047) and 1 to 8 data bytes. The SID allow-list, the single-frame PCI check and `403 SERVICE_BLOCKED` are removed. Extended-ID TX is not built: the OBD2 TX path and the TX-done match are standard-ID only, and the page does not need it for v1.
+- **Sender:** body with `frames`, `period_ms` (10 ms to 1 h, required) and `repeat` (0 to 65535, 0 = until stopped). Own task, alive only while a plan runs. Not counted as Raw activity, so the 300 s idle timeout also ends a forever plan. One plan at a time. New routes `GET /can/send` (status, open) and `POST /can/send/stop` (gated). `kMaxUriHandlers` raised 64 to 72 for these and the capture routes.

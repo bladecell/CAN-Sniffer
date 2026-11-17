@@ -8,6 +8,7 @@
 #include <cstdint>
 
 #include "can_mode.hpp"
+#include "raw_tx_policy.hpp"
 
 namespace can_mode_service
 {
@@ -71,6 +72,34 @@ Run run(Requirement need, F&& action)
   return runImpl(
       need, [](void* ctx, bool fc) { return (*static_cast<F*>(ctx))(fc); }, &action);
 }
+
+// The raw sender (UI3e-9): runs a raw_tx::Plan (up to 32 frames, one every period_ms >= 10, repeated) on its own short-lived
+// task, not the poll queue. Every frame is sent through the same mode lock and checks as POST /can/send, so it needs Raw
+// mode, no recording and no polling. It ends by itself when the plan is done, on stopSender(), when Raw mode ends (Stop, the
+// last WebSocket closing, the idle timeout, the supervisor leaving RUNNING) or on a send error. Frames do not count as activity:
+// the Raw idle timeout (5 min) also ends a plan that repeats forever.
+enum class SenderStart
+{
+  started,
+  notRawMode,  // 409 NOT_RAW_MODE
+  recording,   // 409 RECORDING
+  polling,     // 409 POLLING_ACTIVE
+  running,     // 409 SENDER_RUNNING (a plan runs, or is still ending after Stop: retry in a moment)
+  busy,        // 503 BUSY: the mode lock was not obtained
+  noTask       // 503 NO_MEMORY
+};
+SenderStart startSender(const raw_tx::Plan& plan);
+void        stopSender();  // lock-free: the task notices within one period slice (<= 50 ms)
+
+struct SenderStatus
+{
+  bool        running;
+  uint32_t    sent;       // frames confirmed on the bus by the current or last plan
+  uint32_t    total;      // frames the plan will send, 0 when it repeats until stopped
+  uint32_t    periodMs;
+  const char* error;      // nullptr, or the code the last plan ended on ("TX_FAILED", "BUS_DOWN", ...)
+};
+SenderStatus senderStatus();
 
 // Back to Monitor: last WebSocket client closed (restore = true), or a component stopping (restore = false when OBD2 goes
 // down with it). If the lock is busy the request is remembered and applied by the next set() or periodic check.

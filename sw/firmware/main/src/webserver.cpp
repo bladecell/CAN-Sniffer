@@ -859,10 +859,10 @@ esp_err_t p_can_mode_handler(httpd_req_t* req, void* arg)
     return send_json_response(req, result);
 }
 
-// Body {"id":2015,"data":"02 01 00"}: at most 128 bytes are read.
+// Body {"id":2015,"data":"02 01 00"} or a sender plan with up to 32 frames: at most 2048 bytes are read.
 esp_err_t p_can_send_handler(httpd_req_t* req, void* arg)
 {
-    cJSON* root = get_validated_json_payload(req, 128);
+    cJSON* root = get_validated_json_payload(req, 2048);
     if (root == nullptr)
     {
         return ESP_OK;
@@ -870,6 +870,16 @@ esp_err_t p_can_send_handler(httpd_req_t* req, void* arg)
     MiddlewareJsonResult result = m_can_send(root);
     cJSON_Delete(root);
     return send_json_response(req, result);
+}
+
+esp_err_t g_can_send_handler(httpd_req_t* req, void* arg)
+{
+    return send_json_response(req, m_can_sender_get());
+}
+
+esp_err_t p_can_send_stop_handler(httpd_req_t* req, void* arg)
+{
+    return send_json_response(req, m_can_sender_stop());
 }
 
 esp_err_t g_recorder_trips_handler(httpd_req_t* req, void* arg)

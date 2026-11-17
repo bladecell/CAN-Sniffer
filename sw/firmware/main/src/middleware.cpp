@@ -2271,8 +2271,65 @@ MiddlewareJsonResult m_can_mode_set(const cJSON* payload)
     return can_mode_state_result();
 }
 
+static MiddlewareJsonResult can_sender_status_result(int status)
+{
+    const can_mode_service::SenderStatus st   = can_mode_service::senderStatus();
+    cJSON*                               root = cJSON_CreateObject();
+    if (root == nullptr)
+    {
+        return json_result(nullptr, 500);
+    }
+    cJSON_AddBoolToObject(root, "running", st.running);
+    cJSON_AddNumberToObject(root, "sent", st.sent);
+    cJSON_AddNumberToObject(root, "total", st.total);
+    cJSON_AddNumberToObject(root, "period_ms", st.periodMs);
+    if (st.error != nullptr)
+    {
+        cJSON_AddStringToObject(root, "error", st.error);
+    }
+    return json_result(root, status);
+}
+
+MiddlewareJsonResult m_can_sender_get()
+{
+    return can_sender_status_result(200);
+}
+
+MiddlewareJsonResult m_can_sender_stop()
+{
+    can_mode_service::stopSender();
+    return can_sender_status_result(200);
+}
+
+// {"frames":[...],"period_ms":n,"repeat":n}: starts the raw sender. 200 with its status.
+static MiddlewareJsonResult can_sender_start(const cJSON* payload)
+{
+    // 32 frames of 540 bytes would be too big for the stack of a worker: it is a static inside the sender, copied here once.
+    static raw_tx::Plan plan;
+    const raw_tx::Error parsed = raw_tx::parsePlan(payload, plan);
+    if (parsed != raw_tx::Error::none)
+    {
+        return json_result(json_error_body(raw_tx::reason(parsed), raw_tx::code(parsed)), raw_tx::httpStatus(parsed));
+    }
+    using S = can_mode_service::SenderStart;
+    switch (can_mode_service::startSender(plan))
+    {
+        case S::started: return can_sender_status_result(200);
+        case S::notRawMode: return json_result(json_error_body("Enter Raw mode first (POST /api/v1/can/mode)", "NOT_RAW_MODE"), 409);
+        case S::recording: return json_result(json_error_body("The recorder is recording; stop it first", "RECORDING"), 409);
+        case S::polling: return json_result(json_error_body("Polling is on; Raw mode needs it off", "POLLING_ACTIVE"), 409);
+        case S::running: return json_result(json_error_body("A sender is running; stop it first", "SENDER_RUNNING"), 409);
+        case S::noTask: return json_result(json_error_body("No memory for the sender", "NO_MEMORY"), 503);
+        default: return json_result(json_error_body("A CAN mode change is in progress", "BUSY"), 503);
+    }
+}
+
 MiddlewareJsonResult m_can_send(const cJSON* payload)
 {
+    if (cJSON_IsObject(payload) && cJSON_GetObjectItemCaseSensitive(payload, "frames") != nullptr)
+    {
+        return can_sender_start(payload);
+    }
     static LogGate sendGate(raw_tx::kMinIntervalMs);  // one raw send per 250 ms, device wide
 
     raw_tx::Request req{};

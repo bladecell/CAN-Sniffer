@@ -81,6 +81,8 @@ MiddlewareJsonResult m_recorder_trips_get();
 MiddlewareJsonResult m_can_mode_get();
 MiddlewareJsonResult m_can_mode_set(const cJSON* payload);
 MiddlewareJsonResult m_can_send(const cJSON* payload);
+MiddlewareJsonResult m_can_sender_get();
+MiddlewareJsonResult m_can_sender_stop();
 esp_err_t recorder_state_packet_get(uint8_t* out_packet);
 
 MiddlewareJsonResult m_settings_get();

@@ -16,7 +16,7 @@
 // slot, and so does the WebSocket route /ws. When the table is full httpd_register_uri_handler fails and routes are lost
 // (2026-10-30: the 49th handler disabled the whole web server). test_api_routes.cpp keeps the routes plus kExtraUriHandlers
 // under this limit with kUriHandlerHeadroom to spare; raise the limit here when it fails. Cost: one httpd_uri_t (about 32 B) per slot.
-constexpr unsigned kMaxUriHandlers   = 64;  // 48 routes + /ws now (was 48: full at 47 + /ws, broke at the 48th route)
+constexpr unsigned kMaxUriHandlers   = 72;  // 56 routes + /ws at most (was 64 up to 48 routes; 48 before that: full at 47 + /ws)
 constexpr unsigned kExtraUriHandlers = 1;  // /ws, registered outside the table
 constexpr unsigned kUriHandlerHeadroom = 8;
 
@@ -51,6 +51,8 @@ constexpr unsigned kUriHandlerHeadroom = 8;
   X("/api/v1/can/mode",             GET,    g_can_mode_handler,              0)                \
   X("/api/v1/can/mode",             POST,   p_can_mode_handler,              1)                \
   X("/api/v1/can/send",             POST,   p_can_send_handler,              1)                \
+  X("/api/v1/can/send",             GET,    g_can_send_handler,              0)                \
+  X("/api/v1/can/send/stop",        POST,   p_can_send_stop_handler,         1)                \
   X("/api/v1/system",               GET,    g_system_index_handler,          0)                \
   X("/api/v1/system/reboot",        POST,   p_system_reboot_index_handler,   1)                \
   X("/api/v1/system/sleep",         POST,   p_system_sleep_index_handler,    1)                \
