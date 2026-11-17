@@ -65,6 +65,7 @@
   }
   .ce-list small {
     display: block;
+    white-space: nowrap;
     color: var(--muted);
     font-weight: 600;
   }
