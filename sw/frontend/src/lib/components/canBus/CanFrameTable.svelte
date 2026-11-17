@@ -121,7 +121,9 @@
     top: 0;
     padding: 6px 10px;
     text-align: left;
-    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 0.8rem;
     font-weight: 700;
     color: var(--muted);
     background: var(--card);
@@ -146,15 +148,9 @@
   .ft-tbl tbody tr:hover td {
     background: var(--hov);
   }
-  .ft-tbl tr.sel td:first-child::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 24%;
-    bottom: 24%;
-    width: 3px;
-    border-radius: 3px;
-    background: var(--accent);
+  .ft-tbl tr.sel td {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
   }
   .num {
     text-align: right;
