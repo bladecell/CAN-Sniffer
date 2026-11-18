@@ -7,10 +7,10 @@ export type FilterRule = { key: number; field: FilterField; op: FilterOp; value:
 type FrameView = { id: number; tx: boolean; data: ArrayLike<number> };
 
 export const FILTER_FIELDS: { id: FilterField; label: string }[] = [
-  { id: "id", label: "ID (hex)" },
+  { id: "id", label: "ID" },
   { id: "dlc", label: "DLC" },
   { id: "dir", label: "Direction" },
-  ...([0, 1, 2, 3, 4, 5, 6, 7] as const).map((i) => ({ id: `b${i}` as FilterField, label: `Byte ${i} (hex)` })),
+  ...([0, 1, 2, 3, 4, 5, 6, 7] as const).map((i) => ({ id: `b${i}` as FilterField, label: `Byte ${i}` })),
 ];
 export const FILTER_OPS: FilterOp[] = ["=", "!=", ">", "<", ">=", "<="];
 

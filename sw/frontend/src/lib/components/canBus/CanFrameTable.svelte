@@ -3,6 +3,7 @@
   import type { TableMode } from "$lib/canBus/canBusStore.svelte";
   import Icon from "$lib/Icon.svelte";
   import SelectMenu from "$lib/components/SelectMenu.svelte";
+  import { placePopup } from "$lib/popoverAnchor";
   import { FILTER_FIELDS, opsFor, parseFilterValue, type FilterField, type FilterOp, type FilterRule } from "$lib/canBus/canFilter";
   import { relTime } from "$lib/canBus/canFormat";
   import { measureHeight, trackUnder } from "$lib/layers";
@@ -161,7 +162,7 @@
           {#if draft.length > 0}<span class="ft-badge">{draft.length}</span>{/if}
         </button>
         {#if adding}
-          <div class="popup ft-pop" role="dialog" aria-label="Filters" tabindex="-1" onkeydown={(e) => e.key === "Escape" && (adding = false)}>
+          <div class="popup ft-pop" use:placePopup={() => wrapEl} role="dialog" aria-label="Filters" tabindex="-1" onkeydown={(e) => e.key === "Escape" && (adding = false)}>
             <div class="ft-pop-h">Filter by</div>
             <div class="ft-rules">
               {#each draft as r, i (r.key)}
@@ -197,7 +198,7 @@
           {#if hidden.size > 0}<span class="ft-badge">{hidden.size}</span>{/if}
         </button>
         {#if viewing}
-          <div class="popup ft-view" role="menu" tabindex="-1" onkeydown={(e) => e.key === "Escape" && (viewing = false)}>
+          <div class="popup ft-view" use:placePopup={() => viewEl} role="menu" tabindex="-1" onkeydown={(e) => e.key === "Escape" && (viewing = false)}>
             {#each COLS as c (c.key)}
               <button type="button" role="menuitemcheckbox" aria-checked={!hidden.has(c.key)} class="ft-col" onclick={() => toggleCol(c.key)}>
                 <span>{c.label}</span>
@@ -311,13 +312,12 @@
     position: relative;
   }
   .ft-pop {
-    position: absolute;
-    right: 0;
-    top: calc(100% + 6px);
+    position: fixed;
     z-index: 50;
+    box-sizing: border-box;
     width: max-content;
-    min-width: min(620px, calc(100vw - 2rem));
-    max-width: calc(100vw - 2rem);
+    min-width: min(540px, calc(100vw - 16px));
+    overflow-y: auto;
     padding: 1.25rem;
     font-size: 0.85rem;
   }
@@ -335,8 +335,8 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
-    padding: 6px 8px 6px 12px;
+    gap: 6px;
+    padding: 6px 6px 6px 10px;
     border-radius: var(--r-track);
     background: var(--row);
   }
@@ -365,17 +365,28 @@
     outline-offset: 2px;
   }
   .ft-lbl {
-    flex: 0 0 50px;
+    flex: 0 0 44px;
   }
   .ft-sel {
-    flex: 1 1 0;
-    min-width: 0;
+    flex: 0 0 auto;
+    width: 98px;
+  }
+  .ft-sel:nth-of-type(2) {
+    width: 118px;
   }
   .ft-op {
-    flex: 0 0 90px;
+    width: 66px;
+  }
+  .ft-sel :global(.select-menu-trigger) {
+    padding: 0 8px 0 10px;
+    gap: 4px;
+  }
+  .ft-sel :global(.select-menu-trigger svg) {
+    width: 16px;
+    height: 16px;
   }
   .ft-val {
-    flex: 1 1 0;
+    flex: 1 1 90px;
     min-width: 0;
     margin: 0;
   }
@@ -386,10 +397,10 @@
     border-top: 1px solid var(--hair);
   }
   .ft-view {
-    position: absolute;
-    right: 0;
-    top: calc(100% + 6px);
+    position: fixed;
     z-index: 50;
+    box-sizing: border-box;
+    overflow-y: auto;
     width: 220px;
     padding: 0.5rem;
     display: flex;
@@ -420,28 +431,11 @@
   }
   @media (max-width: 768px) {
     .ft-pop {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      right: auto;
-      transform: translate(-50%, -50%);
-      width: 90vw;
-      min-width: 0;
-      max-height: 85vh;
-      overflow-y: auto;
-      box-shadow:
-        0 0 0 100vw var(--scrim),
-        var(--shadow-float);
+      padding: 1rem;
     }
-    .ft-lbl {
-      flex: 1 1 0;
-    }
-    .ft-sel,
-    .ft-val {
-      flex: 1 1 100%;
-    }
-    .ft-op {
-      flex: 1 1 100%;
+    .ft-sel:nth-of-type(2) {
+      flex: 1 1 120px;
+      width: auto;
     }
   }
   .ft-empty {
