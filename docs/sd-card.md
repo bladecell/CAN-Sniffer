@@ -9,7 +9,8 @@ Settings are not on the card. Wi-Fi, CAN and supervisor settings are in NVS (nam
 /sdcard
 ├── config/              created on every mount if missing
 │   ├── pid_def.json     PID config JSON (pid-config.md). Written by POST /api/v1/pid_def/save. Path is configurable
-│   └── dtcs.bin         DTC description database (binary, below). Copied on by the user, never written by the firmware. Path is configurable
+│   ├── dtcs.bin         DTC description database (binary, below). Copied on by the user, never written by the firmware. Path is configurable
+│   └── send/            saved CAN send sequences, `<name>.json`. Written by the web page (below), never by the firmware
 └── logs/                created on every mount if missing
     ├── trips/           created by the recorder on its first write
     │   ├── trip_000001.csv     one trip: long-format samples (below)
@@ -47,6 +48,15 @@ No card, or a card that is unreadable, never stops the boot: the SD step succeed
 - Lookup (`m_dtc_description_get` in `middleware.cpp`): binary search over the records. For each probe it reads the first 6 bytes, compares the first 5 characters to the requested code (`strcmp`), and on a match reads the description. Codes must be 5 characters, upper case, `[PBCU][0-3][0-9A-F]{3}`. The 122 description bytes are returned verbatim. A code that is not in the file gives `"Description not found"`.
 - Built by `sw/firmware/csv_to_bin.py` from `sw/firmware/obd-trouble-codes.csv` (two columns: code, description). Run it from `sw/firmware/`. It strips whitespace, sorts by code, drops non-ASCII characters and cuts descriptions to 121 characters. The result in the repo, `sw/firmware/dtcs.bin`, has 3071 records (393088 bytes). Copy it to `/config/dtcs.bin` on the card, for example with `POST /api/v1/sd_card/file/config/dtcs.bin`.
 - The file is read per request with a lock held for the whole lookup, so a lookup of 30 codes holds the SD mutex for the full time.
+
+## Saved send sequences
+`/config/send/<name>.json`, one file per sequence, written and read by the CAN page's Send tab through the generic SD file routes (`api.md`). The firmware never opens them. `<name>` is `[A-Za-z0-9_-]{1,32}`; the page creates the folder on the first save and treats a missing folder as an empty list.
+
+The content is the body of `POST /can/send` (plan):
+```json
+{"frames":[{"id":2015,"data":"02 01 0C"}],"period_ms":100,"repeat":0}
+```
+`frames` 1 to 32, `id` integer 0 to 2047, `data` 1 to 8 hex bytes, `period_ms` 10 to 3600000, `repeat` 0 to 65535 (0 = until stopped, absent = 1). The page checks every loaded file against these limits and refuses a bad one with a reason; files over 16 KB are not read. Export and Import on the same tab use the same JSON as a download or an upload.
 
 ## PID config file
 JSON array, written as one line without whitespace by `save_pid_def_to_json`, with keys `id, mode, pid, length, name, unit, desc, formula, minV, maxV, priority, interval, color, icon`. Format and validation are in `pid-config.md`. The write is crash-safe (`atomic_file.hpp`): the data goes to `<path>.tmp`, is flushed and fsynced, then `<path>` is renamed to `<path>.bak`, the tmp file to `<path>`, and the bak file deleted. A failed write or rename keeps the previous file. After a power cut between the two renames `<path>` is missing for a moment: the next load (`atomic_file::recover`) restores it from `.tmp` (when `.bak` exists, which proves the tmp write had finished) or from `.bak`. A leftover `.tmp` or `.bak` next to the PID file is therefore normal after a power cut and can be deleted. Paths longer than 255 bytes are refused.

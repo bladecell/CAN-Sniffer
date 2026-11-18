@@ -4,7 +4,7 @@ import { exportRules, parseRules } from "./canRulesIo";
 
 const KEY = "can-sniffer.canRules";
 
-function newRuleId(): string {
+export function newRuleId(): string {
   return `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 }
 
@@ -40,9 +40,10 @@ class RulesStore {
     saveRules(next);
   }
 
-  add(draft: RuleDraft): SaveResult {
+  /** `id` lets the editor keep one stable row key from the first keystroke to the saved rule. */
+  add(draft: RuleDraft, id: string = newRuleId()): SaveResult {
     if (this.list.length >= RULE_CAP) return { ok: false, reason: `At most ${RULE_CAP} rules` };
-    this.commit([...this.list, { id: newRuleId(), ...draft }]);
+    this.commit([...this.list, { id, ...draft }]);
     return { ok: true };
   }
 
@@ -50,6 +51,15 @@ class RulesStore {
     if (!this.list.some((r) => r.id === id)) return { ok: false, reason: "That rule no longer exists" };
     this.commit(this.list.map((r) => (r.id === id ? { id, ...draft } : r)));
     return { ok: true };
+  }
+
+  /** Pauses or resumes a rule without touching the rest of it. */
+  setEnabled(id: string, on: boolean) {
+    this.commit(this.list.map((r) => {
+      if (r.id !== id) return r;
+      const { enabled: _old, ...rest } = r;
+      return on ? rest : { ...rest, enabled: false };
+    }));
   }
 
   remove(id: string) {

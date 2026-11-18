@@ -132,3 +132,22 @@ describe("parseRules / exportRules", () => {
     expect(parseRules(" ".repeat(64 * 1024 + 1))).toMatchObject({ ok: false });
   });
 });
+
+describe("rule enabled flag", () => {
+  const draft = { name: "x", formula: "", match: { id: 1, ext: false, idMask: 0x7ff, bytes: [] } };
+  test("only false is stored and exported; a rule without it stays enabled", () => {
+    expect(checkRule(draft)).toEqual({ ok: true, value: draft });
+    expect(checkRule({ ...draft, enabled: true })).toEqual({ ok: true, value: draft });
+    expect(checkRule({ ...draft, enabled: false })).toEqual({ ok: true, value: { ...draft, enabled: false } });
+    expect(checkRule({ ...draft, enabled: "no" }).ok).toBe(false);
+  });
+  test("a disabled rule survives export and import", () => {
+    const r = parseRules(exportRules([{ id: "a", ...draft, enabled: false }]));
+    expect(r.ok && r.rules[0].enabled).toBe(false);
+  });
+  test("a disabled rule neither hides nor parses", () => {
+    const f = frame(1, [1]);
+    expect(compileRules([rule({ ...draft, id: "a", enabled: false })]).apply(f).hidden).toBe(false);
+    expect(compileRules([rule({ ...draft, id: "a" })]).apply(f).hidden).toBe(true);
+  });
+});

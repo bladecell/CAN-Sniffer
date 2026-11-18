@@ -348,7 +348,7 @@
   }
   @media (min-width: 860px) {
     .wb {
-      grid-template-columns: clamp(380px, 28vw, 400px) minmax(0, 1fr);
+      grid-template-columns: clamp(420px, 31vw, 470px) minmax(0, 1fr);
     }
     .side {
       display: flex;

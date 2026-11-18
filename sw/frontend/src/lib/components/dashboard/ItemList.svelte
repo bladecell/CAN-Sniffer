@@ -15,6 +15,8 @@
     color?: string;
     /** A second line under the row, in monospace (a CAN frame's data). */
     detail?: string;
+    /** Show the name in monospace (a CAN id). */
+    mono?: boolean;
   }
 
   interface Props {
@@ -86,7 +88,7 @@
           </button>
           {#snippet label()}
             {#if r.color}<i class="db-sw" style:background={r.color}></i>{/if}
-            <span class="db-nm" title={r.name}>{r.name}</span>
+            <span class="db-nm" class:mono={r.mono} title={r.name}>{r.name}</span>
             {#if r.unit}<span class="tag">{r.unit}</span>{/if}
           {/snippet}
           {#if body && onToggle}

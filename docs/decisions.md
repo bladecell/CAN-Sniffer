@@ -341,3 +341,9 @@ Implements UI3e-D4 and D1.
 - **Not on the drain task:** SD writes can take tens of ms (a wedged card was seen on V1_1), so rows go through a stream buffer to a task that writes, like the recorder. A full buffer drops whole batches and counts them.
 - **Format:** `t_us` relative to the first frame (no 32-bit wrap to explain), hex ids, contiguous hex data. 8 MiB cap per file, no rotation: a capture that hits it ends with `ended:"limit"`.
 - **Routes:** own `/can/capture*` and `/can/captures*` routes with a strict `cap_NNNNNN.csv` name check, not the generic SD file routes, so the page needs no path handling and a hostile name never reaches the card. Start, stop, list, download and delete are gated; the status read is open.
+
+## 2026-11-18: Saved CAN send sequences use the generic SD routes
+- **Choice:** the Send tab stores a sequence as `/config/send/<name>.json` (format in `sd-card.md`) with `PUT`, `GET` and `DELETE /sd_card/file/<path>` and `GET /sd_card/tree/config/send`. No firmware change and no `/can/sequences` route.
+- **Why:** the file is only the `POST /can/send` body, so nothing in the firmware needs to read it. The page validates a loaded file with the plan limits before it touches the form or the bus, so a hostile file gives an error and nothing is sent.
+- **Cost:** the page builds SD paths itself. The name allow-list `[A-Za-z0-9_-]{1,32}` keeps `..`, `/` and `.` out of them.
+- **Rejected:** a dedicated route with a name check in firmware, like `/can/captures*`. It would add a route, a host test and a doc row for a file the firmware never uses.

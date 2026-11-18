@@ -14,8 +14,8 @@ export type RuleMatch = {
   dlc?: number;
   bytes: ByteMatch[];
 };
-/** `formula` empty: a plain filter that hides the matching frames from the table. */
-export type Rule = { id: string; name: string; match: RuleMatch; formula: string };
+/** `formula` empty: a plain filter that hides the matching frames from the table. `enabled: false` pauses the rule; absent means on. */
+export type Rule = { id: string; name: string; match: RuleMatch; formula: string; enabled?: boolean };
 export type RuleDraft = Omit<Rule, "id">;
 export type FrameLike = { id: number; ext: boolean; data: ArrayLike<number> };
 export type Checked<T> = { ok: true; value: T } | { ok: false; reason: string };
@@ -47,7 +47,7 @@ export type RuleValue = { ruleId: string; label: string; text: string };
 type Compiled = { rule: Rule; formula: CompiledFormula | null };
 
 export function compileRules(rules: readonly Rule[]) {
-  const list: Compiled[] = rules.map((rule) => ({
+  const list: Compiled[] = rules.filter((rule) => rule.enabled !== false).map((rule) => ({
     rule,
     formula: rule.formula.trim() ? compileFormula(rule.formula, FRAME_LETTERS) : null,
   }));
@@ -119,6 +119,7 @@ export function checkRule(raw: unknown): Checked<RuleDraft> {
   if (!isObj(raw)) return { ok: false, reason: "rule is not an object" };
   const name = raw.name ?? "";
   if (typeof name !== "string" || name.length > NAME_MAX) return { ok: false, reason: `name must be text up to ${NAME_MAX} characters` };
+  if (raw.enabled !== undefined && typeof raw.enabled !== "boolean") return { ok: false, reason: "enabled must be true or false" };
   const formula = raw.formula ?? "";
   if (typeof formula !== "string" || formula.length > FORMULA_MAX) return { ok: false, reason: `formula must be text up to ${FORMULA_MAX} characters` };
   if (formula.trim()) {
@@ -127,5 +128,7 @@ export function checkRule(raw: unknown): Checked<RuleDraft> {
   }
   const match = checkMatch(raw.match);
   if (!match.ok) return match;
-  return { ok: true, value: { name, formula: formula.trim(), match: match.value } };
+  const value: RuleDraft = { name, formula: formula.trim(), match: match.value };
+  if (raw.enabled === false) value.enabled = false;
+  return { ok: true, value };
 }

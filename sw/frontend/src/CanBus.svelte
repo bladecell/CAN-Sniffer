@@ -40,9 +40,10 @@
   $effect(() => untrack(() => canBus.attach()));
 
   // Bus status is read on every open and whenever the CAN state changes (GET /can_bus, GET /can/mode).
+  // wsCanStatus is replaced on every 1 Hz status frame, so the $derived keeps the effect from re-running unless the state itself changes.
+  const busTrigger = $derived(connectionStore.connected && connectionStore.wsCanStatus.state);
   $effect(() => {
-    const trigger = connectionStore.connected && connectionStore.wsCanStatus.state;
-    if (trigger) untrack(() => void canBus.refreshBus());
+    if (busTrigger) untrack(() => void canBus.refreshBus());
   });
 
   const live = $derived(connectionStore.connected && canBus.counters.streaming);
@@ -160,7 +161,7 @@
   .cb-ws {
     display: grid;
     gap: var(--gap, 20px);
-    grid-template-columns: clamp(380px, 28vw, 400px) minmax(0, 1fr);
+    grid-template-columns: clamp(420px, 31vw, 470px) minmax(0, 1fr);
     align-items: start;
   }
   /* Rail and panel share Telemetry's side column: same width, 10 px between them, sticky under the 104 px header. */
@@ -223,7 +224,7 @@
     }
   }
   .cb-side {
-    padding: var(--pad-card);
+    padding: 14px;
     flex: 1;
     overflow: auto;
     min-width: 0;

@@ -115,6 +115,7 @@
   }
   .hint.inline {
     position: relative;
+    inset: auto;
     flex: none;
     width: 24px;
     height: 24px;
