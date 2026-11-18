@@ -1,0 +1,4 @@
+# Name, Type, SubType, Offset, Size
+nvs, data, nvs, 0x9000, 0x6000
+sim_profile, data, nvs, , 0x30000
+factory, app, factory, , 0x100000

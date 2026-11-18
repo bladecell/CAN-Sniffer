@@ -1,0 +1,6 @@
+{
+  "name": "can-sniffer-simulator-host",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "bun run src/index.ts" }
+}

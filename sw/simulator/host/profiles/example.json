@@ -1,0 +1,43 @@
+{
+  "name": "Example two-ECU vehicle",
+  "bitrate": 500000,
+  "ack": true,
+  "ecus": [
+    {
+      "name": "engine",
+      "reqId": 2016,
+      "respId": 2024,
+      "onUnknown": "silent",
+      "clearable": true,
+      "pids": [
+        { "pid": "04", "value": 35 },
+        { "pid": "05", "value": 88 },
+        { "pid": "0C", "value": 2100 },
+        { "pid": "0D", "value": 72 }
+      ],
+      "dtcs": { "stored": ["P0301"], "pending": ["P0171"], "permanent": [] }
+    },
+    {
+      "name": "body",
+      "reqId": 2017,
+      "respId": 2025,
+      "onUnknown": "silent",
+      "clearable": true,
+      "dtcs": { "stored": ["B0020"], "pending": [], "permanent": [] },
+      "vin": "1M8GDM9AXKP042788",
+      "dids": [{ "did": 61840, "bytes": [67, 65, 78, 45, 83, 78, 73, 70, 70, 69, 82] }]
+    }
+  ],
+  "rules": [
+    {
+      "id": 1,
+      "match": { "id": 2016, "mask": 2047, "ext": false, "dlc": 3, "pattern": [2, 1, 90], "patternMask": [255, 255, 255] },
+      "action": { "frames": [{ "delayMs": 0, "id": 2024, "ext": false, "data": [4, 65, 90, "$2", 1] }], "repeat": 1, "periodMs": 0, "isotp": false }
+    }
+  ],
+  "cyclic": [{ "id": 2048, "ext": false, "data": [2, 1, 0, 0], "periodMs": 1000 }],
+  "scenario": [
+    { "atMs": 0, "set": { "ecu": "engine", "mode": 1, "pid": 12, "value": 2100 } },
+    { "atMs": 5000, "set": { "ecu": "engine", "mode": 1, "pid": 12, "value": 2800 } }
+  ]
+}

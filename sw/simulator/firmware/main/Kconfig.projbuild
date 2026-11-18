@@ -1,0 +1,29 @@
+menu "Isolated CAN simulator"
+    choice SIM_HW
+        prompt "Bench PCB revision"
+        default SIM_HW_V12
+        config SIM_HW_V12
+            bool "Sniffer v1.2"
+        config SIM_HW_V11
+            bool "Sniffer v1.1"
+    endchoice
+
+    config SIM_CAN_TX
+        int "TWAI TX GPIO"
+        range 0 48
+        default 5
+    config SIM_CAN_RX
+        int "TWAI RX GPIO"
+        range 0 48
+        default 4
+    config SIM_CAN_RS
+        int "Transceiver RS GPIO (active high for standby)"
+        range 0 48
+        default 7 if SIM_HW_V11
+        default 6
+    config SIM_CAN_LBK
+        int "Transceiver LBK GPIO (active high for loopback)"
+        range 0 48
+        default 6 if SIM_HW_V11
+        default 7
+endmenu
