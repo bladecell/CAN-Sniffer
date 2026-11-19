@@ -641,10 +641,9 @@ video {
   backdrop-filter: var(--float-blur);
   box-shadow: var(--shadow-float);
 }
-/* The one popup surface: select lists, menus, colour and icon pickers, hints. Float layer plus a hairline edge and the
-   float radius. Components add their own size, padding and position only. */
+/* The one popup surface: select lists, menus, colour and icon pickers, hints. Float layer plus the float radius, no border (explicit: [popover] has a UA border). Components add their own size, padding and position only. */
 .popup {
-  border: 1px solid var(--hair);
+  border: 0;
   border-radius: var(--r-float);
   color: var(--text);
 }

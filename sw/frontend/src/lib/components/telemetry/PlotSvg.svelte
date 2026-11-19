@@ -214,7 +214,7 @@
     <p class="sr" aria-live="polite">{announced}</p>
 
     {#if showTip && hover}
-      <div class="tip float-layer" style:left="{flip ? hover.x - 174 : hover.x + 14}px" style:top="{model.T + 8}px">
+      <div class="tip popup" style:left="{flip ? hover.x - 174 : hover.x + 14}px" style:top="{model.T + 8}px">
         <div class="t">{hover.label}</div>
         {#each hover.rows as r (r.id)}
           <div class="r">
@@ -325,7 +325,6 @@
     pointer-events: none;
     min-width: 150px;
     padding: 10px 12px;
-    border-radius: var(--r-ctl);
     font-size: 0.9rem;
   }
   .tip .t {
