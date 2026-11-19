@@ -12,16 +12,19 @@
     onEdit: (index: number) => void;
     /** The active tab. */
     panel?: PidPanel;
+    /** rail only: the panel is hidden, the icon rail stays. */
+    collapsed?: boolean;
   }
 
-  let { variant, onNew, onEdit, panel = $bindable("pids") }: Props = $props();
+  let { variant, onNew, onEdit, panel = $bindable("pids"), collapsed = $bindable(false) }: Props = $props();
 </script>
 
 <div class="sb" class:rail={variant === "rail"} class:bar={variant === "bar"}>
   {#if variant === "rail"}
-    <PidTabs variant="rail" bind:panel />
+    <PidTabs variant="rail" bind:panel bind:collapsed />
   {/if}
 
+  <div class="pwrap" class:closed={variant === "rail" && collapsed} inert={variant === "rail" && collapsed}>
   {#if panel === "pids"}
     <PidList phone={variant === "bar"} {onNew} {onEdit} />
   {:else if panel === "changes"}
@@ -31,6 +34,7 @@
   {:else}
     <PidSettingsTab />
   {/if}
+  </div>
 </div>
 
 <style>
@@ -42,6 +46,37 @@
   }
   .sb.rail {
     gap: 10px;
+    transition: gap 0.28s var(--ease-out);
+  }
+  .sb.rail:has(> .pwrap.closed) {
+    gap: 0;
+  }
+  /* Phone sheet: the wrapper adds no box. Rail: it slides shut with the page's side column (Telemetry.svelte .wb). */
+  .pwrap {
+    display: contents;
+  }
+  .sb.rail > .pwrap {
+    display: flex;
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    opacity: 1;
+    transition:
+      opacity 0.28s var(--ease-out),
+      visibility 0s;
+  }
+  .sb.rail > .pwrap.closed {
+    opacity: 0;
+    visibility: hidden;
+    transition:
+      opacity 0.28s var(--ease-out),
+      visibility 0s 0.28s;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sb.rail,
+    .sb.rail > .pwrap {
+      transition: none;
+    }
   }
   .sb.bar {
     flex-direction: column;

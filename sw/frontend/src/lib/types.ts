@@ -374,14 +374,6 @@ export interface Column {
   showHeaderLabel?: boolean;
 }
 
-export interface DataTableProps {
-  columns: Column[];
-  data: Record<string, any>[];
-  selectedRowIndex?: number;
-  onExport?: () => void;
-  onImport?: () => void;
-}
-
 export type RecorderState = "idle" | "recording" | "stopping" | "error";
 export interface RecorderStatus {
   state: RecorderState;

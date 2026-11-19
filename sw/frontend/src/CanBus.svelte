@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import { MediaQuery } from "svelte/reactivity";
   import Icon from "$lib/Icon.svelte";
   import { alertStore } from "$lib/alertStore.svelte";
   import { connectionStore } from "$lib/connectionStore.svelte";
@@ -16,26 +17,43 @@
   import CanCaptures from "$lib/components/canBus/CanCaptures.svelte";
   import { captures } from "$lib/canBus/captureStore.svelte";
 
-  type Tab = "ids" | "ecu" | "cap" | "info" | "send" | "rules";
-  let tab = $state<Tab>("ids");
+  type Tab = "ov" | "ids" | "ecu" | "cap" | "info" | "send" | "rules";
+  const phone = new MediaQuery("max-width: 859px");
+  // Phone only: "ov" is the Overview tab (header + status tiles). Desktop always shows those beside the panel.
+  let tab = $state<Tab>(phone.current ? "ov" : "ids");
+  let sideOpen = $state(false);
+  const sideShown = $derived(phone.current || sideOpen);
+  const showOverview = $derived(!phone.current || tab === "ov");
 
-  const RAIL: { id: Tab; label: string; icon: string }[] = [
+  const RAIL: { id: Tab; label: string; icon: string }[] = $derived([
+    ...(phone.current ? [{ id: "ov" as const, label: "Overview", icon: "grid" }] : []),
     { id: "ids", label: "IDs", icon: "hashtag" },
     { id: "ecu", label: "ECU IDs", icon: "microchip" },
     { id: "rules", label: "Rules", icon: "filter" },
     { id: "info", label: "ID details", icon: "circle-info" },
     { id: "send", label: "Send", icon: "paper-plane" },
     { id: "cap", label: "Captures", icon: "sd-card" },
-  ];
+  ]);
+
+  // Desktop: a second click on the selected tab hides the panel; the rail stays.
+  function pick(id: Tab) {
+    if (!phone.current && tab === id) sideOpen = !sideOpen;
+    else {
+      tab = id;
+      sideOpen = true;
+    }
+  }
 
   function openDetails(key: number) {
     canBus.select(key);
     tab = "info";
+    sideOpen = true;
   }
 
   function openRuleFor(detail: IdDetail) {
     canBus.requestRule(detail);
     tab = "rules";
+    sideOpen = true;
   }
 
   const selectedRuleExists = $derived(canBus.snapshot.selected ? findRuleForId(rulesStore.list, canBus.snapshot.selected.id, canBus.snapshot.selected.ext) !== undefined : false);
@@ -81,18 +99,19 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <section class="cb" onclick={clearSelection}>
-  <div class="cb-ws">
+  <div class="cb-ws" class:collapsed={!sideShown}>
     <div class="cb-left">
     <nav class="card cb-rail" aria-label="CAN views">
       {#each RAIL as r (r.id)}
-        <button aria-current={tab === r.id ? "page" : undefined} aria-label={r.label} title={r.label} onclick={() => (tab = r.id)}>
+        <button aria-current={tab === r.id && sideShown ? "page" : undefined} aria-label={r.label} title={r.label} onclick={() => pick(r.id)}>
           <Icon name={r.icon} size={20} />
         </button>
       {/each}
     </nav>
 
-    <aside class="card cb-side" aria-label="CAN panel">
-      {#if tab === "ids"}
+    {#if tab !== "ov" || !phone.current}
+    <aside class="card cb-side" class:closed={!sideShown} inert={!sideShown} aria-label="CAN panel">
+      {#if tab === "ids" || tab === "ov"}
         <CanIdList
           ids={canBus.snapshot.ids}
           now={canBus.counters.now}
@@ -112,6 +131,7 @@
         <CanIdDetails detail={canBus.snapshot.selected} startUs={canBus.snapshot.startUs} ruleExists={selectedRuleExists} onrule={openRuleFor} />
       {/if}
     </aside>
+    {/if}
     </div>
 
     <div class="cb-main">
@@ -137,7 +157,7 @@
         </div>
       </header>
 
-      <CanTiles />
+      {#if showOverview}<CanTiles />{/if}
 
       <CanFrameTable
         mode={canBus.tableMode}
@@ -172,6 +192,43 @@
     gap: var(--gap, 20px);
     grid-template-columns: clamp(420px, 31vw, 470px) minmax(0, 1fr);
     align-items: start;
+  }
+  /* Closed: the side column is the 56 px rail alone. The track and the panel animate like the plot tools tray. */
+  .cb-ws {
+    transition: grid-template-columns 0.28s var(--ease-out);
+  }
+  .cb-ws.collapsed {
+    grid-template-columns: 56px minmax(0, 1fr);
+  }
+  .cb-left {
+    transition: gap 0.28s var(--ease-out);
+  }
+  .cb-ws.collapsed .cb-left {
+    gap: 0;
+  }
+  .cb-side {
+    transition:
+      opacity 0.28s var(--ease-out),
+      padding 0.28s var(--ease-out),
+      visibility 0s;
+  }
+  .cb-side.closed {
+    padding-inline: 0;
+    opacity: 0;
+    visibility: hidden;
+    overflow: hidden;
+    transition:
+      opacity 0.28s var(--ease-out),
+      padding 0.28s var(--ease-out),
+      visibility 0s 0.28s;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .cb-ws,
+    .cb-left,
+    .cb-side,
+    .cb-side.closed {
+      transition: none;
+    }
   }
   /* Rail and panel share Telemetry's side column: same width, 10 px between them, sticky under the 104 px header. */
   .cb-left {
@@ -305,8 +362,11 @@
       flex-direction: row;
       justify-content: start;
       position: static;
-      width: max-content;
-      max-width: 100%;
+      width: 100%;
+    }
+    .cb-rail button {
+      flex: 1 1 0;
+      width: auto;
     }
     /* Phone: the rail is a horizontal bar, so the marker sits under the selected button. */
     .cb-rail button[aria-current]::before {
@@ -325,16 +385,19 @@
     .cb-head {
       order: 1;
     }
-    .cb-main > :global(.ct) {
+    .cb-rail {
       order: 2;
     }
-    .cb-side {
+    .cb-main > :global(.ct) {
       order: 3;
+    }
+    .cb-side {
+      order: 4;
       grid-column: auto;
       position: static;
     }
     .cb-main > :global(.ft) {
-      order: 4;
+      order: 5;
     }
     .cb-title h1 {
       font-size: 1.7rem;

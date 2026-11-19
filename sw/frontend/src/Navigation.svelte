@@ -54,20 +54,29 @@
     armIdle();
   }
 
-  // Idle timeout: hide 2.5s after the last scroll or dock touch. Only away from the page top, so scrolling up can always bring it back.
+  // Idle timeout: hide 2.5s after the last scroll or touch, also at the page top (short pages never scroll). A tap
+  // (click, not a scroll drag) on the page brings it back. Keyboard focus in the dock keeps it open; a tapped button does not.
   let idle: ReturnType<typeof setTimeout> | undefined;
 
   function armIdle() {
     clearTimeout(idle);
     idle = setTimeout(() => {
-      if (window.scrollY > 8 && !tabList?.closest(".dock")?.matches(":focus-within")) hidden = true;
+      if (!tabList?.closest(".dock")?.querySelector(":focus-visible")) hidden = true;
     }, 2500);
   }
 
-  $effect(() => () => clearTimeout(idle));
+  $effect(() => {
+    armIdle();
+    return () => clearTimeout(idle);
+  });
+
+  function onTap(e: MouseEvent) {
+    if (hidden && !(e.target as Element).closest?.(".dock")) hidden = false;
+    armIdle();
+  }
 </script>
 
-<svelte:window onresize={moveBar} onscroll={onScroll} onpointerdown={(e) => (e.target as Element).closest?.(".dock") && armIdle()} />
+<svelte:window onresize={moveBar} onscroll={onScroll} onpointerdown={(e) => (e.target as Element).closest?.(".dock") && armIdle()} onclick={onTap} />
 
 <div class="nav-wrapper">
   <nav class="dock float-layer" class:hidden aria-label="Main">

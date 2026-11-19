@@ -17,12 +17,13 @@
   bottom: 3px;
 }
 @media (pointer: coarse) {
+  /* Same 44 px as the round tool buttons beside it (PlotCell .tbtn): 4 px padding + 36 px buttons. */
   .seg.pm > button,
   [role='group'].seg.pm > button {
-    min-height: 44px;
+    min-height: 36px;
   }
   .seg.pm {
-    height: 52px;
+    height: 44px;
   }
 }
 

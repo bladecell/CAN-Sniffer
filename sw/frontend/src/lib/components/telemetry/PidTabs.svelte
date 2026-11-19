@@ -1,5 +1,6 @@
 <script module lang="ts">
   export type PidPanel = "pids" | "changes" | "sd" | "settings";
+  export type PhoneTab = "chart" | PidPanel;
 </script>
 
 <script lang="ts">
@@ -8,32 +9,45 @@
 
   interface Props {
     /** rail: vertical icon rail beside the panel (desktop). bar: segmented switch in the phone sheet's header. */
-    variant: "rail" | "bar";
-    panel?: PidPanel;
+    variant: "rail" | "bar" | "strip";
+    /** Phone page strip: adds a Chart tab before the PID panels. */
+    chart?: boolean;
+    panel?: PhoneTab;
+    /** Rail only: a second click on the selected tab hides the panel; another click shows it again. */
+    collapsed?: boolean;
   }
 
-  let { variant, panel = $bindable("pids") }: Props = $props();
+  let { variant, chart = false, panel = $bindable("pids"), collapsed = $bindable(false) }: Props = $props();
 
   let pendingCount = $derived(telemetryStore.local_piddef.filter((r) => r.pendingChanges === "Yes").length);
 
-  const panels: { id: PidPanel; label: string; icon: string }[] = $derived([
+  const panels: { id: PhoneTab; label: string; icon: string }[] = $derived([
+    ...(chart ? [{ id: "chart" as const, label: "Chart", icon: "chart" }] : []),
     { id: "pids", label: "PIDs", icon: "list" },
     { id: "changes", label: pendingCount > 0 ? `Changes, ${pendingCount} pending` : "Changes", icon: "code-compare" },
     { id: "sd", label: "SD card", icon: "sd-card" },
     { id: "settings", label: "Settings", icon: "sliders" },
   ]);
+  function select(id: PhoneTab) {
+    if (variant === "rail" && panel === id) collapsed = !collapsed;
+    else {
+      panel = id;
+      collapsed = false;
+    }
+  }
 </script>
 
-<div class={variant === "rail" ? "switch rail" : "seg eq stack"} role="group" aria-label="PID panels">
+<div class={variant === "rail" ? "switch rail" : variant === "strip" ? "card strip" : "seg eq stack"} role="group" aria-label="PID panels">
   {#each panels as p (p.id)}
     <button
       type="button"
-      aria-pressed={panel === p.id}
+      aria-pressed={panel === p.id && !(variant === "rail" && collapsed)}
+      aria-current={variant === "strip" && panel === p.id ? "page" : undefined}
       aria-label={p.label}
       title={p.label}
-      onclick={() => (panel = p.id)}
+      onclick={() => select(p.id)}
     >
-      <Icon name={p.icon} size={variant === "rail" ? 24 : 22} />
+      <Icon name={p.icon} size={(variant === "bar" ? 22 : variant === "rail" ? 24 : 20) + (variant === "strip" && p.icon === "list" ? 4 : 0)} />
       {#if variant === "bar"}<span class="lbl">{p.id === "sd" ? "SD" : p.label.split(",")[0]}</span>{/if}
       {#if p.id === "changes" && pendingCount > 0}<span class="badge num" aria-hidden="true">{pendingCount}</span>{/if}
     </button>
@@ -41,6 +55,44 @@
 </div>
 
 <style>
+  /* Phone strip: same as the CAN Bus rail, a full-width card of icon buttons with the accent bar under the selected one. */
+  .strip {
+    display: flex;
+    gap: 4px;
+    padding: 6px;
+    border-radius: calc(var(--r-float) - 8px);
+  }
+  .strip button {
+    position: relative;
+    display: grid;
+    place-items: center;
+    flex: 1 1 0;
+    height: 48px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: calc(var(--r-ctl) - 2px);
+    background: none;
+    color: var(--ctl-sub);
+    cursor: pointer;
+  }
+  .strip button[aria-pressed='true'] {
+    color: var(--accent-text);
+  }
+  .strip button[aria-pressed='true']::before {
+    content: '';
+    position: absolute;
+    left: 22%;
+    right: 22%;
+    bottom: -6px;
+    height: 3px;
+    border-radius: 3px;
+    background: var(--accent);
+  }
+  .strip .badge {
+    top: 4px;
+    right: 18%;
+  }
   /* Rail (desktop): a 56px card of icon buttons, the selected one with a 3px accent bar on its left. */
   .switch.rail {
     display: flex;

@@ -89,7 +89,8 @@
     background: var(--accent);
     border-radius: 99px;
   }
-  @media (max-width: 859px) {
+  /* Phone, and a narrow desktop window where the side panel leaves the tiles under ~800 px: two by two. */
+  @media (max-width: 1480px) {
     .ct {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }

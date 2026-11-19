@@ -3,11 +3,11 @@
   import { connectionStore } from "$lib/connectionStore.svelte";
   import { telemetryStore } from "$lib/telemetryStore.svelte";
   import { untrack, setContext } from "svelte";
+  import { MediaQuery } from "svelte/reactivity";
   import { safeHexColor } from "$lib/color";
-  import Icon from "$lib/Icon.svelte";
-  import Sheet from "$lib/components/Sheet.svelte";
+    import Sheet from "$lib/components/Sheet.svelte";
   import PidSidebar from "$lib/components/telemetry/PidSidebar.svelte";
-  import PidTabs, { type PidPanel } from "$lib/components/telemetry/PidTabs.svelte";
+  import PidTabs, { type PhoneTab } from "$lib/components/telemetry/PidTabs.svelte";
   import PidEditorForm from "$lib/components/telemetry/PidEditorForm.svelte";
   import EditorTabs from "$lib/components/telemetry/EditorTabs.svelte";
   import PidEditorActions from "$lib/components/telemetry/editor/PidEditorActions.svelte";
@@ -30,15 +30,14 @@
   setContext(TELEMETRY_VIEW, view);
   $effect(() => view.start());
 
-  let pidPanel = $state<PidPanel>("pids");
-  const pidPanelTitle: Record<PidPanel, string> = { pids: "PIDs", changes: "Changes", sd: "SD card", settings: "Settings" };
-  let pidSheetOpen = $state(false);
+  // Phone: one strip picks what fills the container under the header; the chart is a tab like the PID panels.
+  const phone = new MediaQuery("max-width: 859px");
+  let sideCollapsed = $state(true);
+  let phoneTab = $state<PhoneTab>("chart");
+  const showChart = $derived(!phone.current || phoneTab === "chart");
   let editorOpen = $state(false);
 
   let innerH = $state(800);
-  /** PID sheet bounds: the head block (~166 px) plus one row; the nav dock and safe area stay on screen. */
-  const PID_SHEET_MIN_PX = 440;
-  const PID_SHEET_NAV_PX = 110;
   /** Index of the plot in full screen, or -1. */
   let fsIndex = $state(-1);
   let activeStats = $state<PlotModel["stats"]>([]);
@@ -191,15 +190,25 @@
 <svelte:window bind:innerHeight={innerH} onkeydown={onWindowKey} onpointerdown={onWindowPointer} />
 
 <section class="tel">
-  <div class="wb">
-    <aside class="side" aria-label="PID list">
-      <PidSidebar variant="rail" onNew={newPid} onEdit={editPid} />
-    </aside>
+  <div class="wb" class:collapsed={sideCollapsed && !phone.current}>
+    {#if !phone.current}
+      <aside class="side" aria-label="PID list">
+        <PidSidebar variant="rail" bind:collapsed={sideCollapsed} onNew={newPid} onEdit={editPid} />
+      </aside>
+    {/if}
 
     <div class="main">
       <div class="card bar">
         <h1 tabindex="-1">Telemetry</h1>
+      </div>
 
+      {#if phone.current}
+        <PidTabs variant="strip" chart bind:panel={phoneTab} />
+      {/if}
+
+      {#if showChart}
+      <div class="card bar ctl">
+        <h2 class="ctl-title">Plot</h2>
         <div class="seg" role="group" aria-label="Number of plots">
           {#each PLOT_COUNTS as n (n)}
             <button type="button" aria-pressed={count === n} aria-label="{n} {n === 1 ? 'plot' : 'plots'}" onclick={() => setLayout(n)}>{n}</button>
@@ -212,12 +221,14 @@
           </svg>
           {status === "live" ? "Pause" : "Back to live"}
         </button>
-
-        <button type="button" class="btn phone-only" onclick={() => (pidSheetOpen = true)} aria-haspopup="dialog">
-          <Icon name="list" size={18} />PIDs
-        </button>
       </div>
+      {/if}
 
+      {#if !showChart}
+        <div class="card phone-panel">
+          <PidSidebar variant="bar" bind:panel={() => (phoneTab === "chart" ? "pids" : phoneTab), (v) => (phoneTab = v)} onNew={newPid} onEdit={editPid} />
+        </div>
+      {:else}
       <div class="chips" role="group" aria-label="PIDs on the active plot">
         {#each telemetryStore.local_piddef.filter((r) => r.loaded) as row (row)}
           {@const pid = parseInt(row.pid, 16)}
@@ -291,26 +302,10 @@
         </table>
         </div>
       </section>
+      {/if}
     </div>
   </div>
 </section>
-
-<!-- Resizable: the grab bar drags or takes Arrow keys. Min is the head (title, tabs, strip) plus one row; max is the viewport less the nav dock. -->
-<Sheet
-  open={pidSheetOpen}
-  title={pidPanelTitle[pidPanel]}
-  onClose={() => (pidSheetOpen = false)}
-  scrolls={false}
-  resizable
-  focusTitle
-  minHeight={PID_SHEET_MIN_PX}
-  maxHeight={Math.min(innerH - PID_SHEET_NAV_PX, Math.round(innerH * 0.85))}
->
-  {#snippet head()}
-    <PidTabs variant="bar" bind:panel={pidPanel} />
-  {/snippet}
-  <PidSidebar variant="bar" bind:panel={pidPanel} onNew={newPid} onEdit={editPid} />
-</Sheet>
 
 <Sheet open={editorOpen} title={editorTitle} onClose={() => (editorOpen = false)} resizable>
   {#snippet head()}
@@ -349,6 +344,18 @@
   @media (min-width: 860px) {
     .wb {
       grid-template-columns: clamp(420px, 31vw, 470px) minmax(0, 1fr);
+    }
+    /* The side column is the 56 px rail alone when closed; the track animates like the plot tools tray. */
+    .wb {
+      transition: grid-template-columns 0.28s var(--ease-out);
+    }
+    .wb.collapsed {
+      grid-template-columns: 56px minmax(0, 1fr);
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .wb {
+        transition: none;
+      }
     }
     .side {
       display: flex;
@@ -398,17 +405,27 @@
       font-size: 1.7rem;
       flex-basis: 100%;
     }
-    .bar > .seg {
-      flex: 1 1 100%;
-      width: 100%;
-    }
-    .bar > .seg > button {
-      flex: 1 1 0;
-    }
-    .bar > .btn {
-      flex: 1 1 0;
-      justify-content: center;
-    }
+
+  }
+  /* Chart controls: fixed size, right-aligned on phone and desktop. */
+  .ctl {
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+  .ctl-title {
+    margin: 0 auto 0 0;
+    color: var(--muted);
+    font-size: 1.05rem;
+    font-weight: 700;
+  }
+  .ctl > .seg,
+  .bar.ctl > .btn {
+    flex: none;
+  }
+  .bar.ctl > .btn {
+    justify-content: center;
+    width: 8rem;
+    padding: 0 10px;
   }
   /* Header buttons: 46 px tall, 18 px side padding (mockup .btn). */
   .bar :global(.btn) {
@@ -425,13 +442,10 @@
     stroke-linejoin: round;
     flex: none;
   }
-  .phone-only {
-    display: inline-flex;
-  }
-  @media (min-width: 860px) {
-    .phone-only {
-      display: none;
-    }
+  .phone-panel {
+    padding: 8px 12px 0;
+    border-radius: var(--r-card);
+    overflow: hidden;
   }
 
   :global(body.tel-fs) {

@@ -47,7 +47,7 @@
     };
   }
 
-  // Column visibility (DataTable "View" menu). The last shown column takes the spare width.
+  // Column visibility ("View" menu). The last shown column takes the spare width.
   // The data bytes are one column each (B0..B7); the "Data" menu entry hides or shows all of them.
   type Col = { key: string; label: string; w: number };
   const BYTE_COLS: Col[] = Array.from({ length: 8 }, (_, i) => ({ key: `b${i}`, label: `B${i}`, w: 46 }));
@@ -60,7 +60,7 @@
     ...BYTE_COLS,
     { key: "p", label: "Parsed", w: 140 },
   ];
-  let hidden = $state<Set<string>>(new Set());
+  let hidden = $state<Set<string>>(new Set(["l"]));
   let viewing = $state(false);
   let viewEl = $state<HTMLDivElement>();
   const vis = $derived(COLS.filter((c) => !hidden.has(c.key)));
@@ -85,7 +85,7 @@
     { id: "obd", label: "OBD" },
   ];
 
-  // The popup edits a local copy (DataTable pattern); every change pushes the whole list to the store.
+  // The popup edits a local copy; every change pushes the whole list to the store.
   let adding = $state(false);
   // svelte-ignore state_referenced_locally
   let seq = rules.reduce((m, r) => Math.max(m, r.key), 0);
