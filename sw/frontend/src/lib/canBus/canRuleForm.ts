@@ -1,5 +1,6 @@
 // The rule editor's text fields <-> a checked rule. Pure, so the form and the import share one validator.
 import { checkRule, type Checked, type Rule, type RuleDraft, type RuleMatch } from "./canRules";
+import { formatId } from "./canIds";
 
 export type ByteField = { index: string; value: string; mask: string };
 export type RuleForm = {
@@ -15,6 +16,9 @@ export type RuleForm = {
 };
 
 export const MAX_BYTE_FIELDS = 8;
+
+/** Rules tab request from the ID details: open the rule that already matches the id, or start a draft for it. */
+export type RuleRequest = { kind: "open"; id: string } | { kind: "draft"; id: string; form: RuleForm };
 
 export function emptyForm(): RuleForm {
   return { name: "", id: "", idMask: "", ext: false, dlc: "", bytes: [], formula: "" };
@@ -46,6 +50,16 @@ export function formFromRule(rule: Rule): RuleForm {
 
 export function fullMask(ext: boolean): number {
   return ext ? 0x1fffffff : 0x7ff;
+}
+
+/** A new rule for one id: the ID, kind and DLC of the frame, named after the id. Nothing is saved until the user edits it. */
+export function formForId(id: number, ext: boolean, dlc: number): RuleForm {
+  return { ...emptyForm(), name: `ID ${formatId(id, ext)}`, id: formatId(id, ext), ext, dlc: String(dlc) };
+}
+
+/** The rule that matches this id exactly (any byte or DLC match), if one exists. */
+export function findRuleForId(rules: readonly Rule[], id: number, ext: boolean): Rule | undefined {
+  return rules.find((r) => r.match.id === id && r.match.ext === ext && r.match.idMask === fullMask(ext));
 }
 
 /** The form as a rule draft. Every failure gives a reason for the user; nothing is saved from a bad form. */

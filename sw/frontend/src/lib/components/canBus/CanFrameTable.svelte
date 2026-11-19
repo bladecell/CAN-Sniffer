@@ -47,19 +47,24 @@
   }
 
   // Column visibility (DataTable "View" menu). The last shown column takes the spare width.
-  const COLS = [
+  // The data bytes are one column each (B0..B7); the "Data" menu entry hides or shows all of them.
+  type Col = { key: string; label: string; w: number };
+  const BYTE_COLS: Col[] = Array.from({ length: 8 }, (_, i) => ({ key: `b${i}`, label: `B${i}`, w: 46 }));
+  const BYTE_KEYS = BYTE_COLS.map((c) => c.key);
+  const COLS: Col[] = [
     { key: "t", label: "Time (s)", w: 84 },
     { key: "d", label: "Direction", w: 92 },
     { key: "i", label: "ID", w: 92 },
     { key: "l", label: "DLC", w: 56 },
-    { key: "b", label: "Data", w: 300 },
+    ...BYTE_COLS,
     { key: "p", label: "Parsed", w: 140 },
-  ] as const;
+  ];
   let hidden = $state<Set<string>>(new Set());
   let viewing = $state(false);
   let viewEl = $state<HTMLDivElement>();
   const vis = $derived(COLS.filter((c) => !hidden.has(c.key)));
-  const show = $derived(Object.fromEntries(COLS.map((c) => [c.key, !hidden.has(c.key)])) as Record<(typeof COLS)[number]["key"], boolean>);
+  const show = $derived(Object.fromEntries(COLS.map((c) => [c.key, !hidden.has(c.key)])) as Record<string, boolean>);
+  const bytesShown = $derived(BYTE_KEYS.filter((k) => !hidden.has(k)).length);
   const cols = $derived(vis.map((c, i) => (i === vis.length - 1 ? "1fr" : `${c.w}px`)).join(" "));
   const minW = $derived(vis.reduce((n, c) => n + c.w, 0));
 
@@ -67,6 +72,10 @@
     const next = new Set(hidden);
     if (!next.delete(key)) next.add(key);
     hidden = next;
+  }
+
+  function toggleData() {
+    hidden = bytesShown > 0 ? new Set([...hidden, ...BYTE_KEYS]) : new Set([...hidden].filter((k) => !BYTE_KEYS.includes(k)));
   }
 
   const FILTERS: { id: TableFilter; label: string }[] = [
@@ -200,7 +209,13 @@
         {#if viewing}
           <div class="popup ft-view" use:placePopup={() => viewEl} role="menu" tabindex="-1" onkeydown={(e) => e.key === "Escape" && (viewing = false)}>
             {#each COLS as c (c.key)}
-              <button type="button" role="menuitemcheckbox" aria-checked={!hidden.has(c.key)} class="ft-col" onclick={() => toggleCol(c.key)}>
+              {#if c.key === "b0"}
+                <button type="button" role="menuitemcheckbox" aria-checked={bytesShown > 0} class="ft-col" onclick={toggleData}>
+                  <span>Data</span>
+                  {#if bytesShown > 0}<Icon name="check" size={14} />{/if}
+                </button>
+              {/if}
+              <button type="button" role="menuitemcheckbox" aria-checked={!hidden.has(c.key)} class="ft-col" class:ft-sub={c.key.startsWith("b")} onclick={() => toggleCol(c.key)}>
                 <span>{c.label}</span>
                 {#if !hidden.has(c.key)}<Icon name="check" size={14} />{/if}
               </button>
@@ -272,16 +287,17 @@
     {#if show.d}<td class="dir" class:tx={row.tx}>{row.tx ? "TX" : "RX"}</td>{/if}
     {#if show.i}<td class="mono id" style:color="var(--c{idColorIndex(key)})">{formatId(row.id, row.ext)}</td>{/if}
     {#if show.l}<td>{row.data.length}</td>{/if}
-    {#if show.b}<td class="mono data">
-      {#if row.rtr}
-        <span class="muted">remote request</span>
-      {:else}
-        {#each Array.from(row.data) as b, i (i)}
-          <span class="byte" class:chg={(row.changed & (1 << i)) !== 0} class:z={b === 0}>{b.toString(16).toUpperCase().padStart(2, "0")}</span>
-        {/each}
+    {#each BYTE_COLS as c, i (c.key)}
+      {#if show[c.key]}
+        <td class="bcell">
+          {#if i < row.data.length && !row.rtr}
+            {@const b = row.data[i]}
+            <div class="tile" class:z={b === 0} class:chg={(row.changed & (1 << i)) !== 0}>{b.toString(16).toUpperCase().padStart(2, "0")}</div>
+          {/if}
+        </td>
       {/if}
-    </td>{/if}
-    {#if show.p}<td class="mono parsed" class:muted={!row.parsed}>{row.parsed || "-"}</td>{/if}
+    {/each}
+    {#if show.p}<td class="mono parsed" class:muted={!row.parsed && !row.rtr}>{row.rtr ? "remote request" : row.parsed || "-"}</td>{/if}
   </tr>
 {/snippet}
 
@@ -521,23 +537,42 @@
     font-weight: 800;
     letter-spacing: 0.02em;
   }
-  .byte {
-    display: inline-block;
-    min-width: 2.1ch;
-    padding: 1px 3px;
-    border-radius: 6px;
-    text-align: center;
+  .ft-sub {
+    padding-left: 1.5rem;
   }
-  .byte + .byte {
-    margin-left: 0.25em;
+  .ft-tbl td.bcell {
+    padding: 4px 3px;
   }
-  .byte.z {
+  .tile {
+    position: relative;
+    display: grid;
+    place-items: center;
+    height: 28px;
+    border-radius: 7px;
+    background: var(--card2);
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 0.84rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .tile.z {
     color: var(--muted);
+    font-weight: 500;
+    opacity: 0.7;
   }
-  .byte.chg {
-    background: color-mix(in srgb, var(--accent) 30%, transparent);
-    color: var(--accent-text);
-    font-weight: 800;
+  .tile.chg {
+    background: color-mix(in srgb, var(--accent) 26%, transparent);
+    color: var(--text);
+  }
+  .tile.chg::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 7px;
+    height: 7px;
+    border-top-right-radius: 7px;
+    background: linear-gradient(225deg, var(--accent) 50%, transparent 50%);
   }
   .parsed:not(.muted) {
     color: var(--accent-text);

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { emptyForm, formFromRule, matchSummary, parseHex, ruleFromForm } from "./canRuleForm";
+import { emptyForm, findRuleForId, formForId, formFromRule, matchSummary, parseHex, ruleFromForm } from "./canRuleForm";
 import type { Rule } from "./canRules";
 
 describe("parseHex", () => {
@@ -46,5 +46,21 @@ describe("formFromRule", () => {
   test("summary", () => {
     expect(matchSummary({ id: 0x545, ext: false, idMask: 0x7ff, bytes: [{ index: 2, value: 0x41, mask: 0xff }] })).toBe("ID 545 · B2 = 41/FF");
     expect(matchSummary({ id: 0x18daf110, ext: true, idMask: 0x1fffffff, dlc: 8, bytes: [] })).toBe("ID 18DAF110 · DLC 8 · extended");
+  });
+});
+
+describe("create rule", () => {
+  test("a new rule is prefilled from the id: ID, extended, DLC and name, no byte match", () => {
+    expect(formForId(0x0c1, false, 8)).toEqual({ ...emptyForm(), name: "ID 0C1", id: "0C1", dlc: "8" });
+    expect(formForId(0x18daf110, true, 8)).toMatchObject({ name: "ID 18DAF110", id: "18DAF110", ext: true, dlc: "8" });
+    expect(ruleFromForm(formForId(0x0c1, false, 8))).toEqual({ ok: true, value: { name: "ID 0C1", formula: "", match: { id: 0xc1, ext: false, idMask: 0x7ff, dlc: 8, bytes: [] } } });
+  });
+
+  test("findRuleForId: a rule matching exactly this id and kind", () => {
+    const rule: Rule = { id: "a", name: "", formula: "", match: { id: 0xc1, ext: false, idMask: 0x7ff, bytes: [] } };
+    expect(findRuleForId([rule], 0xc1, false)).toBe(rule);
+    expect(findRuleForId([rule], 0xc1, true)).toBeUndefined();
+    expect(findRuleForId([rule], 0xc2, false)).toBeUndefined();
+    expect(findRuleForId([{ ...rule, match: { ...rule.match, idMask: 0x7f0 } }], 0xc1, false)).toBeUndefined();
   });
 });

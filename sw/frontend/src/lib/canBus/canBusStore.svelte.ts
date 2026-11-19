@@ -7,9 +7,10 @@ import { firmwareApi } from "$lib/firmwareApi.svelte";
 import type { CanBusStatus, CanModeStatus } from "$lib/types";
 import type { RawStats } from "$lib/wsFrames";
 import { compileFilters, type FilterRule } from "./canFilter";
-import { byIdRows, CanModel, ecuRows, logRows, recentFrames, type CanFrame, type EcuRow, type IdView, type LogRow, type TableFilter } from "./canModel";
+import { bitStats, byIdRows, CanModel, ecuRows, logRows, recentFrames, type CanFrame, type EcuRow, type IdView, type LogRow, type TableFilter } from "./canModel";
 import { findLastMatch, type RuleMatch } from "./canRules";
-import { rulesStore } from "./canRulesStore.svelte";
+import { findRuleForId, formForId, type RuleRequest } from "./canRuleForm";
+import { newRuleId, rulesStore } from "./canRulesStore.svelte";
 import { idKey } from "./canIds";
 import { captureRecords } from "./captureRetention";
 
@@ -30,6 +31,11 @@ export type IdDetail = {
   count: number;
   dlc: number;
   changed: number;
+  /** Frames whose data differed from the previous frame of this id. */
+  changes: number;
+  /** Bits that flipped ever, and bits that flipped within the last second (bitStats). */
+  everBits: number[];
+  recentBits: number[];
   last: CanFrame;
   /** Newest first. */
   recent: CanFrame[];
@@ -77,6 +83,8 @@ class CanBusStore {
   stats = $state.raw<RawStats | null>(null);
   bus = $state.raw<CanBusStatus | null>(null);
   mode = $state.raw<CanModeStatus | null>(null);
+  /** Set by "Create rule" / "Open rule"; the Rules view takes it (takeRule) when it shows. */
+  pendingRule = $state.raw<RuleRequest | null>(null);
 
   private model = new CanModel();
   private statsMs = 0;
@@ -179,6 +187,17 @@ class CanBusStore {
     this.refreshSnapshot();
   }
 
+  requestRule(d: IdDetail) {
+    const rule = findRuleForId(rulesStore.list, d.id, d.ext);
+    this.pendingRule = rule ? { kind: "open", id: rule.id } : { kind: "draft", id: newRuleId(), form: formForId(d.id, d.ext, d.dlc) };
+  }
+
+  takeRule(): RuleRequest | null {
+    const r = this.pendingRule;
+    this.pendingRule = null;
+    return r;
+  }
+
   setTableMode(mode: TableMode) {
     this.tableMode = mode;
     this.refreshSnapshot();
@@ -243,6 +262,7 @@ class CanBusStore {
   private detailFor(key: number): IdDetail | null {
     const e = this.model.ids.get(key);
     if (!e) return null;
+    const bits = bitStats(e, Date.now());
     return {
       key,
       id: e.id,
@@ -252,6 +272,9 @@ class CanBusStore {
       count: e.count,
       dlc: e.last.data.length,
       changed: e.changed,
+      changes: e.changes,
+      everBits: bits.ever,
+      recentBits: bits.recent,
       last: e.last,
       recent: e.recent.slice().reverse(),
     };

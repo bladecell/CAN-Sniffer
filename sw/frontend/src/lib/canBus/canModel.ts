@@ -16,6 +16,8 @@ export const ACTIVE_MS = 3000;
 export const activeLimitMs = (gapMs: number) => Math.max(ACTIVE_MS, 2.5 * gapMs);
 /** An ECU id silent for this long leaves the ECU list. */
 export const ECU_AGE_MS = 60_000;
+/** A bit that flipped this recently (ms, client clock) shows as changing now in the bit view. */
+export const FLIP_WINDOW_MS = 1000;
 
 export type CanFrame = FrameLike & { t: number; rtr: boolean; tx: boolean; data: Uint8Array };
 export type LogRow = CanFrame & { changed: number; parsed: string; hidden: boolean };
@@ -40,7 +42,20 @@ export type IdEntry = {
   seenMs: number;
   /** Client-clock gap (ms) between the last two frames, 0 until a second frame arrives. */
   gapMs: number;
+  /** Frames whose data differed from the previous frame of this id. */
+  changes: number;
+  /** Bit j of byte i is set once it has flipped. */
+  everBits: number[];
+  /** Client clock (ms) of the last flip of bit j of byte i at index i * 8 + j, -Infinity until it flips. */
+  flipMs: Float64Array;
 };
+
+/** Bit view masks at `nowMs`: `ever` for every bit that flipped, `recent` for those that flipped within FLIP_WINDOW_MS. */
+export function bitStats(e: Pick<IdEntry, "everBits" | "flipMs">, nowMs: number): { ever: number[]; recent: number[] } {
+  const recent = [0, 0, 0, 0, 0, 0, 0, 0];
+  for (let k = 0; k < 64; k++) if (nowMs - e.flipMs[k] < FLIP_WINDOW_MS) recent[k >> 3] |= 1 << (k & 7);
+  return { ever: e.everBits.slice(), recent };
+}
 
 /** Bit i of the result is set when byte i differs. A DLC change counts every byte past the shorter frame. */
 export function changedMask(prev: ArrayLike<number>, cur: ArrayLike<number>): number {
@@ -48,6 +63,16 @@ export function changedMask(prev: ArrayLike<number>, cur: ArrayLike<number>): nu
   const n = Math.max(prev.length, cur.length);
   for (let i = 0; i < n && i < 8; i++) if (prev[i] !== cur[i]) mask |= 1 << i;
   return mask;
+}
+
+/** Records the bits that differ between two frames of one id. A missing byte counts as 0, like changedMask. */
+function markFlips(e: IdEntry, prev: ArrayLike<number>, cur: ArrayLike<number>, nowMs: number) {
+  for (let i = 0; i < 8; i++) {
+    const diff = (prev[i] ?? 0) ^ (cur[i] ?? 0);
+    if (diff === 0) continue;
+    e.everBits[i] |= diff;
+    for (let j = 0; j < 8; j++) if (diff & (1 << j)) e.flipMs[i * 8 + j] = nowMs;
+  }
 }
 
 export class CanModel {
@@ -96,13 +121,17 @@ export class CanModel {
     const key = idKey(f.id, f.ext);
     let entry = this.ids.get(key);
     if (!entry && this.ids.size < MAX_IDS) {
-      entry = { id: f.id, ext: f.ext, count: 0, window: 0, hz: 0, last: f, recent: [], changed: 0, hidden: false, name: "", parsed: "", seenMs: nowMs, gapMs: 0 };
+      entry = { id: f.id, ext: f.ext, count: 0, window: 0, hz: 0, last: f, recent: [], changed: 0, hidden: false, name: "", parsed: "", seenMs: nowMs, gapMs: 0, changes: 0, everBits: [0, 0, 0, 0, 0, 0, 0, 0], flipMs: new Float64Array(64).fill(-Infinity) };
       this.ids.set(key, entry);
     }
     if (!entry) this.untracked++;
     let changed = 0;
     if (entry) {
       changed = entry.count > 0 ? changedMask(entry.last.data, f.data) : 0;
+      if (changed) {
+        entry.changes++;
+        markFlips(entry, entry.last.data, f.data, nowMs);
+      }
       entry.count++;
       entry.window++;
       entry.last = f;

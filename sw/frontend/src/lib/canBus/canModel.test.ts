@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { byIdRows, CanModel, changedMask, ECU_AGE_MS, ecuRows, logRows, MAX_IDS, TABLE_ROWS } from "./canModel";
+import { bitStats, byIdRows, CanModel, changedMask, ECU_AGE_MS, ecuRows, logRows, MAX_IDS, TABLE_ROWS } from "./canModel";
 import { compileRules, type Rule } from "./canRules";
 import { ecuRequestId, isObdId } from "./canIds";
 import type { RawBatch, RawRecord } from "../wsFrames";
@@ -182,5 +182,36 @@ describe("activeLimitMs", () => {
     expect(activeLimitMs(0)).toBe(3000);
     expect(activeLimitMs(100)).toBe(3000);
     expect(activeLimitMs(4000)).toBe(10000);
+  });
+});
+
+describe("bit view", () => {
+  test("everBits ORs every bit that flipped, per byte", () => {
+    const m = new CanModel();
+    m.ingest(batch([rec(0x0c1, [0x00, 0x00]), rec(0x0c1, [0x0f, 0x00]), rec(0x0c1, [0x05, 0x80])]), 0);
+    expect(m.ids.get(0x0c1)!.everBits).toEqual([0x0f, 0x80, 0, 0, 0, 0, 0, 0]);
+  });
+
+  test("changes counts frames whose data differed from the previous frame of the id", () => {
+    const m = new CanModel();
+    m.ingest(batch([rec(1, [1]), rec(1, [1]), rec(1, [2]), rec(1, [2]), rec(1, [3, 0])]), 0);
+    expect(m.ids.get(1)!.changes).toBe(2);
+  });
+
+  test("bitStats: flips in the last second are recent, older ones only ever", () => {
+    const m = new CanModel();
+    m.ingest(batch([rec(2, [0x00])]), 0);
+    m.ingest(batch([rec(2, [0x01])]), 1000);
+    m.ingest(batch([rec(2, [0x03])]), 1500);
+    const e = m.ids.get(2)!;
+    expect(bitStats(e, 2200)).toEqual({ ever: [0x03, 0, 0, 0, 0, 0, 0, 0], recent: [0x02, 0, 0, 0, 0, 0, 0, 0] });
+    expect(bitStats(e, 2600).recent).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
+    expect(bitStats(e, 2600).ever[0]).toBe(0x03);
+  });
+
+  test("log rows carry the changed mask against the previous frame of the same id", () => {
+    const m = new CanModel();
+    m.ingest(batch([rec(0xa, [1]), rec(0xb, [2]), rec(0xa, [3])]), 0);
+    expect(m.log.map((r) => r.changed)).toEqual([0, 0, 1]);
   });
 });

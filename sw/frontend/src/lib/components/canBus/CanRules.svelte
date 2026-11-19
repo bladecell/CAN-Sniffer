@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import { tick, untrack } from "svelte";
   import Icon from "$lib/Icon.svelte";
   import Switch from "$lib/components/Switch.svelte";
   import { canBus } from "$lib/canBus/canBusStore.svelte";
@@ -55,8 +55,7 @@
     storeError = null;
   }
 
-  function toggle(rule: Rule) {
-    if (openId === rule.id) return close();
+  function openRule(rule: Rule) {
     form = formFromRule(rule);
     helper = { start: "0", length: "1", order: "be" };
     draftId = null;
@@ -65,14 +64,39 @@
     void tick().then(() => document.getElementById(`cr-row-${rule.id}`)?.scrollIntoView({ block: "nearest" }));
   }
 
-  function startNew() {
-    if (full) return;
-    form = emptyForm();
+  function toggle(rule: Rule) {
+    if (openId === rule.id) return close();
+    openRule(rule);
+  }
+
+  /** A new row that exists only in the editor until the form is edited into a valid rule. */
+  function startDraft(next: RuleForm, id: string) {
+    form = next;
     helper = { start: "0", length: "1", order: "be" };
     storeError = null;
-    draftId = openId = newRuleId();
-    void focusName(openId);
+    draftId = openId = id;
+    void focusName(id);
   }
+
+  function startNew() {
+    if (full) return;
+    startDraft(emptyForm(), newRuleId());
+  }
+
+  // "Create rule" / "Open rule" from the ID details. takeRule clears the request, so a later visit to this tab does not repeat it.
+  $effect(() => {
+    if (!canBus.pendingRule) return;
+    untrack(() => {
+      const req = canBus.takeRule();
+      if (req?.kind === "open") {
+        const rule = rulesStore.list.find((r) => r.id === req.id);
+        if (rule) openRule(rule);
+      } else if (req?.kind === "draft") {
+        if (full) storeError = `At most ${RULE_CAP} rules`;
+        else startDraft(req.form, req.id);
+      }
+    });
+  });
 
   /** Edits apply as they are typed. An invalid form keeps the last good rule and the fields say what is wrong. */
   function apply() {
@@ -396,9 +420,6 @@
     padding: 2px 10px 2px 12px;
     border-radius: var(--r-track);
     background: var(--row);
-  }
-  .rl-i.on {
-    box-shadow: inset 0 0 0 2px var(--accent);
   }
   .rl-i.off .rl-open,
   .rl-i.off .rl-v {

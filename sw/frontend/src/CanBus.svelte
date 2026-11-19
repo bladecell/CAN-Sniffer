@@ -3,7 +3,9 @@
   import Icon from "$lib/Icon.svelte";
   import { alertStore } from "$lib/alertStore.svelte";
   import { connectionStore } from "$lib/connectionStore.svelte";
-  import { canBus } from "$lib/canBus/canBusStore.svelte";
+  import { canBus, type IdDetail } from "$lib/canBus/canBusStore.svelte";
+  import { findRuleForId } from "$lib/canBus/canRuleForm";
+  import { rulesStore } from "$lib/canBus/canRulesStore.svelte";
   import CanTiles from "$lib/components/canBus/CanTiles.svelte";
   import CanIdList from "$lib/components/canBus/CanIdList.svelte";
   import CanFrameTable from "$lib/components/canBus/CanFrameTable.svelte";
@@ -30,6 +32,13 @@
     canBus.select(key);
     tab = "info";
   }
+
+  function openRuleFor(detail: IdDetail) {
+    canBus.requestRule(detail);
+    tab = "rules";
+  }
+
+  const selectedRuleExists = $derived(canBus.snapshot.selected ? findRuleForId(rulesStore.list, canBus.snapshot.selected.id, canBus.snapshot.selected.ext) !== undefined : false);
 
   // A click on empty space (not a row, the side panel or a control) clears the selection.
   function clearSelection(e: MouseEvent) {
@@ -100,7 +109,7 @@
       {:else if tab === "rules"}
         <CanRules />
       {:else if tab === "info"}
-        <CanIdDetails detail={canBus.snapshot.selected} startUs={canBus.snapshot.startUs} />
+        <CanIdDetails detail={canBus.snapshot.selected} startUs={canBus.snapshot.startUs} ruleExists={selectedRuleExists} onrule={openRuleFor} />
       {/if}
     </aside>
     </div>
