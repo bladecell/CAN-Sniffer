@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getContext } from "svelte";
+  import SidebarHint from "./SidebarHint.svelte";
   import { vehicleStore } from "$lib/vehicleStore.svelte";
   import { safeHexColor } from "$lib/color";
   import { TELEMETRY_VIEW, type TelemetryView } from "$lib/telemetryChart/viewState.svelte";
@@ -85,7 +86,9 @@
 
 <section class="ov card" class:pinned aria-label="Time window">
   <div class="cap">
-    <span>Shared by all plots. Drag the frame to move it, its edges to zoom.</span>
+    <span class="cap-title"><span>Brush</span>
+      <SidebarHint inline label="About the time window" text="Shared by all plots. Drag the frame to move it, its edges to zoom." />
+    </span>
     <div class="seg sm" role="group" aria-label="Visible window">
       {#each WINDOW_LENS as s (s)}
         <button
@@ -173,6 +176,17 @@
     color: var(--muted);
     font-size: 0.85rem;
     font-weight: 600;
+  }
+  /* Same label style as a plot's title (PlotCell .csel): muted, 800, body size, 34 px tall. */
+  .cap-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 34px;
+    padding: 4px 6px;
+    color: var(--muted);
+    font-size: 1rem;
+    font-weight: 800;
   }
   .track {
     min-width: 0;

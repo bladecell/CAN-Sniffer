@@ -535,6 +535,7 @@
   }
 
   .stats {
+    container: stats / inline-size;
     position: relative;
     padding: 8px var(--pad-card);
     min-width: 0;
@@ -622,8 +623,9 @@
     font-weight: 600;
   }
   /* Phone: the name takes a full row, and Now, Min, Avg and Max form a fixed four-column grid under it, so no value
-     shares a column with a long name. Desktop keeps the table. */
-  @media (max-width: 859px) {
+     shares a column with a long name. Wider cards keep the table, with the name beside the values. The switch is
+     on the card's own width, not the window's, so a narrow desktop window with the side panel open still gets it. */
+  @container stats (max-width: 520px) {
     .stats table {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -638,16 +640,20 @@
     .stats thead th:first-child {
       display: none;
     }
+    .stats th {
+      padding: 6px 0 8px;
+    }
     .stats th.n {
       padding-right: 0;
     }
     .stats td {
-      padding: 0 0 6px;
+      padding: 0 0 12px;
       font-size: 0.95rem;
     }
     .stats td:first-child {
       grid-column: 1 / -1;
-      padding: 8px 0 2px;
+      padding: 12px 0 6px;
+      border-top: 1px solid var(--hair);
     }
     .stats td:not(:first-child) {
       border-top: 0;
