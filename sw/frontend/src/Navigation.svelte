@@ -36,28 +36,32 @@
     if (tabList && activeTab) moveBar();
   });
 
-  // Phone bottom bar: hide on scroll down, show on scroll up. Always shown near the top or bottom of the page.
+  // Phone bottom bar: hide on scroll down, show on scroll up. Needs a deliberate 40px scroll up to return; always shown at the top.
   let hidden = $state(false);
   let lastY = 0;
 
   function onScroll() {
     const y = window.scrollY;
-    const max = document.documentElement.scrollHeight - window.innerHeight;
     const dy = y - lastY;
-    if (y <= 8 || y >= max - 8 || dy < -6) hidden = false;
-    else if (dy > 6) hidden = true;
-    if (Math.abs(dy) > 6) lastY = y;
+    if (y <= 8) hidden = false;
+    else if (dy > 6) {
+      hidden = true;
+      lastY = y;
+    } else if (dy < -40) {
+      hidden = false;
+      lastY = y;
+    }
     armIdle();
   }
 
-  // Idle timeout: hide 4s after the last scroll or dock touch. Only away from the page top, so scrolling up can always bring it back.
+  // Idle timeout: hide 2.5s after the last scroll or dock touch. Only away from the page top, so scrolling up can always bring it back.
   let idle: ReturnType<typeof setTimeout> | undefined;
 
   function armIdle() {
     clearTimeout(idle);
     idle = setTimeout(() => {
       if (window.scrollY > 8 && !tabList?.closest(".dock")?.matches(":focus-within")) hidden = true;
-    }, 4000);
+    }, 2500);
   }
 
   $effect(() => () => clearTimeout(idle));
