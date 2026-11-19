@@ -35,12 +35,38 @@
   $effect(() => {
     if (tabList && activeTab) moveBar();
   });
+
+  // Phone bottom bar: hide on scroll down, show on scroll up. Always shown near the top or bottom of the page.
+  let hidden = $state(false);
+  let lastY = 0;
+
+  function onScroll() {
+    const y = window.scrollY;
+    const max = document.documentElement.scrollHeight - window.innerHeight;
+    const dy = y - lastY;
+    if (y <= 8 || y >= max - 8 || dy < -6) hidden = false;
+    else if (dy > 6) hidden = true;
+    if (Math.abs(dy) > 6) lastY = y;
+    armIdle();
+  }
+
+  // Idle timeout: hide 4s after the last scroll or dock touch. Only away from the page top, so scrolling up can always bring it back.
+  let idle: ReturnType<typeof setTimeout> | undefined;
+
+  function armIdle() {
+    clearTimeout(idle);
+    idle = setTimeout(() => {
+      if (window.scrollY > 8 && !tabList?.closest(".dock")?.matches(":focus-within")) hidden = true;
+    }, 4000);
+  }
+
+  $effect(() => () => clearTimeout(idle));
 </script>
 
-<svelte:window onresize={moveBar} />
+<svelte:window onresize={moveBar} onscroll={onScroll} onpointerdown={(e) => (e.target as Element).closest?.(".dock") && armIdle()} />
 
 <div class="nav-wrapper">
-  <nav class="dock float-layer" aria-label="Main">
+  <nav class="dock float-layer" class:hidden aria-label="Main">
     <ul class="tabs" bind:this={tabList}>
       {#each tabs as tab (tab.id)}
         <li>
@@ -183,6 +209,30 @@
       width: 100%;
       padding: 7px 2px 9px;
       border-radius: calc(var(--r-float) + 4px);
+    }
+
+    .dock {
+      transition:
+        transform 0.3s var(--ease-out),
+        opacity 0.2s var(--ease-out),
+        visibility 0s 0.3s;
+    }
+
+    /* Fades while sliding: the backdrop blur drops during a transform, so the content behind would show through. */
+    .dock.hidden {
+      transform: translateY(calc(100% + 24px + env(safe-area-inset-bottom)));
+      opacity: 0;
+      visibility: hidden;
+    }
+
+    .dock:focus-within {
+      transform: none;
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .dock:not(.hidden) {
+      transition-delay: 0s;
     }
 
     .tabs {

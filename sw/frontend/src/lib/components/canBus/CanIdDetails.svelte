@@ -53,6 +53,7 @@
     </div>
 
     <div class="bt" aria-label="Last data bytes">
+      <span></span>
       {#each bytes as b, i (i)}
         <CanByteTile value={b} changed={(detail.changed & (1 << i)) !== 0} />
       {/each}
@@ -143,9 +144,10 @@
     color: var(--accent-text);
   }
   .bt {
-    --tile-h: 34px;
+    --tile-h: 38px;
     display: grid;
-    grid-template-columns: repeat(8, minmax(0, 1fr));
+    grid-template-columns: 26px repeat(8, minmax(0, 44px));
+    justify-content: center;
     gap: 4px;
   }
   .sub {
@@ -157,7 +159,8 @@
   }
   .bits {
     display: grid;
-    grid-template-columns: 26px repeat(8, minmax(0, 1fr));
+    grid-template-columns: 26px repeat(8, minmax(0, 44px));
+    justify-content: center;
     gap: 4px;
     align-items: center;
   }
@@ -172,7 +175,7 @@
     text-align: center;
   }
   .k {
-    aspect-ratio: 1.25;
+    aspect-ratio: 1;
     min-height: 24px;
     border-radius: 6px;
     border: 2px solid var(--hair);
@@ -222,16 +225,19 @@
     font-size: 1rem;
   }
   .hist {
+    width: fit-content;
+    max-width: 100%;
     display: grid;
     gap: 2px;
-    margin: 0;
+    margin: 0 auto;
     padding: 0;
     list-style: none;
   }
   .hrow {
-    --tile-h: 26px;
+    --tile-h: 34px;
     display: grid;
-    grid-template-columns: 4.1rem repeat(8, minmax(0, 1fr));
+    grid-template-columns: 4.1rem repeat(8, minmax(0, 40px));
+    justify-content: center;
     gap: 3px;
     align-items: center;
     padding: 5px 0;
