@@ -75,6 +75,11 @@ function markFlips(e: IdEntry, prev: ArrayLike<number>, cur: ArrayLike<number>, 
   }
 }
 
+/** Changed mask per frame of one id, newest first: each frame against the next older one. The oldest has nothing to compare with, so 0. */
+export function changedMasks(newestFirst: readonly { data: ArrayLike<number> }[]): number[] {
+  return newestFirst.map((f, i) => (i + 1 < newestFirst.length ? changedMask(newestFirst[i + 1].data, f.data) : 0));
+}
+
 export class CanModel {
   readonly ids = new Map<number, IdEntry>();
   /** Frames from ids past MAX_IDS: counted and logged, not listed. */

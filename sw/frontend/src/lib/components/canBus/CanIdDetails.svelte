@@ -2,6 +2,8 @@
   import type { IdDetail } from "$lib/canBus/canBusStore.svelte";
   import { relTime } from "$lib/canBus/canFormat";
   import { formatId } from "$lib/canBus/canIds";
+  import { changedMasks } from "$lib/canBus/canModel";
+  import CanByteTile from "./CanByteTile.svelte";
 
   interface Props {
     detail: IdDetail | null;
@@ -11,12 +13,18 @@
   }
 
   let { detail, startUs, ruleExists, onrule }: Props = $props();
-  const hex = (v: number) => v.toString(16).toUpperCase().padStart(2, "0");
   const bitAt = (mask: number, bit: number) => ((mask >> bit) & 1) === 1;
   const BITS = [7, 6, 5, 4, 3, 2, 1, 0];
   const rate = (hz: number) => (hz >= 10 ? String(Math.round(hz)) : hz.toFixed(1));
   // A CAN frame carries at most 8 bytes; the slice keeps a bad length from building more rows.
   const bytes = $derived(detail ? Array.from(detail.last.data).slice(0, 8) : []);
+  // Newest first, each row with the bytes that changed against the next older frame.
+  const recentRows = $derived.by(() => {
+    if (!detail) return [];
+    const masks = changedMasks(detail.recent);
+    return detail.recent.map((f, i) => ({ t: f.t, data: f.data.subarray(0, 8), changed: masks[i] }));
+  });
+  const BYTE_IDX = [0, 1, 2, 3, 4, 5, 6, 7];
 </script>
 
 <div class="id-pane">
@@ -46,7 +54,7 @@
 
     <div class="bt" aria-label="Last data bytes">
       {#each bytes as b, i (i)}
-        <div class="b" class:z={b === 0} class:chg={(detail.changed & (1 << i)) !== 0}>{hex(b)}</div>
+        <CanByteTile value={b} changed={(detail.changed & (1 << i)) !== 0} />
       {/each}
     </div>
 
@@ -70,11 +78,13 @@
     </div>
 
     <h3>Recent values</h3>
-    <ul class="hist mono">
-      {#each detail.recent as f (f.t)}
-        <li>
-          <span class="muted">{relTime(f.t, startUs)}</span>
-          {Array.from(f.data, hex).join(" ")}
+    <ul class="hist">
+      {#each recentRows as r (r.t)}
+        <li class="hrow">
+          <span class="time">{relTime(r.t, startUs)}</span>
+          {#each BYTE_IDX as i (i)}
+            {#if i < r.data.length}<CanByteTile value={r.data[i]} changed={(r.changed & (1 << i)) !== 0} />{:else}<span></span>{/if}
+          {/each}
         </li>
       {/each}
     </ul>
@@ -131,43 +141,11 @@
     letter-spacing: 0.02em;
     color: var(--accent-text);
   }
-  /* Byte tile, shared in spirit with the table: tint and corner mark = changed on the last frame, dim = 00. */
   .bt {
+    --tile-h: 34px;
     display: grid;
     grid-template-columns: repeat(8, minmax(0, 1fr));
     gap: 4px;
-  }
-  .b {
-    position: relative;
-    display: grid;
-    place-items: center;
-    height: 34px;
-    min-width: 0;
-    border-radius: 8px;
-    background: var(--card2);
-    font-family: var(--mono);
-    font-weight: 700;
-    font-size: 0.92rem;
-    font-variant-numeric: tabular-nums;
-  }
-  .b.z {
-    color: var(--muted);
-    font-weight: 500;
-    opacity: 0.7;
-  }
-  .b.chg {
-    background: color-mix(in srgb, var(--accent) 26%, transparent);
-    color: var(--text);
-  }
-  .b.chg::after {
-    content: "";
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: 9px;
-    height: 9px;
-    border-top-right-radius: 8px;
-    background: linear-gradient(225deg, var(--accent) 50%, transparent 50%);
   }
   .sub {
     display: flex;
@@ -255,15 +233,23 @@
     margin: 0;
     padding: 0;
     list-style: none;
-    font-size: 0.88rem;
   }
-  .hist li {
-    display: flex;
-    gap: 12px;
-    padding: 6px 0;
+  .hrow {
+    --tile-h: 26px;
+    display: grid;
+    grid-template-columns: 4.1rem repeat(8, minmax(0, 1fr));
+    gap: 3px;
+    align-items: center;
+    padding: 5px 0;
     border-top: 1px solid var(--hair);
   }
-  .hist li:first-child {
+  .hrow:first-child {
     border-top: 0;
+  }
+  .hrow .time {
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    white-space: nowrap;
+    color: var(--muted);
   }
 </style>

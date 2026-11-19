@@ -2,6 +2,7 @@
   import type { LogRow, IdView, TableFilter } from "$lib/canBus/canModel";
   import type { TableMode } from "$lib/canBus/canBusStore.svelte";
   import Icon from "$lib/Icon.svelte";
+  import CanByteTile from "./CanByteTile.svelte";
   import SelectMenu from "$lib/components/SelectMenu.svelte";
   import { placePopup } from "$lib/popoverAnchor";
   import { FILTER_FIELDS, opsFor, parseFilterValue, type FilterField, type FilterOp, type FilterRule } from "$lib/canBus/canFilter";
@@ -291,8 +292,7 @@
       {#if show[c.key]}
         <td class="bcell">
           {#if i < row.data.length && !row.rtr}
-            {@const b = row.data[i]}
-            <div class="tile" class:z={b === 0} class:chg={(row.changed & (1 << i)) !== 0}>{b.toString(16).toUpperCase().padStart(2, "0")}</div>
+            <CanByteTile value={row.data[i]} changed={(row.changed & (1 << i)) !== 0} />
           {/if}
         </td>
       {/if}
@@ -542,37 +542,6 @@
   }
   .ft-tbl td.bcell {
     padding: 4px 3px;
-  }
-  .tile {
-    position: relative;
-    display: grid;
-    place-items: center;
-    height: 28px;
-    border-radius: 7px;
-    background: var(--card2);
-    font-family: var(--mono);
-    font-weight: 700;
-    font-size: 0.84rem;
-    font-variant-numeric: tabular-nums;
-  }
-  .tile.z {
-    color: var(--muted);
-    font-weight: 500;
-    opacity: 0.7;
-  }
-  .tile.chg {
-    background: color-mix(in srgb, var(--accent) 26%, transparent);
-    color: var(--text);
-  }
-  .tile.chg::after {
-    content: "";
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: 7px;
-    height: 7px;
-    border-top-right-radius: 7px;
-    background: linear-gradient(225deg, var(--accent) 50%, transparent 50%);
   }
   .parsed:not(.muted) {
     color: var(--accent-text);

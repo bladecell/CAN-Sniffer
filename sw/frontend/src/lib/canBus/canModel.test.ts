@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { bitStats, byIdRows, CanModel, changedMask, ECU_AGE_MS, ecuRows, logRows, MAX_IDS, TABLE_ROWS } from "./canModel";
+import { bitStats, changedMasks, byIdRows, CanModel, changedMask, ECU_AGE_MS, ecuRows, logRows, MAX_IDS, TABLE_ROWS } from "./canModel";
 import { compileRules, type Rule } from "./canRules";
 import { ecuRequestId, isObdId } from "./canIds";
 import type { RawBatch, RawRecord } from "../wsFrames";
@@ -213,5 +213,13 @@ describe("bit view", () => {
     const m = new CanModel();
     m.ingest(batch([rec(0xa, [1]), rec(0xb, [2]), rec(0xa, [3])]), 0);
     expect(m.log.map((r) => r.changed)).toEqual([0, 0, 1]);
+  });
+});
+
+describe("recent frames", () => {
+  test("changedMasks compares each frame with the next older one; the oldest has nothing to compare", () => {
+    const newestFirst = [{ data: new Uint8Array([1, 3]) }, { data: new Uint8Array([1, 2]) }, { data: new Uint8Array([0, 2]) }];
+    expect(changedMasks(newestFirst)).toEqual([0b10, 0b1, 0]);
+    expect(changedMasks([])).toEqual([]);
   });
 });
