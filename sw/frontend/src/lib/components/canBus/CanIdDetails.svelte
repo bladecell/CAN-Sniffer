@@ -72,9 +72,10 @@
       {/each}
     </div>
     <div class="legend">
+      <span><i class="on"></i>1</span>
+      <span><i></i>0</span>
       <span><i class="now"></i>changing now</span>
       <span><i class="ev"></i>changed before</span>
-      <span><i></i>never</span>
     </div>
 
     <h3>Recent values</h3>
@@ -174,27 +175,19 @@
     aspect-ratio: 1.25;
     min-height: 24px;
     border-radius: 6px;
-    border: 1px solid var(--hair);
+    border: 2px solid var(--hair);
+  }
+  .k.on {
+    background: color-mix(in srgb, var(--text) 50%, transparent);
   }
   .k.ev {
-    background: color-mix(in srgb, var(--muted) 38%, transparent);
-    border-color: transparent;
+    border-color: var(--muted);
   }
   .k.now {
+    border-color: var(--accent);
+  }
+  .k.now.on {
     background: var(--accent);
-    border-color: transparent;
-  }
-  .k.on::after {
-    content: "1";
-    display: grid;
-    place-items: center;
-    height: 100%;
-    font: 700 0.7rem var(--mono);
-    color: var(--on-accent);
-  }
-  .k.ev.on::after {
-    color: var(--text);
-    opacity: 0.8;
   }
   .legend {
     display: flex;
@@ -213,15 +206,16 @@
     width: 14px;
     height: 14px;
     border-radius: 4px;
-    border: 1px solid var(--hair);
+    border: 2px solid var(--hair);
+  }
+  .legend i.on {
+    background: color-mix(in srgb, var(--text) 50%, transparent);
   }
   .legend i.ev {
-    background: color-mix(in srgb, var(--muted) 38%, transparent);
-    border-color: transparent;
+    border-color: var(--muted);
   }
   .legend i.now {
-    background: var(--accent);
-    border-color: transparent;
+    border-color: var(--accent);
   }
   h3 {
     margin: 10px 0 2px;
