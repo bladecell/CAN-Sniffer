@@ -41,6 +41,9 @@ export const ROW = {
   sleepAuto: { title: "Automatic sleep", kw: "sleep inactivity battery drain idle power off" },
   stayAwakeV: { title: "Stay awake above", kw: "voltage battery alternator engine running charging sleep" },
   lowBatteryV: { title: "Low battery below", kw: "voltage battery sleep longer cycle drain protect" },
+  sleepState: { title: "State", kw: "status supervisor running waiting sleeping live" },
+  batteryNow: { title: "Battery now", kw: "voltage status live car" },
+  keepAwake: { title: "Keep awake", kw: "stay awake hold 30 minutes prevent sleep" },
   sleepNow: { title: "Sleep now", kw: "sleep now suspend standby" },
   hwFilter: { title: "Hardware filter", kw: "filter mask acceptance id can controller" },
   autoPoll: { title: "Auto poll", kw: "keep polling resume ignition trip" },
@@ -69,7 +72,7 @@ export const GROUP: Record<GroupId, GroupMeta> = {
   },
   modem: { id: "modem", title: "Cellular & GNSS", icon: "waves-sine", kw: "lte gnss mqtt apn cellular modem", rows: [ROW.modem, ROW.apn, ROW.mqtt, ROW.gnss] },
   can: { id: "can", title: "CAN bus", icon: "engine", kw: "bitrate baud queue obd can filter mask acceptance", rows: [ROW.bitrate, ROW.rxQueue, ROW.txQueue, ROW.hwFilter] },
-  sleep: { id: "sleep", title: "Sleep", icon: "moon", kw: "sleep battery voltage idle power drain", rows: [ROW.sleepAuto, ROW.stayAwakeV, ROW.lowBatteryV, ROW.sleepNow] },
+  sleep: { id: "sleep", title: "Sleep", icon: "moon", kw: "sleep battery voltage idle power drain", rows: [ROW.sleepState, ROW.batteryNow, ROW.keepAwake, ROW.sleepAuto, ROW.stayAwakeV, ROW.lowBatteryV, ROW.sleepNow] },
   recorder: { id: "recorder", title: "Recorder", icon: "route", kw: "recorder trip start polling", rows: [ROW.autoPoll] },
   storage: { id: "storage", title: "Storage", icon: "sd-card", kw: "sd card storage format folder library", rows: [ROW.sdUsage, ROW.pidFolder, ROW.sdFormat] },
   access: { id: "access", title: "Access", icon: "lock", kw: "pin login log out password", rows: [ROW.session, ROW.savedPin, ROW.changePin] },
@@ -367,6 +370,14 @@ export function buildSleepPatch(saved: PowerSettings, d: SleepDraft): Built {
   if (low !== null && low !== saved.low_battery_voltage_mv) patch.low_battery_voltage_mv = low;
   return { patch, errors };
 }
+
+/** `GET /system` state number (supervisor, docs/power.md) as a short phrase. */
+export function supervisorStateText(state: number): string {
+  return ["Not started", "Starting", "Waiting for the CAN bus", "Running", "Shutting down for sleep", "Sleeping", "Error"][state] ?? "Unknown";
+}
+
+/** "12.6 V", or "-" when the device has no reading. */
+export const batteryText = (v: number | null | undefined) => (typeof v === "number" && Number.isFinite(v) ? `${v.toFixed(1)} V` : "-");
 
 /** "3 h 12 min", "42 min", "17 s". */
 export function formatUptime(seconds: number): string {

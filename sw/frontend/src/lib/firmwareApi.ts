@@ -25,6 +25,7 @@ export function createFirmwareApi(deps: FirmwareApiDeps) {
     system: () => open<SystemStatus>("/api/v1/system"),
     reboot: () => gated<Json>("/api/v1/system/reboot", body("POST")),
     sleep: () => gated<Json>("/api/v1/system/sleep", body("POST")),
+    setKeepAwake: (enabled: boolean) => gated<{ keep_awake: boolean }>("/api/v1/system/keep_awake", body("POST", { enabled })),
     canBus: () => open<CanBusStatus>("/api/v1/can_bus"),
     canMode: () => open<CanModeStatus>("/api/v1/can/mode"),
     setCanMode: (mode: { mode: "monitor" | "raw"; isotp_flow_control?: boolean }) => gated<CanModeStatus>("/api/v1/can/mode", body("POST", mode)),

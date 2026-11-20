@@ -1,13 +1,16 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import Icon from "$lib/Icon.svelte";
   import Dialog from "$lib/components/Dialog.svelte";
   import { alertStore } from "$lib/alertStore.svelte";
   import { parseJsonResponse } from "$lib/api";
   import { firmwareApi } from "$lib/firmwareApi.svelte";
+  import { keepAwakeWatch } from "$lib/keepAwake.svelte";
   import { settingsStore } from "$lib/settingsStore.svelte";
   import Switch from "$lib/components/Switch.svelte";
   import RangeSlider from "$lib/components/RangeSlider.svelte";
-  import { GROUP, ROW, VOLT_MAX, VOLT_MIN, anyShown, buildSleepPatch, parseVolts, rowShown, sleepDraft, type RowMeta, type SettingsDoc } from "$lib/settingsModel";
+  import type { SystemStatus } from "$lib/types";
+  import { GROUP, ROW, VOLT_MAX, VOLT_MIN, anyShown, batteryText, buildSleepPatch, parseVolts, rowShown, sleepDraft, supervisorStateText, type RowMeta, type SettingsDoc } from "$lib/settingsModel";
   import ApplyBar from "./ApplyBar.svelte";
   import SettingRow from "./SettingRow.svelte";
 
@@ -29,6 +32,37 @@
   // Saved values are always in range, so the fallback only guards a hand-edited draft.
   const volts = (text: string) => (parseVolts(text) ?? VOLT_MIN * 1000) / 1000;
 
+  // Live status: GET /system is open, so it is polled while this tab is open. Null while the device does not answer (asleep or out of range).
+  let live = $state<SystemStatus | null>(null);
+  let holding = $state(false);
+  async function refresh() {
+    try {
+      live = await parseJsonResponse<SystemStatus>(await firmwareApi.system());
+      if (typeof live.keep_awake === "boolean") keepAwakeWatch.seen(live.keep_awake);
+    } catch {
+      live = null;
+    }
+  }
+  onMount(() => {
+    void refresh();
+    const timer = setInterval(() => !document.hidden && void refresh(), 2000);
+    return () => clearInterval(timer);
+  });
+
+  async function setKeepAwake(on: boolean) {
+    holding = true;
+    try {
+      await parseJsonResponse<unknown>(await firmwareApi.setKeepAwake(on));
+      if (on) keepAwakeWatch.arm();
+      else keepAwakeWatch.disarm();
+      await refresh();
+    } catch (e) {
+      alertStore.add(`Keep awake failed: ${e instanceof Error ? e.message : String(e)}`, "error");
+    } finally {
+      holding = false;
+    }
+  }
+
   let confirmSleep = $state(false);
   let sleeping = $state(false);
   async function sleepNow() {
@@ -47,6 +81,29 @@
     if (await settingsStore.save("system", built.patch, false)) edits = {};
   }
 </script>
+
+{#if anyShown(q, GROUP.sleep, [ROW.sleepState, ROW.batteryNow, ROW.keepAwake])}
+<div class="st-sec">
+  <h2>Status</h2>
+  <div class="st-list">
+    {#if show(ROW.sleepState)}
+      <SettingRow inline title={ROW.sleepState.title} hint="What the device is doing now. Refreshes every 2 s; no answer means it is asleep or out of range.">
+        <span class="st-val">{live ? supervisorStateText(live.state) : "No answer"}</span>
+      </SettingRow>
+    {/if}
+    {#if show(ROW.batteryNow)}
+      <SettingRow inline title={ROW.batteryNow.title} hint="Voltage on the OBD port, read by the device.">
+        <span class="st-val">{batteryText(live?.battery_voltage)}</span>
+      </SettingRow>
+    {/if}
+    {#if show(ROW.keepAwake) && live && typeof live.keep_awake === "boolean"}
+      <SettingRow inline title={ROW.keepAwake.title} hint="Stops automatic sleep for 30 minutes (turn it on again to renew). Not saved: it ends on its own, when the device sleeps and after a restart.">
+        <Switch aria-label={ROW.keepAwake.title} checked={live.keep_awake} disabled={holding} onchange={setKeepAwake} />
+      </SettingRow>
+    {/if}
+  </div>
+</div>
+{/if}
 
 {#if anyShown(q, GROUP.sleep, [ROW.sleepAuto, ROW.stayAwakeV, ROW.lowBatteryV, ROW.sleepNow])}
 <div class="st-sec">

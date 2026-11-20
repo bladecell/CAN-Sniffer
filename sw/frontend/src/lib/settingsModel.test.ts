@@ -7,6 +7,8 @@ import {
   buildSleepPatch,
   sleepDraft,
   parseVolts,
+  supervisorStateText,
+  batteryText,
   hwFilterDraft,
   hwFilterPreview,
   buildPidPathPatch,
@@ -155,6 +157,11 @@ describe("wire guards", () => {
     expect(buildSleepPatch(power, { enabled: true, awake: "17", low: "abc" }).errors).toHaveProperty("stay_awake_voltage_mv");
     expect(parseVolts("9")).toBe(9000);
     expect(parseVolts("8.9")).toBeNull();
+    expect(supervisorStateText(2)).toBe("Waiting for the CAN bus");
+    expect(supervisorStateText(99)).toBe("Unknown");
+    expect(batteryText(12.64)).toBe("12.6 V");
+    expect(batteryText(Number.NaN)).toBe("-");
+    expect(batteryText(null)).toBe("-");
   });
 
   test("hardware filter is read when the firmware sends it, and the patch sends only changes", () => {
