@@ -29,13 +29,14 @@ class SettingsStore {
   }
 
   /** One section per call. Returns true when the firmware saved it. */
-  async save(section: "wifi" | "can" | "system", fields: Patch): Promise<boolean> {
+  /** `needsRestart` false for fields the firmware applies at once (system power fields). */
+  async save(section: "wifi" | "can" | "system", fields: Patch, needsRestart = true): Promise<boolean> {
     if (Object.keys(fields).length === 0) return true;
     this.saving = true;
     try {
       await parseJsonResponse<unknown>(await firmwareApi.patchSettings({ [section]: fields }));
-      this.restartRequired = true;
-      alertStore.add("Saved. Restart the device to apply.", "success");
+      if (needsRestart) this.restartRequired = true;
+      alertStore.add(needsRestart ? "Saved. Restart the device to apply." : "Saved.", "success");
       await this.load();
       return true;
     } catch (e) {

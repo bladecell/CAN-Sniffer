@@ -253,14 +253,27 @@
   min-width: 0;
 }
 .st-lab {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 6px;
   font-weight: 700;
   font-size: 0.95rem;
 }
 .st-hint {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   margin-top: 2px;
   font-size: 0.82rem;
   color: var(--muted);
   line-height: 1.35;
+}
+/* Too long for its line: hidden but still measured, the i popup on the title carries it. */
+.st-hint.over {
+  height: 0;
+  margin: 0;
+  visibility: hidden;
 }
 .st-bad {
   margin-top: 4px;
@@ -657,4 +670,14 @@
   min-height: var(--ctl-h);
   height: var(--ctl-h);
   padding: 0 18px;
+}
+
+/* Names a control for screen readers without showing. */
+.st-root .sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

@@ -6,10 +6,13 @@
   import { parseJsonResponse } from "$lib/api";
   import { firmwareApi } from "$lib/firmwareApi.svelte";
   import { vehicleStore } from "$lib/vehicleStore.svelte";
-  import { GROUP, ROW, formatUptime, anyShown, rowShown, type RowMeta } from "$lib/settingsModel";
+  import Switch from "$lib/components/Switch.svelte";
+  import { settingsStore } from "$lib/settingsStore.svelte";
+  import { GROUP, ROW, formatUptime, anyShown, rowShown, type RowMeta, type SettingsDoc } from "$lib/settingsModel";
   import SettingRow from "./SettingRow.svelte";
 
-  let { q }: { q: string } = $props();
+  let { q, doc }: { q: string; doc: SettingsDoc | null } = $props();
+  const debug = $derived(doc?.can.debug ?? null);
   const show = (row: RowMeta) => rowShown(q, GROUP.device, row);
   const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
   const KB = 1024;
@@ -46,7 +49,7 @@
 </div>
 {/if}
 
-{#if anyShown(q, GROUP.device, [ROW.uptime, ROW.lastReset, ROW.freeMemory, ROW.restart])}
+{#if anyShown(q, GROUP.device, [ROW.uptime, ROW.lastReset, ROW.freeMemory, ROW.debugMode, ROW.restart])}
 <div class="st-sec">
   <h2>System</h2>
   <div class="st-list">
@@ -61,8 +64,13 @@
         <span class="st-val">{loaded ? `${Math.round(sys.heap_free / KB)} KB` : "-"}</span>
       </SettingRow>
     {/if}
+    {#if debug !== null && show(ROW.debugMode)}
+      <SettingRow inline title={ROW.debugMode.title} hint="Loopback and a simulated bus instead of the car: fake data, and the device never sleeps. Takes effect after a restart.">
+        <Switch aria-label={ROW.debugMode.title} checked={debug} disabled={settingsStore.saving} onchange={(v) => settingsStore.save("can", { debug: v })} />
+      </SettingRow>
+    {/if}
     {#if show(ROW.restart)}
-      <SettingRow title={ROW.restart.title} hint="Keeps all settings. The page reconnects when the device is back." boxed>
+      <SettingRow inline title={ROW.restart.title} hint="Keeps all settings. The page reconnects when the device is back." boxed>
         <button type="button" class="btn" onclick={() => (confirmRestart = true)} disabled={restarting}>
           <Icon name="reload" size={16} />Restart device
         </button>
