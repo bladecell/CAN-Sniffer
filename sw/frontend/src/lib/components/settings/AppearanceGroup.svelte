@@ -35,7 +35,7 @@
       </SettingRow>
     {/if}
     {#if show(ROW.accent)}
-      <SettingRow title={ROW.accent.title} hint={`${accentLabel}. Status colours stay fixed.`} stack>
+      <SettingRow title={ROW.accent.title} hint={`${accentLabel}. Status colours stay fixed.`}>
         <div class="st-sws" role="radiogroup" aria-label="Accent">
           {#each ACCENTS as a (a.id)}
             <button
