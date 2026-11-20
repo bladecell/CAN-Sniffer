@@ -164,12 +164,15 @@
         <button role="radio" aria-checked={filter === f.id} onclick={() => onfilter(f.id)}>{f.label}</button>
       {/each}
     </div>
+    {#snippet label(icon: "filter" | "eye", text: string, n: number)}
+      <!-- Two layers share one cell. The button is as wide as the badged layer, so it never resizes; the visible layer is centred in it. -->
+      <span class="ft-lbl" class:off={n === 0} aria-hidden={n === 0}><Icon name={icon} size={16} /><span>{text}</span><span class="ft-badge">{n || 1}</span></span>
+      <span class="ft-lbl" class:off={n > 0} aria-hidden={n > 0}><Icon name={icon} size={16} /><span>{text}</span></span>
+    {/snippet}
     <div class="ft-tools">
       <div class="ft-add" bind:this={wrapEl}>
         <button class="btn sm" aria-expanded={adding} aria-haspopup="dialog" onclick={() => (adding = !adding)}>
-          <Icon name="filter" size={16} />
-          <span>Filter</span>
-          {#if draft.length > 0}<span class="ft-badge">{draft.length}</span>{/if}
+          {@render label("filter", "Filter", draft.length)}
         </button>
         {#if adding}
           <div class="popup ft-pop" use:placePopup={() => wrapEl} role="dialog" aria-label="Filters" tabindex="-1" onkeydown={(e) => e.key === "Escape" && (adding = false)}>
@@ -203,9 +206,7 @@
       </div>
       <div class="ft-add" bind:this={viewEl}>
         <button class="btn sm" aria-expanded={viewing} aria-haspopup="menu" onclick={() => (viewing = !viewing)}>
-          <Icon name="eye" size={16} />
-          <span>View</span>
-          {#if hidden.size > 0}<span class="ft-badge">{hidden.size}</span>{/if}
+          {@render label("eye", "View", hidden.size)}
         </button>
         {#if viewing}
           <div class="popup ft-view" use:placePopup={() => viewEl} role="menu" tabindex="-1" onkeydown={(e) => e.key === "Escape" && (viewing = false)}>
@@ -320,8 +321,10 @@
     gap: 12px;
   }
   .ft-tools .btn {
+    position: relative;
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 6px;
   }
   .ft-add {
@@ -331,8 +334,7 @@
     position: fixed;
     z-index: 50;
     box-sizing: border-box;
-    width: max-content;
-    min-width: min(540px, calc(100vw - 16px));
+    width: min(600px, calc(100vw - 16px));
     overflow-y: auto;
     padding: 1.25rem;
     font-size: 0.85rem;
@@ -438,6 +440,19 @@
   }
   .ft-col:hover {
     background: var(--hov);
+  }
+  .ft-tools .btn:has(.ft-lbl) {
+    display: inline-grid;
+  }
+  .ft-lbl {
+    grid-area: 1 / 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .ft-lbl.off {
+    visibility: hidden;
   }
   .ft-badge {
     background: var(--ctl);

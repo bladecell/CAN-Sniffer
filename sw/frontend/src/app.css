@@ -647,6 +647,9 @@ video {
   border-radius: var(--r-float);
   color: var(--text);
 }
+.popup:focus-visible {
+  outline: none;
+}
 /* A bar at the edge of a scroller floats only while content is under it. At rest it shows the surface it sits on
    (--rest-fill, none by default), so a header or footer does not read as a second, denser surface. The scroller writes
    data-under on the shared parent (lib/layers.ts: trackUnder, trackStuck). */
