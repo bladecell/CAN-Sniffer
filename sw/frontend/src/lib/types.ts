@@ -76,6 +76,8 @@ export interface SystemStatus {
   restart_reason: string;
   mac: string;
   state: number;
+  /** Volatile user hold on automatic sleep (POST /system/keep_awake). Absent on older firmware. */
+  keep_awake?: boolean;
   battery_voltage: number;
   sd_card_detected: boolean;
   component_status: ComponentStatus[];

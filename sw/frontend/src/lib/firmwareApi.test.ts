@@ -8,7 +8,7 @@ describe("firmware API client", () => {
       fetch: async (url) => { calls.push(`open ${url}`); return new Response("{}"); },
       gatedFetch: async (url, init) => { calls.push(`${init?.method ?? "GET"} ${url}`); return new Response("{}"); },
     });
-    await api.index(); await api.system(); await api.reboot(); await api.sleep(); await api.canBus(); await api.obd2();
+    await api.index(); await api.system(); await api.reboot(); await api.sleep(); await api.setKeepAwake(true); await api.canBus(); await api.obd2();
     await api.setAutoPoll(true); await api.pidDefinitions(); await api.getPidDefinition(7);
     await api.addPidDefinitions([]); await api.replacePidDefinitions([]); await api.deletePidDefinition(7);
     await api.savePidDefinitions(); await api.loadPidDefinitions(); await api.pidData(); await api.getPidData(7);
@@ -20,7 +20,7 @@ describe("firmware API client", () => {
     await api.deleteSdFile("logs/old", true); await api.copySdFile("a", "b"); await api.formatSdCard();
     await api.getSettings(); await api.patchSettings({ can: {} }); await api.startWifiScan(); await api.wifiScan();
     await api.recorder(); await api.startRecorder(); await api.stopRecorder(); await api.recorderTrips();
-    expect(calls).toHaveLength(43);
+    expect(calls).toHaveLength(44);
     expect(calls.filter((call) => call === "GET /api/v1/settings" || call === "GET /api/v1/wifi/scan")).toHaveLength(2);
     expect(calls.some((call) => call.includes("/api/v1/req/clear_dtc"))).toBe(true);
   });
