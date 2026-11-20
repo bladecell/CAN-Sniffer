@@ -57,3 +57,24 @@ describe("sequence order", () => {
     expect(reorderBy(list, (x) => x.k, ["c", "a", "zzz"])).toBe(list);
   });
 });
+
+describe("typed slider values", () => {
+  test("parsePeriod clamps to the allowed range", async () => {
+    const { parsePeriod } = await import("./canSend");
+    expect(parsePeriod("250")).toBe(250);
+    expect(parsePeriod("1.5 s")).toBe(1500);
+    expect(parsePeriod("1")).toBe(10);
+    expect(parsePeriod("5 h")).toBe(3_600_000);
+    expect(parsePeriod("abc")).toBeNull();
+  });
+  test("parseRepeat", async () => {
+    const { parseRepeat } = await import("./canSend");
+    expect(parseRepeat("once")).toBe(1);
+    expect(parseRepeat("Endless")).toBe(0);
+    expect(parseRepeat("0")).toBe(0);
+    expect(parseRepeat("12 times")).toBe(12);
+    expect(parseRepeat("9999999")).toBeNull();
+    expect(parseRepeat("70000")).toBe(65535);
+    expect(parseRepeat("-1")).toBeNull();
+  });
+});

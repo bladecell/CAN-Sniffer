@@ -12,7 +12,8 @@
   import AppearanceGroup from "$lib/components/settings/AppearanceGroup.svelte";
   import WifiGroup from "$lib/components/settings/WifiGroup.svelte";
   import ModemGroup from "$lib/components/settings/ModemGroup.svelte";
-  import VehicleGroup from "$lib/components/settings/VehicleGroup.svelte";
+  import CanGroup from "$lib/components/settings/CanGroup.svelte";
+  import SleepGroup from "$lib/components/settings/SleepGroup.svelte";
   import RecorderGroup from "$lib/components/settings/RecorderGroup.svelte";
   import StorageGroup from "$lib/components/settings/StorageGroup.svelte";
   import AccessGroup from "$lib/components/settings/AccessGroup.svelte";
@@ -64,8 +65,10 @@
         return doc ? `Hotspot ${doc.wifi.ssid}` : reading();
       case "modem":
         return "Needs the HW v2 board";
-      case "vehicle":
+      case "can":
         return doc ? `${bitrateLabel(doc.can.bitrate)} bus` : reading();
+      case "sleep":
+        return doc?.system.power ? (doc.system.power.sleep_enabled ? "Sleeps when idle" : "Stays awake") : reading();
       case "recorder":
         return vehicleStore.obd2Status?.auto_poll ? "Auto poll on" : "Auto poll off";
       case "storage":
@@ -125,7 +128,7 @@
   {:else if id === "access"}
     <AccessGroup q={q} />
   {:else if id === "device"}
-    <DeviceGroup q={q} />
+    <DeviceGroup q={q} {doc} />
   {:else if id === "storage"}
     <StorageGroup q={q} doc={doc} />
   {:else if !canUse}
@@ -144,8 +147,10 @@
     {/if}
   {:else if id === "wifi"}
     <WifiGroup q={q} doc={doc} />
+  {:else if id === "sleep"}
+    <SleepGroup q={q} doc={doc} />
   {:else}
-    <VehicleGroup q={q} doc={doc} />
+    <CanGroup q={q} doc={doc} />
   {/if}
 {/snippet}
 

@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { ACCENTS, CONTROL_FILLS, THEMES, nextOption, type ControlFill, type Theme } from "$lib/appearance";
+  import { ACCENTS, CONTROL_FILLS, GLASS_MAX, GLASS_MIN, THEMES, nextOption, type ControlFill, type Theme } from "$lib/appearance";
   import { appearance, setAppearance } from "$lib/appearance.svelte";
   import { GROUP, ROW, rowShown, type RowMeta } from "$lib/settingsModel";
-  import GlassSlider from "./GlassSlider.svelte";
+  import RangeSlider from "$lib/components/RangeSlider.svelte";
   import SegControl from "./SegControl.svelte";
   import SettingRow from "./SettingRow.svelte";
 
@@ -63,8 +63,21 @@
       </SettingRow>
     {/if}
     {#if show(ROW.glass)}
-      <SettingRow title={ROW.glass.title} hint="Lower is more solid. Cards change the most, menus and dialogs stay readable." stack>
-        <GlassSlider labelId="glass-label" value={appearance.glass} onChange={(v) => setAppearance("glass", v)} />
+      <SettingRow title={ROW.glass.title} hint="Lower is more solid. Cards change the most, menus and dialogs stay readable.">
+        <span class="sr" id="glass-label">{ROW.glass.title}</span>
+        <RangeSlider
+          labelIds={["glass-label"]}
+          values={[appearance.glass]}
+          min={GLASS_MIN}
+          max={GLASS_MAX}
+          step={1}
+          keyStep={5}
+          page={20}
+          fit
+          parse={(t) => (/^\d{1,3}\s*%?$/.test(t.trim()) ? Number(t.replace(/\D/g, "")) : null)}
+          format={(v) => `${v}%`}
+          onChange={([v]) => setAppearance("glass", v)}
+        />
       </SettingRow>
     {/if}
   </div>

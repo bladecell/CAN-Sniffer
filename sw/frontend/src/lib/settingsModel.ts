@@ -3,7 +3,7 @@ import { parseHex } from "./canBus/canRuleForm";
 // Limits mirror docs/api.md (Settings rules). The firmware still validates everything; these checks only stop bad
 // input before it leaves the browser.
 
-export type GroupId = "look" | "wifi" | "modem" | "vehicle" | "recorder" | "storage" | "access" | "device";
+export type GroupId = "look" | "wifi" | "modem" | "can" | "sleep" | "recorder" | "storage" | "access" | "device";
 
 export interface RowMeta {
   readonly title: string;
@@ -38,6 +38,10 @@ export const ROW = {
   bitrate: { title: "Bitrate", kw: "baud speed kbps can bus obd" },
   rxQueue: { title: "Receive queue", kw: "frames buffer rx" },
   txQueue: { title: "Transmit queue", kw: "frames buffer tx send" },
+  sleepAuto: { title: "Automatic sleep", kw: "sleep inactivity battery drain idle power off" },
+  stayAwakeV: { title: "Stay awake above", kw: "voltage battery alternator engine running charging sleep" },
+  lowBatteryV: { title: "Low battery below", kw: "voltage battery sleep longer cycle drain protect" },
+  sleepNow: { title: "Sleep now", kw: "sleep now suspend standby" },
   hwFilter: { title: "Hardware filter", kw: "filter mask acceptance id can controller" },
   autoPoll: { title: "Auto poll", kw: "keep polling resume ignition trip" },
   sdUsage: { title: "Card usage", kw: "storage capacity sd used full" },
@@ -50,6 +54,7 @@ export const ROW = {
   uptime: { title: "Uptime", kw: "up running time" },
   lastReset: { title: "Last reset", kw: "restart reason boot" },
   freeMemory: { title: "Free memory", kw: "heap ram memory" },
+  debugMode: { title: "Debug mode", kw: "debug loopback simulator fake data test bench" },
   restart: { title: "Restart", kw: "reboot device reset" },
 } satisfies Record<string, RowMeta>;
 
@@ -63,21 +68,21 @@ export const GROUP: Record<GroupId, GroupMeta> = {
     rows: [ROW.hotspotName, ROW.hotspotPassword, ROW.channel, ROW.join, ROW.networks, ROW.staSsid, ROW.staPassword],
   },
   modem: { id: "modem", title: "Cellular & GNSS", icon: "waves-sine", kw: "lte gnss mqtt apn cellular modem", rows: [ROW.modem, ROW.apn, ROW.mqtt, ROW.gnss] },
-  vehicle: { id: "vehicle", title: "Vehicle & CAN", icon: "engine", kw: "bitrate baud queue obd vin poll can filter mask acceptance", rows: [ROW.bitrate, ROW.rxQueue, ROW.txQueue, ROW.hwFilter] },
+  can: { id: "can", title: "CAN bus", icon: "engine", kw: "bitrate baud queue obd can filter mask acceptance", rows: [ROW.bitrate, ROW.rxQueue, ROW.txQueue, ROW.hwFilter] },
+  sleep: { id: "sleep", title: "Sleep", icon: "moon", kw: "sleep battery voltage idle power drain", rows: [ROW.sleepAuto, ROW.stayAwakeV, ROW.lowBatteryV, ROW.sleepNow] },
   recorder: { id: "recorder", title: "Recorder", icon: "route", kw: "recorder trip start polling", rows: [ROW.autoPoll] },
   storage: { id: "storage", title: "Storage", icon: "sd-card", kw: "sd card storage format folder library", rows: [ROW.sdUsage, ROW.pidFolder, ROW.sdFormat] },
   access: { id: "access", title: "Access", icon: "lock", kw: "pin login log out password", rows: [ROW.session, ROW.savedPin, ROW.changePin] },
-  device: { id: "device", title: "Device", icon: "bolt", kw: "firmware update restart reset uptime heap factory", rows: [ROW.firmware, ROW.uptime, ROW.lastReset, ROW.freeMemory, ROW.restart] },
+  device: { id: "device", title: "Device", icon: "bolt", kw: "firmware update restart reset uptime heap factory", rows: [ROW.firmware, ROW.uptime, ROW.lastReset, ROW.freeMemory, ROW.debugMode, ROW.restart] },
 };
 
-export const GROUP_IDS: readonly GroupId[] = ["look", "wifi", "modem", "vehicle", "recorder", "storage", "access", "device"];
+export const GROUP_IDS: readonly GroupId[] = ["look", "wifi", "modem", "can", "sleep", "recorder", "storage", "access", "device"];
 
 /** Side rail and phone list sections, in order. */
 export const RAIL: readonly { label: string; ids: readonly GroupId[] }[] = [
   { label: "Look", ids: ["look"] },
-  { label: "Connections", ids: ["wifi", "modem"] },
-  { label: "Vehicle", ids: ["vehicle", "recorder"] },
-  { label: "Device", ids: ["storage", "access", "device"] },
+  { label: "Connections", ids: ["wifi", "modem", "can"] },
+  { label: "System", ids: ["sleep", "recorder", "storage", "access", "device"] },
 ];
 
 /** True when every word of the query appears in the text (case-insensitive). An empty query matches everything. */
@@ -149,8 +154,14 @@ export interface HwFilter {
 
 export interface SettingsDoc {
   wifi: { ssid: string; channel: number; mode: number; sta_ssid: string };
-  can: { bitrate: number; rx_queue_size: number; tx_queue_depth: number; hwFilter: HwFilter | null };
-  system: { pid_def_path: string };
+  can: { bitrate: number; rx_queue_size: number; tx_queue_depth: number; hwFilter: HwFilter | null; debug: boolean | null };
+  system: { pid_def_path: string; power: PowerSettings | null };
+}
+
+export interface PowerSettings {
+  sleep_enabled: boolean;
+  stay_awake_voltage_mv: number;
+  low_battery_voltage_mv: number;
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -176,9 +187,17 @@ export function parseSettingsDoc(raw: unknown): SettingsDoc | null {
   if (pid_def_path === null) return null;
   return {
     wifi: { ssid, channel, mode, sta_ssid },
-    can: { bitrate, rx_queue_size, tx_queue_depth, hwFilter: parseHwFilter(c) },
-    system: { pid_def_path },
+    can: { bitrate, rx_queue_size, tx_queue_depth, hwFilter: parseHwFilter(c), debug: typeof c.debug === "boolean" ? c.debug : null },
+    system: { pid_def_path, power: parsePower(s) },
   };
+}
+
+/** Null when the firmware does not report the power fields: the sleep rows are then not shown. */
+function parsePower(s: Record<string, unknown>): PowerSettings | null {
+  const awake = num(s.stay_awake_voltage_mv);
+  const low = num(s.low_battery_voltage_mv);
+  if (typeof s.sleep_enabled !== "boolean" || awake === null || low === null) return null;
+  return { sleep_enabled: s.sleep_enabled, stay_awake_voltage_mv: awake, low_battery_voltage_mv: low };
 }
 
 /** Null when the filter keys are missing or the wrong type: the row is then not shown. */
@@ -308,6 +327,45 @@ export function buildPidPathPatch(saved: SettingsDoc["system"], path: string): B
   const error = checkPidPath(path);
   if (error) return { patch: {}, errors: { pid_def_path: error } };
   return { patch: path === saved.pid_def_path ? {} : { pid_def_path: path }, errors: {} };
+}
+
+export interface SleepDraft {
+  enabled: boolean;
+  /** Volts as typed, e.g. "13.2". */
+  awake: string;
+  low: string;
+}
+
+export const voltsText = (mv: number) => (mv / 1000).toFixed(1);
+
+export function sleepDraft(p: PowerSettings): SleepDraft {
+  return { enabled: p.sleep_enabled, awake: voltsText(p.stay_awake_voltage_mv), low: voltsText(p.low_battery_voltage_mv) };
+}
+
+/** Volts text to whole mV, 9.0 to 16.0 V. Null when malformed or out of range. */
+export function parseVolts(text: string): number | null {
+  const t = text.trim().replace(",", ".");
+  if (!/^\d{1,2}(\.\d{1,3})?$/.test(t)) return null;
+  const mv = Math.round(Number(t) * 1000);
+  return mv >= 9000 && mv <= 16000 ? mv : null;
+}
+
+export const VOLT_MIN = 9;
+export const VOLT_MAX = 16;
+
+/** Changed power fields only. The low threshold must stay below the stay-awake one (the firmware checks the pair). */
+export function buildSleepPatch(saved: PowerSettings, d: SleepDraft): Built {
+  const patch: Patch = {};
+  const errors: Record<string, string> = {};
+  if (d.enabled !== saved.sleep_enabled) patch.sleep_enabled = d.enabled;
+  const awake = parseVolts(d.awake);
+  const low = parseVolts(d.low);
+  if (awake === null) errors.stay_awake_voltage_mv = "Volts from 9.0 to 16.0.";
+  if (low === null) errors.low_battery_voltage_mv = "Volts from 9.0 to 16.0.";
+  if (awake !== null && low !== null && low >= awake) errors.low_battery_voltage_mv = "Must be below the stay-awake voltage.";
+  if (awake !== null && awake !== saved.stay_awake_voltage_mv) patch.stay_awake_voltage_mv = awake;
+  if (low !== null && low !== saved.low_battery_voltage_mv) patch.low_battery_voltage_mv = low;
+  return { patch, errors };
 }
 
 /** "3 h 12 min", "42 min", "17 s". */

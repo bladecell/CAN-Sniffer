@@ -8,7 +8,7 @@
   import SettingRow from "./SettingRow.svelte";
 
   let { q, doc }: { q: string; doc: SettingsDoc } = $props();
-  const show = (row: RowMeta) => rowShown(q, GROUP.vehicle, row);
+  const show = (row: RowMeta) => rowShown(q, GROUP.can, row);
   const ID_LENGTHS = [
     { value: "std", label: "Standard, 11-bit" },
     { value: "ext", label: "Extended, 29-bit" },
@@ -41,7 +41,7 @@
   }
 </script>
 
-{#if anyShown(q, GROUP.vehicle, [ROW.bitrate, ROW.rxQueue, ROW.txQueue, ROW.hwFilter])}
+{#if anyShown(q, GROUP.can, [ROW.bitrate, ROW.rxQueue, ROW.txQueue, ROW.hwFilter])}
 <div class="st-sec">
   <h2>Bus</h2>
   <div class="st-list">
@@ -77,7 +77,7 @@
       </SettingRow>
     {/if}
     {#if hwDraft && show(ROW.hwFilter)}
-      <SettingRow title={ROW.hwFilter.title} hint="Takes effect after a restart. Frames the controller rejects never reach the CAN Bus page or the poller." error={built.errors.mfilter_cfg}>
+      <SettingRow inline title={ROW.hwFilter.title} hint="Takes effect after a restart. Frames the controller rejects never reach the CAN Bus page or the poller." error={built.errors.mfilter_cfg}>
         <Switch label="Filter on" checked={hwDraft.on} onchange={(v) => (hwEdits.on = v)} />
       </SettingRow>
       {#if hwDraft.on}

@@ -131,3 +131,15 @@ describe("priority levels", () => {
     expect(priorityEnabled(16)).toBe(true);
   });
 });
+
+describe("parseInterval", () => {
+  test("typed intervals", async () => {
+    const { parseInterval } = await import("./pollRate");
+    expect(parseInterval("static")).toBe(0);
+    expect(parseInterval("0")).toBe(0);
+    expect(parseInterval("250")).toBe(250);
+    expect(parseInterval("1.5 s")).toBe(1500);
+    expect(parseInterval("10 s")).toBe(10000);
+    for (const t of ["", "5", "15", "20 s", "abc"]) expect(parseInterval(t)).toBeNull();
+  });
+});

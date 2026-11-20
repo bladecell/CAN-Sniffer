@@ -1,4 +1,5 @@
 // Send-tab input checks. Hostile input is refused here too: the firmware checks again, and nothing is sent on a failure.
+import { parseDurationMs } from "$lib/duration";
 
 export const SEND_MAX_FRAMES = 32;
 export const SEND_MIN_PERIOD_MS = 10;
@@ -94,6 +95,12 @@ export function periodKey(ms: number, key: string): number | undefined {
   return next[key];
 }
 
+/** A typed period in ms ("250", "1.5 s", "2 min"), clamped to the allowed range. Null when it is not a duration. */
+export function parsePeriod(text: string): number | null {
+  const ms = parseDurationMs(text);
+  return ms === null ? null : clamp(ms, SEND_MIN_PERIOD_MS, SEND_MAX_PERIOD_MS);
+}
+
 export function periodBrief(ms: number): string {
   if (ms >= 3_600_000) return "1 h";
   if (ms >= 60_000) return `${+(ms / 60_000).toFixed(2)} min`;
@@ -136,6 +143,14 @@ export function repeatKey(n: number, key: string): number | undefined {
     End: 0,
   };
   return next[key];
+}
+
+/** A typed repeat count: "once", "endless" or 0 (Endless on the wire), or a whole number clamped to 1 to 65535. Null otherwise. */
+export function parseRepeat(text: string): number | null {
+  const t = text.trim().toLowerCase().replace(/\s*(times|rounds|x)$/, "");
+  if (t === "endless" || t === "0") return 0;
+  if (t === "once") return 1;
+  return /^\d{1,6}$/.test(t) ? clamp(Number(t), 1, SEND_MAX_REPEAT) : null;
 }
 
 export function repeatBrief(n: number): string {

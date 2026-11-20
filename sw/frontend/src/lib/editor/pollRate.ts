@@ -1,5 +1,7 @@
 /** Poll interval slider and priority levels for the PID editor. Pure, so it is unit-tested (pollRate.test.ts). */
 
+import { parseDurationMs } from "$lib/duration";
+
 export const STATIC_MS = 0;
 /** The slider floor, the same as MIN_PID_INTERVAL. */
 export const SLIDER_MIN_MS = 16;
@@ -110,4 +112,12 @@ export function pageUp(ms: number): number {
 export function pageDown(ms: number): number {
   if (ms === 0) return STATIC_MS;
   return [...LADDER_MS].reverse().find((s) => s < ms) ?? STATIC_MS;
+}
+
+/** A typed interval: "static" or 0, or a duration from 16 ms to 10 s. Null when it is neither. */
+export function parseInterval(text: string): number | null {
+  if (/^static$/i.test(text.trim())) return STATIC_MS;
+  const ms = parseDurationMs(text);
+  if (ms === null) return null;
+  return ms === 0 ? STATIC_MS : ms >= SLIDER_MIN_MS && ms <= SLIDER_MAX_MS ? ms : null;
 }

@@ -1,0 +1,160 @@
+/* Shared look of every slider (PosSlider, RangeSlider): a bar with a fill, tick dots, round thumbs, a readout and a scale line under it. Global classes, imported by the components. */
+.sld-pad {
+  position: relative;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: var(--ctl-h);
+  border-radius: var(--r-ctl);
+  background: var(--ctl);
+  touch-action: none;
+  user-select: none;
+  cursor: pointer;
+}
+.sld-pad:focus-visible,
+.sld-thumb:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+.sld-thumb:focus-visible {
+  outline-offset: 5px;
+}
+.sld-track {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  margin: 0 18px;
+}
+.sld-track::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 3px;
+  background: var(--ctl-sub);
+  opacity: 0.4;
+}
+.sld-stop {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -18px;
+  width: calc(12% + 18px);
+  border-radius: var(--r-xs);
+  background: repeating-linear-gradient(135deg, transparent 0 3px, var(--ctl-sub) 3px 4px);
+  opacity: 0.6;
+}
+.sld-stop.left {
+  right: auto;
+  left: -18px;
+}
+.sld.end .sld-stop {
+  opacity: 1;
+}
+.sld-fill {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 3px;
+  background: var(--accent);
+}
+.sld-tick {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  background: var(--ctl-sub);
+}
+.sld-tick.on {
+  background: var(--accent);
+}
+.sld-thumb {
+  position: absolute;
+  top: 50%;
+  width: 26px;
+  height: 26px;
+  margin: -13px 0 0 -13px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px var(--ctl);
+}
+.sld.end .sld-thumb {
+  background: var(--ctl-text);
+}
+.sld-readout {
+  flex: none;
+  width: 80px;
+  padding-right: 14px;
+  text-align: right;
+  font-weight: 800;
+  font-size: 0.9375rem;
+  white-space: nowrap;
+}
+/* Typed readout: a bare input. `:root` outranks Pico's input rules (fill, 100% width, height, padding, margin). */
+:root .sld .sld-edit {
+  flex: none;
+  box-sizing: border-box;
+  width: 80px;
+  height: auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0 14px 0 0;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: none;
+  background-image: none;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  cursor: text;
+}
+:root .sld .sld-edit.first {
+  padding: 0 0 0 14px;
+  text-align: left;
+}
+:root .sld .sld-edit:hover,
+:root .sld .sld-edit:focus,
+:root .sld .sld-edit:focus-visible {
+  outline: none;
+  background: none;
+  box-shadow: none;
+}
+.sld.bad .sld-pad {
+  outline: 2px solid var(--crit);
+  outline-offset: 0;
+}
+.sld-readout.first {
+  padding: 0 0 0 14px;
+  text-align: left;
+}
+.sld-scale {
+  position: relative;
+  height: 18px;
+  margin: 0 80px 0 18px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+.sld-scale span {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.sld-scale .l {
+  transform: none;
+}
+.sld-scale .r {
+  transform: translateX(-100%);
+}

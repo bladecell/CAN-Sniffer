@@ -4,6 +4,9 @@ import {
   GROUP_IDS,
   buildCanPatch,
   buildHwFilterPatch,
+  buildSleepPatch,
+  sleepDraft,
+  parseVolts,
   hwFilterDraft,
   hwFilterPreview,
   buildPidPathPatch,
@@ -28,8 +31,8 @@ import {
 
 const doc: SettingsDoc = {
   wifi: { ssid: "CAN-Sniffer", channel: 6, mode: 2, sta_ssid: "" },
-  can: { bitrate: 500000, rx_queue_size: 20, tx_queue_depth: 20 },
-  system: { pid_def_path: "/sdcard/pids/pid.json" },
+  can: { bitrate: 500000, rx_queue_size: 20, tx_queue_depth: 20, hwFilter: null, debug: null },
+  system: { pid_def_path: "/sdcard/pids/pid.json", power: null },
 };
 
 describe("search", () => {
@@ -130,16 +133,28 @@ describe("PATCH builders", () => {
 describe("wire guards", () => {
   const raw = {
     wifi: { ssid: "CAN-Sniffer", channel: 6, mode: 2, sta_ssid: "", password: "never returned" },
-    can: { bitrate: 500000, rx_queue_size: 20, tx_queue_depth: 20, filter: [] },
+    can: { bitrate: 500000, rx_queue_size: 20, tx_queue_depth: 20, filter: [], debug: true },
     system: { pid_def_path: "/sdcard/pid.json", dtc_desc_path: "/sdcard/dtc.bin" },
   };
 
   test("parseSettingsDoc keeps the fields the screen uses", () => {
     expect(parseSettingsDoc(raw)).toEqual({
       wifi: { ssid: "CAN-Sniffer", channel: 6, mode: 2, sta_ssid: "" },
-      can: { bitrate: 500000, rx_queue_size: 20, tx_queue_depth: 20, hwFilter: null },
-      system: { pid_def_path: "/sdcard/pid.json" },
+      can: { bitrate: 500000, rx_queue_size: 20, tx_queue_depth: 20, hwFilter: null, debug: true },
+      system: { pid_def_path: "/sdcard/pid.json", power: null },
     });
+  });
+
+  test("power fields are read when present and the sleep patch sends only changes", () => {
+    const power = { sleep_enabled: true, stay_awake_voltage_mv: 13200, low_battery_voltage_mv: 11400 };
+    const d = parseSettingsDoc({ ...raw, system: { ...raw.system, ...power } });
+    expect(d?.system.power).toEqual(power);
+    expect(buildSleepPatch(power, sleepDraft(power))).toEqual({ patch: {}, errors: {} });
+    expect(buildSleepPatch(power, { enabled: false, awake: "13,5", low: "11.4" }).patch).toEqual({ sleep_enabled: false, stay_awake_voltage_mv: 13500 });
+    expect(buildSleepPatch(power, { enabled: true, awake: "12", low: "12" }).errors.low_battery_voltage_mv).toBeDefined();
+    expect(buildSleepPatch(power, { enabled: true, awake: "17", low: "abc" }).errors).toHaveProperty("stay_awake_voltage_mv");
+    expect(parseVolts("9")).toBe(9000);
+    expect(parseVolts("8.9")).toBeNull();
   });
 
   test("hardware filter is read when the firmware sends it, and the patch sends only changes", () => {

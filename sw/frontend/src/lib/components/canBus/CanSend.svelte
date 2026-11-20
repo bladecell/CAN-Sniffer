@@ -3,14 +3,14 @@
   import Icon from "$lib/Icon.svelte";
   import SidebarHint from "$lib/components/telemetry/SidebarHint.svelte";
   import Switch from "$lib/components/Switch.svelte";
-  import PosSlider from "$lib/components/PosSlider.svelte";
+  import RangeSlider from "$lib/components/RangeSlider.svelte";
   import { auth } from "$lib/auth.svelte";
   import { firmwareApi } from "$lib/firmwareApi.svelte";
   import { parseJsonResponse } from "$lib/api";
   import { canBus } from "$lib/canBus/canBusStore.svelte";
   import ItemList from "$lib/components/dashboard/ItemList.svelte";
   import {
-    PERIOD_TICKS, REPEAT_TICKS, SEND_MAX_FRAMES, SEQUENCE_MAX_BYTES, idHex, moveAt, parseSendData, parseSendId, parseSequence, periodBrief, periodKey, periodToPos, planBody, posToPeriod, posToRepeat,
+    PERIOD_TICKS, REPEAT_STOP, REPEAT_TICKS, SEND_MAX_PERIOD_MS, SEND_MAX_REPEAT, SEND_MIN_PERIOD_MS, parsePeriod, parseRepeat, SEND_MAX_FRAMES, SEQUENCE_MAX_BYTES, idHex, moveAt, parseSendData, parseSendId, parseSequence, periodBrief, periodKey, periodToPos, planBody, posToPeriod, posToRepeat,
     reorderBy, repeatBrief, repeatKey, repeatToPos, sequenceSummary, serializeSequence, type SendFrame, type Sequence,
   } from "$lib/canBus/canSend";
   import { SEQ_DIR, isSeqName, parseSeqList, seqPath } from "$lib/canBus/canSequenceFiles";
@@ -411,54 +411,48 @@
       <h3 id="cs-th">Timing</h3>
       <div>
         <span class="lab" id="cs-pl">Period between frames</span>
-        <PosSlider
-          labelId="cs-pl"
-          pos={periodToPos(period)}
-          readout={periodBrief(period)}
-          min={10}
-          max={3600000}
-          now={period}
-          text="{period} milliseconds"
-          ticks={PERIOD_TICKS.map((t) => ({ pos: periodToPos(t), on: period >= t }))}
+        <RangeSlider
+          labelIds={["cs-pl"]}
+          values={[period]}
+          min={SEND_MIN_PERIOD_MS}
+          max={SEND_MAX_PERIOD_MS}
+          toPos={periodToPos}
+          fromPos={posToPeriod}
+          keyFor={(_, v, k) => periodKey(v, k)}
+          format={periodBrief}
+          valueText={(v) => `${v} milliseconds`}
+          parse={parsePeriod}
+          ticks={PERIOD_TICKS}
           scale={[
-            { pos: 0, text: "10 ms", edge: "left" },
-            { pos: periodToPos(1000), text: "1 s" },
-            { pos: periodToPos(60000), text: "1 min" },
-            { pos: 1, text: "1 h", edge: "right" },
+            { value: 10, text: "10 ms", edge: "left" },
+            { value: 1000, text: "1 s" },
+            { value: 60000, text: "1 min" },
+            { value: 3600000, text: "1 h", edge: "right" },
           ]}
-          onPos={(x) => (period = posToPeriod(x))}
-          onKey={(k) => {
-            const n = periodKey(period, k);
-            if (n !== undefined) period = n;
-            return n !== undefined;
-          }}
+          onChange={([v]) => (period = v)}
         />
       </div>
       <div>
         <span class="lab" id="cs-rl">Repeat the sequence</span>
-        <PosSlider
-          labelId="cs-rl"
-          pos={repeatToPos(repeat)}
-          readout={repeatBrief(repeat)}
+        <RangeSlider
+          labelIds={["cs-rl"]}
+          values={[repeat]}
           min={0}
-          max={65535}
-          now={repeat}
-          text={repeat === 0 ? "Endless" : repeatBrief(repeat)}
-          ticks={REPEAT_TICKS.map((t) => ({ pos: repeatToPos(t), on: repeat === 0 || repeat >= t }))}
+          max={SEND_MAX_REPEAT}
+          toPos={repeatToPos}
+          fromPos={posToRepeat}
+          keyFor={(_, v, k) => repeatKey(v, k)}
+          format={repeatBrief}
+          parse={parseRepeat}
+          ticks={REPEAT_TICKS}
           scale={[
-            { pos: 0, text: "Once", edge: "left" },
-            { pos: repeatToPos(100), text: "100" },
-            { pos: repeatToPos(1000), text: "1k" },
-            { pos: 1, text: "Endless", edge: "right" },
+            { value: 1, text: "Once", edge: "left" },
+            { value: 100, text: "100" },
+            { value: 1000, text: "1k" },
+            { value: 0, text: "Endless", edge: "right" },
           ]}
-          stop
-          stopOn={repeat === 0}
-          onPos={(x) => (repeat = posToRepeat(x))}
-          onKey={(k) => {
-            const n = repeatKey(repeat, k);
-            if (n !== undefined) repeat = n;
-            return n !== undefined;
-          }}
+          stop={{ side: "right", share: REPEAT_STOP, on: repeat === 0 }}
+          onChange={([v]) => (repeat = v)}
         />
       </div>
       <div class="chk">
