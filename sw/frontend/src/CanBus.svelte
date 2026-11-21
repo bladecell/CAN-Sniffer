@@ -76,7 +76,9 @@
   const live = $derived(connectionStore.connected && canBus.counters.streaming);
   const statusText = $derived(
     !connectionStore.connected
-      ? "Not connected"
+      ? connectionStore.sleeping
+        ? "Sleeping"
+        : "Not connected"
       : !canBus.logging
         ? "Not logging"
         : !canBus.counters.streaming

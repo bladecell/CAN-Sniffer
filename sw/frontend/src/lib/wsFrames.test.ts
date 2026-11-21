@@ -84,3 +84,13 @@ describe("recorder state frame", () => {
     expect(parseWsFrame(badLen.buffer)).toBeNull();
   });
 });
+
+describe("sleep notice frame", () => {
+  test("parses the 3 byte 0x05 frame and rejects other sizes, lengths and reasons", () => {
+    const bytes = new Uint8Array([0x05, 1, 1]);
+    expect(parseWsFrame(bytes.buffer)).toEqual({ kind: "sleep" });
+    expect(parseWsFrame(bytes.slice(0, 2).buffer)).toBeNull();
+    expect(parseWsFrame(new Uint8Array([0x05, 2, 1]).buffer)).toBeNull();
+    expect(parseWsFrame(new Uint8Array([0x05, 1, 9]).buffer)).toBeNull();
+  });
+});

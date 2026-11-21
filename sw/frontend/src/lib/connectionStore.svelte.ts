@@ -21,6 +21,8 @@ export const COMMANDS = { START_LOG: 0xa0, STOP_LOG: 0xa1, PING_REQUEST: 0xa2, P
 export type MessageListener = (update: { pid: number; value: number; timestamp: number }) => void;
 export class ConnectionStore {
     connected = $state(false);
+    /** The device said it is going to sleep (0x05). Stays set through the drop until the socket opens again. */
+    sleeping = $state(false);
     pids = livePids;
     listeners = new Set<MessageListener>();
     isStreaming = $state(false);
@@ -127,6 +129,7 @@ export class ConnectionStore {
             console.log("WebSocket Connected");
             this.clearConnectTimer();
             this.connected = true;
+            this.sleeping = false;
             this.upSince = Date.now();
             this.outageAlerted = false;
             // A new session starts with the stream off.
@@ -213,7 +216,7 @@ export class ConnectionStore {
         if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
         this.reconnectTimeout = null;
         if (!this.intentionalDisconnect && this.session === "active") {
-            if (!this.outageAlerted && !silent) {
+            if (!this.outageAlerted && !silent && !this.sleeping) {
                 this.outageAlerted = true;
                 alertStore.add("WebSocket Disconnected, reconnecting...", "error");
             }
@@ -302,6 +305,10 @@ export class ConnectionStore {
             case "rawBatch":
             case "rawStats":
                 for (const listener of this.rawListeners) listener(frame);
+                break;
+            case "sleep":
+                this.sleeping = true;
+                alertStore.add("Device is sleeping. It reconnects when it wakes.", "info");
                 break;
             case "pong":
                 break;

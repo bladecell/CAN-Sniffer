@@ -15,6 +15,9 @@ struct PIDData_t;
 #define MSG_TYPE_PID 0x02
 #define MSG_TYPE_CAN_STATUS 0x03
 #define MSG_TYPE_RECORDER 0x04  // = recorder_http::kMsgTypeRecorder
+#define MSG_TYPE_SLEEP 0x05
+#define SLEEP_NOTICE_PACKET_SIZE 3
+#define SLEEP_NOTICE_REASON_SLEEP 1
 
 #define PID_STREAM_PACKET_SIZE 20
 #define CAN_STATUS_PACKET_SIZE 12

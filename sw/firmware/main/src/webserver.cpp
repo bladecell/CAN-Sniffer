@@ -2095,6 +2095,19 @@ void ws_send_recorder_state()
     }
 }
 
+// Tells the client the device is about to sleep, so it can show Sleeping instead of a plain drop. Best effort.
+static void ws_send_sleep_notice()
+{
+    uint8_t          packet[SLEEP_NOTICE_PACKET_SIZE] = {MSG_TYPE_SLEEP, SLEEP_NOTICE_PACKET_SIZE - 2, SLEEP_NOTICE_REASON_SLEEP};
+    httpd_ws_frame_t ws_frame                         = {.final      = true,
+                                                         .fragmented = false,
+                                                         .type       = HTTPD_WS_TYPE_BINARY,
+                                                         .payload    = packet,
+                                                         .len        = SLEEP_NOTICE_PACKET_SIZE,
+                                                         .left_len   = 0};
+    AsyncWebServer::getInstance().wsBroadcast(&ws_frame);
+}
+
 // Any socket that closes (close frame or not) may have been the session socket. Runs in the httpd task.
 static void ws_socket_closed(int fd)
 {
@@ -2310,6 +2323,13 @@ esp_err_t setup_web_server()
 esp_err_t stop_web_server()
 {
     constexpr int kTaskExitPolls = 100;  // 10 ms each
+
+    // A stop out of STOPPING is the sleep path (ERROR recovery stops from ERROR). The short wait lets httpd send the frame.
+    if (SUPERVISOR::getInstance().get_state() == supervisor::State::STOPPING)
+    {
+        ws_send_sleep_notice();
+        vTaskDelay(pdMS_TO_TICKS(150));
+    }
 
     (void)can_capture_service::stop();  // a capture reads the raw stream; it ends first (best effort, it ends by itself too)
 

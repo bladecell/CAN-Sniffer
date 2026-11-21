@@ -106,6 +106,8 @@
   <div class="st-chips">
     {#if connectionStore.connected}
       <span class="chip c-ok"><Icon name="circle-check" size={14} />Connected</span>
+    {:else if connectionStore.sleeping}
+      <span class="chip"><Icon name="circle" size={14} />Sleeping</span>
     {:else}
       <span class="chip"><Icon name="circle" size={14} />Not connected</span>
     {/if}

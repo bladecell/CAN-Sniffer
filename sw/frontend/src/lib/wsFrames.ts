@@ -5,6 +5,7 @@ export type WsFrame =
   | { kind: "pid"; pid: number; value: number; lastUpdated: number; rate: number; isSupported: boolean; isValid: boolean }
   | { kind: "canStatus"; state: number; utilization: number; batteryVoltage: number; busConnected: boolean }
   | { kind: "recorder"; state: RecorderState; trip: number; rows: number; dropped: number; hasError: boolean }
+  | { kind: "sleep" }
   | { kind: "pong" }
   | ({ kind: "rawBatch" } & RawBatch)
   | ({ kind: "rawStats" } & RawStats);
@@ -34,6 +35,7 @@ const RAW_RECORD_HEADER_BYTES = 7;
 export const PID_FRAME_BYTES = 20;
 export const CAN_STATUS_FRAME_BYTES = 12;
 export const RECORDER_FRAME_BYTES = 16;
+export const SLEEP_FRAME_BYTES = 3;
 const RECORDER_STATES: RecorderState[] = ["idle", "recording", "stopping", "error"];
 
 /** Returns null for anything that is not an exactly sized, known frame. */
@@ -68,6 +70,11 @@ export function parseWsFrame(data: unknown): WsFrame | null {
     const state = RECORDER_STATES[view.getUint8(2)];
     if (view.byteLength !== RECORDER_FRAME_BYTES || view.getUint8(1) !== RECORDER_FRAME_BYTES - 2 || state === undefined) return null;
     return { kind: "recorder", state, trip: view.getUint32(3, true), rows: view.getUint32(7, true), dropped: view.getUint32(11, true), hasError: view.getUint8(15) !== 0 };
+  }
+  // 0x05: the device is about to sleep. Reason 1 is the only one; any other value is ignored.
+  if (type === 0x05) {
+    if (view.byteLength !== SLEEP_FRAME_BYTES || view.getUint8(1) !== SLEEP_FRAME_BYTES - 2 || view.getUint8(2) !== 1) return null;
+    return { kind: "sleep" };
   }
   if (type === 0xa3) return view.byteLength === 1 ? { kind: "pong" } : null;
   if (type === 0x10) {
