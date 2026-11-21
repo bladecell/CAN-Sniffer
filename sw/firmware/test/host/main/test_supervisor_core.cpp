@@ -50,6 +50,7 @@ struct Fake
   size_t count = 0;
   bool connected = false;
   bool alive = false;
+  bool buttonWake = false;
   float volts = 12.0f;
   static thread_local int depth;
   std::mutex mutex;
@@ -169,7 +170,8 @@ struct Fake
             static_cast<Fake*>(p)->uncleanReported[i] = true;
       },
       [](void* p) { auto& f = *static_cast<Fake*>(p); ++f.policyReads; return f.storedPower; },
-      [](void* p) { return static_cast<Fake*>(p)->clockMs; }};
+      [](void* p) { return static_cast<Fake*>(p)->clockMs; },
+      [](void* p, uint32_t ms) { auto& f = *static_cast<Fake*>(p); f.elapsedMs += ms; return f.buttonWake; }};
   }
   esp_err_t start() { return core.init({this, init<0>}); }
   void boot()
@@ -821,6 +823,17 @@ void test_dead_bus_sleep_order_and_voltage_limits()
     TEST_ASSERT_EQUAL_UINT64(volts == 11.3f ? 60000000ULL : 10000000ULL, f.lightUs);
     TEST_ASSERT_EQUAL_INT(static_cast<int>(State::SLEEPING), static_cast<int>(f.core.state()));
   }
+}
+
+void test_button_wake_starts_everything_without_probing_a_dead_bus()
+{
+  Fake f;
+  f.sleepReady();
+  f.alive = false;
+  f.buttonWake = true;
+  f.core.step();
+  f.expect({201, 104, 4, 202, 204, 205, 5, 3, 6, 7, 8});
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(State::NOT_CONNECTED), static_cast<int>(f.core.state()));
 }
 
 void test_alive_wake_order_optional_sd_and_frozen_boot_status()
@@ -1784,6 +1797,7 @@ extern "C" void run_supervisor_core_tests()
   RUN_TEST(test_idle_threshold_reset_and_running_bus_guard);
   RUN_TEST(test_shutdown_order_and_each_provider_barrier);
   RUN_TEST(test_dead_bus_sleep_order_and_voltage_limits);
+  RUN_TEST(test_button_wake_starts_everything_without_probing_a_dead_bus);
   RUN_TEST(test_alive_wake_order_optional_sd_and_frozen_boot_status);
   RUN_TEST(test_optional_wake_failure_and_required_success_dependents);
   RUN_TEST(test_wake_failures_do_not_start_later_components);

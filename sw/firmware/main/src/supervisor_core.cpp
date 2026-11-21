@@ -410,7 +410,16 @@ void Core::sleepCycle()
         enterError();
         return;
     }
-    ops_.delayMs(ops_.context, static_cast<uint32_t>(us / 1000));
+    const uint32_t sleepMs = static_cast<uint32_t>(us / 1000);
+    bool           pressed = false;
+    if (ops_.waitWake != nullptr)
+    {
+        pressed = ops_.waitWake(ops_.context, sleepMs);
+    }
+    else
+    {
+        ops_.delayMs(ops_.context, sleepMs);
+    }
     (void)initialize(registry_.role(Role::BATTERY));
     const esp_err_t finishError = ops_.finishSleep(ops_.context);
     if (finishError != ESP_OK)
@@ -431,7 +440,8 @@ void Core::sleepCycle()
         enterError();
         return;
     }
-    if (ops_.probeBus(ops_.context))
+    // A button wake brings the web server up even when the bus is dead: the owner is standing at the device.
+    if (pressed || ops_.probeBus(ops_.context))
     {
         for (size_t i = 0; i < registry_.size(); ++i)
         {

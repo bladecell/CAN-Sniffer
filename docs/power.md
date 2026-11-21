@@ -5,9 +5,9 @@ The supervisor keeps the device from draining the car battery when the car is of
 ## As built
 
 ### What exists
-- Normal sleep uses **automatic light sleep**, driven by a timer. ERROR uses timer deep sleep and reboots on wake. No GPIO wake, IMU code, ignition sense or modem.
+- Normal sleep uses **automatic light sleep**, driven by a timer. ERROR uses timer deep sleep and reboots on wake. The BOOT button (GPIO0) also wakes the light sleep. No IMU code, ignition sense or modem.
 - Power management is configured at startup: CPU 240 MHz max, 40 MHz min, `light_sleep_enable = true` (`CONFIG_PM_ENABLE=y`). Application wiring creates an `ESP_PM_NO_LIGHT_SLEEP` lock, private to that module, and holds it for the whole awake time. The production-used `SleepTransaction` configures the timer before releasing it. Timer/release failure enters ERROR without an acquire; successful release is followed by exactly one acquire attempt, after the delay or on battery-cleanup failure. A restore failure is reported and enters ERROR without retrying or starting providers. Null-handle wrappers remain successful no-ops. There is no explicit light-sleep call/error result: idle automatic sleep follows `vTaskDelay`.
-- The only wake source is the timer. The sleeping task just calls `vTaskDelay(sleep time)`; the FreeRTOS idle task then enters light sleep, and the same delay brings the device back. `esp_sleep_enable_timer_wakeup()` is also called with the same time.
+- Wake sources: the timer and the BOOT button (GPIO0, see below). The sleeping task waits on a semaphore with the sleep time as timeout (`sleepWaitForButton`, `Operations::waitWake`); the FreeRTOS idle task then enters light sleep, and the timeout brings the device back unless the button does first. `esp_sleep_enable_timer_wakeup()` is also called with the same time.
 
 ### States (`SUPERVISOR::State`, shown as a number by `GET /api/v1/system`)
 ```
@@ -103,7 +103,7 @@ Not deinitialized before sleep, and have no `deinit()`: Settings (NVS), power ma
 - `main()` keeps polling the supervisor state every 250 ms until it is RUNNING, including while the device sleeps.
 
 ### BOOT button (GPIO0) and sleep
-- The button is not a wake source. The only wake source is the timer, and the web server (the only user of the button) is down while the device sleeps, so a press then has no effect and nothing is latched.
+- A press while the device is in light sleep wakes it at once. The supervisor borrows GPIO0 for the wait (input, pull-up, low-level wakeup plus an ISR that gives the semaphore) and releases it afterwards; the web server, the pin's usual owner, is down then. A button wake skips the dead-bus check: CAN, OBD, Wi-Fi and the web server start and the state is NOT_CONNECTED, so the UI is reachable on a bench or with the ignition off. The normal 60 s inactivity count then applies, so the device sleeps again unless the bus comes alive or a hold is set. The press that woke the device is not a claim or recovery press (the driver ignores a button that is down at its init until released once). If the pin cannot be set up, the timer alone wakes the device.
 - It lives and dies with the web server: initialised at the end of `setup_web_server()`, released in `stop_web_server()`. Every wake that brings the web server back also re-initialises it, and "a press since boot" means a press since that init (`button_last_press_us()` is 0 after init).
 - While idle the button costs nothing: no timer, no polling; the task blocks on a notification and the pin interrupt (both edges) is the only wake-up. It does not hold a PM lock, and the supervisor's `ESP_PM_NO_LIGHT_SLEEP` lock is held while awake anyway.
 - GPIO0 is a strapping pin: holding it low at reset enters download mode. The driver only reads it (input, internal pull-up) and never drives it. A button that is already down when the driver starts (held through a reset or a wake) is ignored until it has been released once, so it can neither confirm a claim nor start a recovery hold.

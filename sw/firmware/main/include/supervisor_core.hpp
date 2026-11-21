@@ -58,6 +58,8 @@ struct Operations
   power_settings::Config (*powerSettings)(void*);
   // Monotonic milliseconds (wraps at 2^32), for hold expiry. Null: holds never expire.
   uint32_t (*nowMs)(void*) = nullptr;
+  // Sleeps for up to `ms` and returns true when a button press ended it early. Null: plain delayMs, timer wake only.
+  bool (*waitWake)(void*, uint32_t) = nullptr;
 };
 
 class Core

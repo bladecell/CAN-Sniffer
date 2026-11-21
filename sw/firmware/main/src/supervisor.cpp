@@ -23,6 +23,9 @@
 #include "esp_mac.h"
 #include "esp_sleep.h"
 #include "esp_system.h"
+#include "driver/gpio.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "esp_timer.h"
 #include "input_limits.hpp"
 #include "json_budget.hpp"
@@ -52,6 +55,60 @@ supervisor::SleepTransaction sleepTransaction({
     [](void*, uint64_t us) { return esp_sleep_enable_timer_wakeup(us); },
     [](void*) { return application_components::releasePowerLock(); },
     [](void*) { return application_components::acquirePowerLock(); }});
+
+// The light sleep ends at the timer or when BOOT (GPIO0, active low) is pressed. The web server, which owns the pin the
+// rest of the time, is stopped here, so the pin is borrowed for the wait and handed back unconfigured.
+SemaphoreHandle_t sleepButtonSem;
+void IRAM_ATTR    onSleepButton(void*)
+{
+    BaseType_t woken = pdFALSE;
+    xSemaphoreGiveFromISR(sleepButtonSem, &woken);
+    if (woken == pdTRUE)
+    {
+        portYIELD_FROM_ISR();
+    }
+}
+
+bool sleepWaitForButton(uint32_t ms)
+{
+    constexpr gpio_num_t kPin = GPIO_NUM_0;
+    if (sleepButtonSem == nullptr)
+    {
+        sleepButtonSem = xSemaphoreCreateBinary();
+    }
+    const gpio_config_t cfg = {.pin_bit_mask = 1ULL << kPin,
+                               .mode         = GPIO_MODE_INPUT,
+                               .pull_up_en   = GPIO_PULLUP_ENABLE,
+                               .pull_down_en = GPIO_PULLDOWN_DISABLE,
+                               .intr_type    = GPIO_INTR_DISABLE};
+    bool armed = sleepButtonSem != nullptr && gpio_config(&cfg) == ESP_OK;
+    if (armed)
+    {
+        const esp_err_t svc = gpio_install_isr_service(0);  // shared service: ESP_ERR_INVALID_STATE means already installed
+        armed = (svc == ESP_OK || svc == ESP_ERR_INVALID_STATE) && gpio_isr_handler_add(kPin, onSleepButton, nullptr) == ESP_OK;
+        if (armed && (gpio_wakeup_enable(kPin, GPIO_INTR_LOW_LEVEL) != ESP_OK || esp_sleep_enable_gpio_wakeup() != ESP_OK))
+        {
+            (void)gpio_isr_handler_remove(kPin);
+            armed = false;
+        }
+    }
+    if (!armed)
+    {
+        ESP_LOGW(TAG, "BOOT wake unavailable, timer only");
+        vTaskDelay(pdMS_TO_TICKS(ms));
+        return false;
+    }
+    (void)xSemaphoreTake(sleepButtonSem, 0);  // drop a stale give
+    const bool pressed = xSemaphoreTake(sleepButtonSem, pdMS_TO_TICKS(ms)) == pdTRUE;
+    (void)gpio_wakeup_disable(kPin);
+    (void)gpio_intr_disable(kPin);
+    (void)gpio_isr_handler_remove(kPin);
+    if (pressed)
+    {
+        ESP_LOGI(TAG, "Woken by the BOOT button");
+    }
+    return pressed;
+}
 
 // SDCard accepts either leading-slash form for a relative path and one trailing
 // slash.  Normalize those accepted spellings before comparing copy endpoints.
@@ -153,7 +210,8 @@ supervisor::Operations SUPERVISOR::operations(SUPERVISOR* self)
             [](void*, const char* name, esp_err_t error, bool initializing)
             { ESP_LOGI(TAG, "%s %s: %s", initializing ? "Init" : "Deinit", name, esp_err_to_name(error)); },
             [](void* p) { return static_cast<SUPERVISOR*>(p)->_config.power; },
-            [](void*) { return static_cast<uint32_t>(pdTICKS_TO_MS(xTaskGetTickCount())); }};
+            [](void*) { return static_cast<uint32_t>(pdTICKS_TO_MS(xTaskGetTickCount())); },
+            [](void*, uint32_t ms) { return sleepWaitForButton(ms); }};
 }
 
 esp_err_t SUPERVISOR::init(const supervisor::SettingsBootstrap& bootstrap)
