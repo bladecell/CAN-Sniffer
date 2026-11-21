@@ -6,6 +6,8 @@
   import { safeHexColor } from "$lib/color";
   import { footerActions, groupPids, pidHex, pressRow, removeRows } from "$lib/telemetryView";
   import Icon from "$lib/Icon.svelte";
+  import { slide } from "svelte/transition";
+  import { accordion } from "$lib/components/accordion";
   import { swipeRow } from "./swipeRow";
   import PidCard from "./PidCard.svelte";
   import SidebarHint from "./SidebarHint.svelte";
@@ -183,13 +185,13 @@
           {@render head(group.key, group.title, group.items.length, groupIcon[group.key])}
         </h3>
         {#if isOpen(group.key)}
-          <div class="sb-gl" id="grpl-{group.key}">
+          <div class="sb-gl" id="grpl-{group.key}" transition:slide={accordion()}>
             {#if group.sections}
               {#each group.sections as section (section.key)}
                 <section class="sb-group">
                   <h4 style="margin: 0; font-size: inherit;">{@render head(section.key, section.title, section.items.length)}</h4>
                   {#if isOpen(section.key)}
-                    <div id="grpl-{section.key}">{@render cards(section.items)}</div>
+                    <div id="grpl-{section.key}" transition:slide={accordion()}>{@render cards(section.items)}</div>
                   {/if}
                 </section>
               {/each}

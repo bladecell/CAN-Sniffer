@@ -4,7 +4,9 @@
 
 <script lang="ts" generics="T">
   import { tick, type Snippet } from "svelte";
+  import { slide } from "svelte/transition";
   import Icon from "$lib/Icon.svelte";
+  import { accordion } from "../accordion";
   import "./listDetail.css";
 
   interface Props {
@@ -96,6 +98,7 @@
             <div
               id="{uid}-panel-{i}"
               class="rv-inline"
+              transition:slide={accordion()}
               role="region"
               tabindex="-1"
               aria-labelledby="{uid}-row-{i}"

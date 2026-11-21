@@ -1,5 +1,7 @@
 <script lang="ts">
   import { tick, untrack } from "svelte";
+  import { slide } from "svelte/transition";
+  import { accordion } from "$lib/components/accordion";
   import Icon from "$lib/Icon.svelte";
   import Switch from "$lib/components/Switch.svelte";
   import Checkbox from "$lib/components/Checkbox.svelte";
@@ -211,7 +213,7 @@
             <Switch checked={rule.enabled !== false} aria-label="Enable {rule.name || 'rule'}" onchange={(on) => rulesStore.setEnabled(rule.id, on)} />
           {/if}
           {#if open}
-            <div class="rl-body" id="cr-body-{rule.id}" role="presentation" oninput={apply}>
+            <div class="rl-body" id="cr-body-{rule.id}" role="presentation" oninput={apply} transition:slide={accordion()}>
               <div>
                 <label class="lab" for="cr-nm-{rule.id}">Name</label>
                 <input id="cr-nm-{rule.id}" class="in" maxlength="40" bind:value={form.name} />

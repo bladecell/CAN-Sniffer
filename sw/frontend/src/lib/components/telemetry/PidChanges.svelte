@@ -5,6 +5,8 @@
   import { safeHexColor } from "$lib/color";
   import { definitionsToApply, pendingKind, pidHex, type PendingKind } from "$lib/telemetryView";
   import Icon from "$lib/Icon.svelte";
+  import { slide } from "svelte/transition";
+  import { accordion } from "$lib/components/accordion";
   import { swipeRow } from "./swipeRow";
   import SidebarHint from "./SidebarHint.svelte";
   import SidebarPanel from "./SidebarPanel.svelte";
@@ -162,7 +164,7 @@
             </button>
           </h3>
           {#if isOpen(section.kind)}
-            <ul class="sb-list" id="chg-{section.kind}">
+            <ul class="sb-list" id="chg-{section.kind}" transition:slide={accordion()}>
               {#each section.items as change (change.row)}
                 {@const hex = pidHex(change.pid, change.row.mode)}
                 <li class="sb-row" class:sel={isSelected(change.pid)} class:phone>

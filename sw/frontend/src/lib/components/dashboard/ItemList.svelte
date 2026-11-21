@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
-  import { cubicOut } from "svelte/easing";
   import { slide } from "svelte/transition";
+  import { accordion } from "$lib/components/accordion";
   import { dragHandle, dragHandleZone, type DndEvent } from "svelte-dnd-action";
   import Icon from "$lib/Icon.svelte";
   import { reduced } from "./flip";
@@ -49,7 +49,6 @@
   const shown = $derived(live ?? rows);
   const FLIP_MS = reduced() ? 0 : 150;
   // Opening and closing a row eases its height; the detail line and the body swap with the same slide, so the row does not jump.
-  const OPEN_MS = reduced() ? 0 : 130;
 
   const gripKey = (e: KeyboardEvent, i: number) => {
     const d = e.key === "ArrowUp" ? -1 : e.key === "ArrowDown" ? 1 : 0;
@@ -114,9 +113,9 @@
             </button>
           </div>
           {#if body && openId === r.id}
-            <div class="db-body" id="db-body-{r.id}" transition:slide|local={{ duration: OPEN_MS, easing: cubicOut }}>{@render body(r, i)}</div>
+            <div class="db-body" id="db-body-{r.id}" transition:slide={accordion()}>{@render body(r, i)}</div>
           {:else if r.detail}
-            <div class="db-sub" transition:slide|local={{ duration: OPEN_MS, easing: cubicOut }}>{r.detail}</div>
+            <div class="db-sub" transition:slide={accordion()}>{r.detail}</div>
           {/if}
         </li>
       {/each}

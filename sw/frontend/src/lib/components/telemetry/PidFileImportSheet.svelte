@@ -1,5 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import { slide } from "svelte/transition";
+  import { accordion } from "$lib/components/accordion";
   import { SvelteSet } from "svelte/reactivity";
   import Sheet from "$lib/components/Sheet.svelte";
   import { safeHexColor } from "$lib/color";
@@ -122,7 +124,8 @@
             </button>
           {/snippet}
           {#snippet after()}
-            <dl id="{uid}-d{def.pid}" class="imp-dl" hidden={!isOpen}>
+            {#if isOpen}
+            <dl id="{uid}-d{def.pid}" class="imp-dl" transition:slide={accordion()}>
               <div><dt>Mode</dt><dd>{getModeLabel(def.mode)} <span class="tel-mono">{hexByte(def.mode)}</span></dd></div>
               <div><dt>CAN ID</dt><dd class="tel-mono">0x{def.id.toString(16).toUpperCase()}</dd></div>
               <div><dt>PID</dt><dd class="tel-mono">{formatPid(def.pid)}</dd></div>
@@ -143,6 +146,7 @@
               <div><dt>Update interval</dt><dd>{def.update_interval_ms === 0 ? "Off" : `${def.update_interval_ms} ms`}</dd></div>
               <div><dt>Priority</dt><dd>{def.priority}</dd></div>
             </dl>
+            {/if}
           {/snippet}
         </PidCard>
       {/each}
@@ -205,9 +209,6 @@
     height: 14px;
     border-radius: 4px;
     background: var(--sw);
-  }
-  .imp-dl[hidden] {
-    display: none;
   }
   .imp-dl > div {
     display: grid;
