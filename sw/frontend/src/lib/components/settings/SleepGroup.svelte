@@ -3,6 +3,7 @@
   import Icon from "$lib/Icon.svelte";
   import Dialog from "$lib/components/Dialog.svelte";
   import { alertStore } from "$lib/alertStore.svelte";
+  import { connectionStore } from "$lib/connectionStore.svelte";
   import { parseJsonResponse } from "$lib/api";
   import { firmwareApi } from "$lib/firmwareApi.svelte";
   import { keepAwakeWatch } from "$lib/keepAwake.svelte";
@@ -36,6 +37,8 @@
   // Live status: GET /system is open, so it is polled while this tab is open. Null while the device does not answer (asleep or out of range).
   let live = $state<SystemStatus | null>(null);
   let holding = $state(false);
+  // The last answer is stale once the device says it is going to sleep (WS notice).
+  const asleep = $derived(connectionStore.sleeping);
   async function refresh() {
     try {
       live = await parseJsonResponse<SystemStatus>(await firmwareApi.system());
@@ -89,15 +92,15 @@
   <div class="st-list">
     {#if show(ROW.sleepState)}
       <SettingRow inline title={ROW.sleepState.title} hint="What the device is doing now. Refreshes every 2 s; no answer means it is asleep or out of range.">
-        <span class="st-val">{live ? supervisorStateText(live.state) : "No answer"}</span>
+        <span class="st-val">{asleep ? "Sleeping" : live ? supervisorStateText(live.state) : "No answer"}</span>
       </SettingRow>
     {/if}
     {#if show(ROW.batteryNow)}
       <SettingRow inline title={ROW.batteryNow.title} hint="Voltage on the OBD port, read by the device.">
-        <span class="st-val">{batteryText(live?.battery_voltage)}</span>
+        <span class="st-val">{batteryText(asleep ? undefined : live?.battery_voltage)}</span>
       </SettingRow>
     {/if}
-    {#if show(ROW.keepAwake) && live && typeof live.keep_awake === "boolean"}
+    {#if show(ROW.keepAwake) && live && !asleep && typeof live.keep_awake === "boolean"}
       <SettingRow inline title={ROW.keepAwake.title} hint="Stops automatic sleep for 30 minutes (turn it on again to renew). Not saved: it ends on its own, when the device sleeps and after a restart.">
         <Switch aria-label={ROW.keepAwake.title} checked={live.keep_awake} disabled={holding} onchange={setKeepAwake} />
       </SettingRow>
