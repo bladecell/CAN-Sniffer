@@ -10,6 +10,7 @@ namespace ws_session {
 // Close codes in the private range (RFC 6455, 4000-4999). The frontend reads them from the close event.
 constexpr uint16_t kCloseInUse = 4000;     // another session holds the device; reconnect with takeover=1 to replace it
 constexpr uint16_t kCloseReplaced = 4001;  // this session was replaced by a newer one
+constexpr uint16_t kCloseSameSession = 4002;  // the same page reconnected (same sid); the page reconnects quietly
 // The frontend pings every 3 s. A holder silent for this long is treated as gone and is replaced without asking.
 constexpr uint32_t kStaleMs = 10000;
 
@@ -35,6 +36,12 @@ inline Admit admit(const Holder& holder, uint32_t nowMs, uint32_t sid, bool take
 inline bool keepsRawOnReplace(const Holder& holder, uint32_t nowMs, uint32_t sid, bool takeover)
 {
     return !takeover && sid != 0 && sid == holder.sid && nowMs - holder.lastRxMs < kStaleMs;
+}
+
+// Close code for the replaced socket: the same page reconnecting is not another session moving in.
+inline uint16_t replaceCode(const Holder& holder, uint32_t sid, bool takeover)
+{
+    return (!takeover && sid != 0 && sid == holder.sid) ? kCloseSameSession : kCloseReplaced;
 }
 
 // 1 to 8 hex digits, not zero. Anything else is 0 (no session id).

@@ -490,6 +490,18 @@ static void test_replace_keeps_raw_mode_only_for_a_live_same_sid_reload()
     TEST_ASSERT_FALSE(ws_session::keepsRawOnReplace(noSid, 2000, 0, false));
 }
 
+// The same page reconnecting (same sid, no takeover) gets its own code, so the page does not ask "Session moved".
+static void test_replace_code_tells_a_same_page_reconnect_from_another_session()
+{
+    const ws_session::Holder held{7, 0xAB, 1000};
+    TEST_ASSERT_EQUAL(ws_session::kCloseSameSession, ws_session::replaceCode(held, 0xAB, false));
+    TEST_ASSERT_EQUAL(ws_session::kCloseReplaced, ws_session::replaceCode(held, 0xAB, true));
+    TEST_ASSERT_EQUAL(ws_session::kCloseReplaced, ws_session::replaceCode(held, 0, false));
+    TEST_ASSERT_EQUAL(ws_session::kCloseReplaced, ws_session::replaceCode(held, 0xCD, false));
+    const ws_session::Holder noSid{7, 0, 1000};
+    TEST_ASSERT_EQUAL(ws_session::kCloseReplaced, ws_session::replaceCode(noSid, 0, false));
+}
+
 // R5: the close reply is empty or a status code, never a length without a payload.
 static void test_close_payload_is_empty_or_a_status_code()
 {
@@ -888,6 +900,7 @@ extern "C" void run_ws_broadcast_tests(void)
     RUN_TEST(test_session_admission);
     RUN_TEST(test_replace_keeps_raw_mode_only_for_a_live_same_sid_reload);
     RUN_TEST(test_session_id_parse_rejects_bad_input);
+    RUN_TEST(test_replace_code_tells_a_same_page_reconnect_from_another_session);
     RUN_TEST(test_close_payload_is_empty_or_a_status_code);
     RUN_TEST(test_successful_send_does_not_evict);
     RUN_TEST(test_reused_http_fd_does_not_receive_frame);

@@ -1916,7 +1916,7 @@ static esp_err_t ws_post_handshake(httpd_req_t* req)
             return ESP_OK;  // not the session: no stream, no sleep hold
         case ws_session::Admit::replace:
             ESP_LOGI(TAG, "WS client #%d replaces #%d", fd, wsHolder.fd);
-            server.wsClose(wsHolder.fd, ws_session::kCloseReplaced);
+            server.wsClose(wsHolder.fd, ws_session::replaceCode(wsHolder, sid, takeover));
             // The replaced socket stays open until its close echo. Its raw subscription, PID stream, Raw CAN mode and
             // sleep hold end now; the new session asks for what it needs. A same-sid reload keeps Raw CAN mode.
             ws_session_end(wsHolder.fd, ws_session::keepsRawOnReplace(wsHolder, now, sid, takeover));
