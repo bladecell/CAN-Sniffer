@@ -6,7 +6,7 @@
   import { parseJsonResponse } from "$lib/api";
   import { firmwareApi } from "$lib/firmwareApi.svelte";
   import { vehicleStore } from "$lib/vehicleStore.svelte";
-  import Switch from "$lib/components/Switch.svelte";
+  import Checkbox from "$lib/components/Checkbox.svelte";
   import { settingsStore } from "$lib/settingsStore.svelte";
   import { GROUP, ROW, formatUptime, anyShown, rowShown, type RowMeta, type SettingsDoc } from "$lib/settingsModel";
   import SettingRow from "./SettingRow.svelte";
@@ -66,7 +66,7 @@
     {/if}
     {#if debug !== null && show(ROW.debugMode)}
       <SettingRow inline title={ROW.debugMode.title} hint="Loopback and a simulated bus instead of the car: fake data, and the device never sleeps. Takes effect after a restart.">
-        <Switch aria-label={ROW.debugMode.title} checked={debug} disabled={settingsStore.saving} onchange={(v) => settingsStore.save("can", { debug: v })} />
+        <Checkbox aria-label={ROW.debugMode.title} checked={debug} disabled={settingsStore.saving} onchange={(v) => settingsStore.save("can", { debug: v })} />
       </SettingRow>
     {/if}
     {#if show(ROW.restart)}

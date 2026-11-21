@@ -1,6 +1,6 @@
 <script lang="ts">
   import Icon from "$lib/Icon.svelte";
-  import Switch from "$lib/components/Switch.svelte";
+  import Checkbox from "$lib/components/Checkbox.svelte";
   import SelectMenu from "$lib/components/SelectMenu.svelte";
   import { settingsStore } from "$lib/settingsStore.svelte";
   import { wifiScanStore } from "$lib/wifiScanStore.svelte";
@@ -114,7 +114,7 @@
   <div class="st-list">
     {#if show(ROW.join)}
       <SettingRow title={ROW.join.title} hint="Lets the device reach the internet for time and updates." inline>
-        <Switch checked={draft.join} aria-label={ROW.join.title} onchange={(on) => (edits.join = on)} />
+        <Checkbox checked={draft.join} aria-label={ROW.join.title} onchange={(on) => (edits.join = on)} />
       </SettingRow>
     {/if}
     {#if show(ROW.networks)}

@@ -2,6 +2,7 @@
   import { tick, untrack } from "svelte";
   import Icon from "$lib/Icon.svelte";
   import Switch from "$lib/components/Switch.svelte";
+  import Checkbox from "$lib/components/Checkbox.svelte";
   import { canBus } from "$lib/canBus/canBusStore.svelte";
   import { newRuleId, rulesStore } from "$lib/canBus/canRulesStore.svelte";
   import { MAX_BYTE_FIELDS, emptyForm, formFromRule, fullMask, matchSummary, parseHex, ruleFromForm, type RuleForm } from "$lib/canBus/canRuleForm";
@@ -219,7 +220,7 @@
               <section class="sec" aria-labelledby="cr-sm-{rule.id}">
                 <h4 id="cr-sm-{rule.id}">
                   Match
-                  <span class="ext">Extended id <Switch bind:checked={form.ext} aria-label="Extended id" onchange={apply} /></span>
+                  <span class="ext">Extended id <Checkbox checked={form.ext} aria-label="Extended id" onchange={(v) => { form.ext = v; apply(); }} /></span>
                 </h4>
                 <div class="r3m">
                   <div>

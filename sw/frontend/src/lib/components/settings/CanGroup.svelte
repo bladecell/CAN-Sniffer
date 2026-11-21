@@ -2,7 +2,7 @@
   import SegControl from "./SegControl.svelte";
   import SelectMenu from "$lib/components/SelectMenu.svelte";
   import { settingsStore } from "$lib/settingsStore.svelte";
-  import Switch from "$lib/components/Switch.svelte";
+  import Checkbox from "$lib/components/Checkbox.svelte";
   import { BITRATES, GROUP, ROW, bitrateLabel, buildCanPatch, buildHwFilterPatch, hwFilterDraft, hwFilterPreview, anyShown, rowShown, type HwFilterDraft, type RowMeta, type SettingsDoc } from "$lib/settingsModel";
   import ApplyBar from "./ApplyBar.svelte";
   import SettingRow from "./SettingRow.svelte";
@@ -78,7 +78,7 @@
     {/if}
     {#if hwDraft && show(ROW.hwFilter)}
       <SettingRow inline title={ROW.hwFilter.title} hint="Takes effect after a restart. Frames the controller rejects never reach the CAN Bus page or the poller." error={built.errors.mfilter_cfg}>
-        <Switch label="Filter on" checked={hwDraft.on} onchange={(v) => (hwEdits.on = v)} />
+        <Checkbox aria-label="Filter on" checked={hwDraft.on} onchange={(v) => (hwEdits.on = v)} />
       </SettingRow>
       {#if hwDraft.on}
         <SettingRow title="Accepted IDs" hint="Hex. A mask bit set to 1 must match the same bit of the ID." stack error={built.errors.mfilter_cfg}>

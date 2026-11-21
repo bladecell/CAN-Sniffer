@@ -2,7 +2,7 @@
   import { untrack } from "svelte";
   import Icon from "$lib/Icon.svelte";
   import SidebarHint from "$lib/components/telemetry/SidebarHint.svelte";
-  import Switch from "$lib/components/Switch.svelte";
+  import Checkbox from "$lib/components/Checkbox.svelte";
   import RangeSlider from "$lib/components/RangeSlider.svelte";
   import { auth } from "$lib/auth.svelte";
   import { firmwareApi } from "$lib/firmwareApi.svelte";
@@ -460,7 +460,7 @@
           ISO-TP flow control
           <SidebarHint inline text="Sends a flow-control frame (30 00 00) in reply to each first frame, so the ECU keeps sending the rest of a multi-frame message." label="About ISO-TP flow control" />
         </span>
-        <Switch checked={fc} aria-label="ISO-TP flow control" onchange={toggleFc} />
+        <Checkbox checked={fc} aria-label="ISO-TP flow control" onchange={toggleFc} />
       </div>
     </section>
 

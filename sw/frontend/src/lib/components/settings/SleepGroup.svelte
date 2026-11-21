@@ -8,6 +8,7 @@
   import { keepAwakeWatch } from "$lib/keepAwake.svelte";
   import { settingsStore } from "$lib/settingsStore.svelte";
   import Switch from "$lib/components/Switch.svelte";
+  import Checkbox from "$lib/components/Checkbox.svelte";
   import RangeSlider from "$lib/components/RangeSlider.svelte";
   import type { SystemStatus } from "$lib/types";
   import { GROUP, ROW, VOLT_MAX, VOLT_MIN, anyShown, batteryText, buildSleepPatch, parseVolts, rowShown, sleepDraft, supervisorStateText, type RowMeta, type SettingsDoc } from "$lib/settingsModel";
@@ -110,8 +111,8 @@
   <h2>Battery and idle</h2>
   <div class="st-list">
     {#if draft && show(ROW.sleepAuto)}
-      <SettingRow inline title={ROW.sleepAuto.title} hint="Sleeps after 60 s without a CAN bus. Off keeps the device awake at any battery voltage and can drain the car battery. Applies at once.">
-        <Switch aria-label={ROW.sleepAuto.title} checked={draft.enabled} onchange={(v) => (edits.enabled = v)} />
+      <SettingRow inline title={ROW.sleepAuto.title} hint="Sleeps after 60 s without a CAN bus. Off keeps the device awake at any battery voltage and can drain the car battery.">
+        <Checkbox aria-label={ROW.sleepAuto.title} checked={draft.enabled} onchange={(v) => (edits.enabled = v)} />
       </SettingRow>
     {/if}
     {#if draft && (show(ROW.lowBatteryV) || show(ROW.stayAwakeV))}
