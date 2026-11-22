@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SidebarHint from "$lib/components/telemetry/SidebarHint.svelte";
   import type { IdRow } from "$lib/canBus/canBusStore.svelte";
   import { activeLimitMs } from "$lib/canBus/canModel";
   import { formatId, idColorIndex } from "$lib/canBus/canIds";
@@ -26,7 +27,7 @@
 <div class="cl">
   <div class="cl-top">
     <div>
-      <h2>IDs</h2>
+      <div class="h-hint"><h2>IDs</h2><SidebarHint inline label="About the ID list" text="Every CAN ID seen on the bus. Active IDs are listed first; IDs that stopped sending move to Silent. Click selects an ID and highlights its frames, double-click or Details opens its byte view." /></div>
       <p class="muted">{ids.length} seen · {silentTotal} silent. Click selects, double-click opens details.</p>
     </div>
     <button class="btn sm" disabled={selected === null} onclick={() => selected !== null && ondetails(selected)}>Details</button>

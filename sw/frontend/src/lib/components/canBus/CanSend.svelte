@@ -324,7 +324,7 @@
 
 <div class="cs">
   <div class="hd">
-    <h2>Send frames</h2>
+    <div class="h-hint"><h2>Send frames</h2><SidebarHint inline tone="warn" label="Sending warning" text={raw ? "Transmits on the car's bus, exactly as typed. Polling is stopped." : "This transmits on the car's bus, exactly as typed."} /></div>
     {#if raw && auth.canUseGated}
       <span class="chip c-warn">Raw mode</span>
     {/if}
@@ -332,10 +332,6 @@
   {#if !auth.canUseGated}
     <p class="muted">Sending needs a login.</p>
   {/if}
-  <p class="warn">
-    <Icon name="triangle-exclamation" size={18} />
-    <span>{raw ? "Transmits on the car's bus, exactly as typed. Polling is stopped." : "This transmits on the car's bus, exactly as typed."}</span>
-  </p>
 
   {#if !auth.canUseGated}
     <button class="btn pri" onclick={() => void auth.ensureLogin()}>Log in to send</button>
@@ -552,20 +548,6 @@
   }
   p {
     margin: 0;
-  }
-  .warn {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    padding: 8px 12px;
-    border-radius: var(--r-ctl);
-    background: var(--warn-f, var(--ctl));
-    color: var(--warn);
-    font-size: 0.88rem;
-    font-weight: 700;
-  }
-  .warn :global(svg) {
-    flex: none;
   }
   .gate {
     display: grid;

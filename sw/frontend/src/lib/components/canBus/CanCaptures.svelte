@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import SidebarHint from "$lib/components/telemetry/SidebarHint.svelte";
   import Icon from "$lib/Icon.svelte";
   import { auth } from "$lib/auth.svelte";
   import { captures } from "$lib/canBus/captureStore.svelte";
@@ -29,10 +30,9 @@
 
 <div class="cc">
   <div>
-    <h2>Captures</h2>
+    <div class="h-hint"><h2>Captures</h2><SidebarHint inline tone="warn" label="Capture limits" text="A capture stops at 8 MB, when the stream ends, or when the card is full." /></div>
     <p class="muted">CSV files on the SD card. Start and stop with Save to SD in the toolbar.</p>
   </div>
-  <p class="cc-warn"><Icon name="triangle-exclamation" size={18} /> A capture stops at 8 MB, when the stream ends, or when the card is full.</p>
 
   {#if captures.capturing}
     <p class="t-ok">Capturing {captures.status?.file ?? ""}: {captures.status?.rows ?? 0} rows, {formatBytes(captures.status?.bytes ?? 0)}</p>
@@ -87,20 +87,6 @@
   }
   .cc p {
     margin: 0;
-  }
-  .cc-warn :global(svg) {
-    flex: none;
-  }
-  .cc-warn {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    padding: 8px 12px;
-    border-radius: var(--r-ctl);
-    background: var(--warn-f, var(--ctl));
-    color: var(--warn);
-    font-size: 0.88rem;
-    font-weight: 700;
   }
   .cc-list {
     display: grid;

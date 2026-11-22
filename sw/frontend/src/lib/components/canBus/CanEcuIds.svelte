@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SidebarHint from "$lib/components/telemetry/SidebarHint.svelte";
   import type { EcuRow } from "$lib/canBus/canModel";
   import { ageText, hzText } from "$lib/canBus/canFormat";
   import { formatId } from "$lib/canBus/canIds";
@@ -13,7 +14,7 @@
 
 <div class="ce">
   <div>
-    <h2>ECU IDs</h2>
+    <div class="h-hint"><h2>ECU IDs</h2><SidebarHint inline label="About ECU IDs" text="Lists IDs that answer on the OBD response pattern (7E8-7EF, 18DAF1xx), with the request ID each one replies to. Passive: this tab sends nothing." /></div>
     <p class="muted">IDs that answer on the OBD response pattern (7E8-7EF, 18DAF1xx). Passive: nothing is sent.</p>
   </div>
 

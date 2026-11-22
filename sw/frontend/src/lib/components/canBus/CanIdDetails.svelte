@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SidebarHint from "$lib/components/telemetry/SidebarHint.svelte";
   import type { IdDetail } from "$lib/canBus/canBusStore.svelte";
   import { relTime } from "$lib/canBus/canFormat";
   import { formatId } from "$lib/canBus/canIds";
@@ -29,7 +30,7 @@
 
 <div class="id-pane">
   {#if detail === null}
-    <h2>ID details</h2>
+    <div class="h-hint"><h2>ID details</h2><SidebarHint inline label="About ID details" text="Byte-level view of the selected ID: the latest payload, how each byte changes, and a shortcut to its rule." /></div>
     <p class="muted">Select an ID in the IDs list, then Details, or double-click it.</p>
   {:else}
     <div class="id-head">

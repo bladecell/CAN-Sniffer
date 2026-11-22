@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SidebarHint from "$lib/components/telemetry/SidebarHint.svelte";
   import { tick, untrack } from "svelte";
   import { slide } from "svelte/transition";
   import { accordion } from "$lib/components/accordion";
@@ -182,7 +183,7 @@
 <!-- Escape closes the open editor, like Done. -->
 <div class="cr" role="presentation" onkeydown={(e) => e.key === "Escape" && openId && close()}>
   <div class="cr-hd">
-    <h2>Rules</h2>
+    <div class="h-hint"><h2>Rules</h2><SidebarHint inline label="About rules" text="A rule names an ID and can decode its bytes with a formula. Rules are stored on the device and can be exported and imported as a file." /></div>
     <span class="tag">{rulesStore.list.length} of {RULE_CAP}</span>
   </div>
 

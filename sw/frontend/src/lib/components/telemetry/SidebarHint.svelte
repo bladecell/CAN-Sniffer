@@ -13,9 +13,11 @@
     /** Sits in a text line (next to a field name) instead of the sidebar's top-right corner. */
     inline?: boolean;
     label?: string;
+    /** warn: warning icon and tone, for caution text. */
+    tone?: "info" | "warn";
   }
 
-  let { text, inline = false, label = "How this page works" }: Props = $props();
+  let { text, inline = false, label = "How this page works", tone = "info" }: Props = $props();
 
   const uid = $props.id();
   const popId = `${uid}-hint`;
@@ -80,6 +82,7 @@
   bind:this={trigger}
   class="hint"
   class:inline
+  class:warn={tone === "warn"}
   aria-label={label}
   aria-controls={popId}
   aria-describedby={popId}
@@ -91,7 +94,7 @@
   onfocus={onFocus}
   onblur={hide}
 >
-  <Icon name="circle-info" size={inline ? 16 : 20} />
+  <Icon name={tone === "warn" ? "circle-exclamation" : "circle-info"} size={inline ? 16 : 20} />
 </button>
 <!-- Portalled out of the blurred header: a blurred ancestor would drop this popover's blur (lib/layers.ts). -->
 <div bind:this={pop} use:toBody id={popId} class="pop popup" popover="auto" role="tooltip" ontoggle={onToggle}>{text}</div>
@@ -129,9 +132,15 @@
       inset: -10px;
     }
   }
+  .hint.warn {
+    color: var(--warn);
+  }
   @media (hover: hover) {
     .hint:hover {
       color: var(--accent-text);
+    }
+    .hint.warn:hover {
+      color: var(--warn);
     }
   }
   /* Mouse and tap focus show nothing; keyboard focus is a background step. */

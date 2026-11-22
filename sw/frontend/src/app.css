@@ -791,3 +791,70 @@ a.btn {
     transform: none;
   }
 }
+
+/* Visually hidden, still read by screen readers (status lines, labels for controls). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Warning note: a one-line banner in the warning tone, icon first. */
+.warn-note {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--r-ctl);
+  background: var(--warn-f, var(--ctl));
+  color: var(--warn);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+.warn-note svg {
+  flex: none;
+}
+
+/* Title with an inline hint icon beside it. */
+.h-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.h-hint h2 {
+  margin: 0;
+}
+
+/* Empty list: a quiet panel where the rows would be. */
+.empty-state {
+  padding: 18px 14px;
+  border-radius: var(--r-track);
+  background: var(--row);
+  color: var(--muted);
+  font-weight: 600;
+}
+
+/* Icon rail: a 56 px column of icon buttons on a card. Buttons keep their own rules, because Pico's [role=group] rules outrank a shared button selector. */
+.icon-rail {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 4px;
+  box-sizing: border-box;
+  width: 56px;
+  padding: 6px;
+  border-radius: calc(var(--r-float) - 8px);
+  background: var(--card);
+  align-self: flex-start;
+}
+
+/* One line, cut with an ellipsis when it does not fit. Add min-width: 0 on a flex child that must shrink. */
+.ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
