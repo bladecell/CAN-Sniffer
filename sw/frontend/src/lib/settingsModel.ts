@@ -70,7 +70,7 @@ export const GROUP: Record<GroupId, GroupMeta> = {
     kw: "wifi hotspot ssid password channel scan network join",
     rows: [ROW.hotspotName, ROW.hotspotPassword, ROW.channel, ROW.join, ROW.networks, ROW.staSsid, ROW.staPassword],
   },
-  modem: { id: "modem", title: "Cellular & GNSS", icon: "waves-sine", kw: "lte gnss mqtt apn cellular modem", rows: [ROW.modem, ROW.apn, ROW.mqtt, ROW.gnss] },
+  modem: { id: "modem", title: "Cellular & GNSS", icon: "tower-cell", kw: "lte gnss mqtt apn cellular modem", rows: [ROW.modem, ROW.apn, ROW.mqtt, ROW.gnss] },
   can: { id: "can", title: "CAN bus", icon: "engine", kw: "bitrate baud queue obd can filter mask acceptance", rows: [ROW.bitrate, ROW.rxQueue, ROW.txQueue, ROW.hwFilter] },
   sleep: { id: "sleep", title: "Sleep", icon: "moon", kw: "sleep battery voltage idle power drain", rows: [ROW.sleepState, ROW.batteryNow, ROW.keepAwake, ROW.sleepAuto, ROW.stayAwakeV, ROW.lowBatteryV, ROW.sleepNow] },
   recorder: { id: "recorder", title: "Recorder", icon: "route", kw: "recorder trip start polling", rows: [ROW.autoPoll] },
