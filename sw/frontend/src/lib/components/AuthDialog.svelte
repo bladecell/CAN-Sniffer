@@ -1,7 +1,10 @@
 <script lang="ts">
   import { auth } from "$lib/auth.svelte";
-  import { errorText, isPin, PIN_PATTERN, type ClaimOutcome } from "$lib/auth";
+  import { errorText, isPin, type ClaimOutcome } from "$lib/auth";
+  import Icon from "$lib/Icon.svelte";
   import Sheet from "./Sheet.svelte";
+  import PinField from "./PinField.svelte";
+  import PinPad from "./PinPad.svelte";
 
   // Local form state lives inside the {#if} blocks below, so it resets when the dialog closes.
   let clock = $state(Date.now());
@@ -22,10 +25,13 @@
   };
 
   let loginPin = $state("");
+  let reveal = $state(false);
   // null until the user touches the checkbox: then it follows whether a PIN is already remembered.
   let rememberChoice = $state<boolean | null>(null);
   let newPin = $state("");
   let confirmPin = $state("");
+  // The pad types into the claim field that has focus (or was tapped last).
+  let claimField = $state<"new" | "repeat">("new");
   let claimMismatch = $derived(confirmPin.length === 6 && newPin !== confirmPin);
 
   async function submitLogin(e: SubmitEvent) {
@@ -39,6 +45,7 @@
     await auth.startClaim(newPin);
     newPin = "";
     confirmPin = "";
+    claimField = "new";
   }
 
   const finalText: Record<ClaimOutcome, string> = {
@@ -68,22 +75,27 @@
       {#if auth.view.notice}
         <p class="auth-note">{notices[auth.view.notice]}</p>
       {/if}
-      <form onsubmit={submitLogin}>
-        <label for="auth-login-pin">PIN (6 digits)</label>
-        <input class="in"
+      <form class="pin-col" onsubmit={submitLogin}>
+        <PinField
           id="auth-login-pin"
-          type="password"
-          inputmode="numeric"
-          autocomplete="off"
-          maxlength="6"
-          pattern={PIN_PATTERN}
-          bind:value={loginPin}
+          label="PIN (6 digits)"
+          value={loginPin}
+          onchange={(next) => (loginPin = next)}
+          reveal={reveal}
           disabled={waitLeft > 0 || auth.view.state === "unavailable"}
-          aria-describedby="auth-login-msg"
-          required
+          describedby="auth-login-msg"
+          autocomplete="current-password"
+          autofocus
         />
+        <div class="auth-reveal">
+          <button type="button" class="btn sm" onclick={() => (reveal = !reveal)}>
+            <Icon name={reveal ? "eye-slash" : "eye"} size={18} />
+            {reveal ? "Hide PIN" : "Show PIN"}
+          </button>
+        </div>
+        <PinPad value={loginPin} onchange={(next) => (loginPin = next)} disabled={waitLeft > 0 || auth.view.state === "unavailable"} />
         <label class="auth-remember">
-          <input class="in"
+          <input
             type="checkbox"
             checked={rememberChoice ?? auth.view.pinSaved}
             onchange={(e) => (rememberChoice = e.currentTarget.checked)}
@@ -105,7 +117,7 @@
           <button type="submit" class="btn pri" disabled={!isPin(loginPin) || waitLeft > 0 || auth.view.state === "unavailable"}>Log in</button>
         </div>
       </form>
-      <p class="auth-hint">Forgot the PIN? Hold the BOOT button on the device for 10 seconds. This clears the PIN, and you can set a new one.</p>
+      <p class="auth-hint pin-col">Forgot the PIN? Hold the BOOT button on the device for 10 seconds. This clears the PIN, and you can set a new one.</p>
     {:else if auth.view.claimPhase === "other"}
       <p>Another client is setting the PIN. Wait for it to finish, or for its window to close in {claimLeft} s.</p>
       <div class="auth-actions">
@@ -126,21 +138,33 @@
         <button type="button" class="btn pri" onclick={() => auth.retryClaim()}>Start again</button>
       </div>
     {:else}
-      <form onsubmit={submitClaim}>
+      <form class="pin-col" onsubmit={submitClaim}>
         <p>This device has no PIN yet. Choose 6 digits. The PIN is set after you press BOOT on the device.</p>
-        <label for="auth-new-pin">New PIN (6 digits)</label>
-        <input class="in" id="auth-new-pin" type="password" inputmode="numeric" autocomplete="new-password" maxlength="6" pattern={PIN_PATTERN} bind:value={newPin} required />
-        <label for="auth-confirm-pin">Repeat the PIN</label>
-        <input class="in"
-          id="auth-confirm-pin"
-          type="password"
-          inputmode="numeric"
+        <PinField
+          id="auth-new-pin"
+          label="New PIN (6 digits)"
+          value={newPin}
+          onchange={(next) => (newPin = next)}
+          active={claimField === "new"}
+          onfocus={() => (claimField = "new")}
           autocomplete="new-password"
-          maxlength="6"
-          pattern={PIN_PATTERN}
-          bind:value={confirmPin}
-          aria-describedby="auth-claim-msg"
-          required
+          autofocus
+        />
+        <div class="auth-gap"></div>
+        <PinField
+          id="auth-confirm-pin"
+          label="Repeat PIN (6 digits)"
+          value={confirmPin}
+          onchange={(next) => (confirmPin = next)}
+          active={claimField === "repeat"}
+          onfocus={() => (claimField = "repeat")}
+          invalid={claimMismatch}
+          describedby="auth-claim-msg"
+          autocomplete="new-password"
+        />
+        <PinPad
+          value={claimField === "new" ? newPin : confirmPin}
+          onchange={(next) => (claimField === "new" ? (newPin = next) : (confirmPin = next))}
         />
         <p id="auth-claim-msg" class="auth-error" role="alert">
           {#if claimMismatch}
@@ -181,6 +205,20 @@
     font-weight: 400;
     cursor: pointer;
   }
+  .pin-col {
+    max-width: 360px;
+    margin-inline: auto;
+  }
+  .auth-remember input {
+    flex: none;
+    width: 22px;
+    height: 22px;
+    margin: 0;
+    accent-color: var(--accent);
+  }
+  .auth-actions .btn {
+    flex: 1;
+  }
   .auth-remember-hint {
     margin: 0.25rem 0 0;
   }
@@ -191,7 +229,12 @@
     gap: 10px;
     margin-top: 8px;
   }
-  input[type="password"] {
-    letter-spacing: 0.3em;
+  .auth-reveal {
+    display: flex;
+    justify-content: flex-end;
+    margin: 6px 0 12px;
+  }
+  .auth-gap {
+    height: 12px;
   }
 </style>
