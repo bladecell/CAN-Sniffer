@@ -1,7 +1,8 @@
 // Pure view rules for the dashboard cards: levels, read states, control reasons, gauge and chart geometry, labels.
 // No DOM and no stores, so it runs under bun test.
 import type { Thresholds } from "./dashboardModel";
-import { decimate, pathOf, type Pt } from "./telemetryChart/series";
+import { decimate, pathOf, windowPoints, type Pt } from "./telemetryChart/series";
+import { SCROLL_HEADROOM_MS } from "./telemetryChart/scroll";
 import type { PidValue } from "./types";
 
 export type Level = "ok" | "warn" | "crit";
@@ -118,6 +119,8 @@ export interface ChartBox {
   to: number;
   lo: number;
   hi: number;
+  /** Keep points outside [from, to] at their true x (drawn beyond the box, for a layer shifted under a clip). */
+  unclamped?: boolean;
 }
 
 export interface ChartPaths {
@@ -138,7 +141,8 @@ export function chartPaths(samples: { t: number[]; v: (number | null)[] }, box: 
   const pts: Pt[] = samples.t.map((t, i) => {
     const v = samples.v[i];
     if (!finite(v)) return null;
-    const x = clamp01((t - box.from) / span) * box.w;
+    const f = (t - box.from) / span;
+    const x = (box.unclamped ? f : clamp01(f)) * box.w;
     // A flat scale (constant values) draws mid-height instead of on the baseline.
     const y = box.hi > box.lo ? box.h - clamp01((v - box.lo) / scale) * box.h : box.h / 2;
     return { x, y };
@@ -181,6 +185,38 @@ export function uptimeLabel(seconds: number): string {
   if (s < 60) return `${s} s`;
   if (s < 3600) return `${Math.floor(s / 60)} min`;
   return `${Math.floor(s / 3600)} h ${Math.floor((s % 3600) / 60)} min`;
+}
+
+/**
+ * The buffer samples a chart window needs: read from the window start less the headroom and a second, so the
+ * segment that enters the left edge (windowPoints starts the headroom before it) is always covered.
+ */
+export function chartWindowRead(
+  read: (pid: number, fromT: number) => { t: number[]; v: (number | null)[] },
+  pid: number,
+  to: number,
+  spanMs: number,
+): { t: number[]; v: (number | null)[] } {
+  return read(pid, to - spanMs - SCROLL_HEADROOM_MS - 1000);
+}
+
+/**
+ * A trace for the window [anchor - spanMs, anchor], built ahead of the present (telemetryChart/scroll.ts). A line holds
+ * its last value to the anchor while fresh, and the margin before the window start is kept, so a layer shifted by the
+ * scroll offset still covers both edges. Points outside the window are not clamped (the card clips them).
+ */
+export function traceShape(
+  samples: { t: number[]; v: (number | null)[] },
+  anchor: number,
+  spanMs: number,
+  holdMs: number,
+  box: { w: number; h: number; lo: number; hi: number },
+): ChartPaths {
+  const drawn = windowPoints(samples.t, samples.v, anchor - spanMs - SCROLL_HEADROOM_MS, anchor, anchor, holdMs);
+  return chartPaths(
+    { t: drawn.map((p) => p.t), v: drawn.map((p) => p.v) },
+    { ...box, from: anchor - spanMs, to: anchor, unclamped: true },
+  );
 }
 
 /** The samples in the last `spanMs` before the newest one. Times are device ms, ascending. */

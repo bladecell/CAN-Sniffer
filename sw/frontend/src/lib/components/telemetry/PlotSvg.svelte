@@ -8,13 +8,15 @@
 
   interface Props {
     model: PlotModel;
+    /** Shift of the lines in px for this frame; the geometry is built ahead of the present (telemetryChart/scroll.ts). */
+    offset: number;
     /** Unique per plot: the tooltip shows only where the pointer is. */
     key: string;
     emptyText: string;
     width?: number;
   }
 
-  let { model, key, emptyText, width = $bindable(0) }: Props = $props();
+  let { model, offset, key, emptyText, width = $bindable(0) }: Props = $props();
   // role="application" is the WAI pattern for a chart with its own keys (pan, zoom, reset). Svelte does not count it as interactive.
   const view = getContext<TelemetryView>(TELEMETRY_VIEW);
   // Unique per plot instance: the clip path is referenced by id from this svg only.
@@ -187,10 +189,12 @@
         </clipPath>
       </defs>
       <g clip-path="url(#{clipId})">
-        {#each model.lines as line (line.id)}
-          {#if line.area}<path class="ar" d={line.area} fill={line.color} />{/if}
-          <path class="ln" d={line.d} stroke={line.color} />
-        {/each}
+        <g transform="translate({offset} 0)">
+          {#each model.lines as line (line.id)}
+            {#if line.area}<path class="ar" d={line.area} fill={line.color} />{/if}
+            <path class="ln" d={line.d} stroke={line.color} />
+          {/each}
+        </g>
       </g>
 
 

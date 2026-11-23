@@ -5,6 +5,7 @@ import { GUTTER_LEFT, GUTTER_RIGHT } from "./gutter";
 import { domainFor, fracOf, type Range } from "./plotModel";
 import { decimate, pathOf, windowPoints, type Pt } from "./series";
 import { SPAN_SEC, shiftWin, type Win } from "./window";
+import { SCROLL_HEADROOM_MS } from "./scroll";
 
 export const OV_L = GUTTER_LEFT;
 export const OV_R = GUTTER_RIGHT;
@@ -78,10 +79,13 @@ export function overviewModel(o: { width: number; height: number; now: number; w
     }
     const [lo, hi] = domainFor(s.range, vals, false, true);
     // The line runs to both edges of the strip (interpolated, as in the plot), and holds nothing past the present.
-    const pts: Pt[] = windowPoints(s.t, s.v, o.now - SPAN_SEC * 1000, o.now, o.now, 0).map((p) => {
+    // The left margin is the headroom: a strip shifted right by the scroll offset still has its left edge covered.
+    const pts: Pt[] = windowPoints(s.t, s.v, o.now - SPAN_SEC * 1000 - SCROLL_HEADROOM_MS, o.now, o.now, 0).map((p) => {
       if (p.v === null) return null;
       const frac = Math.min(1, Math.max(0, fracOf(p.v, lo, hi)));
-      return { x: ovX((o.now - p.t) / 1000, W), y: bottom - frac * (bottom - OV_T) };
+      // Not clamped to the span like ovX: the margin before the left edge is drawn and clipped.
+      const x = OV_L + (1 - (o.now - p.t) / 1000 / SPAN_SEC) * pw;
+      return { x, y: bottom - frac * (bottom - OV_T) };
     });
     return { color: s.color, d: pathOf(decimate(pts, pw)) };
   });

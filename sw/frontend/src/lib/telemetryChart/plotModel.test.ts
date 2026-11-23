@@ -139,7 +139,8 @@ describe("plot edges", () => {
       }),
     );
     const xs = [...m.lines[0].d.matchAll(/[ML]([\d.]+),/g)].map((r) => Number(r[1]));
-    expect(xs[0]).toBeCloseTo(m.L, 0);
+    // The path starts in the left margin (clipped) so a shifted layer has no uncovered edge.
+    expect(xs[0]).toBeLessThanOrEqual(m.L);
     expect(xs[xs.length - 1]).toBeCloseTo(m.L + m.pw, 0);
   });
 

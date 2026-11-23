@@ -7,6 +7,9 @@
   import { TELEMETRY_VIEW, type TelemetryView } from "$lib/telemetryChart/viewState.svelte";
   import { buildPlotCsv, downloadCsv, plotCsvFileName, type PlotCsvSeries } from "$lib/telemetryChart/plotCsv";
   import { liveWin, winStatus } from "$lib/telemetryChart/window";
+  import { holdEndsOf, SCROLL_HEADROOM_MS } from "$lib/telemetryChart/scroll";
+  import { ChartScroll } from "$lib/telemetryChart/scroll.svelte";
+  import { chartFrames } from "$lib/chartFrames.svelte";
   import Icon from "$lib/Icon.svelte";
   import PlotSvg from "./PlotSvg.svelte";
 
@@ -42,11 +45,17 @@
   const defs = $derived(new Map(vehicleStore.pidDefinitions.map((d) => [d.pid, d])));
   const nameOf = (pid: number) => defs.get(pid)?.name || `0x${pid.toString(16).toUpperCase()}`;
 
+  // Geometry is built for scroll.anchor and shifted per frame by scroll.shift (telemetryChart/scroll.ts).
+  const scroll = new ChartScroll(
+    (time) => view.presentAt(time),
+    () => holdEnds,
+  );
+  $effect(() => chartFrames.subscribe((time) => scroll.frame(time)));
+
   const series = $derived.by((): PlotSeries[] => {
     void feed.version;
-    const now = view.presentAt();
     const w = view.win;
-    const fromT = now === null ? -Infinity : now - (w.endAgo + w.len) * 1000 - 1000;
+    const fromT = scroll.anchor - (w.endAgo + w.len) * 1000 - SCROLL_HEADROOM_MS - 1000;
     return pids.map((pid) => {
       const def = defs.get(pid);
       const samples = feed.read(pid, fromT);
@@ -65,6 +74,8 @@
     });
   });
 
+  const holdEnds = $derived(holdEndsOf(series, view.win.endAgo * 1000));
+
   const model = $derived(
     buildPlotModel({
       width,
@@ -73,11 +84,13 @@
       fit,
       laneH: laneHeight,
       win: view.win,
-      now: view.presentAt() ?? 0,
+      now: scroll.anchor,
       series,
       hoverF: view.hoverF,
     }),
   );
+  /** px the built lines are shifted by this frame. */
+  const offset = $derived(scroll.shift(model.pw / (view.win.len * 1000)));
 
   $effect(() => {
     if (active) onStats(model.stats);
@@ -222,7 +235,7 @@
   {#if pids.length === 0}
     <p class="empty">Tick a PID in the list to chart it</p>
   {:else}
-    <PlotSvg {model} key="plot-{n}" {emptyText} bind:width />
+    <PlotSvg {model} {offset} key="plot-{n}" {emptyText} bind:width />
   {/if}
 </section>
 

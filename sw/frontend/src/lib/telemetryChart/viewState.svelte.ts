@@ -3,13 +3,9 @@ import { clamp } from "./math";
 import { createPresentClock, guardWin, liveWin, winStatus, type Win, type WinStatus } from "./window";
 
 export const TELEMETRY_VIEW = "telemetry-view";
-/** The present advances at 4 Hz while live; the plots redraw from `tick`. */
-const CLOCK_MS = 250;
 
 export class TelemetryView {
   win = $state<Win>(liveWin(60));
-  /** Bumped while live so every reader of presentAt() refreshes. */
-  tick = $state(0);
   /** Cursor position as a fraction of a plot's width, shared by all plots. */
   hoverF = $state<number | null>(null);
   /** Which plot the pointer is over, so only that plot shows the tooltip. */
@@ -20,24 +16,15 @@ export class TelemetryView {
     return winStatus(this.win);
   }
 
-  /** Device ms of the present: frozen while paused, extrapolated from the newest sample while live. Null before data. */
-  presentAt(): number | null {
-    void this.tick;
+  /** Device ms of the present at a frame time (rAF timestamp): frozen while paused, extrapolated while live. Null before data. */
+  presentAt(at = performance.now()): number | null {
     if (this.win.pausedAt !== null) return this.win.pausedAt;
-    return this.#clock.now(performance.now());
+    return this.#clock.now(at);
   }
 
   /** Feeds the newest sample time of any plotted PID. */
   observe(deviceMs: number) {
     this.#clock.observe(deviceMs, performance.now());
-  }
-
-  /** Runs the clock while mounted. Returns the stop function for $effect. */
-  start(): () => void {
-    const id = setInterval(() => {
-      if (this.win.pausedAt === null) this.tick++;
-    }, CLOCK_MS);
-    return () => clearInterval(id);
   }
 
   /** Applies a window change. Without data there is no present, so the window cannot leave live. */

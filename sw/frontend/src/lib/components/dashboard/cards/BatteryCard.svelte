@@ -3,11 +3,17 @@
   import { connectionStore } from "$lib/connectionStore.svelte";
   import { BATTERY_HISTORY_MS, carBatteryFeed } from "$lib/carBatteryFeed.svelte";
   import { BATTERY_LABEL, BATTERY_SCALE_MAX_V, BATTERY_SCALE_MIN_V, batteryReading } from "$lib/carBattery";
-  import { chartPaths, emptyNote, type Level, type ReadState } from "$lib/dashboardCardView";
+  import { emptyNote, traceShape, type Level, type ReadState } from "$lib/dashboardCardView";
+  import { holdEndsOf } from "$lib/telemetryChart/scroll";
+  import { ChartScroll } from "$lib/telemetryChart/scroll.svelte";
+  import { chartFrames } from "$lib/chartFrames.svelte";
   import { batteryBands } from "$lib/dashboardCardLayout";
   import CardTitle from "./CardTitle.svelte";
 
   let { card }: { card: Card } = $props();
+
+  /** A battery sample holds to the present this long: the feed's gap break (carBatteryFeed.svelte.ts). */
+  const BATTERY_HOLD_MS = 2500;
 
   // The no-data rule needs a clock: a frame older than 3 s is no data. One tick a second is enough.
   let now = $state(Date.now());
@@ -48,12 +54,21 @@
   const bandTone = { crit: "var(--crit)", warn: "var(--warn)", ok: "var(--ok)" } as const;
   // Mockup: from 4 columns and 3 rows the card adds a "Last 5 min" trace on the fixed battery scale.
   const big = $derived(card.h >= 3 && card.w >= 4);
+  // Battery samples are stamped with performance.now(), the frame clock, so the present is the frame time itself.
+  // The trace is built for scroll.anchor and shifted per frame (telemetryChart/scroll.ts). Samples come at 1 Hz; the
+  // last one holds to the present for the same gap break as the feed.
+  const trace = $derived(carBatteryFeed.snapshot());
+  const holdEnds = $derived<number[]>(holdEndsOf([{ ...trace, holdMs: BATTERY_HOLD_MS }], 0));
+  const scroll = new ChartScroll(
+    (time) => time,
+    () => holdEnds,
+  );
+  $effect(() => chartFrames.subscribe((time) => scroll.frame(time)));
+  const clipId = `batt-clip-${Math.random().toString(36).slice(2, 10)}`;
+  const offset = $derived(scroll.shift(100 / BATTERY_HISTORY_MS));
   const spark = $derived.by(() => {
-    const trace = carBatteryFeed.snapshot();
     if (trace.t.length < 2) return null;
-    const to = trace.t[trace.t.length - 1];
-    // Fixed window ending at the newest sample: a young trace enters from the right and slides left.
-    return chartPaths(trace, { w: 100, h: 40, from: to - BATTERY_HISTORY_MS, to, lo: BATTERY_SCALE_MIN_V, hi: BATTERY_SCALE_MAX_V });
+    return traceShape(trace, scroll.anchor, BATTERY_HISTORY_MS, BATTERY_HOLD_MS, { w: 100, h: 40, lo: BATTERY_SCALE_MIN_V, hi: BATTERY_SCALE_MAX_V });
   });
 </script>
 
@@ -62,8 +77,11 @@
     <span class="cap">Last 5 min</span>
     {#if spark}
       <svg class="spark" style:color={fillColor} viewBox="-2 -3 104 46" preserveAspectRatio="none" aria-hidden="true">
-        <path class="area" d={spark.area} />
-        <path class="line" d={spark.line} />
+        <defs><clipPath id={clipId}><rect x="0" y="-3" width="100" height="40" /></clipPath></defs>
+        <g clip-path="url(#{clipId})"><g transform="translate({offset} 0)">
+          <path class="area" d={spark.area} />
+          <path class="line" d={spark.line} />
+        </g></g>
       </svg>
     {/if}
   </div>

@@ -25,10 +25,9 @@
   // Ref-counted: the stream stays on while any view needs it.
   $effect(() => connectionStore.acquireStream());
 
-  // One window and one clock for every plot on the page.
+  // One window and one clock for every plot on the page. Plots draw from chartFrames, not a timer.
   const view = new TelemetryView();
   setContext(TELEMETRY_VIEW, view);
-  $effect(() => view.start());
 
   // Phone: one strip picks what fills the container under the header; the chart is a tab like the PID panels.
   const phone = new MediaQuery("max-width: 859px");

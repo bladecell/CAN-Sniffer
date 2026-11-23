@@ -7,6 +7,8 @@
   import { createSeriesFeed } from "$lib/telemetryChart/feed.svelte";
   import { OV_L, OV_R, overviewModel, overviewDrag, grabAt, jumpTo, ovAgo, toViewX, type DrawnRect, type Grab } from "$lib/telemetryChart/overview";
   import { SPAN_SEC, WINDOW_LENS, shiftWin, zoomWin, type Win } from "$lib/telemetryChart/window";
+  import { ChartScroll } from "$lib/telemetryChart/scroll.svelte";
+  import { chartFrames } from "$lib/chartFrames.svelte";
 
   interface Props {
     pids: number[];
@@ -23,9 +25,18 @@
   );
   const defs = $derived(new Map(vehicleStore.pidDefinitions.map((d) => [d.pid, d])));
 
+  // Lines are built for scroll.anchor and shifted per frame; the window frame and ticks are ago-based, so they stay put.
+  const scroll = new ChartScroll(
+    (time) => view.presentAt(time),
+    () => [],
+  );
+  $effect(() => chartFrames.subscribe((time) => scroll.frame(time)));
+  const clipId = `ov-clip-${Math.random().toString(36).slice(2, 10)}`;
+  const offset = $derived(scroll.shift((Math.max(0, width - OV_L - OV_R)) / (SPAN_SEC * 1000)));
+
   const model = $derived.by(() => {
     void feed.version;
-    const now = view.presentAt() ?? 0;
+    const now = scroll.anchor;
     const fromT = now - SPAN_SEC * 1000 - 1000;
     const series = pids.map((pid) => {
       const def = defs.get(pid);
@@ -122,9 +133,16 @@
       onpointercancel={onUp}
       onkeydown={onKey}
     >
-      {#each model.lines as line, i (i)}
-        <path class="ln" d={line.d} stroke={line.color} />
-      {/each}
+      <defs>
+        <clipPath id={clipId}><rect x={OV_L} y={model.top} width={Math.max(0, width - OV_L - OV_R)} height={model.bottom - model.top} /></clipPath>
+      </defs>
+      <g clip-path="url(#{clipId})">
+        <g transform="translate({offset} 0)">
+          {#each model.lines as line, i (i)}
+            <path class="ln" d={line.d} stroke={line.color} />
+          {/each}
+        </g>
+      </g>
       <rect class="dim" x={OV_L} y={model.top} width={Math.max(0, model.frame.x0 - OV_L)} height={model.bottom - model.top} />
       <rect class="dim" x={model.frame.x1} y={model.top} width={Math.max(0, width - OV_R - model.frame.x1)} height={model.bottom - model.top} />
       <rect class="frame" x={model.frame.x0} y={model.top} width={Math.max(1, model.frame.x1 - model.frame.x0)} height={model.bottom - model.top} rx="8" />

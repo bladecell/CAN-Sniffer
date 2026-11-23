@@ -101,7 +101,11 @@ describe("(d) the history keeps recording while no chart is mounted", () => {
   function harness() {
     let onMessage: ((u: { pid: number; value: number; timestamp: number }) => void) | null = null;
     const defs = [def];
-    const history = createChartHistory({ subscribeMessages: (cb) => ((onMessage = cb), () => {}), definitions: () => defs });
+    // Frames run at once: these tests read the buffer, not the redraw timing.
+    const history = createChartHistory(
+      { subscribeMessages: (cb) => ((onMessage = cb), () => {}), definitions: () => defs },
+      { request: (fn) => fn() },
+    );
     return { history, send: (t: number) => onMessage?.({ pid: 5, value: 1, timestamp: t }) };
   }
 

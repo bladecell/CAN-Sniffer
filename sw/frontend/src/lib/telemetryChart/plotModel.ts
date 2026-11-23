@@ -4,6 +4,7 @@
 import { agoLabel, clamp, finiteOr, formatValue, niceTicks, timeStep } from "./math";
 import { decimate, pathOf, statsOf, valueAt, windowPoints, type Pt } from "./series";
 import { GUTTER_LEFT, GUTTER_RIGHT } from "./gutter";
+import { SCROLL_HEADROOM_MS } from "./scroll";
 
 export type PlotMode = "overlay" | "lanes";
 export type Range = [number, number];
@@ -154,7 +155,8 @@ export function buildPlotModel(inp: PlotInput): PlotModel {
   const lines: PlotModel["lines"] = [];
   inp.series.forEach((s, i) => {
     // Edge-to-edge samples: interpolated at the window edges, held to the present while fresh (series.ts).
-    const pts: Pt[] = windowPoints(s.t, s.v, fromT, toT, now, s.holdMs ?? 2000).map((p) =>
+    // The left margin lets the geometry shift right by up to the headroom without an uncovered edge (scroll.ts).
+    const pts: Pt[] = windowPoints(s.t, s.v, fromT - SCROLL_HEADROOM_MS, toT, now, s.holdMs ?? 2000).map((p) =>
       p.v === null ? null : { x: xOfT(p.t), y: yOf(i, p.v) },
     );
     const dec = decimate(pts, pw);

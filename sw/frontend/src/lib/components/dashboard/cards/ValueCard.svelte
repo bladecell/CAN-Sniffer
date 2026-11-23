@@ -4,7 +4,11 @@
   import { vehicleStore } from "$lib/vehicleStore.svelte";
   import { safeHexColor } from "$lib/color";
   import { createSeriesFeed } from "$lib/telemetryChart/feed.svelte";
-  import { bridgeGaps, chartPaths, emptyNote, formatReading, levelOf, readState, sparkScale, windowOf } from "$lib/dashboardCardView";
+  import { createPresentClock } from "$lib/telemetryChart/window";
+  import { holdEndsOf } from "$lib/telemetryChart/scroll";
+  import { ChartScroll } from "$lib/telemetryChart/scroll.svelte";
+  import { chartFrames } from "$lib/chartFrames.svelte";
+  import { bridgeGaps, chartWindowRead, emptyNote, formatReading, levelOf, readState, sparkScale, traceShape, windowOf } from "$lib/dashboardCardView";
   import { pidSources } from "./cardSources.svelte";
   import CardTitle from "./CardTitle.svelte";
 
@@ -27,7 +31,16 @@
   const name = $derived(card.pids.length === 0 ? "Choose a PID" : (def?.name ?? `PID ${pid}`));
 
   pidSources();
-  const feed = createSeriesFeed(() => card.pids.slice(0, 1), () => {});
+  const clock = createPresentClock();
+  const feed = createSeriesFeed(() => card.pids.slice(0, 1), (t) => clock.observe(t, performance.now()));
+  // The sparkline is built for scroll.anchor and shifted per frame, as the Chart card is (telemetryChart/scroll.ts).
+  const scroll = new ChartScroll(
+    (time) => clock.now(time),
+    () => holdEnds,
+  );
+  $effect(() => chartFrames.subscribe((time) => scroll.frame(time)));
+  const clipId = `spark-clip-${Math.random().toString(36).slice(2, 10)}`;
+  const hold = $derived(Math.max(1500, 2 * (def?.update_interval_ms || 500)));
 
   // The last minute of stored samples for the sparkline, the last five minutes for the min and max.
   const history = $derived.by(() => {
@@ -52,12 +65,18 @@
     if (nums.length === 0) return null;
     return sparkScale(Math.min(...nums), Math.max(...nums), def && def.maxValue > def.minValue ? { min: def.minValue, max: def.maxValue } : null);
   });
-  const spark = $derived.by(() => {
-    if (!scale || recent.t.length < 2) return null;
-    const to = recent.t[recent.t.length - 1];
-    // Fixed 60 s window ending at the newest sample: a young trace enters from the right and slides left.
-    return chartPaths(recent, { w: 100, h: 40, from: to - WINDOW_MS, to, lo: scale.lo, hi: scale.hi });
+  // The drawn samples: the window's own, bridged, read from the buffer (not the whole history).
+  const drawn = $derived.by((): { t: number[]; v: (number | null)[] } => {
+    void feed.version;
+    return bridgeGaps(chartWindowRead(feed.read, pid, scroll.anchor, WINDOW_MS), BRIDGE_MS);
   });
+  // A young trace enters from the right and slides left: the window ends at the anchor, the layer shifts to the present.
+  const spark = $derived.by(() => {
+    if (!scale || drawn.t.length < 2) return null;
+    return traceShape(drawn, scroll.anchor, WINDOW_MS, hold, { w: 100, h: 40, lo: scale.lo, hi: scale.hi });
+  });
+  const offset = $derived(scroll.shift(100 / WINDOW_MS));
+  const holdEnds = $derived<number[]>(holdEndsOf([{ ...drawn, holdMs: hold }], 0));
 
   const numPx = $derived(card.h >= 3 ? (card.w >= 6 ? 61 : 48) : 34);
   const oneRow = $derived(card.h === 1 && card.w >= 3);
@@ -75,8 +94,11 @@
       <div class="t1"><CardTitle {name} {state} {level} {direction} iconOnly={card.w < 3} inline /></div>
       {#if inlineSpark && spark}
         <svg class="spark inl" viewBox="-2 -3 104 46" preserveAspectRatio="none" aria-hidden="true">
-          <path class="area" d={spark.area} />
-          <path class="line" d={spark.line} />
+          <defs><clipPath id="{clipId}-inl"><rect x="0" y="-3" width="100" height="40" /></clipPath></defs>
+          <g clip-path="url(#{clipId}-inl)"><g transform="translate({offset} 0)">
+            <path class="area" d={spark.area} />
+            <path class="line" d={spark.line} />
+          </g></g>
         </svg>
       {/if}
       <span class="num" class:warn={level === "warn"} class:crit={level === "crit"} style:font-size="min(20px, 24cqw)">{formatReading(value)}{#if unit && value !== null}<span class="u"> {unit}</span>{/if}</span>
@@ -101,8 +123,11 @@
         {/if}
         {#if spark}
           <svg class="spark" viewBox="-2 -3 104 46" preserveAspectRatio="none" aria-hidden="true">
-            <path class="area" d={spark.area} />
-            <path class="line" d={spark.line} />
+            <defs><clipPath id="{clipId}-tall"><rect x="0" y="-3" width="100" height="40" /></clipPath></defs>
+            <g clip-path="url(#{clipId}-tall)"><g transform="translate({offset} 0)">
+              <path class="area" d={spark.area} />
+              <path class="line" d={spark.line} />
+            </g></g>
           </svg>
         {/if}
       </div>

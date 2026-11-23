@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { OV_L, OV_R, grabAt, jumpTo, overviewDrag, overviewModel, ovAgo, ovX, dragWin, toViewX } from "./overview";
-import { liveWin } from "./window";
+import { liveWin, SPAN_SEC } from "./window";
+import { SCROLL_HEADROOM_MS } from "./scroll";
 
 describe("overview geometry", () => {
   test("the newest time is on the right, five minutes back on the left", () => {
@@ -86,6 +87,8 @@ describe("overview line edges", () => {
     const x = m.lines[0].d.match(/^M([\d.]+),/);
     return x ? Number(x[1]) : NaN;
   };
+  // The line starts one headroom before the edge (shifted into view by the scroll offset); see overview.ts.
+  const marginX = (width = 500) => ovX(300, width) - (SCROLL_HEADROOM_MS * (width - OV_L - OV_R)) / (300 * 1000);
   const every = (fromAgoMs: number, stepMs = 1000) => {
     const out: number[] = [];
     for (let t = NOW - fromAgoMs; t <= NOW; t += stepMs) out.push(t);
@@ -93,18 +96,42 @@ describe("overview line edges", () => {
   };
 
   test("data older than five minutes starts the line at the left edge, the five-minute mark", () => {
-    expect(firstX(every(400_000))).toBeCloseTo(ovX(300, 500), 1);
+    expect(firstX(every(400_000))).toBeCloseTo(marginX(), 1);
   });
 
   test("data that starts less than one sample interval after five minutes begins at the edge too", () => {
-    expect(firstX(every(299_500))).toBeCloseTo(ovX(300, 500), 1);
+    expect(firstX(every(299_500))).toBeCloseTo(marginX(), 1);
   });
 
   test("a slow PID (one sample every 5 s) still reaches the left edge", () => {
-    expect(firstX(every(302_000, 5000))).toBeCloseTo(ovX(300, 500), 1);
+    expect(firstX(every(302_000, 5000))).toBeCloseTo(marginX(), 1);
   });
 
   test("a buffer shorter than five minutes starts at its first sample, not at the edge", () => {
     expect(firstX(every(180_000))).toBeCloseTo(ovX(180, 500), 1);
+  });
+});
+
+describe("strip shifted by the scroll offset", () => {
+  test("the built lines reach past the left edge by the shift, so a shifted strip shows no gap", () => {
+    const now = 1_000_000;
+    const anchor = now + SCROLL_HEADROOM_MS;
+    const width = 700;
+    const t: number[] = [];
+    const v: (number | null)[] = [];
+    for (let s = -310; s <= 0; s++) {
+      t.push(now + s * 1000);
+      v.push(50 + 20 * Math.sin(s / 7));
+    }
+    const m = overviewModel({
+      width,
+      height: 84,
+      now: anchor,
+      win: { len: 60, endAgo: 0, pausedAt: null },
+      series: [{ color: "#fff", range: [0, 100], t, v }],
+    });
+    const offset = SCROLL_HEADROOM_MS * ((width - OV_L - OV_R) / (SPAN_SEC * 1000));
+    const xs = [...m.lines[0].d.matchAll(/[ML]([-\d.]+),/g)].map((r) => Number(r[1]));
+    expect(Math.min(...xs)).toBeLessThanOrEqual(OV_L - offset + 0.1);
   });
 });

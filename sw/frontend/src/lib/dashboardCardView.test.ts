@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { createChartBuffer } from "./chartBuffer";
+import { windowPoints } from "./telemetryChart/series";
+import { SCROLL_HEADROOM_MS } from "./telemetryChart/scroll";
 import {
   arcPath,
   arcPoint,
@@ -15,6 +18,8 @@ import {
   windowOf,
   bridgeGaps,
   sparkScale,
+  chartWindowRead,
+  traceShape,
   zoneStops,
   worstLevel,
   updatesPerSecond,
@@ -290,5 +295,75 @@ describe("updatesPerSecond", () => {
     expect(updatesPerSecond(5, 0)).toBe(0);
     expect(updatesPerSecond(-3, 1000)).toBe(0);
     expect(updatesPerSecond(Number.NaN, 1000)).toBe(0);
+  });
+});
+
+describe("chartWindowRead", () => {
+  test("reads from the window start less a lead margin, never from the buffer start", () => {
+    const calls: [number, number][] = [];
+    const read = (pid: number, fromT: number) => (calls.push([pid, fromT]), { t: [], v: [] });
+    chartWindowRead(read, 3, 100_000, 60_000);
+    expect(calls).toEqual([[3, 100_000 - 60_000 - SCROLL_HEADROOM_MS - 1000]]);
+  });
+});
+
+describe("chartPaths unclamped", () => {
+  test("points left of the box stay left of x=0 when unclamped, so a shifted layer shows them", () => {
+    const box = { w: 100, h: 40, from: 10, to: 20, lo: 0, hi: 10, unclamped: true };
+    const { line } = chartPaths({ t: [0, 15], v: [5, 5] }, box);
+    expect(line.startsWith("M-100.0,20.0")).toBe(true);
+  });
+});
+
+describe("chartWindowRead with a real buffer", () => {
+  test("a slow PID keeps the segment that enters the window's left edge", () => {
+    const buf = createChartBuffer();
+    for (let t = 0; t <= 100_000; t += 2000) buf.push(t, t / 1000);
+    const to = 100_000;
+    const spanMs = 60_000;
+    let readFrom = Infinity;
+    const read = (pid: number, fromT: number) => {
+      readFrom = Math.min(readFrom, fromT);
+      return buf.snapshot(fromT, 1);
+    };
+    const samples = chartWindowRead(read, 1, to, spanMs);
+    expect(readFrom).toBeLessThanOrEqual(to - spanMs - SCROLL_HEADROOM_MS);
+    const pts = windowPoints(samples.t, samples.v, to - spanMs - SCROLL_HEADROOM_MS, to, to, 4000);
+    expect(pts[0].t).toBe(to - spanMs - SCROLL_HEADROOM_MS);
+    expect(pts[0].v).not.toBeNull();
+  });
+});
+
+describe("chartPaths unclamped, right side", () => {
+  test("points past `to` keep their x beyond the box", () => {
+    const box = { w: 100, h: 40, from: 0, to: 10, lo: 0, hi: 10, unclamped: true };
+    const { line } = chartPaths({ t: [0, 20], v: [5, 5] }, box);
+    expect(line).toContain("L200.0,");
+  });
+});
+
+describe("traceShape continuity", () => {
+  // A trace built at the anchor and shifted by the offset must match the trace built at the exact present.
+  test("interior vertices at the anchor, shifted by the offset, land where the exact present puts them", () => {
+    const t: number[] = [];
+    const v: (number | null)[] = [];
+    for (let k = 0; k <= 100; k++) {
+      t.push(k * 1000);
+      v.push(50 + 20 * Math.sin(k / 5));
+    }
+    const span = 60_000;
+    const now = 90_500;
+    const anchor = now + SCROLL_HEADROOM_MS;
+    const box = { w: 300, h: 100, lo: 0, hi: 100 };
+    const built = traceShape({ t, v }, anchor, span, 1500, box);
+    const exact = traceShape({ t, v }, now, span, 1500, box);
+    const offset = (anchor - now) * (box.w / span);
+    const bv = [...built.line.matchAll(/[ML]([-\d.]+),([-\d.]+)/g)].map((m) => ({ x: +m[1], y: +m[2] }));
+    const ev = [...exact.line.matchAll(/[ML]([-\d.]+),([-\d.]+)/g)].map((m) => ({ x: +m[1], y: +m[2] })).filter((p) => p.x > 0.5 && p.x < box.w - 0.5);
+    expect(ev.length).toBeGreaterThan(40);
+    for (const p of ev) {
+      const gap = Math.min(...bv.map((b) => Math.hypot(b.x + offset - p.x, b.y - p.y)));
+      expect(gap).toBeLessThan(0.1);
+    }
   });
 });

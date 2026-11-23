@@ -1,4 +1,4 @@
-// Reads the stored samples of a set of PIDs. Listeners arrive at 5 Hz from chartHistory; `version` bumps with them.
+// Reads the stored samples of a set of PIDs. Listeners arrive once per frame that has new samples (chartHistory); `version` bumps with them.
 import { untrack } from "svelte";
 import type { ChartBuffer } from "$lib/chartBuffer";
 import { chartHistoryStore } from "$lib/chartHistoryStore";

@@ -61,7 +61,8 @@ class CarBatteryFeed {
   snapshot(): ChartSnapshot {
     void this.#version;
     const last = this.#buffer.lastTime();
-    return last === undefined ? { t: [], v: [] } : this.#buffer.snapshot(last - BATTERY_HISTORY_MS);
+    // One lead sample before the window, so the card can interpolate its left edge.
+    return last === undefined ? { t: [], v: [] } : this.#buffer.snapshot(last - BATTERY_HISTORY_MS, 1);
   }
 }
 

@@ -3,8 +3,12 @@
   import { vehicleStore } from "$lib/vehicleStore.svelte";
   import { safeHexColor } from "$lib/color";
   import { createSeriesFeed } from "$lib/telemetryChart/feed.svelte";
+  import { createPresentClock } from "$lib/telemetryChart/window";
+  import { holdEndsOf } from "$lib/telemetryChart/scroll";
+  import { ChartScroll } from "$lib/telemetryChart/scroll.svelte";
+  import { chartFrames } from "$lib/chartFrames.svelte";
   import { rangeOf } from "$lib/dashboardCardForm";
-  import { chartPaths, formatReading, readState, windowOf, type ReadState } from "$lib/dashboardCardView";
+  import { chartWindowRead, formatReading, readState, traceShape, type ReadState } from "$lib/dashboardCardView";
   import { pidSources } from "./cardSources.svelte";
   import CardTitle from "./CardTitle.svelte";
 
@@ -14,8 +18,17 @@
   const W = 300;
   const H = 100;
   const LANE_H = 40;
+  // Unique per card (and per lane below): a clip path id is referenced from this card only.
+  const clipId = `chart-clip-${Math.random().toString(36).slice(2, 10)}`;
 
-  const feed = createSeriesFeed(() => card.pids, () => {});
+  const clock = createPresentClock();
+  const feed = createSeriesFeed(() => card.pids, (t) => clock.observe(t, performance.now()));
+  // Geometry is built for scroll.anchor and shifted per frame, as the telemetry plots are (telemetryChart/scroll.ts).
+  const scroll = new ChartScroll(
+    (time) => clock.now(time),
+    () => holdEnds,
+  );
+  $effect(() => chartFrames.subscribe((time) => scroll.frame(time)));
   const polling = $derived(vehicleStore.obd2Status ? vehicleStore.obd2Status.polling : null);
   pidSources();
 
@@ -30,27 +43,27 @@
     end: { x: number; y: number } | null;
   }
 
-  // Every series keeps the last minute of its samples. Time runs to the newest sample of any PID.
-  const data = $derived.by(() => {
+  // Only the window's samples are read. Each line runs to the anchor and holds its last value while fresh, as the
+  // telemetry plots do (series.ts); the layer is then shifted so the anchor lands on the present.
+  const raw = $derived.by((): { pid: number; samples: { t: number[]; v: (number | null)[] } }[] => {
     void feed.version;
-    const raw = card.pids.map((pid) => ({ pid, samples: windowOf(feed.read(pid, 0), WINDOW_MS) }));
-    const times = raw.flatMap((r) => (r.samples.t.length ? [r.samples.t[r.samples.t.length - 1]] : []));
-    const to = times.length ? Math.max(...times) : 0;
-    // A trace shorter than the window fills the width instead of hugging the right edge.
-    const firsts = raw.flatMap((r) => (r.samples.t.length ? [r.samples.t[0]] : []));
-    const from = firsts.length ? Math.max(to - WINDOW_MS, Math.min(...firsts)) : to - WINDOW_MS;
-    return { to, from, raw };
+    return card.pids.map((pid) => ({ pid, samples: chartWindowRead(feed.read, pid, scroll.anchor, WINDOW_MS) }));
   });
 
+  const holdOf = (pid: number) => Math.max(1500, 2 * (vehicleStore.pidDefinitions.find((d) => d.pid === pid)?.update_interval_ms || 500));
+  const holdEnds = $derived<number[]>(holdEndsOf(raw.map((r) => ({ ...r.samples, holdMs: holdOf(r.pid) })), 0));
+
   const series = $derived<Series[]>(
-    data.raw.map(({ pid, samples }) => {
+    raw.map(({ pid, samples }) => {
       const def = vehicleStore.pidDefinitions.find((d) => d.pid === pid);
       const range = def ? rangeOf(def) : null;
+      const hold = holdOf(pid);
+      const to = scroll.anchor;
       const nums = samples.v.filter((v): v is number => v !== null);
       const lo = range ? range.min : nums.length ? Math.min(...nums) : 0;
       const hi = range ? range.max : nums.length ? Math.max(...nums) : 1;
       const box = card.style === "lanes" ? { w: W, h: LANE_H } : { w: W, h: H };
-      const paths = chartPaths(samples, { ...box, from: data.from, to: data.to, lo, hi });
+      const paths = traceShape(samples, to, WINDOW_MS, hold, { ...box, lo, hi });
       return {
         pid,
         name: def?.name ?? `PID ${pid}`,
@@ -63,6 +76,11 @@
       };
     }),
   );
+
+  /** Layer shift in viewBox units for this frame. */
+  const offset = $derived(scroll.shift(W / WINDOW_MS));
+  /** The end dot sits on the present: a held line's end is past it (clipped), a stale one moves with the layer. */
+  const dotX = (x: number) => Math.min(x + offset, W);
 
   const hasSamples = $derived(series.some((s) => s.latest !== null));
   const groupState = $derived<ReadState>(
@@ -88,8 +106,13 @@
             <span class="lv">{s.latest === null ? "—" : formatReading(s.latest)}{s.unit && s.latest !== null ? ` ${s.unit}` : ""}</span>
           </div>
           <svg viewBox="-4 -3 {W + 8} {LANE_H + 6}" preserveAspectRatio="none" aria-hidden="true">
-            <path class="line" d={s.line} style:stroke={s.color} />
-            {#if s.end}<path class="dot" d="M{s.end.x},{s.end.y}l0.01,0" style:stroke={s.color} />{/if}
+            <defs>
+              <clipPath id="{clipId}-{s.pid}"><rect x="0" y="-4" width={W} height={LANE_H + 8} /></clipPath>
+            </defs>
+            <g clip-path="url(#{clipId}-{s.pid})">
+              <path class="line" d={s.line} style:stroke={s.color} transform="translate({offset} 0)" />
+            </g>
+            {#if s.end}<path class="dot" d="M{dotX(s.end.x)},{s.end.y}l0.01,0" style:stroke={s.color} />{/if}
           </svg>
         </div>
       {/each}
@@ -104,11 +127,20 @@
     {/if}
     <div class="plot">
       <svg viewBox="-4 -4 {W + 8} {H + 8}" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <clipPath id={clipId}><rect x="0" y="-4" width={W} height={H + 8} /></clipPath>
+        </defs>
         <line class="mid" x1="-4" x2={W + 4} y1={H / 2} y2={H / 2} />
+        <g clip-path="url(#{clipId})">
+          <g transform="translate({offset} 0)">
+            {#each series as s (s.pid)}
+              {#if card.style === "area"}<path class="area" d={s.area} style:fill={s.color} />{/if}
+              <path class="line" d={s.line} style:stroke={s.color} />
+            {/each}
+          </g>
+        </g>
         {#each series as s (s.pid)}
-          {#if card.style === "area"}<path class="area" d={s.area} style:fill={s.color} />{/if}
-          <path class="line" d={s.line} style:stroke={s.color} />
-          {#if s.end}<path class="dot" d="M{s.end.x},{s.end.y}l0.01,0" style:stroke={s.color} />{/if}
+          {#if s.end}<path class="dot" d="M{dotX(s.end.x)},{s.end.y}l0.01,0" style:stroke={s.color} />{/if}
         {/each}
       </svg>
       {#if !hasSamples}
