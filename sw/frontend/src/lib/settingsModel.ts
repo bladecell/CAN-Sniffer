@@ -50,6 +50,7 @@ export const ROW = {
   sleepNow: { title: "Sleep now", kw: "sleep now suspend standby" },
   hwFilter: { title: "Hardware filter", kw: "filter mask acceptance id can controller" },
   autoPoll: { title: "Auto poll", kw: "keep polling resume ignition trip" },
+  sdStatus: { title: "Card status", kw: "sd card inserted removed mounted eject status" },
   sdUsage: { title: "Card usage", kw: "storage capacity sd used full" },
   pidFolder: { title: "PID library folder", kw: "pid json library path" },
   sdFormat: { title: "Format card", kw: "erase wipe destroy sd card" },
@@ -77,7 +78,7 @@ export const GROUP: Record<GroupId, GroupMeta> = {
   can: { id: "can", title: "CAN bus", icon: "engine", kw: "bitrate baud queue obd can filter mask acceptance", rows: [ROW.bitrate, ROW.rxQueue, ROW.txQueue, ROW.hwFilter] },
   sleep: { id: "sleep", title: "Sleep", icon: "moon", kw: "sleep battery voltage idle power drain", rows: [ROW.sleepState, ROW.batteryNow, ROW.keepAwake, ROW.sleepAuto, ROW.stayAwakeV, ROW.lowBatteryV, ROW.sleepNow] },
   recorder: { id: "recorder", title: "Recorder", icon: "route", kw: "recorder trip start polling", rows: [ROW.autoPoll] },
-  storage: { id: "storage", title: "Storage", icon: "sd-card", kw: "sd card storage format folder library", rows: [ROW.sdUsage, ROW.pidFolder, ROW.sdFormat] },
+  storage: { id: "storage", title: "Storage", icon: "sd-card", kw: "sd card storage format folder library", rows: [ROW.sdStatus, ROW.sdUsage, ROW.pidFolder, ROW.sdFormat] },
   access: { id: "access", title: "Access", icon: "lock", kw: "pin login log out password", rows: [ROW.session, ROW.savedPin, ROW.changePin] },
   device: { id: "device", title: "Device", icon: "bolt", kw: "firmware update restart reset uptime heap factory", rows: [ROW.firmware, ROW.uptime, ROW.lastReset, ROW.freeMemory, ROW.debugMode, ROW.restart] },
 };

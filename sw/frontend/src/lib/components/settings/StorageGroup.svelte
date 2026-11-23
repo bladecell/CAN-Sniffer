@@ -6,7 +6,7 @@
   import { parseJsonResponse } from "$lib/api";
   import { firmwareApi } from "$lib/firmwareApi.svelte";
   import { settingsStore } from "$lib/settingsStore.svelte";
-  import { SD_UNAVAILABLE_TEXT } from "$lib/sdCardStore.svelte";
+  import { SD_UNAVAILABLE_TEXT, sdCardStore } from "$lib/sdCardStore.svelte";
   import {
     GROUP,
     ROW,
@@ -45,6 +45,13 @@
     }
   }
   onMount(() => void loadCard());
+  // The live frame says when the card was inserted, removed or given up: re-read the usage then.
+  let lastMounted: boolean | undefined;
+  $effect(() => {
+    const mounted = sdCardStore.frame?.mounted;
+    if (mounted !== undefined && lastMounted !== undefined && mounted !== lastMounted) void loadCard();
+    lastMounted = mounted;
+  });
 
   const view = $derived(card.kind === "ok" ? sdView(card.info) : null);
   const cardHint = $derived.by(() => {
@@ -93,8 +100,13 @@
 
 <div class="st-sec">
   <h2>Card</h2>
-  {#if anyShown(q, GROUP.storage, [ROW.sdUsage])}
+  {#if anyShown(q, GROUP.storage, [ROW.sdStatus, ROW.sdUsage])}
   <div class="st-list">
+    {#if show(ROW.sdStatus) && sdCardStore.statusText}
+      <SettingRow title={ROW.sdStatus.title} hint={sdCardStore.unavailable ? SD_UNAVAILABLE_TEXT : "Updates when the card is inserted or removed."}>
+        <span class="st-val">{sdCardStore.statusText}</span>
+      </SettingRow>
+    {/if}
     {#if show(ROW.sdUsage)}
       <SettingRow title={ROW.sdUsage.title} hint={cardHint} stack>
         {#if view?.kind === "ok"}
