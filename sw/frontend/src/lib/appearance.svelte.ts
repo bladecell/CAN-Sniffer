@@ -5,6 +5,7 @@ import {
   writeAppearance,
   type Appearance,
 } from "./appearance";
+import { startBackground } from "./background.svelte";
 
 function localStore(): Storage | null {
   try {
@@ -16,6 +17,7 @@ function localStore(): Storage | null {
 
 export const appearance: Appearance = $state(readAppearance(localStore()));
 applyAppearance(document.documentElement, appearance);
+startBackground(appearance, document.documentElement);
 
 export function setAppearance<K extends keyof Appearance>(key: K, value: Appearance[K]): void {
   Object.assign(appearance, parseAppearance({ ...appearance, [key]: value }));

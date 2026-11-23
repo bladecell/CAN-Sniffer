@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { ACCENTS, CONTROL_FILLS, GLASS_MAX, GLASS_MIN, THEMES, nextOption, type ControlFill, type Theme } from "$lib/appearance";
+  import { ACCENTS, BACKGROUNDS, BG_VAR_MAX, BG_VAR_MIN, CONTROL_FILLS, GLASS_MAX, GLASS_MIN, THEMES, nextOption, type ControlFill, type Theme } from "$lib/appearance";
   import { appearance, setAppearance } from "$lib/appearance.svelte";
   import { GROUP, ROW, rowShown, type RowMeta } from "$lib/settingsModel";
+  import SelectMenu from "$lib/components/SelectMenu.svelte";
   import RangeSlider from "$lib/components/RangeSlider.svelte";
   import SegControl from "./SegControl.svelte";
   import SettingRow from "./SettingRow.svelte";
@@ -12,6 +13,12 @@
   const themeOptions: { value: Theme; label: string }[] = THEMES.map((t) => ({ value: t, label: t[0]!.toUpperCase() + t.slice(1) }));
   const fillOptions: { value: ControlFill; label: string }[] = CONTROL_FILLS.map((c) => ({ value: c, label: c[0]!.toUpperCase() + c.slice(1) }));
   const accentLabel = $derived(ACCENTS.find((a) => a.id === appearance.accent)?.label ?? "Orange");
+
+  // The first stretch of the track is a hatched stop for 0 (Random); the rest runs 1 to 100.
+  const BG_STOP = 0.1;
+  const bgVarToPos = (v: number) => (v <= 0 ? 0 : BG_STOP + ((v - 1) / (BG_VAR_MAX - 1)) * (1 - BG_STOP));
+  const posToBgVar = (x: number) => (x < BG_STOP ? 0 : Math.round(1 + ((x - BG_STOP) / (1 - BG_STOP)) * (BG_VAR_MAX - 1)));
+  const bgOptions = BACKGROUNDS.map((b) => ({ value: b.id, label: b.label }));
 
   function swatchKey(e: KeyboardEvent, id: string) {
     const next = nextOption(
@@ -77,6 +84,32 @@
           parse={(t) => (/^\d{1,3}\s*%?$/.test(t.trim()) ? Number(t.replace(/\D/g, "")) : null)}
           format={(v) => `${v}%`}
           onChange={([v]) => setAppearance("glass", v)}
+        />
+      </SettingRow>
+    {/if}
+    {#if show(ROW.background)}
+      <SettingRow title={ROW.background.title} hint="A generated pattern behind the app, drawn in your accent colour.">
+        <SelectMenu options={bgOptions} value={appearance.bg} ariaLabel={ROW.background.title} onChange={(v) => setAppearance("bg", v)} />
+      </SettingRow>
+    {/if}
+    {#if appearance.bg === "contour" && show(ROW.bgVariation)}
+      <SettingRow title={ROW.bgVariation.title} hint="Slide to reshape the lines. The hatched start of the slider is Random, a new pattern each day. Line count follows your screen width.">
+        <span class="sr-only" id="bgvar-label">{ROW.bgVariation.title}</span>
+        <RangeSlider
+          labelIds={["bgvar-label"]}
+          values={[appearance.bgVar]}
+          min={BG_VAR_MIN}
+          max={BG_VAR_MAX}
+          keyStep={1}
+          page={10}
+          fit
+          readouts={false}
+          toPos={bgVarToPos}
+          fromPos={posToBgVar}
+          format={(v) => (v === 0 ? "Random" : String(v))}
+          valueText={(v) => (v === 0 ? "Random, a new pattern each day" : `Pattern ${v}`)}
+          stop={{ side: "left", share: BG_STOP, on: appearance.bgVar === 0 }}
+          onChange={([v]) => setAppearance("bgVar", v)}
         />
       </SettingRow>
     {/if}

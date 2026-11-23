@@ -295,6 +295,11 @@ body::before {
 	color: var(--on-accent);
 }
 
+/* Generated background: replaces the tonal shapes. --bg-image is set by background.svelte.ts. */
+:root[data-bg='contour'] body::before {
+	background: var(--bg-image) 0 0 / auto no-repeat;
+}
+
 /* Surfaces in page flow: translucent fill, no border, no shadow, no blur. */
 .card {
 	background: var(--card);

@@ -6,6 +6,7 @@ import {
   applyAppearance,
   glassFactors,
   nextOption,
+  parseBgVar,
   parseGlass,
   parseAppearance,
   readAppearance,
@@ -26,7 +27,7 @@ function fakeStore(initial: Record<string, string> = {}) {
 describe("parseAppearance", () => {
   test("uses the defaults when nothing is stored", () => {
     expect(parseAppearance({})).toEqual(DEFAULT_APPEARANCE);
-    expect(DEFAULT_APPEARANCE).toEqual({ theme: "system", accent: "orange", ctl: "clear", glass: 50 });
+    expect(DEFAULT_APPEARANCE).toEqual({ theme: "system", accent: "orange", ctl: "clear", glass: 50, bg: "default", bgVar: 12 });
   });
 
   test("keeps valid values", () => {
@@ -35,6 +36,8 @@ describe("parseAppearance", () => {
       accent: "rose",
       ctl: "strong",
       glass: 50,
+      bg: "default",
+      bgVar: 12,
     });
   });
 
@@ -49,7 +52,7 @@ describe("parseAppearance", () => {
 describe("readAppearance", () => {
   test("reads the three storage keys", () => {
     const store = fakeStore({ "cs-theme": "light", "cs-accent": "teal", "cs-ctl": "strong" });
-    expect(readAppearance(store)).toEqual({ theme: "light", accent: "teal", ctl: "strong", glass: 50 });
+    expect(readAppearance(store)).toEqual({ theme: "light", accent: "teal", ctl: "strong", glass: 50, bg: "default", bgVar: 12 });
   });
 
   test("falls back to defaults when storage is missing or throws", () => {
@@ -66,11 +69,13 @@ describe("readAppearance", () => {
 describe("writeAppearance", () => {
   test("writes all three keys", () => {
     const store = fakeStore();
-    writeAppearance(store, { theme: "dark", accent: "blue", ctl: "strong", glass: 30 });
+    writeAppearance(store, { theme: "dark", accent: "blue", ctl: "strong", glass: 30, bg: "contour", bgVar: 40 });
     expect(store.data.get(STORAGE_KEYS.theme)).toBe("dark");
     expect(store.data.get(STORAGE_KEYS.accent)).toBe("blue");
     expect(store.data.get(STORAGE_KEYS.ctl)).toBe("strong");
     expect(store.data.get(STORAGE_KEYS.glass)).toBe("30");
+    expect(store.data.get(STORAGE_KEYS.bg)).toBe("contour");
+    expect(store.data.get(STORAGE_KEYS.bgVar)).toBe("40");
   });
 
   test("does not throw when storage refuses writes", () => {
@@ -85,7 +90,7 @@ describe("writeAppearance", () => {
 
   test("a written value reads back unchanged", () => {
     const store = fakeStore();
-    const value = { theme: "system", accent: "violet", ctl: "clear", glass: 80 } as const;
+    const value = { theme: "system", accent: "violet", ctl: "clear", glass: 80, bg: "contour", bgVar: 77 } as const;
     writeAppearance(store, value);
     expect(readAppearance(store)).toEqual(value);
   });
@@ -94,8 +99,8 @@ describe("writeAppearance", () => {
 describe("applyAppearance", () => {
   test("sets data-theme, data-accent and data-ctl on the root element", () => {
     const root = { dataset: {} as DOMStringMap };
-    applyAppearance(root, { theme: "light", accent: "green", ctl: "strong", glass: 50 });
-    expect(root.dataset).toEqual({ theme: "light", accent: "green", ctl: "strong" });
+    applyAppearance(root, { theme: "light", accent: "green", ctl: "strong", glass: 50, bg: "default", bgVar: 12 });
+    expect(root.dataset).toEqual({ theme: "light", accent: "green", ctl: "strong", bg: "default" });
   });
 });
 
@@ -146,5 +151,24 @@ describe("glass", () => {
     const solid = glassFactors(0);
     expect(solid.card).toBeGreaterThan(solid.inner);
     expect(solid.inner).toBeGreaterThan(solid.float);
+  });
+});
+
+describe("background", () => {
+  test("an unknown background falls back to the default", () => {
+    expect(parseAppearance({ bg: "plasma" }).bg).toBe("default");
+    expect(parseAppearance({ bg: "contour" }).bg).toBe("contour");
+  });
+  test("variation is a clamped whole number, else the default", () => {
+    expect(parseBgVar("40.6")).toBe(41);
+    expect(parseBgVar(-5)).toBe(0);
+    expect(parseBgVar(900)).toBe(100);
+    expect(parseBgVar("abc")).toBe(12);
+    expect(parseBgVar(NaN)).toBe(12);
+  });
+  test("applyAppearance sets data-bg", () => {
+    const root = { dataset: {} as DOMStringMap };
+    applyAppearance(root, { ...DEFAULT_APPEARANCE, bg: "contour" });
+    expect(root.dataset.bg).toBe("contour");
   });
 });

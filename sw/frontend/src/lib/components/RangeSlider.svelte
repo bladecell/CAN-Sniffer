@@ -35,6 +35,8 @@
     stop?: { side: "left" | "right"; share: number; on: boolean };
     /** Fixed width (for rows beside a title) instead of the full width of the parent. */
     fit?: boolean;
+    /** false hides the value readout (the thumb and scale carry the meaning). */
+    readouts?: boolean;
     id?: string;
     describedBy?: string;
     invalid?: boolean;
@@ -60,6 +62,7 @@
     scale = [],
     stop,
     fit = false,
+    readouts = true,
     id,
     describedBy,
     invalid = false,
@@ -170,7 +173,7 @@
 <div class="sld rs" class:two class:fit class:end={stop?.on} class:bad={invalid}>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="sld-pad" onpointerdown={onDown} onpointermove={onMove}>
-    {#if two}{@render readout(0, true)}{/if}
+    {#if two && readouts}{@render readout(0, true)}{/if}
     <div class="sld-track" bind:this={track}>
       {#if stop}<span class="sld-stop" class:left={stop.side === "left"} style="width: calc({stop.share * 100}% + 18px)" aria-hidden="true"></span>{/if}
       <span class="sld-fill" style="left: {from * 100}%; width: {Math.max(0, to - from) * 100}%"></span>
@@ -196,7 +199,9 @@
         ></span>
       {/each}
     </div>
-    {@render readout(values.length - 1, false)}
+    {#if readouts}
+      {@render readout(values.length - 1, false)}
+    {/if}
   </div>
   {#if scale.length > 0}
     <div class="sld-scale" aria-hidden="true">

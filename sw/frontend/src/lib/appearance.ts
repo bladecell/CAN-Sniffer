@@ -22,21 +22,41 @@ export const GLASS_MIN = 0;
 export const GLASS_MAX = 100;
 export const GLASS_DEFAULT = 50;
 
+export const BACKGROUNDS = [
+  { id: "default", label: "Default" },
+  { id: "contour", label: "Contour lines" },
+] as const;
+export type Background = (typeof BACKGROUNDS)[number]["id"];
+export const BACKGROUND_IDS: readonly Background[] = BACKGROUNDS.map((b) => b.id);
+
+/** Pattern variation, 0 to 100: morphs the selected background. */
+export const BG_VAR_MIN = 0;
+export const BG_VAR_MAX = 100;
+export const BG_VAR_DEFAULT = 12;
+
 export interface Appearance {
   theme: Theme;
   accent: Accent;
   ctl: ControlFill;
   glass: number;
+  bg: Background;
+  bgVar: number;
 }
 
-export const DEFAULT_APPEARANCE: Appearance = { theme: "system", accent: "orange", ctl: "clear", glass: GLASS_DEFAULT };
+export const DEFAULT_APPEARANCE: Appearance = { theme: "system", accent: "orange", ctl: "clear", glass: GLASS_DEFAULT, bg: "default", bgVar: BG_VAR_DEFAULT };
 
-export const STORAGE_KEYS = { theme: "cs-theme", accent: "cs-accent", ctl: "cs-ctl", glass: "cs-glass" } as const;
+export const STORAGE_KEYS = { theme: "cs-theme", accent: "cs-accent", ctl: "cs-ctl", glass: "cs-glass", bg: "cs-bg", bgVar: "cs-bgvar" } as const;
 
 /** A whole number in 0..100, or the default for anything else (NaN, text, out of range is clamped). */
 export function parseGlass(value: unknown): number {
   const n = typeof value === "number" ? value : typeof value === "string" && value.trim() !== "" ? Number(value) : NaN;
   return Number.isFinite(n) ? Math.round(Math.min(GLASS_MAX, Math.max(GLASS_MIN, n))) : GLASS_DEFAULT;
+}
+
+/** A whole number in 0..100, or the default for anything else. */
+export function parseBgVar(value: unknown): number {
+  const n = typeof value === "number" ? value : typeof value === "string" && value.trim() !== "" ? Number(value) : NaN;
+  return Number.isFinite(n) ? Math.round(Math.min(BG_VAR_MAX, Math.max(BG_VAR_MIN, n))) : BG_VAR_DEFAULT;
 }
 
 /** Multiples of each tier's designed alpha (app.css multiplies them in). One slider, three tiers that respond differently:
@@ -58,6 +78,8 @@ export function parseAppearance(raw: Partial<Record<keyof Appearance, unknown>>)
     accent: pick(ACCENT_IDS, raw.accent, DEFAULT_APPEARANCE.accent),
     ctl: pick(CONTROL_FILLS, raw.ctl, DEFAULT_APPEARANCE.ctl),
     glass: parseGlass(raw.glass),
+    bg: pick(BACKGROUND_IDS, raw.bg, DEFAULT_APPEARANCE.bg),
+    bgVar: parseBgVar(raw.bgVar),
   };
 }
 
@@ -74,6 +96,8 @@ export function readAppearance(store: Pick<Storage, "getItem"> | null): Appearan
     accent: get(STORAGE_KEYS.accent),
     ctl: get(STORAGE_KEYS.ctl),
     glass: get(STORAGE_KEYS.glass),
+    bg: get(STORAGE_KEYS.bg),
+    bgVar: get(STORAGE_KEYS.bgVar),
   });
 }
 
@@ -94,6 +118,7 @@ export function applyAppearance(
   root.dataset.theme = value.theme;
   root.dataset.accent = value.accent;
   root.dataset.ctl = value.ctl;
+  root.dataset.bg = value.bg;
   const k = glassFactors(value.glass);
   root.style?.setProperty("--k-float", String(k.float));
   root.style?.setProperty("--k-card", String(k.card));
