@@ -120,8 +120,8 @@
     {/if}
     {#if draft && (show(ROW.lowBatteryV) || show(ROW.stayAwakeV))}
       <SettingRow title="Battery thresholds" hint="Above the right thumb the engine is charging, so the device stays awake. Below the left thumb the device sleeps 60 s per cycle instead of 10 s, to save the battery. 9.0 to 16.0 V." error={built.errors.stay_awake_voltage_mv ?? built.errors.low_battery_voltage_mv}>
-        <span class="sr" id="sl-lo">{ROW.lowBatteryV.title}</span>
-        <span class="sr" id="sl-aw">{ROW.stayAwakeV.title}</span>
+        <span class="sr-only" id="sl-lo">{ROW.lowBatteryV.title}</span>
+        <span class="sr-only" id="sl-aw">{ROW.stayAwakeV.title}</span>
         <RangeSlider
           labelIds={["sl-lo", "sl-aw"]}
           values={[volts(draft.low), volts(draft.awake)]}
@@ -142,7 +142,7 @@
       </SettingRow>
     {/if}
     {#if show(ROW.sleepNow)}
-      <SettingRow inline title={ROW.sleepNow.title} hint="One sleep cycle, not power off. Wi-Fi drops; the device wakes every 10 s (60 s on a low battery) and comes back only when the CAN bus is live." boxed>
+      <SettingRow inline title={ROW.sleepNow.title} hint="One sleep cycle, not power off. Wi-Fi drops; the device wakes every 10 s (60 s on a low battery) and comes back only when the CAN bus is live.">
         <button type="button" class="btn" onclick={() => (confirmSleep = true)} disabled={sleeping}>
           <Icon name="zzz" size={16} />Sleep now
         </button>

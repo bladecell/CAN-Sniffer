@@ -550,6 +550,10 @@
 .st-phone .in {
   width: 100%;
 }
+.st-phone .st-ctl .rs.fit {
+  width: 100%;
+  min-width: 0;
+}
 .st-phone .seg {
   width: 100%;
   display: flex;
@@ -662,14 +666,4 @@
   min-height: var(--ctl-h);
   height: var(--ctl-h);
   padding: 0 18px;
-}
-
-/* Names a control for screen readers without showing. */
-.st-root .sr {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
 }

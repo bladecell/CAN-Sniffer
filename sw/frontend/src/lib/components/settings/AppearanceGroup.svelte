@@ -64,7 +64,7 @@
     {/if}
     {#if show(ROW.glass)}
       <SettingRow title={ROW.glass.title} hint="Lower is more solid. Cards change the most, menus and dialogs stay readable.">
-        <span class="sr" id="glass-label">{ROW.glass.title}</span>
+        <span class="sr-only" id="glass-label">{ROW.glass.title}</span>
         <RangeSlider
           labelIds={["glass-label"]}
           values={[appearance.glass]}
