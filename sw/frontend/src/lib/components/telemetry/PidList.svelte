@@ -117,8 +117,8 @@
       >
         {#snippet behind()}
           {#if phone}
-            <div class="lay lay-l" aria-hidden="true">Delete</div>
-            <div class="lay lay-r" aria-hidden="true">Edit</div>
+            <div class="sb-lay sb-lay-l sb-lay-del" aria-hidden="true">Delete</div>
+            <div class="sb-lay sb-lay-r sb-lay-apply" aria-hidden="true">Edit</div>
           {/if}
         {/snippet}
         {#snippet tags()}
@@ -147,8 +147,8 @@
         {#snippet after()}
           {#if phone}
             <!-- Keyboard path to the swipe actions. Hidden until focused, then the card slides to show the action. -->
-            <button type="button" class="sra sra-l" onclick={() => removeOne(row)}>Delete {row.name}</button>
-            <button type="button" class="sra sra-r" onclick={() => onEdit(index)}>Edit {row.name}</button>
+            <button type="button" class="sb-sra sb-sra-l" onclick={() => removeOne(row)}>Delete {row.name}</button>
+            <button type="button" class="sb-sra sb-sra-r" onclick={() => onEdit(index)}>Edit {row.name}</button>
           {/if}
         {/snippet}
       </PidCard>
@@ -237,82 +237,5 @@
   .sb-group > h3,
   .sb-group > h4 {
     display: block;
-  }
-  .sra {
-    position: absolute;
-    z-index: 3;
-    top: 50%;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    border: 0;
-    background: none;
-    color: transparent;
-    font-size: 0;
-    white-space: nowrap;
-    clip-path: inset(50%);
-    overflow: hidden;
-    transform: translateY(-50%);
-  }
-  .sra:focus-visible {
-    top: 0;
-    bottom: 0;
-    width: 112px;
-    height: auto;
-    transform: none;
-    clip-path: none;
-    overflow: visible;
-    outline: none;
-  }
-  .sra-l {
-    left: 0;
-  }
-  .sra-r {
-    right: 0;
-  }
-  /* Phone swipe: the layers sit under the card and show the action for the drag direction. */
-  .lay {
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    display: flex;
-    align-items: center;
-    padding: 0 20px;
-    font-weight: 800;
-    font-size: 0.95rem;
-    visibility: hidden;
-  }
-  .lay-l {
-    justify-content: flex-start;
-    background: var(--crit);
-    color: var(--bg);
-  }
-  .lay-r {
-    justify-content: flex-end;
-    background: var(--accent);
-    color: var(--on-accent);
-  }
-  :global(.prow[data-dir='left']) .lay-r,
-  :global(.prow[data-dir='right']) .lay-l {
-    visibility: visible;
-  }
-  :global(.prow:has(.sra-l:focus-visible)) :global(.sb-slide) {
-    transform: translateX(112px);
-  }
-  :global(.prow:has(.sra-r:focus-visible)) :global(.sb-slide) {
-    transform: translateX(-112px);
-  }
-  :global(.prow:has(.sra-l:focus-visible)) .lay-l,
-  :global(.prow:has(.sra-r:focus-visible)) .lay-r {
-    visibility: visible;
-  }
-  :global(.prow.phone) :global(.sb-slide) {
-    background: linear-gradient(var(--row), var(--row)), var(--float-solid);
-    touch-action: pan-y;
-    user-select: none;
-    -webkit-user-select: none;
-  }
-  :global(.prow.phone) .lay {
-    border-radius: var(--r-ctl);
   }
 </style>

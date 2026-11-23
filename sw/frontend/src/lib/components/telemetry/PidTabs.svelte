@@ -37,7 +37,7 @@
   }
 </script>
 
-<div class={variant === "rail" ? "switch rail" : variant === "strip" ? "card strip" : "seg eq stack"} role="group" aria-label="PID panels">
+<div class={variant === "rail" ? "switch rail icon-rail" : variant === "strip" ? "card strip" : "seg eq stack"} role="group" aria-label="PID panels">
   {#each panels as p (p.id)}
     <button
       type="button"
@@ -93,18 +93,7 @@
     top: 4px;
     right: 18%;
   }
-  /* Rail (desktop): a 56px card of icon buttons, the selected one with a 3px accent bar on its left. */
-  .switch.rail {
-    display: flex;
-    flex: none;
-    flex-direction: column;
-    gap: 4px;
-    width: 56px;
-    padding: 6px;
-    border-radius: calc(var(--r-float) - 8px);
-    background: var(--card);
-    align-self: flex-start;
-  }
+  /* Rail (desktop): the selected button has a 3px accent bar on its left. The rail box is app.css .icon-rail. */
   .switch.rail button {
     position: relative;
     display: grid;

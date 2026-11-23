@@ -3,6 +3,7 @@
   import { connectionStore } from "$lib/connectionStore.svelte";
   import { vehicleStore } from "$lib/vehicleStore.svelte";
   import { recordingStore } from "$lib/recordingStore.svelte";
+  import { sdCardStore } from "$lib/sdCardStore.svelte";
   import { alertStore } from "$lib/alertStore.svelte";
   import { formatBytes, sidecarName, tripRows, type TripRow } from "$lib/recorderView";
   import Icon from "$lib/Icon.svelte";
@@ -131,8 +132,8 @@
   </ViewHeader>
 
   {#if sdMissing}
-    <StateNote title="SD card not available" icon="alert-circle" tone="warn" role="alert">
-      <p class="rv-muted">Trips are saved to the SD card, so recording is off and the trip list can't be read. Insert a card, or wait if it is busy, then check again.</p>
+    <StateNote title={sdCardStore.unavailable ? "SD card unavailable" : "SD card not available"} icon="alert-circle" tone="warn" role="alert">
+      <p class="rv-muted">{sdCardStore.unavailable ? "The device stopped using the card after repeated errors, so recording is off. Reinsert the card, then check again." : "Trips are saved to the SD card, so recording is off and the trip list can't be read. Insert a card, or wait if it is busy, then check again."}</p>
       <div class="rv-acts">
         <button type="button" class="btn pri" onclick={retry}>Check again</button>
       </div>

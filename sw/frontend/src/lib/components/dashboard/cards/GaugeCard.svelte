@@ -230,7 +230,7 @@
       {#each items as it (it.pid)}
         <li>
           <i class="sw" style:background={it.color}></i>
-          <span class="ln">{it.name}</span>
+          <span class="ln ellipsis">{it.name}</span>
           <span class="lv">{formatReading(it.value)}{it.unit && it.value !== null ? ` ${it.unit}` : ""}</span>
         </li>
       {/each}
@@ -441,9 +441,6 @@
   }
   .ln {
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
   .lv {
     margin-left: auto;

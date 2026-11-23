@@ -67,6 +67,8 @@
   border: 1px solid var(--hair);
   border-radius: var(--r-track);
   background: var(--card);
+  -webkit-backdrop-filter: var(--card-blur);
+  backdrop-filter: var(--card-blur);
 }
 
 /* Card level rings (mockup): warning dashed, critical solid and thicker. The card body marks its level with data-level. */

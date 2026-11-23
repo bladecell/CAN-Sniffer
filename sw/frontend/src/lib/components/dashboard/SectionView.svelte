@@ -140,6 +140,7 @@
 
 <style>
   .db-section {
+    position: relative;
     display: grid;
     gap: 10px;
     min-width: 0;
@@ -149,7 +150,18 @@
   .db-section.editing {
     padding: 12px;
     border-radius: var(--r-card);
+    isolation: isolate;
+  }
+  /* The panel's blur lives on a sibling-level layer so the blurred cards inside it keep theirs (DESIGN.md, blur blockers). */
+  .db-section.editing::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
     background: var(--row);
+    -webkit-backdrop-filter: var(--card-blur);
+    backdrop-filter: var(--card-blur);
   }
   .db-sec-edit {
     display: flex;

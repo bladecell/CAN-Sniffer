@@ -11,6 +11,9 @@ if (typeof crypto !== "undefined" && !crypto.randomUUID) {
 import './app.css'
 import { mount } from 'svelte'
 import App from './App.svelte'
+import { installTooltips } from '$lib/tooltip'
+
+installTooltips()
 
 const app = mount(App, {
 	target: document.getElementById('app')!,

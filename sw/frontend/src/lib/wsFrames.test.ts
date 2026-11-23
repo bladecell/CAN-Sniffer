@@ -94,3 +94,20 @@ describe("sleep notice frame", () => {
     expect(parseWsFrame(new Uint8Array([0x05, 1, 9]).buffer)).toBeNull();
   });
 });
+
+describe("SD card state frame", () => {
+  test("parses the 5 byte 0x06 frame", () => {
+    expect(parseWsFrame(new Uint8Array([0x06, 3, 1, 0, 0]).buffer)).toEqual({ kind: "sdCard", mounted: true, unavailable: false, reason: "mounted" });
+    expect(parseWsFrame(new Uint8Array([0x06, 3, 0, 0, 1]).buffer)).toEqual({ kind: "sdCard", mounted: false, unavailable: false, reason: "removed" });
+    expect(parseWsFrame(new Uint8Array([0x06, 3, 0, 1, 2]).buffer)).toEqual({ kind: "sdCard", mounted: false, unavailable: true, reason: "io-timeouts" });
+    expect(parseWsFrame(new Uint8Array([0x06, 3, 0, 0, 3]).buffer)).toEqual({ kind: "sdCard", mounted: false, unavailable: false, reason: "unmounted" });
+  });
+  test("rejects 0x06 frames of the wrong size, length or values", () => {
+    expect(parseWsFrame(new Uint8Array([0x06, 3, 1, 0]).buffer)).toBeNull();
+    expect(parseWsFrame(new Uint8Array([0x06, 3, 1, 0, 0, 0]).buffer)).toBeNull();
+    expect(parseWsFrame(new Uint8Array([0x06, 2, 1, 0, 0]).buffer)).toBeNull();
+    expect(parseWsFrame(new Uint8Array([0x06, 3, 2, 0, 0]).buffer)).toBeNull();
+    expect(parseWsFrame(new Uint8Array([0x06, 3, 0, 2, 2]).buffer)).toBeNull();
+    expect(parseWsFrame(new Uint8Array([0x06, 3, 0, 0, 4]).buffer)).toBeNull();
+  });
+});

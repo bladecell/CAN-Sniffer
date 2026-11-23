@@ -103,7 +103,7 @@
 <section class="cb" onclick={clearSelection}>
   <div class="cb-ws" class:collapsed={!sideShown}>
     <div class="cb-left">
-    <nav class="card cb-rail" aria-label="CAN views">
+    <nav class="card cb-rail icon-rail" aria-label="CAN views">
       {#each RAIL as r (r.id)}
         <button aria-current={tab === r.id && sideShown ? "page" : undefined} aria-label={r.label} title={r.label} onclick={() => pick(r.id)}>
           <Icon name={r.icon} size={20} />
@@ -247,18 +247,7 @@
       max-height: calc(100dvh - 200px);
     }
   }
-  /* Same look as Telemetry's PidTabs rail: 56 px card, 6 px padding, 44x48 buttons, selected = accent icon + bar. */
-  .cb-rail {
-    flex: none;
-    width: 56px;
-    box-sizing: border-box;
-    align-self: flex-start;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding: 6px;
-    border-radius: calc(var(--r-float) - 8px);
-  }
+  /* 44x48 buttons, selected = accent icon + bar. The rail box is app.css .icon-rail. */
   .cb-rail button {
     position: relative;
     display: grid;

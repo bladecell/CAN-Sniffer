@@ -167,6 +167,8 @@
     padding: 16px 18px 12px 20px;
     border-radius: var(--r-card);
     background: var(--card);
+    -webkit-backdrop-filter: var(--card-blur);
+    backdrop-filter: var(--card-blur);
   }
   /* Phone: the same 12 px side padding as the plot cards, so the strip's plot area lines up with the plots. */
   @media (max-width: 859px) {

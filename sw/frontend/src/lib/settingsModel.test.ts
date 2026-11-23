@@ -204,7 +204,8 @@ describe("SD card mapping (GET /sd_card/info)", () => {
   const info = { capacity: 30464, used_space_mb: 14540, is_present: true, is_mounted: true, name: "SD" };
 
   test("parseSdInfo keeps the documented fields and rejects bad types or negatives", () => {
-    expect(parseSdInfo(info)).toEqual({ capacity: 30464, used_space_mb: 14540, is_present: true, is_mounted: true });
+    expect(parseSdInfo(info)).toEqual({ capacity: 30464, used_space_mb: 14540, is_present: true, is_mounted: true, unavailable: false });
+    expect(parseSdInfo({ ...info, unavailable: true })?.unavailable).toBe(true);
     expect(parseSdInfo({ ...info, capacity: "30464" })).toBeNull();
     expect(parseSdInfo({ ...info, used_space_mb: -1 })).toBeNull();
     expect(parseSdInfo({ ...info, is_mounted: "yes" })).toBeNull();
@@ -214,6 +215,7 @@ describe("SD card mapping (GET /sd_card/info)", () => {
   test("no card, then not mounted, then the meter", () => {
     expect(sdView({ ...parseSdInfo(info)!, is_present: false })).toEqual({ kind: "no-card" });
     expect(sdView({ ...parseSdInfo(info)!, is_mounted: false })).toEqual({ kind: "not-mounted" });
+    expect(sdView({ ...parseSdInfo(info)!, is_mounted: false, unavailable: true })).toEqual({ kind: "unavailable" });
     expect(sdView({ ...parseSdInfo(info)!, capacity: 0 })).toEqual({ kind: "not-mounted" });
     expect(sdView(parseSdInfo(info)!)).toEqual({ kind: "ok", usedGb: "14.2", totalGb: "29.8", percent: 48 });
   });

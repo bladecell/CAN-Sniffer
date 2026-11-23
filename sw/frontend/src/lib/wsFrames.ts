@@ -6,6 +6,7 @@ export type WsFrame =
   | { kind: "canStatus"; state: number; utilization: number; batteryVoltage: number; busConnected: boolean }
   | { kind: "recorder"; state: RecorderState; trip: number; rows: number; dropped: number; hasError: boolean }
   | { kind: "sleep" }
+  | { kind: "sdCard"; mounted: boolean; unavailable: boolean; reason: SdCardReason }
   | { kind: "pong" }
   | ({ kind: "rawBatch" } & RawBatch)
   | ({ kind: "rawStats" } & RawStats);
@@ -36,7 +37,11 @@ export const PID_FRAME_BYTES = 20;
 export const CAN_STATUS_FRAME_BYTES = 12;
 export const RECORDER_FRAME_BYTES = 16;
 export const SLEEP_FRAME_BYTES = 3;
+export const SD_CARD_FRAME_BYTES = 5;
 const RECORDER_STATES: RecorderState[] = ["idle", "recording", "stopping", "error"];
+/** 0x06 reason, docs/api.md. */
+export type SdCardReason = "mounted" | "removed" | "io-timeouts" | "unmounted";
+const SD_CARD_REASONS: SdCardReason[] = ["mounted", "removed", "io-timeouts", "unmounted"];
 
 /** Returns null for anything that is not an exactly sized, known frame. */
 export function parseWsFrame(data: unknown): WsFrame | null {
@@ -75,6 +80,15 @@ export function parseWsFrame(data: unknown): WsFrame | null {
   if (type === 0x05) {
     if (view.byteLength !== SLEEP_FRAME_BYTES || view.getUint8(1) !== SLEEP_FRAME_BYTES - 2 || view.getUint8(2) !== 1) return null;
     return { kind: "sleep" };
+  }
+  // 0x06: SD card state. Sent on every change and at 1 Hz; unavailable means the card was given up after I/O timeouts.
+  if (type === 0x06) {
+    if (view.byteLength !== SD_CARD_FRAME_BYTES || view.getUint8(1) !== SD_CARD_FRAME_BYTES - 2) return null;
+    const mounted = view.getUint8(2);
+    const unavailable = view.getUint8(3);
+    const reason = SD_CARD_REASONS[view.getUint8(4)];
+    if (mounted > 1 || unavailable > 1 || reason === undefined) return null;
+    return { kind: "sdCard", mounted: mounted === 1, unavailable: unavailable === 1, reason };
   }
   if (type === 0xa3) return view.byteLength === 1 ? { kind: "pong" } : null;
   if (type === 0x10) {

@@ -22,6 +22,11 @@ export const GLASS_MIN = 0;
 export const GLASS_MAX = 100;
 export const GLASS_DEFAULT = 50;
 
+/** Blur radius of every glass surface, in px. 10 is the default. */
+export const BLUR_MIN = 0;
+export const BLUR_MAX = 30;
+export const BLUR_DEFAULT = 10;
+
 export const BACKGROUNDS = [
   { id: "default", label: "Default" },
   { id: "contour", label: "Contour lines" },
@@ -47,18 +52,25 @@ export interface Appearance {
   accent: Accent;
   ctl: ControlFill;
   glass: number;
+  blur: number;
   bg: Background;
   bgVar: number;
 }
 
-export const DEFAULT_APPEARANCE: Appearance = { theme: "system", accent: "orange", ctl: "clear", glass: GLASS_DEFAULT, bg: "default", bgVar: BG_VAR_DEFAULT };
+export const DEFAULT_APPEARANCE: Appearance = { theme: "system", accent: "orange", ctl: "clear", glass: GLASS_DEFAULT, blur: BLUR_DEFAULT, bg: "default", bgVar: BG_VAR_DEFAULT };
 
-export const STORAGE_KEYS = { theme: "cs-theme", accent: "cs-accent", ctl: "cs-ctl", glass: "cs-glass", bg: "cs-bg", bgVar: "cs-bgvar" } as const;
+export const STORAGE_KEYS = { theme: "cs-theme", accent: "cs-accent", ctl: "cs-ctl", glass: "cs-glass", blur: "cs-blur", bg: "cs-bg", bgVar: "cs-bgvar" } as const;
 
 /** A whole number in 0..100, or the default for anything else (NaN, text, out of range is clamped). */
 export function parseGlass(value: unknown): number {
   const n = typeof value === "number" ? value : typeof value === "string" && value.trim() !== "" ? Number(value) : NaN;
   return Number.isFinite(n) ? Math.round(Math.min(GLASS_MAX, Math.max(GLASS_MIN, n))) : GLASS_DEFAULT;
+}
+
+/** A whole number in BLUR_MIN..BLUR_MAX, or the default for anything else. */
+export function parseBlur(value: unknown): number {
+  const n = typeof value === "number" ? value : typeof value === "string" && value.trim() !== "" ? Number(value) : NaN;
+  return Number.isFinite(n) ? Math.round(Math.min(BLUR_MAX, Math.max(BLUR_MIN, n))) : BLUR_DEFAULT;
 }
 
 /** A whole number in 0..100, or the default for anything else. */
@@ -68,11 +80,11 @@ export function parseBgVar(value: unknown): number {
 }
 
 /** Multiples of each tier's designed alpha (app.css multiplies them in). One slider, three tiers that respond differently:
- * floats keep most of their body so text stays readable, cards swing the most, inner rows and panels follow half way. */
+ * floats keep most of their body so text stays readable, cards swing the most (0 is fully solid in dark and light), inner rows and panels follow half way. */
 export function glassFactors(level: number): { float: number; card: number; inner: number } {
   const t = (parseGlass(level) - GLASS_DEFAULT) / GLASS_DEFAULT; // -1 opaque .. 1 clear
   const lerp = (up: number, down: number) => Math.round((1 - t * (t < 0 ? up : down)) * 1000) / 1000;
-  return { float: lerp(0.2, 0.4), card: lerp(0.8, 0.6), inner: lerp(0.5, 0.5) };
+  return { float: lerp(0.2, 0.4), card: lerp(1, 0.6), inner: lerp(0.5, 0.5) };
 }
 
 /** Returns `value` when it is one of `options`, otherwise `fallback`. */
@@ -86,6 +98,7 @@ export function parseAppearance(raw: Partial<Record<keyof Appearance, unknown>>)
     accent: pick(ACCENT_IDS, raw.accent, DEFAULT_APPEARANCE.accent),
     ctl: pick(CONTROL_FILLS, raw.ctl, DEFAULT_APPEARANCE.ctl),
     glass: parseGlass(raw.glass),
+    blur: parseBlur(raw.blur),
     bg: pick(BACKGROUND_IDS, raw.bg, DEFAULT_APPEARANCE.bg),
     bgVar: parseBgVar(raw.bgVar),
   };
@@ -104,6 +117,7 @@ export function readAppearance(store: Pick<Storage, "getItem"> | null): Appearan
     accent: get(STORAGE_KEYS.accent),
     ctl: get(STORAGE_KEYS.ctl),
     glass: get(STORAGE_KEYS.glass),
+    blur: get(STORAGE_KEYS.blur),
     bg: get(STORAGE_KEYS.bg),
     bgVar: get(STORAGE_KEYS.bgVar),
   });
@@ -131,6 +145,7 @@ export function applyAppearance(
   root.style?.setProperty("--k-float", String(k.float));
   root.style?.setProperty("--k-card", String(k.card));
   root.style?.setProperty("--k-inner", String(k.inner));
+  root.style?.setProperty("--blur", `${parseBlur(value.blur)}px`);
 }
 
 /** The option after `current` for an arrow key (wrapping), or undefined for any other key. */

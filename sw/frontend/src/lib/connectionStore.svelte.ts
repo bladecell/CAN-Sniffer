@@ -15,6 +15,7 @@ import { createThrottle } from "./throttle";
 import { countPidUpdate, livePids } from "./livePidStore.svelte";
 import { notifyConnectionDrop, notifyConnectionOpen } from "./connectionEvents";
 import { recordingStore } from "./recordingStore.svelte";
+import { sdCardStore } from "./sdCardStore.svelte";
 import { closeOutcome, sessionId, wsUrl, type SessionState } from "./wsSession";
 
 export const COMMANDS = { START_LOG: 0xa0, STOP_LOG: 0xa1, PING_REQUEST: 0xa2, PING_RESPONSE: 0xa3, START_RAW: 0xb0, STOP_RAW: 0xb1 };
@@ -305,6 +306,9 @@ export class ConnectionStore {
             case "rawBatch":
             case "rawStats":
                 for (const listener of this.rawListeners) listener(frame);
+                break;
+            case "sdCard":
+                sdCardStore.applyFrame(frame);
                 break;
             case "sleep":
                 this.sleeping = true;

@@ -80,6 +80,8 @@ export interface SystemStatus {
   keep_awake?: boolean;
   battery_voltage: number;
   sd_card_detected: boolean;
+  /** Same flag as `unavailable` in GET /sd_card/info. */
+  sd_card_unavailable: boolean;
   component_status: ComponentStatus[];
   heap_free: number;
   heap_min_free: number;
@@ -208,6 +210,8 @@ export interface SDCardInfo {
   is_mmc: boolean;
   is_mounted: boolean;
   is_present: boolean;
+  /** True after 3 consecutive I/O timeouts: the card is unmounted and every SD route answers 503. */
+  unavailable: boolean;
 }
 
 /** One node of `GET /sd_card/tree`: a directory has `children`, a file has `size`. */

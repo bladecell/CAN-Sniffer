@@ -532,6 +532,8 @@
     min-height: 0;
     border-radius: var(--r-card);
     background: var(--card);
+    -webkit-backdrop-filter: var(--card-blur);
+    backdrop-filter: var(--card-blur);
     overflow: hidden;
   }
 </style>

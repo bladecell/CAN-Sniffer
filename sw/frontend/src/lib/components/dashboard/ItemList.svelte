@@ -64,7 +64,7 @@
 <div class="db-field db-span">
   <h3 class="db-h3">{title} <span class="tag">{rows.length} of {max}</span></h3>
   {#if rows.length === 0}
-    <div class="db-empty">{emptyHint}</div>
+    <div class="empty-state">{emptyHint}</div>
   {:else}
     <ul
       class="db-items"
@@ -91,7 +91,7 @@
           </button>
           {#snippet label()}
             {#if r.color}<i class="db-sw" style:background={r.color}></i>{/if}
-            <span class="db-nm" class:mono={r.mono} title={r.name}>{r.name}</span>
+            <span class="db-nm ellipsis" class:mono={r.mono} title={r.name}>{r.name}</span>
             {#if r.unit}<span class="tag">{r.unit}</span>{/if}
           {/snippet}
           {#if body && onToggle}
@@ -192,10 +192,7 @@
     font-weight: 800;
   }
   .db-nm {
-    overflow: hidden;
     min-width: 0;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
   .db-open {
     flex-wrap: nowrap;
@@ -270,13 +267,6 @@
   }
   .db-danger {
     color: var(--ctl-crit);
-  }
-  .db-empty {
-    padding: 18px 14px;
-    border-radius: var(--r-track);
-    background: var(--row);
-    color: var(--muted);
-    font-weight: 600;
   }
   .db-add-row {
     display: flex;

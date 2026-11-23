@@ -59,6 +59,8 @@
   gap: 20px;
   padding: var(--pad-card);
   background: var(--card);
+  -webkit-backdrop-filter: var(--card-blur);
+  backdrop-filter: var(--card-blur);
   border-radius: var(--r-card);
 }
 .rv-head-main {
@@ -134,6 +136,8 @@ button.rv-row:focus-visible {
 .rv-list {
   padding: var(--pad-list);
   background: var(--card);
+  -webkit-backdrop-filter: var(--card-blur);
+  backdrop-filter: var(--card-blur);
   border-radius: var(--r-card);
 }
 .rv-list-head {
@@ -259,6 +263,8 @@ button.rv-row {
   align-content: start;
   padding: var(--pad-card);
   background: var(--card);
+  -webkit-backdrop-filter: var(--card-blur);
+  backdrop-filter: var(--card-blur);
   border-radius: var(--r-card);
 }
 .rv-pane h2 {
@@ -304,6 +310,8 @@ button.rv-row {
   gap: 12px;
   padding: var(--pad-card);
   background: var(--card);
+  -webkit-backdrop-filter: var(--card-blur);
+  backdrop-filter: var(--card-blur);
   border-radius: var(--r-card);
 }
 .rv-note-body {
@@ -380,16 +388,6 @@ button.rv-row {
 
 .rv-t-muted {
   color: var(--muted);
-}
-
-/* Visually hidden, still read by screen readers (the selection status line). */
-.rv-sr {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
 }
 .rv-inline:focus-visible {
   outline: 3px solid var(--focus);

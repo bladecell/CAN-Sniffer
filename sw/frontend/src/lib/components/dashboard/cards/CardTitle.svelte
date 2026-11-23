@@ -41,7 +41,7 @@
 
 <div class="ct" class:stacked={!onTop}>
   <div class="top">
-    <span class="nm">{name}</span>
+    <span class="nm ellipsis">{name}</span>
     {#if unit}<span class="un">{unit}</span>{/if}
     {#if onTop}
       <span class="ls" class:warn={level === "warn" && state === "value"} class:crit={level === "crit" && state === "value"} class:ok={icon === "ok"} class:dim={state !== "value"}>
@@ -88,9 +88,6 @@
   }
   .nm {
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
   .un {
     flex: none;

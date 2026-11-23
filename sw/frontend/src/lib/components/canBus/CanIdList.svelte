@@ -69,7 +69,7 @@
     <i aria-hidden="true"></i>
     <span class="cl-id">
       <b class="mono">{formatId(r.id, r.ext)}</b>
-      <small>{r.name || (r.ext ? "extended" : "standard")}</small>
+      <small class="ellipsis">{r.name || (r.ext ? "extended" : "standard")}</small>
     </span>
     <em>{quiet ? "silent" : hzText(r.gapMs > 1000 ? 1000 / r.gapMs : r.hz)}</em>
   </button>
@@ -148,9 +148,6 @@
     font-size: 0.95rem;
   }
   .cl-id small {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     color: var(--muted);
     font-size: 0.8rem;
     font-weight: 600;

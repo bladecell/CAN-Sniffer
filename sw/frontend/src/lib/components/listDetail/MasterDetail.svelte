@@ -116,5 +116,5 @@
       {@render detail(active, true)}
     </section>
   {/if}
-  <p class="rv-sr" role="status">{announced}</p>
+  <p class="sr-only" role="status">{announced}</p>
 </div>

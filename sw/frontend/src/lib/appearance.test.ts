@@ -5,6 +5,7 @@ import {
   STORAGE_KEYS,
   applyAppearance,
   glassFactors,
+  parseBlur,
   nextOption,
   parseBgVar,
   parseGlass,
@@ -27,7 +28,7 @@ function fakeStore(initial: Record<string, string> = {}) {
 describe("parseAppearance", () => {
   test("uses the defaults when nothing is stored", () => {
     expect(parseAppearance({})).toEqual(DEFAULT_APPEARANCE);
-    expect(DEFAULT_APPEARANCE).toEqual({ theme: "system", accent: "orange", ctl: "clear", glass: 50, bg: "default", bgVar: 12 });
+    expect(DEFAULT_APPEARANCE).toEqual({ theme: "system", accent: "orange", ctl: "clear", glass: 50, blur: 10, bg: "default", bgVar: 12 });
   });
 
   test("keeps valid values", () => {
@@ -36,6 +37,7 @@ describe("parseAppearance", () => {
       accent: "rose",
       ctl: "strong",
       glass: 50,
+      blur: 10,
       bg: "default",
       bgVar: 12,
     });
@@ -52,7 +54,7 @@ describe("parseAppearance", () => {
 describe("readAppearance", () => {
   test("reads the three storage keys", () => {
     const store = fakeStore({ "cs-theme": "light", "cs-accent": "teal", "cs-ctl": "strong" });
-    expect(readAppearance(store)).toEqual({ theme: "light", accent: "teal", ctl: "strong", glass: 50, bg: "default", bgVar: 12 });
+    expect(readAppearance(store)).toEqual({ theme: "light", accent: "teal", ctl: "strong", glass: 50, blur: 10, bg: "default", bgVar: 12 });
   });
 
   test("falls back to defaults when storage is missing or throws", () => {
@@ -69,7 +71,7 @@ describe("readAppearance", () => {
 describe("writeAppearance", () => {
   test("writes all three keys", () => {
     const store = fakeStore();
-    writeAppearance(store, { theme: "dark", accent: "blue", ctl: "strong", glass: 30, bg: "contour", bgVar: 40 });
+    writeAppearance(store, { theme: "dark", accent: "blue", ctl: "strong", glass: 30, blur: 10, bg: "contour", bgVar: 40 });
     expect(store.data.get(STORAGE_KEYS.theme)).toBe("dark");
     expect(store.data.get(STORAGE_KEYS.accent)).toBe("blue");
     expect(store.data.get(STORAGE_KEYS.ctl)).toBe("strong");
@@ -90,7 +92,7 @@ describe("writeAppearance", () => {
 
   test("a written value reads back unchanged", () => {
     const store = fakeStore();
-    const value = { theme: "system", accent: "violet", ctl: "clear", glass: 80, bg: "contour", bgVar: 77 } as const;
+    const value = { theme: "system", accent: "violet", ctl: "clear", glass: 80, blur: 10, bg: "contour", bgVar: 77 } as const;
     writeAppearance(store, value);
     expect(readAppearance(store)).toEqual(value);
   });
@@ -99,7 +101,7 @@ describe("writeAppearance", () => {
 describe("applyAppearance", () => {
   test("sets data-theme, data-accent and data-ctl on the root element", () => {
     const root = { dataset: {} as DOMStringMap };
-    applyAppearance(root, { theme: "light", accent: "green", ctl: "strong", glass: 50, bg: "default", bgVar: 12 });
+    applyAppearance(root, { theme: "light", accent: "green", ctl: "strong", glass: 50, blur: 10, bg: "default", bgVar: 12 });
     expect(root.dataset).toEqual({ theme: "light", accent: "green", ctl: "strong", bg: "default" });
   });
 });
@@ -134,6 +136,16 @@ describe("ACCENTS", () => {
   });
 });
 
+describe("blur", () => {
+  test("clamps, rounds and defaults", () => {
+    expect(parseBlur(0)).toBe(0);
+    expect(parseBlur("99")).toBe(30);
+    expect(parseBlur(-5)).toBe(0);
+    expect(parseBlur("x")).toBe(10);
+    expect(parseBlur(12.6)).toBe(13);
+  });
+});
+
 describe("glass", () => {
   test("parseGlass clamps, rounds and rejects junk", () => {
     expect(parseGlass("70")).toBe(70);
@@ -151,6 +163,7 @@ describe("glass", () => {
     const solid = glassFactors(0);
     expect(solid.card).toBeGreaterThan(solid.inner);
     expect(solid.inner).toBeGreaterThan(solid.float);
+    expect(0.5 * solid.card).toBeGreaterThanOrEqual(1); // dark card alpha 0.5 reaches fully solid at 0%
   });
 });
 

@@ -14,8 +14,11 @@
 
   let tabList: HTMLUListElement | undefined = $state();
 
+  // Firefox paints the transition snapshot without backdrop blur, so the glass shows late: no cross-fade there.
+  const gecko = CSS.supports("-moz-appearance", "none");
+
   function go(id: string) {
-    if (!document.startViewTransition) {
+    if (gecko || !document.startViewTransition) {
       activeTab = id;
       return;
     }

@@ -260,6 +260,8 @@
     padding: 10px 18px 6px 20px;
     border-radius: var(--r-card);
     background: var(--card);
+    -webkit-backdrop-filter: var(--card-blur);
+    backdrop-filter: var(--card-blur);
   }
   /* Full screen: a viewport overlay. The overview stays pinned below it (PlotOverview). */
   /* Full screen covers the page and the nav dock. Opaque, so nothing shows through; the pinned overview sits at its bottom. */

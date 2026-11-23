@@ -22,8 +22,10 @@
 	--ctl-h: 48px;
 	--btn-px: 22px;
 	--pad-card: 26px;
-	--blur: 26px;
+	--blur: 10px;
 	--float-blur: blur(var(--blur)) saturate(1.35);
+	/* Cards in flow blur only over a generated background; otherwise they have nothing busy behind them. */
+	--card-blur: none;
 	/* A control fill on its own float layer (a button that floats over a scroller). */
 	--float-ctl: linear-gradient(var(--ctl), var(--ctl)), var(--float);
 	--ctl-bd: transparent;
@@ -296,6 +298,17 @@ body::before {
 }
 
 /* Generated background: replaces the tonal shapes. --bg-image is set by background.svelte.ts. */
+:root[data-bg='contour'],
+:root[data-bg='wave'],
+:root[data-bg='shiny'],
+:root[data-bg='meteor'],
+:root[data-bg='overlay'],
+:root[data-bg='circuit'],
+:root[data-bg='layers'],
+:root[data-bg='hexagon'],
+:root[data-bg='polygon'] {
+	--card-blur: var(--float-blur);
+}
 :root[data-bg='contour'] body::before,
 :root[data-bg='wave'] body::before,
 :root[data-bg='shiny'] body::before,
@@ -311,6 +324,8 @@ body::before {
 /* Surfaces in page flow: translucent fill, no border, no shadow, no blur. */
 .card {
 	background: var(--card);
+	-webkit-backdrop-filter: var(--card-blur);
+	backdrop-filter: var(--card-blur);
 	border-radius: var(--r-card);
 }
 
@@ -663,6 +678,19 @@ video {
 .popup:focus-visible {
   outline: none;
 }
+/* Hover and focus tooltip for any [title] (lib/tooltip.ts). Replaces the browser's native one. */
+.popup.tip {
+  inset: auto;
+  box-sizing: border-box;
+  max-width: min(280px, calc(100vw - 16px));
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.4;
+  pointer-events: none;
+  overflow-wrap: anywhere;
+}
 /* A bar at the edge of a scroller floats only while content is under it. At rest it shows the surface it sits on
    (--rest-fill, none by default), so a header or footer does not read as a second, denser surface. The scroller writes
    data-under on the shared parent (lib/layers.ts: trackUnder, trackStuck). */
@@ -862,6 +890,8 @@ a.btn {
   padding: 6px;
   border-radius: calc(var(--r-float) - 8px);
   background: var(--card);
+  -webkit-backdrop-filter: var(--card-blur);
+  backdrop-filter: var(--card-blur);
   align-self: flex-start;
 }
 

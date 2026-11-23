@@ -154,7 +154,7 @@
   </div>
 
   {#if editing}
-    <span class="db-live" role="status" aria-live="polite">{announcement}</span>
+    <span class="sr-only" role="status" aria-live="polite">{announcement}</span>
     <button
       type="button"
       class="db-grip"
@@ -207,6 +207,8 @@
     min-width: 0;
     border-radius: var(--r-card);
     background: var(--card);
+    -webkit-backdrop-filter: var(--card-blur);
+    backdrop-filter: var(--card-blur);
   }
   .db-card:not(.edit) {
     overflow: hidden;
@@ -269,14 +271,6 @@
   }
   .db-card.short .db-menu-wrap {
     right: 0;
-  }
-  .db-live {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
   }
   .db-grip,
   .db-rz,

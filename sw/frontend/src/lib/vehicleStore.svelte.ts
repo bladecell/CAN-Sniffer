@@ -27,6 +27,7 @@ export class VehicleStore {
         state: 0,
         battery_voltage: 0,
         sd_card_detected: false,
+        sd_card_unavailable: false,
         component_status: [],
         heap_free: 0,
         heap_min_free: 0,

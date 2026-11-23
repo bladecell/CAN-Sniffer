@@ -24,6 +24,7 @@ export const ROW = {
   accent: { title: "Accent", kw: "colour color orange yellow green teal blue violet rose neutral" },
   ctl: { title: "Control fill", kw: "strong clear contrast button field" },
   glass: { title: "Transparency", kw: "glass blur opaque see-through surfaces cards" },
+  blur: { title: "Blur", kw: "glass blur frosted backdrop surfaces" },
   background: { title: "Background", kw: "wallpaper pattern contour lines topographic sound wave bars simple shiny blobs meteor streaks shooting stars shiny overlay facets circuit board traces pcb wave layers hexagon honeycomb polygon luminary network dots lines" },
   bgVariation: { title: "Pattern", kw: "background contour variation morph slider" },
   hotspotName: { title: "Network name", kw: "ssid hotspot access point" },
@@ -64,7 +65,7 @@ export const ROW = {
 } satisfies Record<string, RowMeta>;
 
 export const GROUP: Record<GroupId, GroupMeta> = {
-  look: { id: "look", title: "Appearance", icon: "palette", kw: "theme accent colour control fill dark light transparency background", rows: [ROW.theme, ROW.accent, ROW.ctl, ROW.glass, ROW.background, ROW.bgVariation] },
+  look: { id: "look", title: "Appearance", icon: "palette", kw: "theme accent colour control fill dark light transparency blur background", rows: [ROW.theme, ROW.accent, ROW.ctl, ROW.glass, ROW.blur, ROW.background, ROW.bgVariation] },
   wifi: {
     id: "wifi",
     title: "Wi-Fi",
@@ -431,6 +432,7 @@ export interface SdInfoWire {
   used_space_mb: number;
   is_present: boolean;
   is_mounted: boolean;
+  unavailable: boolean;
 }
 
 export function parseSdInfo(raw: unknown): SdInfoWire | null {
@@ -439,11 +441,12 @@ export function parseSdInfo(raw: unknown): SdInfoWire | null {
   const used = num(raw.used_space_mb);
   if (capacity === null || used === null || capacity < 0 || used < 0) return null;
   if (typeof raw.is_present !== "boolean" || typeof raw.is_mounted !== "boolean") return null;
-  return { capacity, used_space_mb: used, is_present: raw.is_present, is_mounted: raw.is_mounted };
+  return { capacity, used_space_mb: used, is_present: raw.is_present, is_mounted: raw.is_mounted, unavailable: raw.unavailable === true };
 }
 
 export type SdView =
   | { kind: "no-card" }
+  | { kind: "unavailable" }
   | { kind: "not-mounted" }
   | { kind: "ok"; usedGb: string; totalGb: string; percent: number };
 
@@ -452,6 +455,7 @@ const MB_PER_GB = 1024;
 /** Card detect first (no card), then the mount (card present but unusable), then the meter. */
 export function sdView(info: SdInfoWire): SdView {
   if (!info.is_present) return { kind: "no-card" };
+  if (info.unavailable) return { kind: "unavailable" };
   if (!info.is_mounted || info.capacity <= 0) return { kind: "not-mounted" };
   const percent = Math.min(100, Math.round((info.used_space_mb / info.capacity) * 100));
   return {

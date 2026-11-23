@@ -198,7 +198,7 @@
   {/if}
 
   {#if rows.length === 0}
-    <div class="cr-empty">No rules yet. New rule starts one, Import loads a file.</div>
+    <div class="empty-state">No rules yet. New rule starts one, Import loads a file.</div>
   {:else}
     <ul class="rl" aria-label="Rules">
       {#each rows as rule (rule.id)}
@@ -367,13 +367,6 @@
   }
   .cr-file {
     display: none;
-  }
-  .cr-empty {
-    padding: 18px 14px;
-    border-radius: var(--r-track);
-    background: var(--row);
-    color: var(--muted);
-    font-weight: 600;
   }
   .cr-foot {
     margin: 0;

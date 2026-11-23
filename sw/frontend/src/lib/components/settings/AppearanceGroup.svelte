@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ACCENTS, BACKGROUNDS, BG_VAR_MAX, BG_VAR_MIN, CONTROL_FILLS, GLASS_MAX, GLASS_MIN, THEMES, nextOption, type ControlFill, type Theme } from "$lib/appearance";
+  import { ACCENTS, BACKGROUNDS, BG_VAR_MAX, BG_VAR_MIN, BLUR_MAX, BLUR_MIN, CONTROL_FILLS, GLASS_MAX, GLASS_MIN, THEMES, nextOption, type ControlFill, type Theme } from "$lib/appearance";
   import { appearance, setAppearance } from "$lib/appearance.svelte";
   import { GROUP, ROW, rowShown, type RowMeta } from "$lib/settingsModel";
   import SelectMenu from "$lib/components/SelectMenu.svelte";
@@ -84,6 +84,24 @@
           parse={(t) => (/^\d{1,3}\s*%?$/.test(t.trim()) ? Number(t.replace(/\D/g, "")) : null)}
           format={(v) => `${v}%`}
           onChange={([v]) => setAppearance("glass", v)}
+        />
+      </SettingRow>
+    {/if}
+    {#if show(ROW.blur)}
+      <SettingRow title={ROW.blur.title} hint="How strongly menus, dialogs and cards frost what is behind them. Cards blur over a generated background.">
+        <span class="sr-only" id="blur-label">{ROW.blur.title}</span>
+        <RangeSlider
+          labelIds={["blur-label"]}
+          values={[appearance.blur]}
+          min={BLUR_MIN}
+          max={BLUR_MAX}
+          step={1}
+          keyStep={1}
+          page={5}
+          fit
+          parse={(t) => (/^\d{1,2}\s*(px)?$/.test(t.trim()) ? Number(t.replace(/\D/g, "")) : null)}
+          format={(v) => `${v}px`}
+          onChange={([v]) => setAppearance("blur", v)}
         />
       </SettingRow>
     {/if}

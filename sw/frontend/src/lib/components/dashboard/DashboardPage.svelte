@@ -7,6 +7,7 @@
   import ViewHeader from "$lib/components/listDetail/ViewHeader.svelte";
   import { auth } from "$lib/auth.svelte";
   import { dashboardDocStore as store } from "$lib/dashboardDocStore.svelte";
+  import { sdCardStore, SD_UNAVAILABLE_TEXT } from "$lib/sdCardStore.svelte";
   import { type Card, sizeLimits } from "$lib/dashboardModel";
   import { TEMPLATES, templateById, templateForName, type TemplateId } from "$lib/dashboardTemplates";
   import type { SectionRef } from "$lib/dashboardGrid";
@@ -233,7 +234,7 @@
       {#snippet status()}
         {#if statusLine}<p class="db-status">{statusLine}</p>{/if}
         {#if view.save.sd === "failed"}
-          <p class="db-status db-status-save" role="status">The SD card write failed: {view.save.message ?? "unknown error"}</p>
+          <p class="db-status db-status-save" role="status">{sdCardStore.unavailable ? SD_UNAVAILABLE_TEXT : `The SD card write failed: ${view.save.message ?? "unknown error"}`}</p>
         {/if}
       {/snippet}
 
@@ -506,6 +507,8 @@
     border: 0;
     border-radius: var(--r-card);
     background: var(--ctl);
+    -webkit-backdrop-filter: var(--card-blur);
+    backdrop-filter: var(--card-blur);
     color: var(--ctl-text);
     font: 800 1rem/1 var(--font);
     cursor: pointer;
@@ -518,6 +521,8 @@
     gap: 14px;
     padding: var(--pad-card);
     background: var(--card);
+    -webkit-backdrop-filter: var(--card-blur);
+    backdrop-filter: var(--card-blur);
     border-radius: var(--r-card);
   }
   .db-panel h2 {

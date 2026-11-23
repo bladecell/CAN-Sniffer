@@ -5,6 +5,7 @@
   import { parseJsonResponse, parseJsonResponseAllowEmpty } from "$lib/api";
   import { firmwareApi } from "$lib/firmwareApi.svelte";
   import { sdFolder } from "$lib/sdFolder.svelte";
+  import { sdCardStore } from "$lib/sdCardStore.svelte";
   import { normalizePidDefinition } from "$lib/pidDefinition";
   import type { PidDefinition } from "$lib/types";
   import { classifyPidImport, pidImportCounts } from "$lib/pidImport";
@@ -62,7 +63,7 @@
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
   const subline = $derived.by(() => {
-    if (listing.kind === "nocard") return "No card detected";
+    if (listing.kind === "nocard") return sdCardStore.unavailable ? "SD card unavailable" : "No card detected";
     if (listing.kind === "ok") return `${folder} · ${plural(listing.files.length, "pid config file")}`;
     return folder;
   });
@@ -240,6 +241,11 @@
 
   {#if listing.kind === "loading"}
     <div class="sb-empty" role="status"><b>Reading the card</b></div>
+  {:else if listing.kind === "nocard" && sdCardStore.unavailable}
+    <div class="sb-empty">
+      <b>SD card unavailable</b>The device stopped using the card after repeated errors. Reinsert it, then check again. The PIDs on the device are not affected.
+      <div class="sb-act"><button type="button" class="btn" onclick={() => load(folder)}>Check again</button></div>
+    </div>
   {:else if listing.kind === "nocard"}
     <div class="sb-empty">
       <b>No SD card</b>The slot is empty, or the card could not be read. Insert a FAT card and wait a few seconds. The PIDs on the device are not affected.

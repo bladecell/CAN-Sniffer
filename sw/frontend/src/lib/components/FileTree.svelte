@@ -1,13 +1,12 @@
 <script lang="ts">
   import FileTree from "./FileTree.svelte";
   import { alertStore } from "$lib/alertStore.svelte";
+  import { sdCardStore } from "$lib/sdCardStore.svelte";
   import Icon from "$lib/Icon.svelte";
   import type { SdTreeNode } from "$lib/types";
   import { nodeKey } from "$lib/sdTree";
 import { parseJsonResponse, parseJsonResponseAllowEmpty } from "$lib/api";
 import { firmwareApi } from "$lib/firmwareApi.svelte";
-
-  const errorMessage = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
   interface Props {
     node: SdTreeNode;
@@ -57,7 +56,7 @@ import { firmwareApi } from "$lib/firmwareApi.svelte";
       if (onUploadSuccess) onUploadSuccess();
     } catch (err) {
       console.error(err);
-      alertStore.add("Failed to delete: " + errorMessage(err), "error");
+      alertStore.add("Failed to delete: " + sdCardStore.explain(err), "error");
     }
   }
 
@@ -100,7 +99,7 @@ import { firmwareApi } from "$lib/firmwareApi.svelte";
       if (onUploadSuccess) onUploadSuccess();
     } catch (err) {
       console.error(err);
-      alertStore.add("Failed to create folder: " + errorMessage(err), "error");
+      alertStore.add("Failed to create folder: " + sdCardStore.explain(err), "error");
     }
   }
 
@@ -142,7 +141,7 @@ import { firmwareApi } from "$lib/firmwareApi.svelte";
       if (onUploadSuccess) onUploadSuccess();
     } catch (err) {
       console.error(err);
-      alertStore.add("Failed to upload file: " + errorMessage(err), "error");
+      alertStore.add("Failed to upload file: " + sdCardStore.explain(err), "error");
     } finally {
       isUploading = false;
       target.value = ""; // reset input
@@ -188,7 +187,7 @@ import { firmwareApi } from "$lib/firmwareApi.svelte";
       <label for={folderId} class="tree-label" onmouseleave={cancelDelete}>
         <Icon name="folder-closed" class="icon folder-closed-icon" />
         <Icon name="folder-open" class="icon folder-open-icon" />
-        <span class="folder-name-span">{displayName}</span>
+        <span class="folder-name-span ellipsis">{displayName}</span>
         <div class="action-buttons">
           {#if confirmDeletePath === node.path}
             <button class="icon-action-btn confirm-yes-btn" onclick={executeDelete} title="Confirm Delete" aria-label="Confirm">
@@ -244,7 +243,7 @@ import { firmwareApi } from "$lib/firmwareApi.svelte";
         onmouseleave={cancelDelete}
       >
         <Icon name="file-doc" class="icon" />
-        <span class="folder-name-span">{displayName}</span>
+        <span class="folder-name-span ellipsis">{displayName}</span>
         <div class="action-buttons">
           {#if confirmDeletePath === getFileFullPath()}
             <button class="icon-action-btn confirm-yes-btn" onclick={executeDelete} title="Confirm Delete" aria-label="Confirm">
@@ -406,9 +405,6 @@ import { firmwareApi } from "$lib/firmwareApi.svelte";
   }
   .folder-name-span {
     flex-grow: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
   .action-buttons {
     display: flex;

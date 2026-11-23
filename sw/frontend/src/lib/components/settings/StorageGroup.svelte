@@ -6,6 +6,7 @@
   import { parseJsonResponse } from "$lib/api";
   import { firmwareApi } from "$lib/firmwareApi.svelte";
   import { settingsStore } from "$lib/settingsStore.svelte";
+  import { SD_UNAVAILABLE_TEXT } from "$lib/sdCardStore.svelte";
   import {
     GROUP,
     ROW,
@@ -56,6 +57,7 @@
         return `Could not read the card: ${card.message}`;
       case "ok":
         if (view?.kind === "no-card") return "No card in the slot. Insert one, then check again.";
+        if (view?.kind === "unavailable") return SD_UNAVAILABLE_TEXT;
         if (view?.kind === "not-mounted") return "The card is present but not mounted. Check the card, then check again.";
         return `${view?.kind === "ok" ? view.usedGb : ""} of ${view?.kind === "ok" ? view.totalGb : ""} GB used`;
     }

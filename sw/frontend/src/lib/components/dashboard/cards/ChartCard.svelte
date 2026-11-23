@@ -102,7 +102,7 @@
         <div class="lane" style:--pc={s.color}>
           <div class="lh">
             <i class="sw" style:background={s.color}></i>
-            <span class="ln">{s.name}</span>
+            <span class="ln ellipsis">{s.name}</span>
             <span class="lv">{s.latest === null ? "—" : formatReading(s.latest)}{s.unit && s.latest !== null ? ` ${s.unit}` : ""}</span>
           </div>
           <svg viewBox="-4 -3 {W + 8} {LANE_H + 6}" preserveAspectRatio="none" aria-hidden="true">
@@ -121,7 +121,7 @@
     {#if showLegend}
       <ul class="legend">
         {#each series as s (s.pid)}
-          <li>{#if series.length > 1}<i class="sw" style:background={s.color}></i>{/if}<span class="ln">{s.name}</span><span class="lv">{s.latest === null ? "—" : formatReading(s.latest)}{s.unit && s.latest !== null ? ` ${s.unit}` : ""}</span></li>
+          <li>{#if series.length > 1}<i class="sw" style:background={s.color}></i>{/if}<span class="ln ellipsis">{s.name}</span><span class="lv">{s.latest === null ? "—" : formatReading(s.latest)}{s.unit && s.latest !== null ? ` ${s.unit}` : ""}</span></li>
         {/each}
       </ul>
     {/if}
@@ -259,9 +259,6 @@
   }
   .ln {
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
   .legend .lv {
     margin-left: 0;

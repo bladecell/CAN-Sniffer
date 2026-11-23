@@ -2,6 +2,7 @@
 import { auth } from "$lib/auth.svelte";
 import { connectionStore } from "$lib/connectionStore.svelte";
 import { recordingStore } from "$lib/recordingStore.svelte";
+import { sdCardStore } from "$lib/sdCardStore.svelte";
 import { vehicleStore } from "$lib/vehicleStore.svelte";
 import { controlReason } from "$lib/dashboardCardView";
 import { loadWhileMounted } from "./cardSources.svelte";
@@ -68,7 +69,7 @@ export function recorderControl(): Control {
     : "Off",
   );
   const reason = $derived(
-    controlReason({ ...linked(), sdPresent: sdRead ? vehicleStore.system.sd_card_detected : null, needsLogin: true, loggedIn: auth.canUseGated }) ??
+    controlReason({ ...linked(), sdPresent: sdRead ? vehicleStore.system.sd_card_detected && !sdCardStore.unavailable : null, needsLogin: true, loggedIn: auth.canUseGated }) ??
       (rec === null ? "No data" : recordingStore.coolingDown ? `Wait ${recordingStore.cooldownLeft} s` : stopping ? "Working" : null),
   );
   return {

@@ -4,6 +4,7 @@
   import { auth } from "$lib/auth.svelte";
   import { connectionStore } from "$lib/connectionStore.svelte";
   import { settingsStore } from "$lib/settingsStore.svelte";
+  import { sdCardStore } from "$lib/sdCardStore.svelte";
   import { vehicleStore } from "$lib/vehicleStore.svelte";
   import { uptimeLabel, wifiModeLabel, worstLevel, type Level } from "$lib/dashboardCardView";
   import { statusVisible } from "$lib/dashboardCardLayout";
@@ -67,11 +68,11 @@
     list.push({
       key: "sd",
       label: "SD card",
-      value: !systemRead ? "No data" : sys.sd_card_detected ? "Ready" : "No card",
-      level: !systemRead ? null : sys.sd_card_detected ? null : "crit",
+      value: !systemRead ? "No data" : sdCardStore.unavailable ? "Unavailable" : sys.sd_card_detected ? "Ready" : "No card",
+      level: !systemRead ? null : sdCardStore.unavailable || !sys.sd_card_detected ? "crit" : null,
       muted: !systemRead,
-      tone: !systemRead ? undefined : sys.sd_card_detected ? "ok" : "crit",
-      detail: sys.sd_card_detected ? sdDetail : undefined,
+      tone: !systemRead ? undefined : sdCardStore.unavailable || !sys.sd_card_detected ? "crit" : "ok",
+      detail: sys.sd_card_detected && !sdCardStore.unavailable ? sdDetail : undefined,
     });
     list.push({
       key: "heap",
