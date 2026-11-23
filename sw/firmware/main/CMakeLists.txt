@@ -4,7 +4,7 @@ idf_component_register(
     SRCS ${SRC_FILES}
     INCLUDE_DIRS "include"
     REQUIRES button can_driver can_raw obd2 obd2_simulator wifi async_web_server sd_card recorder esp_http_server freertos
-    PRIV_REQUIRES mbedtls esp_driver_gpio esp_adc esp_hw_support esp_pm esp_timer esp_system http_parser espressif__cjson joltwallet__littlefs log nvs_flash
+    PRIV_REQUIRES lwip heap mbedtls esp_driver_gpio esp_adc esp_hw_support esp_pm esp_timer esp_system http_parser espressif__cjson joltwallet__littlefs log nvs_flash
 )
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -Wall -Wextra -Werror)

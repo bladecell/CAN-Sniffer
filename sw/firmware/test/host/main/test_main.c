@@ -27,6 +27,8 @@ void run_keep_awake_http_tests(void);
 void run_power_settings_tests(void);
 void run_manual_sleep_http_tests(void);
 void run_atomic_file_tests(void);
+void run_sd_health_tests(void);
+void run_heap_admission_tests(void);
 void run_battery_calc_tests(void);
 void run_reset_reason_tests(void);
 void run_fixed_text_tests(void);
@@ -73,6 +75,7 @@ void app_main(void)
     run_power_settings_tests();
     run_manual_sleep_http_tests();
     run_atomic_file_tests();
+    run_sd_health_tests();
     run_battery_calc_tests();
     run_reset_reason_tests();
     run_fixed_text_tests();
@@ -100,5 +103,6 @@ void app_main(void)
     run_raw_tx_policy_tests();
     run_raw_flow_control_tests();
     run_keep_awake_http_tests();
+    run_heap_admission_tests();
     exit(UNITY_END() == 0 ? 0 : 1);
 }

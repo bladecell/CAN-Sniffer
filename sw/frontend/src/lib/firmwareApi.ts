@@ -1,4 +1,5 @@
 import { sdCardFileEndpoint } from "./api";
+import { retryBusy } from "./retryBusy";
 import type {
   CanBusStatus, CanModeStatus, CanSendStatus, CaptureList, CaptureStatus, RecorderStatus, RecorderTrips, DtcDescriptionResponse, DtcResponse, Obd2StatusWire, PidDataWire, PidDefinitionWire,
   SDCardInfo, SdTreeNode, SystemStatus,
@@ -8,6 +9,8 @@ type Json = Record<string, unknown>;
 export interface FirmwareApiDeps {
   fetch(url: string, init?: RequestInit): Promise<Response>;
   gatedFetch(url: string, init?: RequestInit): Promise<Response>;
+  /** Test seam for the 503 retry wait. */
+  sleep?(ms: number): Promise<void>;
 }
 export type FirmwareResponse<T> = Response & { readonly responseType?: T };
 const jsonHeaders = { "Content-Type": "application/json" };
@@ -18,8 +21,11 @@ const body = (method: string, value?: unknown): RequestInit => ({
 
 /** Typed HTTP boundary for every documented non-auth firmware operation. It never executes calls by itself. */
 export function createFirmwareApi(deps: FirmwareApiDeps) {
-  const open = <T>(url: string, init?: RequestInit): Promise<FirmwareResponse<T>> => deps.fetch(url, init);
-  const gated = <T>(url: string, init?: RequestInit): Promise<FirmwareResponse<T>> => deps.gatedFetch(url, init);
+  /** GETs ride out a 503 (retryBusy); other methods are sent once, since a retry could repeat their effect. */
+  const idempotent = (fetchFn: (url: string, init?: RequestInit) => Promise<Response>) => (url: string, init?: RequestInit) =>
+    (init?.method ?? "GET") === "GET" ? retryBusy(() => fetchFn(url, init), { sleep: deps.sleep }) : fetchFn(url, init);
+  const open = <T>(url: string, init?: RequestInit): Promise<FirmwareResponse<T>> => idempotent(deps.fetch)(url, init);
+  const gated = <T>(url: string, init?: RequestInit): Promise<FirmwareResponse<T>> => idempotent(deps.gatedFetch)(url, init);
   return {
     index: () => open<string>("/"),
     system: () => open<SystemStatus>("/api/v1/system"),

@@ -7,12 +7,15 @@
 
 #include <new>
 #include "async_web_server.hpp"
+#include "heap_admission.hpp"
 #include "log_gate.hpp"
 #include "ws_broadcast_dispatch.hpp"
 #include "ws_session.hpp"
 
 #include "esp_check.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "lwip/sys.h"
 #include "esp_timer.h"
 
 static const char* TAG = "ASYNC_WEB_SERVER";
@@ -48,7 +51,12 @@ struct WsBroadcastBackend
 {
     httpd_handle_t* server;
 
-    void* allocate(size_t size) { return heap_caps_malloc(size, MALLOC_CAP_INTERNAL); }
+    // Frame copies only go to httpd_queue_work and send(); no ISR or cache-off code touches them, so PSRAM first
+    // (internal RAM is the scarce pool, card 0230). Without PSRAM the second choice is internal.
+    void* allocate(size_t size)
+    {
+        return heap_caps_malloc_prefer(size, 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    }
     void release(void* ptr) { heap_caps_free(ptr); }
     bool queue(void (*callback)(void*), void* arg)
     {
@@ -155,6 +163,8 @@ esp_err_t AsyncWebServer::start(Config config)
     running_        = true;
     stoppedWorkers_ = 0;
     poisonsQueued_  = 0;
+    failedWorkers_  = 0;
+    readyWorkers_   = 0;
 
     shutdown_sem_ = xSemaphoreCreateCounting(config.async_worker_task_num, 0);
     if (!shutdown_sem_)
@@ -175,6 +185,13 @@ esp_err_t AsyncWebServer::start(Config config)
         ESP_LOGE(TAG, "Failed to start async workers: %s", esp_err_to_name(err));
         stop();  // frees the queue, semaphore and any worker that did start
         return err;
+    }
+
+    // Routes must not go live while a worker may still fail its semaphore check, or requests would queue for nobody.
+    // worker_handles is complete here and not touched again until stop(). Bounded: 1 s, polled every 10 ms.
+    for (int waited = 0; readyWorkers_.load() < worker_handles.size() && waited < 100; waited++)
+    {
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 
     config.httpd_config.max_open_sockets = config.max_open_sockets;
@@ -359,6 +376,22 @@ esp_err_t AsyncWebServer::async_handler(httpd_req_t* req)
     ESP_LOGD(TAG, "%s uri: %s", get_method_str(req->method), req->uri);
 
     AsyncWebServer& self = AsyncWebServer::getInstance();
+
+    // First netconn call of this thread allocates its lwIP semaphore from internal RAM; NULL there crashes inside IDF.
+    if (!heap_admission::threadSemReady(sys_thread_sem_get))
+    {
+        ESP_LOGE(TAG, "httpd task: no lwIP thread semaphore, internal RAM exhausted");
+        sendError(req, 503, "Low memory, retry shortly", http_error::kBusy, heap_admission::kRetryAfterS);
+        return ESP_OK;
+    }
+    const size_t internalFree = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    if (!heap_admission::admit(internalFree, req->uri))
+    {
+        ESP_LOGW(TAG, "Low internal RAM (%u B free), refusing %s", static_cast<unsigned>(internalFree), req->uri);
+        sendError(req, 503, "Low memory, retry shortly", http_error::kBusy, heap_admission::kRetryAfterS);
+        return ESP_OK;
+    }
+
     if (self.requestFilter_ != nullptr && !self.requestFilter_(req, static_cast<RouteContext*>(req->user_ctx)->arg))
     {
         return ESP_OK;  // the filter answered
@@ -379,6 +412,11 @@ esp_err_t AsyncWebServer::async_handler(httpd_req_t* req)
 
 esp_err_t AsyncWebServer::queue_request(httpd_req_t* req)
 {
+    if (running_ && heap_admission::allWorkersDown(failedWorkers_.load(), worker_handles.size()))
+    {
+        sendError(req, 503, "No request workers available", http_error::kBusy, heap_admission::kRetryAfterS);
+        return ESP_OK;
+    }
     if (!running_)
     {
         // Server is stopping; reject new work synchronously instead of detaching it.
@@ -435,7 +473,16 @@ void AsyncWebServer::worker_task()
 {
     AsyncRequest async_req;
 
-    while (running_)
+    // Same NULL as the httpd task: a worker without its semaphore must not touch sockets. Leave; stop() still counts it.
+    const bool semOk = heap_admission::threadSemReady(sys_thread_sem_get);
+    if (!semOk)
+    {
+        ESP_LOGE(TAG, "async worker exits: no lwIP thread semaphore (internal RAM exhausted)");
+        failedWorkers_.fetch_add(1);
+    }
+    readyWorkers_.fetch_add(1);
+
+    while (semOk && running_)
     {
         if (xQueueReceive(request_queue, &async_req, portMAX_DELAY) != pdTRUE)
         {
@@ -476,6 +523,28 @@ void AsyncWebServer::worker_task()
     vTaskDelete(NULL);
 }
 
+size_t AsyncWebServer::revive_workers()
+{
+    size_t created = 0;
+    for (size_t n = failedWorkers_.load(); n > 0 && running_; n--)
+    {
+        // The dead worker left one give on shutdown_sem_; take it back so stop() counts only live workers.
+        (void)xSemaphoreTake(shutdown_sem_, 0);
+        failedWorkers_.fetch_sub(1);
+        TaskHandle_t hdl = NULL;
+        if (xTaskCreatePinnedToCore(worker_task_wrapper, "async_req_worker", workerStack_, this, workerPrio_, &hdl,
+                                    workerCore_) != pdPASS)
+        {
+            failedWorkers_.fetch_add(1);
+            (void)xSemaphoreGive(shutdown_sem_);
+            ESP_LOGE(TAG, "Failed to restart async worker");
+            break;
+        }
+        created++;
+    }
+    return created;
+}
+
 void AsyncWebServer::worker_task_wrapper(void* arg)
 {
     AsyncWebServer* instance = (AsyncWebServer*)arg;
@@ -486,6 +555,9 @@ void AsyncWebServer::worker_task_wrapper(void* arg)
 // start worker threads
 esp_err_t AsyncWebServer::start_workers(uint8_t num_workers, uint32_t stack_size, uint8_t priority, int core_id)
 {
+    workerStack_ = stack_size;
+    workerPrio_  = priority;
+    workerCore_  = core_id;
     // create queue
     uint8_t queue_depth = num_workers * 2;
     request_queue       = xQueueCreate(queue_depth, sizeof(AsyncWebServer::AsyncRequest));

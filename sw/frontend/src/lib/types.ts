@@ -85,6 +85,9 @@ export interface SystemStatus {
   component_status: ComponentStatus[];
   heap_free: number;
   heap_min_free: number;
+  /** Free internal RAM (bytes) and its low-water mark. Below 32 KiB REST routes answer 503 BUSY. */
+  heap_internal_free: number;
+  heap_internal_min: number;
   tasks: TaskStack[];
 }
 

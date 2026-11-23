@@ -24,6 +24,12 @@ enum class Result
   NoMem,
   WriteFailed,    // old file untouched
   ReplaceFailed,  // old file restored
+  TimedOut,       // the abort predicate fired (SD hang); old file untouched, temp file removed
+};
+
+struct NeverAbort
+{
+  bool operator()() const { return false; }
 };
 
 namespace detail
@@ -66,8 +72,10 @@ struct Names
 }  // namespace detail
 
 // Fills the new file: `fill(FILE*)` returns false on any read or write error. The old file is untouched until it succeeds.
-template <class Fill>
-inline Result writeWith(const char* path, Fill fill)
+// `abort()` is the deadline: checked before the temp file is opened, by `fill` (copy: per chunk), after a failed write or
+// fsync, and once more before the old file is touched. True there gives TimedOut and removes the temp file.
+template <class Fill, class Abort = NeverAbort>
+inline Result writeWith(const char* path, Fill fill, Abort abort = Abort{})
 {
   if (path == nullptr || strlen(path) == 0 || strlen(path) > kPathMax)
   {
@@ -79,10 +87,14 @@ inline Result writeWith(const char* path, Fill fill)
     return Result::NoMem;
   }
 
+  if (abort())
+  {
+    return Result::TimedOut;
+  }
   FILE* f = fopen(n.tmp, "w");
   if (f == nullptr)
   {
-    return Result::WriteFailed;
+    return abort() ? Result::TimedOut : Result::WriteFailed;
   }
   const bool ok = fill(f);
   const bool flushed = fflush(f) == 0;
@@ -91,7 +103,12 @@ inline Result writeWith(const char* path, Fill fill)
   if (!(ok && flushed && synced && closed))
   {
     unlink(n.tmp);
-    return Result::WriteFailed;
+    return abort() ? Result::TimedOut : Result::WriteFailed;
+  }
+  if (abort())
+  {
+    unlink(n.tmp);  // too late to trust the card: keep the old file
+    return Result::TimedOut;
   }
 
   unlink(n.bak);  // stale leftover of an interrupted save; fine if absent
@@ -117,14 +134,16 @@ inline Result writeWith(const char* path, Fill fill)
   return Result::Ok;
 }
 
-inline Result write(const char* path, const char* data, size_t len)
+template <class Abort = NeverAbort>
+inline Result write(const char* path, const char* data, size_t len, Abort abort = Abort{})
 {
-  return writeWith(path, [&](FILE* f) { return fwrite(data, 1, len, f) == len; });
+  return writeWith(path, [&](FILE* f) { return fwrite(data, 1, len, f) == len; }, abort);
 }
 
 // Copies `src` over `dest` the same way. `dest` only changes at the final rename, so a read or write error, a full card or a
 // `src` that is the same file as `dest` under another name (FAT 8.3 alias) never truncates anything.
-inline Result copy(const char* src, const char* dest)
+template <class Abort = NeverAbort>
+inline Result copy(const char* src, const char* dest, Abort abort = Abort{})
 {
   struct stat st;
   if (dest != nullptr && stat(dest, &st) == 0 && !S_ISREG(st.st_mode))
@@ -145,7 +164,7 @@ inline Result copy(const char* src, const char* dest)
     }
     bool   ok = true;
     size_t got;
-    while ((got = fread(chunk, 1, kChunk, in)) > 0)
+    while (!abort() && (got = fread(chunk, 1, kChunk, in)) > 0)
     {
       if (fwrite(chunk, 1, got, out) != got)
       {
@@ -153,9 +172,9 @@ inline Result copy(const char* src, const char* dest)
         break;
       }
     }
-    ok = ok && ferror(in) == 0;
+    ok = ok && ferror(in) == 0 && !abort();  // the loop also ends on abort: an incomplete copy is never kept
     return fclose(in) == 0 && ok;
-  });
+  }, abort);
   free(chunk);
   return r;
 }

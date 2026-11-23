@@ -10,7 +10,6 @@ import { normalizePidDefinition, parsePidList, serializePidDefinition } from "./
 import { createLatest } from "./latest";
 import { singleFlight } from "./singleFlight";
 import { createLimiter, rebooted, type UptimeSample } from "./openReload";
-import { retryBusy } from "./retryBusy";
 import { firmwareApi } from "./firmwareApi.svelte";
 import { livePids } from "./livePidStore.svelte";
 import { onConnectionDrop, onConnectionOpen } from "./connectionEvents";
@@ -31,6 +30,8 @@ export class VehicleStore {
         component_status: [],
         heap_free: 0,
         heap_min_free: 0,
+        heap_internal_free: 0,
+        heap_internal_min: 0,
         tasks: [],
     });
 
@@ -68,7 +69,7 @@ export class VehicleStore {
 
     private async readSystem(): Promise<boolean> {
         try {
-            const response = await retryBusy(() => firmwareApi.system());
+            const response = await firmwareApi.system();
             const result = await parseJsonResponse<SystemStatus>(response);
 
             const now = Date.now();
@@ -89,7 +90,7 @@ export class VehicleStore {
 
     private async readSDInfo(): Promise<boolean> {
         try {
-            const response = await retryBusy(() => firmwareApi.sdInfo());
+            const response = await firmwareApi.sdInfo();
             this.sdInfo = response.ok ? parseSdInfo(await parseJsonResponse<unknown>(response)) : null;
             return response.ok;
         } catch (e) {
@@ -128,8 +129,7 @@ export class VehicleStore {
 
     private async readDefinitions(): Promise<boolean> {
         try {
-            // The PID map is busy while OBD2 starts, so this read waits longer than the others (it was a 5 s loop).
-            const response = await retryBusy(() => firmwareApi.pidDefinitions(), { attempts: 6 });
+            const response = await firmwareApi.pidDefinitions();
             const definitions = parsePidList(await parseJsonResponse<unknown>(response));
             const currentPids = new Set(definitions.map((definition) => definition.pid));
             for (const pid of livePids.keys()) {
@@ -153,7 +153,7 @@ export class VehicleStore {
 
     private async readCanStatus(): Promise<boolean> {
         try {
-            const response = await retryBusy(() => firmwareApi.canBus());
+            const response = await firmwareApi.canBus();
             this.canStatus = parseCanBusStatus(await parseJsonResponse<unknown>(response));
             return true;
         } catch (e) {
@@ -168,7 +168,7 @@ export class VehicleStore {
 
     private async readObd2Status(): Promise<boolean> {
         try {
-            const response = await retryBusy(() => firmwareApi.obd2());
+            const response = await firmwareApi.obd2();
             const result = parseObd2Status(await parseJsonResponse<unknown>(response));
 
             const supportedGroupsMap = new SvelteMap<number, boolean>();
@@ -210,7 +210,7 @@ export class VehicleStore {
 
     private async readVin(): Promise<boolean> {
         try {
-            const response = await retryBusy(() => firmwareApi.vin());
+            const response = await firmwareApi.vin();
             const result = await parseJsonResponse<{ vin: string }>(response);
 
             this.vin = result.vin;
@@ -241,7 +241,7 @@ export class VehicleStore {
         // Overlapping calls: only the newest one may write the store.
         const isCurrent = this.dtcLatest.begin();
         try {
-            const response = await retryBusy(() => firmwareApi.dtc());
+            const response = await firmwareApi.dtc();
             const groups = parseDtcGroups(await parseJsonResponse<unknown>(response));
             if (!isCurrent()) return false;
 

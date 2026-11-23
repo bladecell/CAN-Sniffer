@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <vector>
 
@@ -75,6 +76,11 @@ public:
     // Waits at most STOP_WAIT_US for the workers. ESP_ERR_TIMEOUT: a worker is still in a handler, nothing was freed and
     // the server keeps running; call again later.
     esp_err_t stop();
+    // Workers that exited at start-up because lwIP had no memory for their thread semaphore. While every worker is gone
+    // REST requests get 503. revive_workers() starts a replacement for each (the new ones check again) and returns how
+    // many tasks it created. Call from one task at a time (the supervisor's 60 s tick); never from the httpd task.
+    size_t failed_workers() const { return failedWorkers_.load(); }
+    size_t revive_workers();
     // Registration failures (no memory, httpd table full) are returned so start-up can fail instead of booting with a hole.
     esp_err_t registerRoute(const char* uri, httpd_method_t method, AsyncHandler func, void* arg);
 
@@ -120,6 +126,11 @@ private:
     static constexpr int64_t STOP_WAIT_US = 3LL * 1000 * 1000;
 
     volatile bool     running_      = false;
+    std::atomic<size_t> failedWorkers_{0};  // workers that left at start-up for want of an lwIP thread semaphore
+    std::atomic<size_t> readyWorkers_{0};   // workers that finished the semaphore check, either way
+    uint32_t          workerStack_ = 0;
+    uint8_t           workerPrio_  = 0;
+    int               workerCore_  = tskNO_AFFINITY;
     size_t            poisonsQueued_  = 0;  // poison pills queued since start(), at most one per worker
     size_t            stoppedWorkers_ = 0;  // workers that gave shutdown_sem_ since start()
     SemaphoreHandle_t shutdown_sem_ = NULL;

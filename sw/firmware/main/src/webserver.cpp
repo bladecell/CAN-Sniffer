@@ -2153,6 +2153,7 @@ static void WSDataStreamTask(void* pvParameters)
             {
                 ws_send_can_status();
                 ws_send_recorder_state();
+                ws_send_sd_state(SDCard::getInstance().health_state());  // also tells a new session; changes go out at once
             }
             else
             {
@@ -2208,6 +2209,27 @@ static esp_err_t register_routes()
 
 }  // namespace
 
+void ws_send_sd_state(const sd_health::State& state)
+{
+    if (!wsStreamingEnabled.load())
+    {
+        return;  // no session: nothing to send to
+    }
+    uint8_t      packet[sd_health::kStateFrameBytes];
+    const size_t len = sd_health::encodeState(state, packet, sizeof(packet));
+    if (len == 0)
+    {
+        return;
+    }
+    httpd_ws_frame_t ws_frame = {.final      = true,
+                                 .fragmented = false,
+                                 .type       = HTTPD_WS_TYPE_BINARY,
+                                 .payload    = packet,
+                                 .len        = len,
+                                 .left_len   = 0};
+    AsyncWebServer::getInstance().wsBroadcast(&ws_frame);
+}
+
 // ============================================================================
 // 5. PUBLIC BOOTSTRAPPER (Sits at the bottom looking up at the namespace)
 // ============================================================================
@@ -2234,6 +2256,16 @@ static esp_err_t stop_access_control()
 {
     auth_service::stop();
     return button_deinit();
+}
+
+void web_server_revive_workers()
+{
+    AsyncWebServer& server = AsyncWebServer::getInstance();
+    if (const size_t missing = server.failed_workers(); missing != 0)
+    {
+        ESP_LOGW(TAG, "%u async workers missing, restarting (created %u)", static_cast<unsigned>(missing),
+                 static_cast<unsigned>(server.revive_workers()));
+    }
 }
 
 esp_err_t setup_web_server()

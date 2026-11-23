@@ -14,6 +14,8 @@
 #include "application_components.hpp"
 #include "atomic_file.hpp"
 #include "battery.hpp"
+#include "sd_health.hpp"
+#include "webserver.hpp"
 #include "can_driver.hpp"
 #include "error_policy.hpp"
 #include "esp_attr.h"
@@ -239,16 +241,62 @@ void SUPERVISOR::finish_sleep_request(uint32_t token, bool responseSent)
     (void)core_.finishSleepRequest(token, responseSent);
 }
 
+static constexpr uint32_t kHeapLogLoops = 60;  // one line per minute at supervisor::kLoopMs = 1000
+static constexpr uint32_t kHeapEarlyLoop = 3;   // ~3 s after the supervisor task starts (WiFi starts in the same startup)
+static constexpr uint32_t kStackDumpLoop = 60;  // one-shot per-task stack high-water dump
+
+static void logInternalHeap()
+{
+    ESP_LOGI(TAG, "heap internal free=%u min=%u largest=%u", static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
+             static_cast<unsigned>(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL)),
+             static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)));
+}
+
+// Once per boot. Needs CONFIG_FREERTOS_USE_TRACE_FACILITY. The snapshot array goes to PSRAM when present.
+static void logStackHighWater()
+{
+    const UBaseType_t cap = uxTaskGetNumberOfTasks() + 4;
+    auto* tasks = static_cast<TaskStatus_t*>(
+        heap_caps_malloc_prefer(cap * sizeof(TaskStatus_t), 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    if (tasks == nullptr)
+    {
+        ESP_LOGW(TAG, "stack dump skipped: no memory");
+        return;
+    }
+    const UBaseType_t n = uxTaskGetSystemState(tasks, cap, nullptr);
+    for (UBaseType_t i = 0; i < n; i++)
+    {
+        ESP_LOGI(TAG, "stack hwm %-16s free=%u B", tasks[i].pcTaskName, static_cast<unsigned>(tasks[i].usStackHighWaterMark));
+    }
+    heap_caps_free(tasks);
+}
+
 void SUPERVISOR::taskWrapper(void* param)
 {
     SUPERVISOR* supervisor = static_cast<SUPERVISOR*>(param);
+    logInternalHeap();
     supervisor->task();
 }
 
 void SUPERVISOR::task()
 {
+    uint32_t loops = 0;
     while (1)
     {
+        ++loops;
+        if (loops == kHeapEarlyLoop)
+        {
+            logInternalHeap();
+        }
+        if (loops == kStackDumpLoop)
+        {
+            logStackHighWater();
+        }
+        if (loops % kHeapLogLoops == 0)
+        {
+            logInternalHeap();
+            web_server_revive_workers();
+        }
         const State before = core_.state();
         core_.step();
         if (core_.state() != before)
@@ -256,6 +304,11 @@ void SUPERVISOR::task()
             ESP_LOGI(TAG, "State %d -> %d", static_cast<int>(before), static_cast<int>(core_.state()));
         }
         SDCard::getInstance().update_card_status();
+        sd_health::State sdState;
+        if (SDCard::getInstance().take_state_change(sdState))
+        {
+            ws_send_sd_state(sdState);  // after the SD lease is released; a dispatcher submit, never blocks
+        }
         vTaskDelay(pdMS_TO_TICKS(supervisor::kLoopMs));
     }
 }
@@ -351,9 +404,16 @@ SUPERVISOR::PidDefinitionSaveResult SUPERVISOR::save_pid_def_to_json(const char*
         }
 
         // Temp file, fsync, rename: a failed or interrupted save keeps the previous PID file (SUP-2).
-        switch (atomic_file::write(path, jsonString, len))
+        const int64_t deadline = esp_timer_get_time() + sd_health::kOpDeadlineUs;
+        const auto    expired  = [deadline] { return esp_timer_get_time() >= deadline; };
+        switch (atomic_file::write(path, jsonString, len, expired))
         {
             case atomic_file::Result::Ok:
+                break;
+            case atomic_file::Result::TimedOut:
+                ESP_LOGE(TAG, "Saving PID definitions to %s exceeded %d ms; previous file kept", path,
+                         static_cast<int>(sd_health::kOpDeadlineUs / 1000));
+                ret = ESP_ERR_TIMEOUT;
                 break;
             case atomic_file::Result::PathTooLong:
                 ret = ESP_ERR_INVALID_ARG;
@@ -366,6 +426,7 @@ SUPERVISOR::PidDefinitionSaveResult SUPERVISOR::save_pid_def_to_json(const char*
                 ret = ESP_FAIL;
                 break;
         }
+        SDCard::getInstance().report_io(ret);
     }
 
     free(jsonString);
@@ -584,10 +645,15 @@ esp_err_t SUPERVISOR::copy_file(const char* src_path, const char* dest_path)
         // Temp file in the destination directory, then rename over it: a failed copy, a full card or a destination that
         // is the same file as the source under a FAT 8.3 alias leaves the old destination intact (identity cannot be
         // tested on FAT: st_ino is not unique there).
-        switch (atomic_file::copy(src_path, dest_path))
+        const int64_t deadline = esp_timer_get_time() + sd_health::kOpDeadlineUs;
+        const auto    expired  = [deadline] { return esp_timer_get_time() >= deadline; };
+        switch (atomic_file::copy(src_path, dest_path, expired))
         {
             case atomic_file::Result::Ok:
                 ret = ESP_OK;
+                break;
+            case atomic_file::Result::TimedOut:
+                ret = ESP_ERR_TIMEOUT;
                 break;
             case atomic_file::Result::PathTooLong:
                 ret = ESP_ERR_INVALID_ARG;
@@ -599,6 +665,7 @@ esp_err_t SUPERVISOR::copy_file(const char* src_path, const char* dest_path)
                 ret = ESP_FAIL;
                 break;
         }
+        SDCard::getInstance().report_io(ret);
     }
     if (ret != ESP_OK)
     {

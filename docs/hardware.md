@@ -24,7 +24,7 @@ Pick the board in menuconfig (`CAN Sniffer` > `Hardware revision`) or in `sdkcon
 | CAN RX | 4 | |
 | CAN RS (transceiver slope/standby) | 6 | v1.1: 7 |
 | CAN loopback (LBK) | 7 | v1.1: 6 |
-| SD (SPI) | MISO 12, MOSI 10, SCLK 11, CS 9 | v1.1: MISO 10, MOSI 12, SCLK 11, CS 13 |
+| SD (SDMMC slot 1, 1-bit, 20 MHz) | DAT0 12, CMD 10, CLK 11 (no CS: SDMMC has none; D1 to D3 unused) | v1.1: DAT0 10, CMD 12, CLK 11 |
 | SD detect | 13 | v1.1: 9 |
 | LED | 47 | |
 | BOOT button | 0 | Strapping pin (low at reset = download mode), so firmware only reads it: input with pull-up, interrupt on both edges, debounced 30 ms. Use: a press after a PIN was posted confirms the claim (`api.md`, Authentication), hold 10 s = PIN recovery (`api.md`, Authentication). Same pin on v1.1 and v1.2; v2 map not defined yet |

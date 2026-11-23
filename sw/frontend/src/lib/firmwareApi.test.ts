@@ -25,6 +25,28 @@ describe("firmware API client", () => {
     expect(calls.some((call) => call.includes("/api/v1/req/clear_dtc"))).toBe(true);
   });
 
+  test("retries a GET answered 503 and never a non-GET", async () => {
+    const waits: number[] = [];
+    const calls: string[] = [];
+    const busy = () => new Response("{}", { status: 503, headers: { "Retry-After": "1" } });
+    const api = createFirmwareApi({
+      fetch: async (url, init) => { calls.push(`${init?.method ?? "GET"} ${url}`); return busy(); },
+      gatedFetch: async (url, init) => { calls.push(`${init?.method ?? "GET"} ${url}`); return busy(); },
+      sleep: async (ms) => void waits.push(ms),
+    });
+    await api.system();
+    await api.setAutoPoll(true);
+    await api.requestVin();
+    await api.wifiScan();
+    expect(calls).toEqual([
+      "GET /api/v1/system", "GET /api/v1/system", "GET /api/v1/system",
+      "PATCH /api/v1/obd2",
+      "POST /api/v1/req/vin",
+      "GET /api/v1/wifi/scan", "GET /api/v1/wifi/scan", "GET /api/v1/wifi/scan",
+    ]);
+    expect(waits).toEqual([1000, 2000, 1000, 2000]);
+  });
+
   test("uses documented methods, routes, auth and binary response handling", async () => {
     const calls: Array<{ url: string; init?: RequestInit; gated: boolean }> = [];
     const response = () => new Response(JSON.stringify({ status: "success" }), { status: 200 });

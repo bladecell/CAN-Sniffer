@@ -63,7 +63,7 @@ SDCard::SDCard() : card(nullptr), mount_path(nullptr)
 SDCard::~SDCard()
 {
     {
-        Operation operation = acquire_operation(portMAX_DELAY);
+        Operation operation = acquire_operation(portMAX_DELAY, false, true);
         if (operation && card != nullptr && mount_path != nullptr)
         {
             ESP_LOGI(TAG, "Cleaning up and unmounting filesystem from %s...", mount_path);
@@ -201,8 +201,13 @@ bool SDCard::ensure_operation_mutex()
     return operation_mutex != nullptr;
 }
 
-SDCard::Operation SDCard::acquire_operation(TickType_t timeout, bool require_mounted)
+SDCard::Operation SDCard::acquire_operation(TickType_t timeout, bool require_mounted, bool allow_unavailable)
 {
+    if (!allow_unavailable && health.unavailable())
+    {
+        return Operation(nullptr, nullptr, ESP_ERR_INVALID_STATE, false);
+    }
+
     if (!ensure_operation_mutex())
     {
         return Operation(nullptr, nullptr, ESP_ERR_NO_MEM, false);
@@ -211,6 +216,12 @@ SDCard::Operation SDCard::acquire_operation(TickType_t timeout, bool require_mou
     if (xSemaphoreTakeRecursive(operation_mutex, timeout) != pdTRUE)
     {
         return Operation(nullptr, nullptr, ESP_ERR_TIMEOUT, false);
+    }
+
+    if (!allow_unavailable && health.unavailable())  // tripped while this caller waited for the mutex
+    {
+        xSemaphoreGiveRecursive(operation_mutex);
+        return Operation(nullptr, nullptr, ESP_ERR_INVALID_STATE, false);
     }
 
     const bool mounted = card != nullptr;
@@ -223,6 +234,32 @@ SDCard::Operation SDCard::acquire_operation(TickType_t timeout, bool require_mou
     return Operation(this, xTaskGetCurrentTaskHandle(), ESP_OK, mounted);
 }
 
+esp_err_t SDCard::report_io(esp_err_t err)
+{
+    if (health.reportIo(err))
+    {
+        // No unmount here: the caller still holds open FILE handles on this volume. update_card_status() unmounts once the
+        // lease is free, and retries every loop until it works.
+        ESP_LOGE(TAG, "SD card: %d consecutive I/O timeouts, marked unavailable (unmount follows)", sd_health::kTimeoutLimit);
+    }
+    return err;
+}
+
+bool SDCard::unavailable() const
+{
+    return health.unavailable();
+}
+
+sd_health::State SDCard::health_state() const
+{
+    return health.state();
+}
+
+bool SDCard::take_state_change(sd_health::State& out)
+{
+    return health.takeChange(out);
+}
+
 /* SD Card Management */
 
 esp_err_t SDCard::init(const SDCard::Config& config)
@@ -232,7 +269,7 @@ esp_err_t SDCard::init(const SDCard::Config& config)
         return ESP_ERR_NO_MEM;
     }
 
-    Operation operation = acquire_operation(portMAX_DELAY);
+    Operation operation = acquire_operation(portMAX_DELAY, false, true);
     if (!operation)
     {
         return operation.status();
@@ -291,7 +328,7 @@ esp_err_t SDCard::deinit()
         return ESP_ERR_NO_MEM;
     }
 
-    Operation operation = acquire_operation(DEINIT_LEASE_TIMEOUT);
+    Operation operation = acquire_operation(DEINIT_LEASE_TIMEOUT, false, true);
     if (!operation)
     {
         return operation.status();
@@ -315,6 +352,7 @@ esp_err_t SDCard::deinit()
         cd_pin = GPIO_NUM_NC;
     }
     last_stable_state = false;
+    health.noteDeinit();
     return ESP_OK;
 }
 
@@ -327,10 +365,19 @@ bool SDCard::card_present()
 void SDCard::update_card_status()
 {
     // Bounded: while a download, upload or delete holds the lease a card is in use, so skip this round.
-    Operation operation = acquire_operation(STATUS_LEASE_TIMEOUT);
+    Operation operation = acquire_operation(STATUS_LEASE_TIMEOUT, false, true);
     if (!operation || cd_pin == GPIO_NUM_NC)
     {
         return;
+    }
+
+    if (health.unavailable() && card != nullptr)
+    {
+        const esp_err_t ret = unmount_sdcard();  // the lease is held here, so no transfer has a file open
+        if (ret != ESP_OK)
+        {
+            ESP_LOGE(TAG, "Unmount of the unavailable card failed: %s (retrying)", esp_err_to_name(ret));
+        }
     }
 
     bool current_raw = card_present();
@@ -353,14 +400,25 @@ void SDCard::update_card_status()
             {
                 ESP_LOGI(TAG, "SD Card removed, unmounting...");
                 unmount_sdcard();
+                health.noteRemoved();
             }
+        }
+    }
+    else if (current_raw && health.unavailable() && health.retryDue(static_cast<uint32_t>(esp_timer_get_time() / 1000)))
+    {
+        // Still inserted but marked unavailable: try again on a long backoff (a reinsert or a format also clears it).
+        // The lease is already held, so the nested acquires return at once; only the driver's own command timeouts remain.
+        ESP_LOGW(TAG, "SD card unavailable, trying to mount again");
+        if (unmount_sdcard() == ESP_OK)
+        {
+            mount_sdcard();
         }
     }
 }
 
 esp_err_t SDCard::mount_sdcard()
 {
-    Operation operation = acquire_operation(portMAX_DELAY);
+    Operation operation = acquire_operation(portMAX_DELAY, false, true);
     if (!operation)
     {
         return operation.status();
@@ -378,6 +436,8 @@ esp_err_t SDCard::mount_sdcard()
         return ret;
     }
 
+    health.noteMounted();  // before the callback: it writes through the normal (unavailable-checked) file calls
+
     if (mount_callback)
     {
         mount_callback();
@@ -388,7 +448,7 @@ esp_err_t SDCard::mount_sdcard()
 
 esp_err_t SDCard::unmount_sdcard()
 {
-    Operation operation = acquire_operation(portMAX_DELAY);
+    Operation operation = acquire_operation(portMAX_DELAY, false, true);
     if (!operation)
     {
         return operation.status();
@@ -407,6 +467,7 @@ esp_err_t SDCard::unmount_sdcard()
     }
 
     card = nullptr;
+    health.noteUnmounted(sd_health::Reason::Unmounted);
 
     if (unmount_callback)
     {
@@ -418,7 +479,7 @@ esp_err_t SDCard::unmount_sdcard()
 
 esp_err_t SDCard::format_sdcard()
 {
-    Operation operation = acquire_operation(portMAX_DELAY);
+    Operation operation = acquire_operation(portMAX_DELAY, false, true);
     if (!operation)
     {
         return operation.status();
@@ -451,7 +512,7 @@ bool SDCard::is_mounted()
 
 void SDCard::get_sd_info(SDCard::SDInfo& sd_info)
 {
-    Operation operation = acquire_operation(portMAX_DELAY);
+    Operation operation = acquire_operation(portMAX_DELAY, false, true);
     if (!operation)
     {
         return;
@@ -830,40 +891,49 @@ esp_err_t SDCard::write_file(const char* relative_path, const void* data, size_t
     FILE* f = fopen(filepath.get(), mode);
     if (f == nullptr)
     {
+        const int open_errno = errno;
         ESP_LOGE(TAG, "Failed to open file %s in mode '%s'", filepath.get(), mode);
-        return ESP_FAIL;
+        return report_io(sd_health::ioError(open_errno));
     }
 
+    int io_errno = 0;  // errno of the first failed step; EIO and ETIMEDOUT count towards the health trip
     size_t written = fwrite(data, 1, size, f);
+    if (written != size)
+    {
+        io_errno = errno;
+    }
 
     bool flushed = (fflush(f) == 0);
     if (!flushed)
     {
+        if (io_errno == 0) { io_errno = errno; }
         ESP_LOGE(TAG, "Flush failed for %s: %s", filepath.get(), strerror(errno));
     }
     if (fsync(fileno(f)) != 0)
     {
+        if (io_errno == 0) { io_errno = errno; }
         ESP_LOGE(TAG, "Hardware sync failed for %s!", filepath.get());
         flushed = false;
     }
     const bool closed = (fclose(f) == 0);
     if (!closed)
     {
+        if (io_errno == 0) { io_errno = errno; }
         ESP_LOGE(TAG, "Close failed for %s: %s", filepath.get(), strerror(errno));
     }
 
     if (written != size)
     {
         ESP_LOGE(TAG, "Write incomplete! Wrote %zu/%zu bytes to %s", written, size, filepath.get());
-        return ESP_FAIL;
+        return report_io(sd_health::ioError(io_errno));
     }
     if (!flushed || !closed)
     {
-        return ESP_FAIL;
+        return report_io(sd_health::ioError(io_errno));
     }
 
     ESP_LOGI(TAG, "Successfully %s %zu bytes to %s", append ? "appended" : "wrote", size, filepath.get());
-    return ESP_OK;
+    return report_io(ESP_OK);
 }
 
 esp_err_t SDCard::read_file(const char* relative_path, void* buffer, size_t max_size, size_t* bytes_read)
@@ -907,8 +977,9 @@ esp_err_t SDCard::read_file(const char* relative_path, void* buffer, size_t max_
 
     if (read_err)
     {
+        const int read_errno = errno;
         ESP_LOGE(TAG, "Read error on %s", filepath.get());
-        return ESP_FAIL;
+        return report_io(sd_health::ioError(read_errno));
     }
 
     if (bytes_read != nullptr)
@@ -1244,11 +1315,9 @@ esp_err_t SDCard::open_file(const char* relative_path, const char* mode, FILE*& 
 
 esp_err_t SDCard::close_file(FILE* fd)
 {
-    Operation operation = acquire_operation(portMAX_DELAY);
-    if (!operation)
-    {
-        return operation.status();
-    }
+    // Always releases the handle, also after the card was marked unavailable (the unmount waits for the caller's lease).
+    Operation operation = acquire_operation(portMAX_DELAY, false, true);
+    (void)operation;  // a failed acquire (no mutex memory) must still not leak the descriptor
 
     if (fd != nullptr)
     {
@@ -1272,10 +1341,10 @@ esp_err_t SDCard::file_write_chunk(FILE* fd, const char* chunk, size_t len)
 
     if (fwrite(chunk, 1, len, fd) != len)
     {
-        return ESP_FAIL;
+        return report_io(sd_health::ioError(errno));
     }
 
-    return ESP_OK;
+    return report_io(ESP_OK);
 }
 
 size_t SDCard::file_read_chunk(FILE* fd, char* chunk, size_t max_len)
@@ -1291,7 +1360,16 @@ size_t SDCard::file_read_chunk(FILE* fd, char* chunk, size_t max_len)
         return 0;
     }
 
-    return fread(chunk, 1, max_len, fd);
+    const size_t got = fread(chunk, 1, max_len, fd);
+    if (got < max_len && ferror(fd) != 0)
+    {
+        report_io(sd_health::ioError(errno));
+    }
+    else if (got > 0)
+    {
+        report_io(ESP_OK);
+    }
+    return got;
 }
 
 esp_err_t SDCard::get_file_stat(const char* relative_path, struct stat* st)

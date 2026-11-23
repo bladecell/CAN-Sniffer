@@ -12,6 +12,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "sd_health.hpp"
 #include "sdmmc_cmd.h"
 #include "soc/gpio_num.h"
 #include "tree_limits.hpp"
@@ -90,7 +91,18 @@ public:
 
     // Acquires the SD mutex for a caller-specified time. If require_mounted is
     // true, a successful operation also guarantees mounted() is true.
-    Operation acquire_operation(TickType_t timeout, bool require_mounted = false);
+    // While the card is unavailable (3 consecutive I/O timeouts, sd_health.hpp) it returns ESP_ERR_INVALID_STATE at once,
+    // without waiting for the mutex, unless `allow_unavailable` is set (mount, format and status paths that bring it back).
+    Operation acquire_operation(TickType_t timeout, bool require_mounted = false, bool allow_unavailable = false);
+
+    // Feeds the health counter with the result of a card transfer: ESP_OK resets it, ESP_ERR_TIMEOUT counts, the rest is
+    // ignored. The third consecutive timeout marks the card unavailable and unmounts it. Returns `err` unchanged.
+    esp_err_t report_io(esp_err_t err);
+    bool      unavailable() const;
+    sd_health::State health_state() const;
+    // True once per mount, unmount, removal or trip, with the state after it. Single consumer (the supervisor loop), which
+    // broadcasts WebSocket frame 0x06 outside the SD lease.
+    bool take_state_change(sd_health::State& out);
 
     esp_err_t mount_sdcard();
     esp_err_t unmount_sdcard();
@@ -168,4 +180,5 @@ private:
     Callback mount_callback;
     Callback unmount_callback;
     SemaphoreHandle_t operation_mutex = nullptr;
+    sd_health::Tracker health;
 };

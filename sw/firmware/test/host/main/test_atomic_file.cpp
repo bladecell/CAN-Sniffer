@@ -192,10 +192,74 @@ void test_copy_larger_than_one_chunk(void)
   TEST_ASSERT_EQUAL_INT(5000, st.st_size);
   cleanup(d);
 }
+
+// SD hang (3 s deadline): an aborted copy or save leaves the destination as it was and no temp file behind.
+void test_copy_abort_keeps_destination(void)
+{
+  const std::string d = makeDir(), a = d + "/big", b = d + "/dest";
+  std::string       big(9000, 'z');
+  FILE*             f = fopen(a.c_str(), "w");
+  TEST_ASSERT_NOT_NULL(f);
+  fwrite(big.data(), 1, big.size(), f);
+  fclose(f);
+  put(b, "precious");
+  int chunks = 0;
+  TEST_ASSERT_EQUAL(af::Result::TimedOut, af::copy(a.c_str(), b.c_str(), [&] { return ++chunks > 2; }));
+  TEST_ASSERT_EQUAL_STRING("precious", get(b).c_str());
+  TEST_ASSERT_FALSE(exists(b + ".tmp"));
+  TEST_ASSERT_FALSE(exists(b + ".bak"));
+  cleanup(d);
+}
+
+void test_copy_abort_before_start_creates_nothing(void)
+{
+  const std::string d = makeDir(), a = d + "/a", b = d + "/dest";
+  put(a, "x");
+  TEST_ASSERT_EQUAL(af::Result::TimedOut, af::copy(a.c_str(), b.c_str(), [] { return true; }));
+  TEST_ASSERT_FALSE(exists(b));
+  TEST_ASSERT_FALSE(exists(b + ".tmp"));
+  cleanup(d);
+}
+
+void test_abort_after_write_discards_before_replace(void)
+{
+  const std::string d = makeDir(), p = d + "/pid.json";
+  put(p, "precious");
+  // the deadline passes while the data is being synced: the new content must not replace the old
+  bool late = false;
+  TEST_ASSERT_EQUAL(af::Result::TimedOut,
+                    af::writeWith(p.c_str(), [&](FILE* f) { late = true; return fputs("new", f) >= 0; }, [&] { return late; }));
+  TEST_ASSERT_EQUAL_STRING("precious", get(p).c_str());
+  TEST_ASSERT_FALSE(exists(p + ".tmp"));
+  cleanup(d);
+}
+
+void test_write_failure_without_deadline_stays_write_failed(void)
+{
+  const std::string d = makeDir(), p = d + "/pid.json";
+  put(p, "precious");
+  TEST_ASSERT_EQUAL(af::Result::WriteFailed, af::writeWith(p.c_str(), [](FILE*) { return false; }, [] { return false; }));
+  TEST_ASSERT_EQUAL_STRING("precious", get(p).c_str());
+  cleanup(d);
+}
+
+void test_copy_with_unused_deadline_succeeds(void)
+{
+  const std::string d = makeDir(), a = d + "/a", b = d + "/b";
+  put(a, "payload");
+  TEST_ASSERT_EQUAL(af::Result::Ok, af::copy(a.c_str(), b.c_str(), [] { return false; }));
+  TEST_ASSERT_EQUAL_STRING("payload", get(b).c_str());
+  cleanup(d);
+}
 }  // namespace
 
 extern "C" void run_atomic_file_tests(void)
 {
+  RUN_TEST(test_copy_abort_keeps_destination);
+  RUN_TEST(test_copy_abort_before_start_creates_nothing);
+  RUN_TEST(test_abort_after_write_discards_before_replace);
+  RUN_TEST(test_write_failure_without_deadline_stays_write_failed);
+  RUN_TEST(test_copy_with_unused_deadline_succeeds);
   RUN_TEST(test_copy_creates_and_overwrites);
   RUN_TEST(test_copy_with_missing_source_keeps_destination);
   RUN_TEST(test_copy_onto_itself_keeps_the_content);

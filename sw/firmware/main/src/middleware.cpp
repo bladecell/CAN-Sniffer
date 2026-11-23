@@ -21,6 +21,7 @@
 #include "can_config_limits.hpp"
 #include "esp_check.h"
 #include "esp_err.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include "esp_system.h"
@@ -542,6 +543,7 @@ MiddlewareJsonResult m_system_get()
     const float battery_v = SUPERVISOR::getInstance().get_battery_voltage();
     cJSON_AddNumberToObject(root, "battery_voltage", std::isnan(battery_v) ? 0.0 : battery_v);
     cJSON_AddBoolToObject(root, "sd_card_detected", sd_card_detected);
+    cJSON_AddBoolToObject(root, "sd_card_unavailable", SDCard::getInstance().unavailable());
 
     cJSON* component_status = cJSON_CreateArray();
     for (const auto& step : SUPERVISOR::getInstance().get_setup_steps())
@@ -558,6 +560,8 @@ MiddlewareJsonResult m_system_get()
     // Read-only diagnostics: heap and the unused stack of every task (shrinks under load, never grows back).
     cJSON_AddNumberToObject(root, "heap_free", esp_get_free_heap_size());
     cJSON_AddNumberToObject(root, "heap_min_free", esp_get_minimum_free_heap_size());
+    cJSON_AddNumberToObject(root, "heap_internal_free", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+    cJSON_AddNumberToObject(root, "heap_internal_min", heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
     const UBaseType_t               taskCapacity = uxTaskGetNumberOfTasks() + 4;
     std::unique_ptr<TaskStatus_t[]> taskStatus(new (std::nothrow) TaskStatus_t[taskCapacity]);
     cJSON*                          stacks = cJSON_CreateArray();
@@ -649,7 +653,7 @@ MiddlewareJsonResult m_sdcard_info_get()
         return json_result(nullptr, 500);
     }
 
-    auto operation = SDCard::getInstance().acquire_operation(SD_OPERATION_TIMEOUT);
+    auto operation = SDCard::getInstance().acquire_operation(SD_OPERATION_TIMEOUT, false, true);
     if (!operation)
     {
         cJSON_Delete(root);
@@ -669,6 +673,7 @@ MiddlewareJsonResult m_sdcard_info_get()
     cJSON_AddBoolToObject(root, "is_mmc", sd_info.is_mmc);
     cJSON_AddBoolToObject(root, "is_mounted", sd_info.is_mounted);
     cJSON_AddBoolToObject(root, "is_present", sd_info.is_present);
+    cJSON_AddBoolToObject(root, "unavailable", SDCard::getInstance().unavailable());
 
     return json_result(root);
 }
@@ -681,7 +686,7 @@ MiddlewareJsonResult m_sdcard_format_post()
         return json_result(nullptr, 500);
     }
 
-    auto operation = SDCard::getInstance().acquire_operation(SD_OPERATION_TIMEOUT);
+    auto operation = SDCard::getInstance().acquire_operation(SD_OPERATION_TIMEOUT, false, true);
     if (!operation)
     {
         cJSON_Delete(root);
