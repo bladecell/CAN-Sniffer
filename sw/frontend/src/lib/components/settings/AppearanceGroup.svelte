@@ -92,8 +92,8 @@
         <SelectMenu options={bgOptions} value={appearance.bg} ariaLabel={ROW.background.title} onChange={(v) => setAppearance("bg", v)} />
       </SettingRow>
     {/if}
-    {#if appearance.bg === "contour" && show(ROW.bgVariation)}
-      <SettingRow title={ROW.bgVariation.title} hint="Slide to reshape the lines. The hatched start of the slider is Random, a new pattern each day. Line count follows your screen width.">
+    {#if appearance.bg !== "default" && show(ROW.bgVariation)}
+      <SettingRow title={ROW.bgVariation.title} hint="Slide to reshape the pattern. The hatched start of the slider is Random, a new pattern each day. Size follows your screen.">
         <span class="sr-only" id="bgvar-label">{ROW.bgVariation.title}</span>
         <RangeSlider
           labelIds={["bgvar-label"]}

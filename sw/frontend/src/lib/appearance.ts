@@ -25,6 +25,14 @@ export const GLASS_DEFAULT = 50;
 export const BACKGROUNDS = [
   { id: "default", label: "Default" },
   { id: "contour", label: "Contour lines" },
+  { id: "wave", label: "Sound wave" },
+  { id: "shiny", label: "Simple shiny" },
+  { id: "meteor", label: "Meteor" },
+  { id: "overlay", label: "Shiny overlay" },
+  { id: "circuit", label: "Circuit board" },
+  { id: "layers", label: "Wave" },
+  { id: "hexagon", label: "Hexagon" },
+  { id: "polygon", label: "Polygon" },
 ] as const;
 export type Background = (typeof BACKGROUNDS)[number]["id"];
 export const BACKGROUND_IDS: readonly Background[] = BACKGROUNDS.map((b) => b.id);

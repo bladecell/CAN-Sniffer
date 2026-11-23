@@ -24,7 +24,7 @@ export const ROW = {
   accent: { title: "Accent", kw: "colour color orange yellow green teal blue violet rose neutral" },
   ctl: { title: "Control fill", kw: "strong clear contrast button field" },
   glass: { title: "Transparency", kw: "glass blur opaque see-through surfaces cards" },
-  background: { title: "Background", kw: "wallpaper pattern contour lines topographic" },
+  background: { title: "Background", kw: "wallpaper pattern contour lines topographic sound wave bars simple shiny blobs meteor streaks shooting stars shiny overlay facets circuit board traces pcb wave layers hexagon honeycomb polygon luminary network dots lines" },
   bgVariation: { title: "Pattern", kw: "background contour variation morph slider" },
   hotspotName: { title: "Network name", kw: "ssid hotspot access point" },
   hotspotPassword: { title: "Password", kw: "hotspot wpa key" },

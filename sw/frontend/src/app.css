@@ -296,7 +296,15 @@ body::before {
 }
 
 /* Generated background: replaces the tonal shapes. --bg-image is set by background.svelte.ts. */
-:root[data-bg='contour'] body::before {
+:root[data-bg='contour'] body::before,
+:root[data-bg='wave'] body::before,
+:root[data-bg='shiny'] body::before,
+:root[data-bg='meteor'] body::before,
+:root[data-bg='overlay'] body::before,
+:root[data-bg='circuit'] body::before,
+:root[data-bg='layers'] body::before,
+:root[data-bg='hexagon'] body::before,
+:root[data-bg='polygon'] body::before {
 	background: var(--bg-image) 0 0 / auto no-repeat;
 }
 
