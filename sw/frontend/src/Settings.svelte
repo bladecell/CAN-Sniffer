@@ -220,7 +220,6 @@
                   >
                     <span class="st-item-ico"><Icon name={GROUP[id].icon} size={24} /></span>
                     <span class="st-item-t">{GROUP[id].title}</span>
-                    <Icon name="chevron-down" size={18} />
                     <span class="st-item-s">{summary(id)}</span>
                   </button>
                 {/each}

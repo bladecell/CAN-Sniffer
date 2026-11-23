@@ -440,7 +440,7 @@
   box-sizing: border-box;
   position: relative;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 2px 12px;
   align-items: center;
   width: 100%;
@@ -489,14 +489,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.st-item > svg {
-  grid-column: 3;
-  grid-row: 1 / 3;
-  width: 1.1em;
-  height: 1.1em;
-  color: var(--muted);
-  transform: rotate(-90deg);
 }
 @media (hover: hover) {
   .st-item:hover {
