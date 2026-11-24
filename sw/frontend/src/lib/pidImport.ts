@@ -3,8 +3,11 @@
 import type { PidDefinition } from "./types";
 import { serializePidDefinition } from "./pidDefinition";
 
-/** new: not in the set. changed: in the set and differs (or not loaded). identical: in the set, same properties. */
-export type PidImportStatus = "new" | "changed" | "identical";
+/**
+ * new: not in the set. changed: in the set and differs (or not loaded). identical: in the set, same properties.
+ * builtin: the set holds it as a built-in PID, which an import never replaces.
+ */
+export type PidImportStatus = "new" | "changed" | "identical" | "builtin";
 
 export interface PidImportItem {
   def: PidDefinition;
@@ -25,6 +28,7 @@ export function classifyPidImport(incoming: PidDefinition[], current: CurrentPid
   return incoming.map((def) => {
     const row = byPid.get(def.pid);
     if (!row) return { def, status: "new" };
+    if (row.def.builtin) return { def, status: "builtin" };
     const same = row.loaded && fingerprint(row.def) === fingerprint(def);
     return { def, status: same ? "identical" : "changed" };
   });
@@ -38,7 +42,7 @@ export function pidImportCounts(items: PidImportItem[]): { added: number; change
   };
 }
 
-/** The definitions whose PID is chosen, in file order. */
+/** The definitions whose PID is chosen, in file order. Built-in PIDs are never chosen. */
 export function chosenDefinitions(items: PidImportItem[], chosen: ReadonlySet<number>): PidDefinition[] {
-  return items.filter((item) => chosen.has(item.def.pid)).map((item) => item.def);
+  return items.filter((item) => item.status !== "builtin" && chosen.has(item.def.pid)).map((item) => item.def);
 }

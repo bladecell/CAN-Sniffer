@@ -104,9 +104,12 @@ export function pressRow<T extends { selected: boolean }>(row: T): void {
 
 export type FooterAction = "new" | "edit" | "remove";
 
-/** The bottom bar: New PID with no selection, Edit and Remove for one selected PID, Remove N for several. */
-export function footerActions(selectedCount: number): FooterAction[] {
-  if (selectedCount === 0) return ["new"];
+/**
+ * The bottom bar. `removable` counts the selected PIDs that are not built in. With none removable (nothing selected, or
+ * only built-in PIDs) it offers New PID. One removable PID offers Edit and Remove, several Remove N.
+ */
+export function footerActions(selectedCount: number, removable: number): FooterAction[] {
+  if (selectedCount === 0 || removable === 0) return ["new"];
   if (selectedCount === 1) return ["edit", "remove"];
   return ["remove"];
 }

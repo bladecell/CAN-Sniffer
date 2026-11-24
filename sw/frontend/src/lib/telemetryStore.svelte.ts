@@ -173,8 +173,10 @@ export class TelemetryStore {
       if (isNaN(rawPid)) continue;
 
       // Normalize short keys from SD card JSON to frontend expected keys
+      // A file cannot make a PID built in: the device sets that flag, and the file's copy is never sent back.
       const normalizedDef = {
         ...def,
+        builtin: false,
         description: def.description !== undefined ? def.description : def.desc,
         length: def.length !== undefined ? def.length : def.len,
         minValue: def.minValue !== undefined ? def.minValue : def.minV,
@@ -191,7 +193,7 @@ export class TelemetryStore {
     for (const row of newRows) {
       const existingIdx = current.findIndex(r => parseInt(r.pid, 16) === parseInt(row.pid, 16));
       if (existingIdx >= 0) {
-        current[existingIdx] = row;
+        if (!current[existingIdx].builtin) current[existingIdx] = row;
       } else {
         current.push(row);
       }
@@ -225,6 +227,9 @@ export function createRowObject(def: PidDefinition, loaded: boolean, selected: b
     max_val: def.maxValue,
     len: def.length,
     updateInterval: def.update_interval_ms,
+
+    /** A built-in PID: read-only in the UI. */
+    builtin: def.builtin === true,
 
     // Stateful editable fields
     loaded: loaded,

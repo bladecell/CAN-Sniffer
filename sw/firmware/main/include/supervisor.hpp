@@ -107,7 +107,7 @@ public:
 
     esp_err_t               load_config_from_nvs();
     PidDefinitionSaveResult save_pid_def_to_json(const char* path);
-    esp_err_t               load_pid_def_from_json(const char* path);
+    esp_err_t               load_pid_def_from_json(const char* path, bool bootOverride = false);
     esp_err_t               copy_file(const char* src_path, const char* dest_path);
 
     // Application event only: the core guards RUNNING -> NOT_CONNECTED.

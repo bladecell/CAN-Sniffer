@@ -35,6 +35,7 @@
 #include "middleware.hpp"
 #include "obd2.hpp"
 #include "pid_json.hpp"
+#include "pid_core.hpp"
 #include "reset_reason.hpp"
 #include "sd_card.hpp"
 #include "settings.hpp"
@@ -440,7 +441,7 @@ SUPERVISOR::PidDefinitionSaveResult SUPERVISOR::save_pid_def_to_json(const char*
     return {ESP_OK, false};
 }
 
-esp_err_t SUPERVISOR::load_pid_def_from_json(const char* path)
+esp_err_t SUPERVISOR::load_pid_def_from_json(const char* path, bool bootOverride)
 {
     if (path == nullptr || !SDCard::is_path_under(path, "/sdcard"))
     {
@@ -588,6 +589,44 @@ esp_err_t SUPERVISOR::load_pid_def_from_json(const char* path)
         return ESP_ERR_INVALID_ARG;
     }
 
+    if (bootOverride)
+    {
+        // Boot only: a file written for an older firmware may carry its own versions of the core PIDs. Those items
+        // are replaced by the built-in ones so the rest of the file still loads.
+        std::vector<PIDDefinitionData> defs;
+        const pidjson::ParseResult     parsed = pidjson::parse(rootArray, defs);
+        cJSON_Delete(rootArray);
+        if (!parsed.ok)
+        {
+            ESP_LOGW(TAG, "PID file %s rejected: %s", path, parsed.reason);
+            return ESP_ERR_INVALID_ARG;
+        }
+        std::vector<uint16_t> replaced;
+        pidcore::overrideChanged(defs, replaced);
+        if (!replaced.empty())
+        {
+            char list[8 * 6 + 1] = {0};
+            size_t n = 0;
+            for (uint16_t pid : replaced)
+            {
+                n += snprintf(list + n, sizeof(list) - n, "0x%02X ", pid);
+                if (n >= sizeof(list))
+                {
+                    break;
+                }
+            }
+            ESP_LOGW(TAG, "PID file %s: built-in PIDs %sreplace the file's versions", path, list);
+        }
+        const esp_err_t result = OBD2::getInstance().replacePIDDefinitions(defs);
+        if (result != ESP_OK)
+        {
+            ESP_LOGW(TAG, "Failed to load PID definitions from %s: %s", path, esp_err_to_name(result));
+            return result == ESP_ERR_INVALID_SIZE ? ESP_ERR_INVALID_ARG : result;
+        }
+        ESP_LOGI(TAG, "Successfully loaded PID definitions from %s", path);
+        return ESP_OK;
+    }
+
     int    http_status    = 200;
     cJSON* error_response = m_pid_def_put(rootArray, &http_status);
     bool   success        = error_response == nullptr && http_status == 204;
@@ -604,6 +643,10 @@ esp_err_t SUPERVISOR::load_pid_def_from_json(const char* path)
         if (http_status == 503)
         {
             return ESP_ERR_TIMEOUT;
+        }
+        if (http_status == 403)
+        {
+            return pidcore::kBuiltin;
         }
         return ESP_ERR_INVALID_ARG;
     }

@@ -194,6 +194,8 @@
   }
 
   function editPid(index: number) {
+    // Built-in PIDs are read-only: no editor opens for them.
+    if (telemetryStore.local_piddef[index]?.builtin) return;
     telemetryStore.activeIndex = index;
     editorOpen = true;
   }

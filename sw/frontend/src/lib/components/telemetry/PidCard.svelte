@@ -19,6 +19,8 @@
     /** The panel under the card is open: the header and the panel read as one card. */
     open?: boolean;
     onToggle: () => void;
+    /** Not pressable (a built-in PID in the import sheet). Shown as aria-disabled; the press does nothing. */
+    disabled?: boolean;
     /** Swipe handling for the card (phone). Nothing by default. */
     swipe?: Attachment<HTMLElement>;
     tags?: Snippet;
@@ -28,7 +30,7 @@
     after?: Snippet;
   }
 
-  let { selected, color, name, hex = "", phone = false, open = false, onToggle, swipe, tags, value, actions, behind, after }: Props = $props();
+  let { selected, color, name, hex = "", phone = false, open = false, onToggle, disabled = false, swipe, tags, value, actions, behind, after }: Props = $props();
 
   const noSwipe: Attachment<HTMLElement> = () => {};
 </script>
@@ -36,7 +38,7 @@
 <li class="sb-row prow" class:sel={selected} class:phone class:open>
   {@render behind?.()}
   <div class="sb-slide" {@attach swipe ?? noSwipe}>
-    <button type="button" class="sb-main" aria-pressed={selected} onclick={onToggle}>
+    <button type="button" class="sb-main" aria-pressed={selected} aria-disabled={disabled || undefined} onclick={() => !disabled && onToggle()}>
       <i class="sb-sw" style="--sw: {color}"></i>
       <span class="sb-nm">
         <span class="sb-nl">

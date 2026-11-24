@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { normalizePidDefinition, parsePidList } from "./pidDefinition";
+import { normalizePidDefinition, parsePidList, serializePidDefinition } from "./pidDefinition";
 
 const required = { id: 0x7df, mode: 1, pid: 12, length: 2, name: "RPM", formula: "A", update_interval_ms: 256 };
 
@@ -23,6 +23,12 @@ describe("normalizePidDefinition", () => {
     const d = normalizePidDefinition({ ...required, len: 3, length: undefined, desc: "x", interval: 512, update_interval_ms: undefined, minV: 1, maxV: 2 });
     expect([d.length, d.description, d.update_interval_ms, d.minValue, d.maxValue]).toEqual([3, "x", 512, 1, 2]);
   });
+  test("builtin is true only when the device says so; missing is false", () => {
+    expect(normalizePidDefinition({ ...required, builtin: true }).builtin).toBe(true);
+    expect(normalizePidDefinition({ ...required, builtin: false }).builtin).toBe(false);
+    expect(normalizePidDefinition(required).builtin).toBe(false);
+    expect(normalizePidDefinition({ ...required, builtin: "yes" }).builtin).toBe(false);
+  });
   test("missing required field still throws", () => {
     expect(() => normalizePidDefinition({ ...required, name: undefined })).toThrow();
     expect(() => normalizePidDefinition({ ...required, formula: null })).toThrow();
@@ -38,5 +44,12 @@ describe("parsePidList", () => {
   test("rejects a non-array", () => {
     expect(() => parsePidList({ data: "x" })).toThrow();
     expect(() => parsePidList(null)).toThrow();
+  });
+});
+
+describe("serializePidDefinition", () => {
+  test("never sends builtin, so a GET to PUT round trip stays valid", () => {
+    const def = normalizePidDefinition({ ...required, builtin: true });
+    expect(serializePidDefinition(def)).not.toHaveProperty("builtin");
   });
 });

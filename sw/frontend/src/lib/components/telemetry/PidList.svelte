@@ -46,6 +46,8 @@
   let pendingCount = $derived(telemetryStore.local_piddef.filter((r) => r.pendingChanges === "Yes").length);
   let supportedCount = $derived(loaded.filter((r) => r.isSupported).length);
   let selectedCount = $derived((replay ? groups.flatMap((g) => g.items) : loaded).filter((r) => r.selected).length);
+  // Built-in PIDs are read-only: they are never edited or removed.
+  let removableCount = $derived(loaded.filter((r) => r.selected && !r.builtin).length);
 
   // Groups and sections the user has toggled. Not supported starts collapsed: it is most of the list on a real car.
   let toggled = $state<Record<string, boolean>>({});
@@ -77,8 +79,8 @@
   }
 
   function removeSelected() {
-    if (selectedCount === 0) return;
-    removeWhere((r) => r.selected, selectedCount);
+    if (removableCount === 0) return;
+    removeWhere((r) => r.selected && !r.builtin, removableCount);
   }
 
   function editSelected() {
@@ -119,15 +121,18 @@
         {hex}
         {phone}
         onToggle={() => pressPid(row)}
-        swipe={replay ? undefined : swipeRow({ left: () => onEdit(index), right: () => removeOne(row) })}
+        swipe={replay || row.builtin ? undefined : swipeRow({ left: () => onEdit(index), right: () => removeOne(row) })}
       >
         {#snippet behind()}
-          {#if phone && !replay}
+          {#if phone && !replay && !row.builtin}
             <div class="sb-lay sb-lay-l sb-lay-del" aria-hidden="true">Delete</div>
             <div class="sb-lay sb-lay-r sb-lay-apply" aria-hidden="true">Edit</div>
           {/if}
         {/snippet}
         {#snippet tags()}
+          {#if row.builtin}
+            <span class="tag"><Icon name="lock" size={14} />Built-in</span>
+          {/if}
           {#if !replay && row.isSupported && !row.isValid}
             <span class="sb-tag k-crit" title="Invalid: the formula gives no usable value"><i class="dot"></i>Invalid</span>
           {/if}
@@ -151,7 +156,7 @@
           {/if}
         {/snippet}
         {#snippet after()}
-          {#if phone && !replay}
+          {#if phone && !replay && !row.builtin}
             <!-- Keyboard path to the swipe actions. Hidden until focused, then the card slides to show the action. -->
             <button type="button" class="sb-sra sb-sra-l" onclick={() => removeOne(row)}>Delete {row.name}</button>
             <button type="button" class="sb-sra sb-sra-r" onclick={() => onEdit(index)}>Edit {row.name}</button>
@@ -224,13 +229,13 @@
     {#if replay}
       <button type="button" class="btn pri" disabled><Icon name="plus" size={18} />New PID</button>
     {/if}
-    {#each replay ? [] : footerActions(selectedCount) as action (action)}
+    {#each replay ? [] : footerActions(selectedCount, removableCount) as action (action)}
       {#if action === "new"}
         <button type="button" class="btn pri" onclick={onNew}><Icon name="plus" size={18} />New PID</button>
       {:else if action === "edit"}
         <button type="button" class="btn" onclick={editSelected}><Icon name="edit" size={18} />Edit</button>
       {:else}
-        <button type="button" class="btn rm" onclick={removeSelected}><Icon name="trash" size={18} />Remove {selectedCount}</button>
+        <button type="button" class="btn rm" onclick={removeSelected}><Icon name="trash" size={18} />Remove {removableCount}</button>
       {/if}
     {/each}
   {/snippet}

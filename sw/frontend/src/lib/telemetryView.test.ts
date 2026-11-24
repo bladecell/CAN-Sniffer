@@ -160,15 +160,24 @@ describe("pressRow", () => {
 
 describe("footerActions", () => {
   test("nothing selected offers New PID only", () => {
-    expect(footerActions(0)).toEqual(["new"]);
+    expect(footerActions(0, 0)).toEqual(["new"]);
   });
 
-  test("one selected PID offers Edit and Remove", () => {
-    expect(footerActions(1)).toEqual(["edit", "remove"]);
+  test("one selected editable PID offers Edit and Remove", () => {
+    expect(footerActions(1, 1)).toEqual(["edit", "remove"]);
   });
 
   test("several selected PIDs offer Remove N only", () => {
-    expect(footerActions(3)).toEqual(["remove"]);
+    expect(footerActions(3, 3)).toEqual(["remove"]);
+  });
+
+  test("a selected built-in PID offers no Edit or Remove", () => {
+    expect(footerActions(1, 0)).toEqual(["new"]);
+  });
+
+  test("built-in PIDs in a multi selection are not removable, the rest still are", () => {
+    expect(footerActions(3, 1)).toEqual(["remove"]);
+    expect(footerActions(2, 0)).toEqual(["new"]);
   });
 });
 

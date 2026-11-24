@@ -31,6 +31,7 @@
 #include "freertos/task.h"
 #include "http_error.hpp"
 #include "can_capture.hpp"
+#include "pid_core.hpp"
 #include "can_capture_core.hpp"
 #include "can_mode_http.hpp"
 #include "can_mode_service.hpp"
@@ -56,6 +57,8 @@ static const char* TAG = "MIDDLEWARE";
 
 namespace
 {
+
+static const char* const kBuiltinReason = "Built-in PID cannot be changed or removed";
 
 static MiddlewareJsonResult json_result(cJSON* body, int status = 200)
 {
@@ -225,6 +228,7 @@ cJSON* single_pid_def_get(uint16_t pid, esp_err_t* operation_error)
     cJSON_AddNumberToObject(item, "color", def.color);
     cJSON_AddStringToObject(item, "icon", def.icon.c_str());
     cJSON_AddStringToObject(item, "formula", def.formula.c_str());
+    cJSON_AddBoolToObject(item, "builtin", pidcore::isCore(def.pid));
 
     return item;
 }
@@ -319,6 +323,7 @@ MiddlewareJsonResult m_pid_def_get(int filter_id)
                 cJSON_AddNumberToObject(item, "color", definition.color);
                 cJSON_AddStringToObject(item, "icon", definition.icon.c_str());
                 cJSON_AddStringToObject(item, "formula", definition.formula.c_str());
+                cJSON_AddBoolToObject(item, "builtin", pidcore::isCore(definition.pid));
                 cJSON_AddItemToArray(data_array, item);
                 count++;
             }
@@ -1339,6 +1344,10 @@ MiddlewareJsonResult m_pid_def_delete(int filter_id)
     {
         return json_result(nullptr, 204);
     }
+    if (err == pidcore::kBuiltin)
+    {
+        return json_result(json_error_body(kBuiltinReason, pidcore::kCode), pidcore::statusFor(pidcore::Op::Write));
+    }
 
     cJSON* root = cJSON_CreateObject();
     if (root == nullptr)
@@ -1380,6 +1389,14 @@ cJSON* m_pid_def_put(cJSON* data, int* http_status)
     }
 
     esp_err_t result = OBD2::getInstance().replacePIDDefinitions(definitions);
+    if (result == pidcore::kBuiltin)
+    {
+        if (http_status != nullptr)
+        {
+            *http_status = pidcore::statusFor(pidcore::Op::Write);
+        }
+        return json_error_body(kBuiltinReason, pidcore::kCode);
+    }
     if (result != ESP_OK)
     {
         const int status = status_for_error(result, 422);
@@ -1472,10 +1489,10 @@ MiddlewareJsonResult m_pid_def_post(cJSON* data)
         {
             cJSON* fail_obj = cJSON_CreateObject();
             cJSON_AddNumberToObject(fail_obj, "pid", parsed_pid);
-            cJSON_AddStringToObject(fail_obj, "error", esp_err_to_name(err));
+            cJSON_AddStringToObject(fail_obj, "error", err == pidcore::kBuiltin ? pidcore::kCode : esp_err_to_name(err));
             cJSON_AddItemToArray(failed_array, fail_obj);
             error_count++;
-            const int item_status = status_for_error(err, 422);
+            const int item_status = err == pidcore::kBuiltin ? pidcore::statusFor(pidcore::Op::Add) : status_for_error(err, 422);
             if (item_status == 503 || item_status == 500)
             {
                 failure_status = item_status;
@@ -1595,6 +1612,11 @@ MiddlewareJsonResult m_pid_def_load(cJSON* payload)
         {
             return json_result(json_error_body("Missing or invalid 'pid_def_path' in payload"), 400);
         }
+    }
+
+    if (ret == pidcore::kBuiltin)
+    {
+        return json_result(json_error_body(kBuiltinReason, pidcore::kCode), pidcore::statusFor(pidcore::Op::Write));
     }
 
     cJSON* root = cJSON_CreateObject();

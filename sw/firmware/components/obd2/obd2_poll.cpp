@@ -1,4 +1,5 @@
 #include "obd2_internal.hpp"
+#include "pid_core.hpp"
 
 class CanLoadTracker
 {
@@ -95,6 +96,11 @@ esp_err_t OBD2::addPID(uint32_t id, uint8_t mode, uint16_t pid, uint8_t len, std
         return ESP_ERR_TIMEOUT;
     }
 
+    if (const esp_err_t guard = pidcore::guardChange(pid); guard != ESP_OK)
+    {
+        return guard;
+    }
+
     if (interval < MIN_TRANSMIT_PERIOD_MS)
     {
         ESP_LOGW(TAG, "Requested interval %d ms is too low, setting to minimum %d ms", interval,
@@ -171,6 +177,10 @@ esp_err_t OBD2::removePID(uint16_t pid)
     {
         return ESP_ERR_TIMEOUT;
     }
+    if (const esp_err_t guard = pidcore::guardChange(pid); guard != ESP_OK)
+    {
+        return guard;
+    }
     return OBD2DataModel::removePID(pid);
 }
 
@@ -196,7 +206,7 @@ PollRequest OBD2::makePollRequest(uint32_t id, uint8_t mode, uint32_t pid, uint8
     return request;
 }
 
-esp_err_t OBD2::replacePIDDefinitions(const std::vector<PIDDefinitionData>& definitions)
+esp_err_t OBD2::replacePIDDefinitions(const std::vector<PIDDefinitionData>& requested)
 {
     OperationGuard operation(this);
     if (!operation.admitted())
@@ -207,6 +217,14 @@ esp_err_t OBD2::replacePIDDefinitions(const std::vector<PIDDefinitionData>& defi
     if (!configurationGuard.isLocked())
     {
         return ESP_ERR_TIMEOUT;
+    }
+
+    // The core PIDs are always part of the set: identical ones pass, absent ones are added, changed ones reject it.
+    std::vector<PIDDefinitionData> definitions;
+    const esp_err_t                coreResult = pidcore::merged(requested, definitions, NUMBER_OF_ITEMS);
+    if (coreResult != ESP_OK)
+    {
+        return coreResult;
     }
 
     std::vector<PollRequest> recurringRequests;

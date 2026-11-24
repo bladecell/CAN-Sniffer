@@ -10,6 +10,7 @@
 #include "led_status.hpp"
 #include "obd2.hpp"
 #include "obd2_simulator.hpp"
+#include "pid_core.hpp"
 #include "can_mode_service.hpp"
 #include "recorder.hpp"
 #include "sd_card.hpp"
@@ -302,17 +303,41 @@ esp_err_t setupObd(void*)
         return ret;
     }
 
+    // The core PIDs exist with or without an SD card or a PID file.
+    const esp_err_t coreRet = obd.replacePIDDefinitions({});
+    if (coreRet != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to install the core PIDs: %s", esp_err_to_name(coreRet));
+    }
+
     if (!SDCard::getInstance().is_mounted())
     {
-        ESP_LOGW(TAG, "No SD card mounted, OBD2 runs without PID definitions");
+        ESP_LOGW(TAG, "No SD card mounted, OBD2 runs with the core PIDs only");
         return ESP_OK;
     }
 
-    ret = SUPERVISOR::getInstance().load_pid_def_from_json(SUPERVISOR::getInstance().get_pid_def_path().c_str());
+    const auto pidPath = SUPERVISOR::getInstance().get_pid_def_path();
+    ret                       = SUPERVISOR::getInstance().load_pid_def_from_json(pidPath.c_str(), true);
+
+    if (pidcore::shouldSeed(ret))
+    {
+        // First mount without a PID file: write the core set so the user can edit it. Never overwrites a file
+        // (load returned "confirmed missing"); a failed save only logs, the core PIDs stay active.
+        const auto seeded = SUPERVISOR::getInstance().save_pid_def_to_json(pidPath.c_str());
+        if (seeded.error == ESP_OK)
+        {
+            ESP_LOGI(TAG, "Seeded %s with the core PIDs", pidPath.c_str());
+        }
+        else
+        {
+            ESP_LOGW(TAG, "Could not seed %s: %s", pidPath.c_str(), esp_err_to_name(seeded.error));
+        }
+        ret = ESP_OK;
+    }
 
     if (ret != ESP_OK)
     {
-        ESP_LOGE(TAG, "Failed to load PID definitions: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Failed to load PID definitions, core PIDs only: %s", esp_err_to_name(ret));
         return ret;
     }
 

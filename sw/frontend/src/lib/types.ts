@@ -107,6 +107,8 @@ export interface PidDefinitionWire {
   color: number;
   icon: string;
   formula: string;
+  /** A core PID the firmware built in: read-only, cannot be edited or removed. */
+  builtin?: boolean;
 }
 
 export interface TaskStack {
@@ -248,6 +250,8 @@ export interface PidDefinition {
   color: number; // Decimal color representation
   priority: number;
   icon: string;
+  /** A core PID the firmware built in: read-only. Never sent back to the device. Missing means false. */
+  builtin?: boolean;
 }
 
 export interface PidDataMetrics {

@@ -22,23 +22,35 @@ export function sdCardFileEndpoint(path: string, isDirectory = false): string {
   return `/api/v1/sd_card/file${encodedPath}`;
 }
 
+/** A firmware refusal. `code` is the firmware's machine code (for example PID_BUILTIN), when it sent one. */
+export class ApiError extends Error {
+  readonly code?: string;
+
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = "ApiError";
+    this.code = code;
+  }
+}
+
 function responseError(response: Response, payload: unknown): Error {
   const reason = isRecord(payload) && payload.reason != null
     ? String(payload.reason).trim()
     : "";
+  const code = isRecord(payload) && typeof payload.code === "string" ? payload.code : undefined;
 
   if (reason) {
-    return new Error(reason);
+    return new ApiError(reason, code);
   }
 
   if (!response.ok) {
     const status = response.statusText
       ? `${response.status} ${response.statusText}`
       : String(response.status);
-    return new Error(`HTTP ${status}`);
+    return new ApiError(`HTTP ${status}`, code);
   }
 
-  return new Error("Request failed");
+  return new ApiError("Request failed", code);
 }
 
 /** Parse an API JSON response and reject both HTTP and firmware-level errors. */

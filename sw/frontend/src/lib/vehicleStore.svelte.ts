@@ -5,6 +5,7 @@ import { parseSdInfo, type SdInfoWire } from "./settingsModel";
 import { recordingStore } from "./recordingStore.svelte";
 import { alertStore } from "./alertStore.svelte";
 import { validatePidDefinitionSet } from "./pidValidation";
+import { builtinRefusal } from "./pidBuiltin";
 import { parseJsonResponse } from "./api";
 import { normalizePidDefinition, parsePidList, serializePidDefinition } from "./pidDefinition";
 import { createLatest } from "./latest";
@@ -361,7 +362,7 @@ export class VehicleStore {
             return null;
         } catch (e) {
             console.error("Failed to replace PIDs:", e);
-            return e instanceof Error ? e.message : "Unknown error";
+            return builtinRefusal(e) ?? (e instanceof Error ? e.message : "Unknown error");
         }
     }
 

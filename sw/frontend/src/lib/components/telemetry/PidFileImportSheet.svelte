@@ -48,11 +48,13 @@
   });
 
   /** Status tag: the same tag classes the PIDs tab uses (sb-tag, k-ok, k-warn). Identical is the muted default. */
-  const STATUS: Record<PidImportStatus, { label: string; tone: string }> = {
+  const STATUS: Record<Exclude<PidImportStatus, "builtin">, { label: string; tone: string }> = {
     new: { label: "New", tone: "k-ok" },
     changed: { label: "Changed", tone: "k-warn" },
     identical: { label: "Identical", tone: "" },
   };
+  /** Only these can be ticked: a built-in PID is kept as it is. */
+  const selectable = $derived(items.filter((item) => item.status !== "builtin").map((item) => item.def));
 
   const colorHex = (color: number) => safeHexColor("#" + Number(color).toString(16).padStart(6, "0"));
   const hexByte = (value: number) => `0x${value.toString(16).toUpperCase().padStart(2, "0")}`;
@@ -63,7 +65,7 @@
     else picked.add(pid);
   }
   function selectAll() {
-    for (const def of defs) picked.add(def.pid);
+    for (const def of selectable) picked.add(def.pid);
   }
   function selectNone() {
     picked.clear();
@@ -81,9 +83,9 @@
 <Sheet {open} title="Import {fileName}" {onClose} resizable>
   <div class="imp">
     <div class="sb-selrow">
-      <span class="num" aria-live="polite">{chosenCount} of {defs.length} selected</span>
+      <span class="num" aria-live="polite">{chosenCount} of {selectable.length} selected</span>
       <span class="sb-acts">
-        {#if chosenCount < defs.length}
+        {#if chosenCount < selectable.length}
           <button type="button" class="sb-txt" onclick={selectAll}>Select all</button>
         {/if}
         {#if chosenCount > 0}
@@ -106,10 +108,15 @@
           name={def.name}
           hex={pidHex(def.pid, def.mode)}
           open={isOpen}
+          disabled={item.status === "builtin"}
           onToggle={() => toggle(def.pid)}
         >
           {#snippet tags()}
-            <span class="sb-tag {STATUS[item.status].tone}"><i class="dot"></i>{STATUS[item.status].label}</span>
+            {#if item.status === "builtin"}
+              <span class="tag"><Icon name="lock" size={14} />Built-in</span>
+            {:else}
+              <span class="sb-tag {STATUS[item.status].tone}"><i class="dot"></i>{STATUS[item.status].label}</span>
+            {/if}
           {/snippet}
           {#snippet actions()}
             <button

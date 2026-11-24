@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { normalizePidDefinition } from "./pidDefinition";
 import { chosenDefinitions, classifyPidImport, pidImportCounts } from "./pidImport";
 
+
 const def = (over: Record<string, unknown> = {}) =>
   normalizePidDefinition({
     id: 0x7e0,
@@ -89,3 +90,23 @@ describe("chosenDefinitions", () => {
     expect(chosenDefinitions(items, new Set([9]))).toEqual([]);
   });
 });
+
+describe("built-in PIDs", () => {
+  test("a row the device marks built-in is kept: status builtin, whatever the file says", () => {
+    const items = classifyPidImport([def({ interval: 1000 })], [{ def: def({ builtin: true }), loaded: true }]);
+    expect(items[0].status).toBe("builtin");
+  });
+
+  test("chosenDefinitions never takes a built-in PID, even when its pid is in the chosen set", () => {
+    const current = [{ def: def({ pid: 0x0c, builtin: true }), loaded: true }];
+    const items = classifyPidImport([def({ pid: 0x0c, interval: 1000 }), def({ pid: 0x0d, name: "Speed" })], current);
+    const chosen = chosenDefinitions(items, new Set([0x0c, 0x0d]));
+    expect(chosen.map((d) => d.pid)).toEqual([0x0d]);
+  });
+
+  test("a built-in PID is not counted as added or changed", () => {
+    const items = classifyPidImport([def({ interval: 1000 })], [{ def: def({ builtin: true }), loaded: true }]);
+    expect(pidImportCounts(items)).toEqual({ added: 0, changed: 0 });
+  });
+});
+

@@ -36,6 +36,7 @@ export function normalizePidDefinition(raw: unknown): PidDefinition {
     color: parseInt(safeHexColor(def.color, "#01aaff").slice(1), 16),
     priority: (def.priority ?? DEFAULT_PID_PRIORITY) as number,
     icon: (def.icon ?? "") as string,
+    builtin: def.builtin === true,
   };
 }
 
