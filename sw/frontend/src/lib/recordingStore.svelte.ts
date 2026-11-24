@@ -3,6 +3,9 @@ import { auth } from "./auth.svelte";
 import { parseJsonResponse, parseJsonResponseAllowEmpty } from "./api";
 import { firmwareApi } from "./firmwareApi.svelte";
 import { singleFlight } from "./singleFlight";
+import { downloadCsv } from "./telemetryChart/plotCsv";
+import { parseTripCsv, readTextLimited } from "./tripCsv";
+import { buildWideCsv, parseSidecarNames, wideFileName, type PidLabel } from "./tripWide";
 import { createStreamRefCount } from "./streamRefCount";
 import {
   cooldownSeconds,
@@ -18,6 +21,7 @@ import type { RecorderSettingsPatch, RecorderStatus, RecorderTrips } from "./typ
 import type { WsFrame } from "./wsFrames";
 
 const TRIPS_DIR = "logs/trips";
+const SIDECAR_MAX_BYTES = 64 * 1024;
 const START_COOLDOWN_S = START_COOLDOWN_MS / 1000;
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -174,17 +178,27 @@ class RecordingStore {
     }
   }
 
-  /** Saves the CSV to a file on this device. The SD file endpoint needs the session token, so it is fetched, not linked. */
-  async download(name: string) {
+  /**
+   * Saves the trip as a wide CSV (t_ms, one column per PID) built here from the long file on the card.
+   * The SD file endpoint needs the session token, so it is fetched, not linked. Names and units come from the
+   * sidecar when it exists; without it the columns are PID numbers.
+   */
+  async download(name: string, sidecar: boolean) {
     if (!isTripCsvName(name)) throw new Error("Not a trip file");
     const response = await firmwareApi.downloadSdFile(`${TRIPS_DIR}/${name}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const url = URL.createObjectURL(await response.blob());
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = name;
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1_000);
+    const parsed = parseTripCsv(await readTextLimited(response));
+    if (!parsed.ok) throw new Error("The trip file has no readable rows");
+    let labels: Map<number, PidLabel> | undefined;
+    if (sidecar) {
+      try {
+        const side = await firmwareApi.downloadSdFile(`${TRIPS_DIR}/${sidecarName(name)}`);
+        if (side.ok) labels = parseSidecarNames(await readTextLimited(side, SIDECAR_MAX_BYTES));
+      } catch (e) {
+        console.error("Failed to read the trip summary", e);
+      }
+    }
+    downloadCsv(buildWideCsv(parsed.series, labels), wideFileName(name));
   }
 
   /**
