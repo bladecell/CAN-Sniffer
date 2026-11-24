@@ -188,3 +188,14 @@ describe("stats now", () => {
     expect(early.stats[0]?.now ?? null).toBe(null);
   });
 });
+
+describe("plots are lines only", () => {
+  test("no fill path for one PID, lanes or overlay", () => {
+    for (const mode of ["overlay", "lanes"] as const) {
+      for (const n of [1, 2]) {
+        const m = buildPlotModel(input({ mode, series: Array.from({ length: n }, (_, i) => series({ id: i + 1 })) }));
+        for (const line of m.lines) expect("area" in line).toBe(false);
+      }
+    }
+  });
+});

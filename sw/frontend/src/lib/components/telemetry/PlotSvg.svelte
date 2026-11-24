@@ -191,7 +191,6 @@
       <g clip-path="url(#{clipId})">
         <g transform="translate({offset} 0)">
           {#each model.lines as line (line.id)}
-            {#if line.area}<path class="ar" d={line.area} fill={line.color} />{/if}
             <path class="ln" d={line.d} stroke={line.color} />
           {/each}
         </g>
@@ -302,10 +301,6 @@
     stroke-width: 2;
     stroke-linejoin: round;
     stroke-linecap: round;
-  }
-  .ar {
-    stroke: none;
-    opacity: 0.14;
   }
   .cur {
     stroke: var(--text);

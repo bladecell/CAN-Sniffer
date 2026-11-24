@@ -45,46 +45,14 @@ describe("(a) line breaks at a long gap", () => {
   });
 });
 
-describe("(b) area per segment", () => {
-  // BUG: plotModel.ts:164 appends one baseline close ("L last,bot L first,bot Z") to the whole multi-segment path d.
-  // Open sub-paths are implicitly closed by a straight chord when filled, which draws the sloped wedges.
-  test("BUG: every segment of the area is closed on its own (one Z per M)", () => {
-    const m = model(gapBuffer());
-    const area = m.lines[0].area!;
-    expect((area.match(/M/g) ?? []).length).toBe((area.match(/Z/g) ?? []).length);
-  });
-
-  test("BUG: each area sub-path returns to the baseline directly below its own first point", () => {
-    const m = model(gapBuffer());
-    const bot = m.bottom;
-    for (const sp of subpaths(m.lines[0].area!)) {
-      const v = verts(sp);
-      const [a, b] = v.slice(-2);
-      expect(a.y).toBeCloseTo(bot, 0);
-      expect(b.y).toBeCloseTo(bot, 0);
-      expect(b.x).toBeCloseTo(v[0].x, 0);
-      expect(sp.trim().endsWith("Z")).toBe(true);
-    }
-  });
-
-  test("a gap-free series closes correctly (current behaviour)", () => {
-    const b = createChartBuffer();
-    fill(b, 40_000, 100_000);
-    const area = model(b).lines[0].area!;
-    expect(subpaths(area).length).toBe(1);
-    expect(area.endsWith("Z")).toBe(true);
-  });
-});
-
 describe("(c) data starting mid-window or ending before now", () => {
-  test("data that starts mid-window has no line or area left of its first sample", () => {
+  test("data that starts mid-window has no line left of its first sample", () => {
     const b = createChartBuffer();
     fill(b, 70_000, 100_000);
     const m = model(b);
     expect(m.lines[0].d.startsWith("M")).toBe(true);
     const firstX = verts(m.lines[0].d)[0].x;
     expect(firstX).toBeGreaterThan(m.L + m.pw * 0.4);
-    expect(verts(m.lines[0].area!)[0].x).toBeCloseTo(firstX, 0);
   });
 
   test("data that ended 30 s ago stops there, not held to the present", () => {
@@ -140,15 +108,5 @@ describe("(e) single-point segments", () => {
     const d = model(b).lines[0].d;
     expect(subpaths(d).length).toBe(3);
     expect(d).toContain("l0.01,0");
-  });
-
-  // BUG: same plotModel.ts:164 cause; a lone point has zero area, but is still joined into the wedge fan.
-  test("BUG: a single-point segment gets a closed zero-width area, not a chord to its neighbours", () => {
-    const b = createChartBuffer();
-    fill(b, 45_000, 60_000);
-    b.push(75_000, 30, SPLIT);
-    fill(b, 90_000, 100_000);
-    const area = model(b).lines[0].area!;
-    expect((area.match(/M/g) ?? []).length).toBe((area.match(/Z/g) ?? []).length);
   });
 });

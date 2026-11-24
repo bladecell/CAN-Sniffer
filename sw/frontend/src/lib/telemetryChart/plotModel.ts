@@ -39,7 +39,7 @@ export interface PlotInput {
 }
 
 export interface PlotModel {
-  /** The plot area; every series, area and cursor is clipped to it. */
+  /** The plot area; every series and the cursor is clipped to it. */
   plot: { x: number; y: number; w: number; h: number };
   W: number;
   H: number;
@@ -54,7 +54,7 @@ export interface PlotModel {
   axisUnit: string | null;
   axis: { y: number; text: string }[];
   timeTicks: { x: number; text: string; anchor: "start" | "middle" | "end" }[];
-  lines: { id: number; color: string; d: string; area: string | null }[];
+  lines: { id: number; color: string; d: string }[];
   lanes: { id: number; name: string; unit: string; color: string; top: number; bottom: number; big: string; ticks: { y: number; text: string }[] }[];
   /** Swatch and name only; live values are drawn at the line ends, in the lane readouts and in the tooltip. */
   legend: { id: number; name: string; color: string }[];
@@ -161,22 +161,7 @@ export function buildPlotModel(inp: PlotInput): PlotModel {
     );
     const dec = decimate(pts, pw);
     const d = pathOf(dec);
-    // One closed shape per run of samples: a gap must not be bridged by the fill.
-    const runs: Pt[][] = [[]];
-    for (const p of dec) p === null ? runs.push([]) : runs[runs.length - 1].push(p);
-    const base = bot(i).toFixed(1);
-    const area =
-      lanes || n === 1
-        ? runs
-            .filter((r) => r.length > 0)
-            .map((r) => {
-              const f = r[0] as { x: number; y: number };
-              const l = r[r.length - 1] as { x: number; y: number };
-              return `${pathOf(r)}L${l.x.toFixed(1)},${base}L${f.x.toFixed(1)},${base}Z`;
-            })
-            .join("") || null
-        : null;
-    lines.push({ id: s.id, color: s.color, d, area });
+    lines.push({ id: s.id, color: s.color, d });
   });
 
   const hasData = visible.some((vals) => vals.length > 0);
