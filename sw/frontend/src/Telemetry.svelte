@@ -13,7 +13,7 @@
   import PidEditorActions from "$lib/components/telemetry/editor/PidEditorActions.svelte";
   import PlotCell from "$lib/components/telemetry/PlotCell.svelte";
   import PlotOverview from "$lib/components/telemetry/PlotOverview.svelte";
-  import { pressRow, ticksFor } from "$lib/telemetryView";
+  import { pressRow, tickedPids, ticksFor } from "$lib/telemetryView";
   import { TELEMETRY_VIEW, TelemetryView } from "$lib/telemetryChart/viewState.svelte";
   import { PLOT_COUNTS, gridColumns, migratePlotCount, type PlotCount } from "$lib/telemetryChart/layout";
   import { canToggleTicks, chartPidsOf, deselectOnEscape, deselectOnPointer } from "$lib/telemetryChart/selection";
@@ -85,8 +85,7 @@
   // With a plot armed, its PIDs are the ticked rows. With none armed, a selection is for Edit and charts nothing.
   $effect(() => {
     if (rec) return;
-    const ticked = replayRows.filter((r) => r.selected).map((row) => parseInt(row.pid, 16));
-
+    const ticked = tickedPids(telemetryStore.local_piddef, (row) => parseInt(row.pid, 16));
     untrack(() => {
       if (telemetryStore.activeChartIndex >= 0 && telemetryStore.activeChartIndex < telemetryStore.plotCount) {
         telemetryStore.chartPids[telemetryStore.activeChartIndex] = ticked;
@@ -129,7 +128,7 @@
   // Replay mode: a tick in the PID list puts the PID on the selected plot, as in live mode.
   $effect(() => {
     if (!rec || !tripViewer.trip) return;
-    const ticked = telemetryStore.local_piddef.filter((r) => r.selected).map((row) => parseInt(row.pid, 16));
+    const ticked = tickedPids(replayRows, (row) => parseInt(row.pid, 16));
     untrack(() => {
       if (ticked.join() !== (recPids[recActive] ?? []).join()) setRecPids(recActive, ticked);
     });

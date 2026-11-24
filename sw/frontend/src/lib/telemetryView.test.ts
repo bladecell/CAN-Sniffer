@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   ticksFor,
+  tickedPids,
   definitionsToApply,
   pressRow,
   footerActions,
@@ -211,5 +212,13 @@ describe("replay PID list", () => {
   test("ticksFor marks exactly the PIDs on the plot", () => {
     expect(ticksFor(rows, (r) => r.pid, [13])).toEqual([false, true, false]);
     expect(ticksFor(rows, (r) => r.pid, [])).toEqual([false, false, false]);
+  });
+});
+
+describe("tickedPids", () => {
+  test("lists the ticked rows' PIDs in list order", () => {
+    const rows = [{ pid: 12, selected: true }, { pid: 13, selected: false }, { pid: 99, selected: true }];
+    expect(tickedPids(rows, (r) => r.pid)).toEqual([12, 99]);
+    expect(tickedPids([], (r: { pid: number; selected: boolean }) => r.pid)).toEqual([]);
   });
 });

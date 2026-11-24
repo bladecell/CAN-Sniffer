@@ -136,6 +136,11 @@ export function definitionsToApply<D>(items: ApplyItem<D>[], chosen: ReadonlySet
   return out;
 }
 
+/** The PIDs of the ticked rows, in list order. */
+export function tickedPids<T extends { selected: boolean }>(items: readonly T[], pidOf: (item: T) => number): number[] {
+  return items.filter((item) => item.selected).map(pidOf);
+}
+
 /** Which rows are ticked for a plot that holds `plotPids`, one flag per item. */
 export function ticksFor<T>(items: readonly T[], pidOf: (item: T) => number, plotPids: readonly number[]): boolean[] {
   const on = new Set(plotPids);
