@@ -300,7 +300,7 @@
 
     <div class="main">
       <div class="card bar">
-        <h1 tabindex="-1">Telemetry</h1>
+        <h1 tabindex="-1">{rec ? "Telemetry · Replay" : "Telemetry"}</h1>
       </div>
 
       {#if phone.current}
