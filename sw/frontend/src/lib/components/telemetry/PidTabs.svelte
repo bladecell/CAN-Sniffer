@@ -28,7 +28,7 @@
     { id: "pids", label: "PIDs", icon: "list" },
     { id: "changes", label: pendingCount > 0 ? `Changes, ${pendingCount} pending` : "Changes", icon: "code-compare", off: replay },
     { id: "sd", label: "SD card", icon: "sd-card", off: replay },
-    { id: "replays", label: "Replays", icon: "timeline-arrow" },
+    { id: "replays", label: "Replays", icon: "route" },
     { id: "settings", label: "Settings", icon: "sliders" },
   ]);
   function select(id: PhoneTab) {

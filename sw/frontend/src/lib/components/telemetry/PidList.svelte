@@ -57,7 +57,7 @@
     available: { name: "circle-check", cls: "t-ok" },
     nodata: { name: "clock", cls: "t-warn" },
     unsupported: { name: "circle-minus", cls: "t-muted" },
-    trip: { name: "timeline-arrow", cls: "t-muted" },
+    trip: { name: "route", cls: "t-muted" },
   };
 
   // With a plot selected, a press ticks the PID onto that plot. With none, a press selects one PID for Edit.
