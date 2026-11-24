@@ -55,53 +55,65 @@
 </script>
 
 <div class="card bar player">
-  <div class="pick">
-    <span class="nm mono">{trip.name}</span>
+  <div class="title">
+    <h2 class="nm mono">{trip.name}</h2>
     <button type="button" class="btn" onclick={onBack}>Back to live</button>
   </div>
-  <button type="button" class="btn pri play" onclick={toggle} aria-label={playing ? "Pause" : atEnd(pos, trip.endMs) ? "Play again" : "Play"}>
-    <Icon name={playing ? "pause" : "play"} size={18} />
-    {playing ? "Pause" : atEnd(pos, trip.endMs) ? "Replay" : "Play"}
-  </button>
-  <div class="seek">
-    <span id={labelId} class="sr">Position in {trip.name}</span>
-    <RangeSlider
-      labelIds={[labelId]}
-      values={[pos - trip.startMs]}
-      min={0}
-      max={span}
-      step={100}
-      keyStep={1000}
-      page={10_000}
-      readouts={false}
-      format={elapsedClock}
-      onChange={([v]) => seek(v)}
-    />
+  <div class="controls">
+    <button type="button" class="btn pri play" onclick={toggle} aria-label={playing ? "Pause" : atEnd(pos, trip.endMs) ? "Play again" : "Play"}>
+      <Icon name={playing ? "pause" : "play"} size={18} />
+      {playing ? "Pause" : atEnd(pos, trip.endMs) ? "Replay" : "Play"}
+    </button>
+    <div class="seek">
+      <span id={labelId} class="sr">Position in {trip.name}</span>
+      <RangeSlider
+        labelIds={[labelId]}
+        values={[pos - trip.startMs]}
+        min={0}
+        max={span}
+        step={100}
+        keyStep={1000}
+        page={10_000}
+        readouts={false}
+        format={elapsedClock}
+        onChange={([v]) => seek(v)}
+      />
+    </div>
+    <span class="clock mono" aria-hidden="true">{elapsedClock(pos - trip.startMs)} / {elapsedClock(span)}</span>
   </div>
-  <span class="clock mono" aria-hidden="true">{elapsedClock(pos - trip.startMs)} / {elapsedClock(span)}</span>
 </div>
 
 <style>
   .player {
+    display: grid;
+    gap: 12px;
     padding: var(--pad-card);
     border-radius: var(--r-card);
-    display: grid;
-    grid-template-columns: minmax(0, 22rem) auto minmax(0, 1fr) auto;
-    gap: 12px var(--gap, 20px);
-    align-items: center;
   }
-  .pick {
+  .title {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
     min-width: 0;
   }
   .nm {
+    flex: 1 1 auto;
     min-width: 0;
+    margin: 0;
     overflow: hidden;
+    font-size: 1.15rem;
     font-weight: 800;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .title .btn {
+    flex: none;
+  }
+  .controls {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px 20px;
   }
   .seek {
     min-width: 0;
@@ -123,25 +135,17 @@
     clip: rect(0 0 0 0);
     white-space: nowrap;
   }
+  /* Phone: the clock wraps to its own line under the slider. */
   @media (max-width: 859px) {
-    .player {
-      grid-template-columns: minmax(0, 1fr) auto;
-    }
-    .seek {
-      grid-column: 1 / -1;
-      grid-row: 3;
-    }
-    .clock {
-      grid-row: 2;
-      grid-column: 2;
-      justify-self: end;
-    }
-    .pick {
-      grid-column: 1 / -1;
+    .controls {
+      grid-template-columns: auto minmax(0, 1fr);
     }
     .play {
-      grid-row: 2;
-      grid-column: 1;
+      min-width: 0;
+    }
+    .clock {
+      grid-column: 1 / -1;
+      justify-self: end;
     }
   }
 </style>
