@@ -5,10 +5,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <initializer_list>
 
 #include "cJSON.h"
 #include "esp_err.h"
 #include "recorder_core.hpp"
+#include "trip_trigger.hpp"
 
 namespace recorder_http
 {
@@ -58,6 +60,39 @@ inline bool parseStart(const cJSON* body, recorder_core::PidSel* out, size_t& n)
     out[n++] = {static_cast<uint16_t>(pid), static_cast<uint16_t>(spacing)};
   }
   return true;
+}
+
+// PATCH /recorder body: an object with "trigger" ("manual"|"auto") and/or "continuous_polling" (bool), at least one, each at
+// most once, nothing else. Anything else is false and leaves `out` unspecified.
+struct TriggerPatch
+{
+  bool              hasMode       = false;
+  trip_trigger::Mode mode         = trip_trigger::Mode::Manual;
+  bool              hasContinuous = false;
+  bool              continuous    = false;
+};
+
+inline bool parseTriggerPatch(const cJSON* body, TriggerPatch& out)
+{
+  out = {};
+  if (!cJSON_IsObject(body)) { return false; }
+  for (const cJSON* k = body->child; k != nullptr; k = k->next)
+  {
+    if (k->string == nullptr) { return false; }
+    if (std::strcmp(k->string, "trigger") == 0)
+    {
+      if (out.hasMode || !cJSON_IsString(k) || !trip_trigger::parseMode(k->valuestring, out.mode)) { return false; }
+      out.hasMode = true;
+    }
+    else if (std::strcmp(k->string, "continuous_polling") == 0)
+    {
+      if (out.hasContinuous || !cJSON_IsBool(k)) { return false; }
+      out.hasContinuous = true;
+      out.continuous    = cJSON_IsTrue(k);
+    }
+    else { return false; }
+  }
+  return out.hasMode || out.hasContinuous;
 }
 
 // HTTP status for Recorder::start(). ESP_ERR_NOT_FINISHED = a session is live (recording, stopping, or paused by a card

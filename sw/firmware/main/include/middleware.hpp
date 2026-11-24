@@ -5,6 +5,7 @@
 #include "cJSON.h"
 #include "esp_err.h"
 #include "recorder_core.hpp"
+#include "recorder_http.hpp"
 #include "tree_limits.hpp"
 
 // Forward declarations to minimize includes
@@ -75,6 +76,8 @@ MiddlewareJsonResult m_pid_def_load(cJSON* payload);
 // Recorder (R4). Start: 200 state, 409 already recording/stopping, 422 bad PID list, 503 no card or recorder not running.
 // Stop is idempotent. `n` = 0 starts the PIDs OBD2 currently polls. Stop blocks up to 5 s: call it from a REST worker only.
 MiddlewareJsonResult m_recorder_get();
+// PATCH /recorder: 200 the GET body, 503 the settings could not be saved (nothing changed).
+MiddlewareJsonResult m_recorder_patch(const recorder_http::TriggerPatch& patch);
 MiddlewareJsonResult m_recorder_start(const recorder_core::PidSel* pids, size_t n);
 MiddlewareJsonResult m_recorder_stop();
 MiddlewareJsonResult m_recorder_trips_get();

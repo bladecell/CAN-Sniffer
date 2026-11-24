@@ -803,6 +803,23 @@ esp_err_t g_recorder_handler(httpd_req_t* req, void* arg)
     return send_json_response(req, m_recorder_get());
 }
 
+esp_err_t patch_recorder_handler(httpd_req_t* req, void* arg)
+{
+    cJSON* root = get_validated_json_payload(req, 256);
+    if (root == nullptr)
+    {
+        return ESP_OK;
+    }
+    recorder_http::TriggerPatch patch;
+    const bool                  ok = recorder_http::parseTriggerPatch(root, patch);
+    cJSON_Delete(root);
+    if (!ok)
+    {
+        return AsyncWebServer::sendError(req, 422, "Body must be {\"trigger\":\"manual\"|\"auto\",\"continuous_polling\":true|false} with at least one key");
+    }
+    return send_json_response(req, m_recorder_patch(patch));
+}
+
 // Body is optional: none (or {}) records the PIDs OBD2 polls. Runs on an async worker, so the 5 s stop wait never
 // blocks the HTTP task.
 esp_err_t p_recorder_start_handler(httpd_req_t* req, void* arg)

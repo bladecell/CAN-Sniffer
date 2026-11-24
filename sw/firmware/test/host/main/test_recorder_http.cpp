@@ -109,6 +109,43 @@ static void test_start_error_mapping(void)
   TEST_ASSERT_EQUAL(503, startHttpStatus(ESP_FAIL));  // the first file could not be opened: card error
 }
 
+
+static bool patchOf(const char* json, TriggerPatch& p)
+{
+  p            = {};
+  cJSON* root  = cJSON_Parse(json);
+  const bool ok = parseTriggerPatch(root, p);
+  cJSON_Delete(root);
+  return ok;
+}
+
+static void test_trigger_patch_accepts_each_key_alone_or_together(void)
+{
+  TriggerPatch p;
+  TEST_ASSERT_TRUE(patchOf("{\"trigger\":\"auto\"}", p));
+  TEST_ASSERT_TRUE(p.hasMode);
+  TEST_ASSERT_EQUAL(trip_trigger::Mode::Auto, p.mode);
+  TEST_ASSERT_FALSE(p.hasContinuous);
+  TEST_ASSERT_TRUE(patchOf("{\"continuous_polling\":true}", p));
+  TEST_ASSERT_FALSE(p.hasMode);
+  TEST_ASSERT_TRUE(p.hasContinuous);
+  TEST_ASSERT_TRUE(p.continuous);
+  TEST_ASSERT_TRUE(patchOf("{\"trigger\":\"manual\",\"continuous_polling\":false}", p));
+  TEST_ASSERT_EQUAL(trip_trigger::Mode::Manual, p.mode);
+  TEST_ASSERT_FALSE(p.continuous);
+}
+
+static void test_trigger_patch_rejects_hostile_bodies(void)
+{
+  TriggerPatch p;
+  const char* bad[] = {"{}", "[]", "null", "\"auto\"", "{\"trigger\":\"Auto\"}", "{\"trigger\":\"\"}", "{\"trigger\":1}",
+                       "{\"trigger\":null}", "{\"continuous_polling\":1}", "{\"continuous_polling\":\"true\"}",
+                       "{\"trigger\":\"auto\",\"extra\":1}", "{\"trigger\":\"auto\",\"trigger\":\"manual\"}",
+                       "{\"continuous_polling\":true,\"continuous_polling\":false}", "{\"pids\":[]}"};
+  for (const char* b : bad) { TEST_ASSERT_FALSE_MESSAGE(patchOf(b, p), b); }
+  TEST_ASSERT_FALSE(parseTriggerPatch(nullptr, p));
+}
+
 extern "C" void run_recorder_http_tests(void)
 {
   RUN_TEST(test_start_error_mapping);
@@ -117,4 +154,6 @@ extern "C" void run_recorder_http_tests(void)
   RUN_TEST(test_start_body_garbage_is_rejected);
   RUN_TEST(test_start_body_more_than_32_pids_is_rejected_without_overflow);
   RUN_TEST(test_state_frame_layout_is_fixed_16_bytes_little_endian);
+  RUN_TEST(test_trigger_patch_accepts_each_key_alone_or_together);
+  RUN_TEST(test_trigger_patch_rejects_hostile_bodies);
 }

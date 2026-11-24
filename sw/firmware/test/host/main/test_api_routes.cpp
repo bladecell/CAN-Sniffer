@@ -139,7 +139,7 @@ void test_routes_fit_the_http_handler_table_with_headroom(void)
 
 void test_route_count_matches_docs(void)
 {
-  TEST_ASSERT_EQUAL_UINT32(56, kCount);  // docs/api.md: GET / plus 55 under /api/v1
+  TEST_ASSERT_EQUAL_UINT32(57, kCount);  // docs/api.md: GET / plus 56 under /api/v1
 }
 // The access-control decision (docs/decisions.md 2026-10-18), spelled out. A route is gated if and only if it is listed;
 // adding a route forces a decision here.
@@ -160,7 +160,7 @@ const GatedRoute kGated[] = {
     {"DELETE", "/api/v1/pid_def/*"},      {"POST", "/api/v1/pid_def/save"},
     {"POST", "/api/v1/pid_def/load"},     {"POST", "/api/v1/req/clear_dtc"},
     {"POST", "/api/v1/auth/logout"},      {"PUT", "/api/v1/auth/pin"},
-    {"POST", "/api/v1/recorder/start"},   {"POST", "/api/v1/recorder/stop"},
+    {"POST", "/api/v1/recorder/start"},   {"POST", "/api/v1/recorder/stop"},   {"PATCH", "/api/v1/recorder"},
     {"POST", "/api/v1/can/mode"},         {"POST", "/api/v1/can/send"},    {"POST", "/api/v1/can/send/stop"},
     {"POST", "/api/v1/can/capture/start"}, {"POST", "/api/v1/can/capture/stop"},
     {"GET", "/api/v1/can/captures"}, {"GET", "/api/v1/can/captures/*"}, {"DELETE", "/api/v1/can/captures/*"},

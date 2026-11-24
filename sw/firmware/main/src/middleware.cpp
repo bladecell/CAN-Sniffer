@@ -2149,6 +2149,9 @@ static cJSON* recorder_status_json(bool success)
          cJSON_AddNumberToObject(root, "rows", st.rows) != nullptr &&
          cJSON_AddNumberToObject(root, "dropped", st.dropped) != nullptr &&
          cJSON_AddNumberToObject(root, "file_bytes", st.fileBytes) != nullptr;
+    const trip_trigger::Config trigger = Recorder::getInstance().getTrigger();
+    ok = ok && cJSON_AddStringToObject(root, "trigger", trip_trigger::modeName(trigger.mode)) != nullptr &&
+         cJSON_AddBoolToObject(root, "continuous_polling", trigger.continuousPolling) != nullptr;
     if (!ok)
     {
         cJSON_Delete(root);
@@ -2160,6 +2163,31 @@ static cJSON* recorder_status_json(bool success)
 MiddlewareJsonResult m_recorder_get()
 {
     cJSON* root = recorder_status_json(false);
+    return json_result(root, root != nullptr ? 200 : 500);
+}
+
+// Saves to NVS first, then applies: a failed save changes nothing. The two keys are written together, so a body with one
+// key keeps the other at its current value.
+MiddlewareJsonResult m_recorder_patch(const recorder_http::TriggerPatch& patch)
+{
+    auto&                recorder = Recorder::getInstance();
+    trip_trigger::Config next     = recorder.getTrigger();
+    if (patch.hasMode)
+    {
+        next.mode = patch.mode;
+    }
+    if (patch.hasContinuous)
+    {
+        next.continuousPolling = patch.continuous;
+    }
+    const esp_err_t err = Settings::getInstance().setRecorderTrigger(next);
+    if (err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Recorder trigger not saved: %s", esp_err_to_name(err));
+        return json_result(json_error_body("Could not save the recorder settings"), 503);
+    }
+    recorder.setTrigger(next);
+    cJSON* root = recorder_status_json(true);
     return json_result(root, root != nullptr ? 200 : 500);
 }
 

@@ -475,6 +475,61 @@ esp_err_t Settings::setDefaultSupervisorConfig()
     return setSupervisorConfig(defaultSupervisorConfig());
 }
 
+esp_err_t Settings::setRecorderTrigger(const trip_trigger::Config& config)
+{
+    if (config.mode != trip_trigger::Mode::Manual && config.mode != trip_trigger::Mode::Auto)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    nvs_handle_t handle;
+    esp_err_t    ret = openHandle(&handle, NVS_READWRITE);
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
+    ESP_GOTO_ON_ERROR(nvs_set_u8(handle, "rec_trig", config.mode == trip_trigger::Mode::Auto ? 1 : 0), out, TAG, "rec_trig");
+    ESP_GOTO_ON_ERROR(nvs_set_u8(handle, "rec_cont", config.continuousPolling ? 1 : 0), out, TAG, "rec_cont");
+    ESP_GOTO_ON_ERROR(nvs_commit(handle), out, TAG, "commit");
+out:
+    nvs_close(handle);
+    return ret;
+}
+
+esp_err_t Settings::getRecorderTrigger(trip_trigger::Config& config)
+{
+    config = trip_trigger::Config{};
+    nvs_handle_t handle;
+    esp_err_t    err = openHandle(&handle, NVS_READONLY);
+    if (err == ESP_ERR_NVS_NOT_FOUND)  // namespace not created yet: first boot
+    {
+        return ESP_OK;
+    }
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+    uint8_t mode = 0, cont = 0;
+    const esp_err_t m = nvs_get_u8(handle, "rec_trig", &mode);
+    const esp_err_t c = nvs_get_u8(handle, "rec_cont", &cont);
+    nvs_close(handle);
+    for (const esp_err_t e : {m, c})
+    {
+        if (e != ESP_OK && e != ESP_ERR_NVS_NOT_FOUND && e != ESP_ERR_NVS_TYPE_MISMATCH && e != ESP_ERR_NVS_INVALID_LENGTH)
+        {
+            return e;
+        }
+    }
+    if (m == ESP_OK && mode <= 1)
+    {
+        config.mode = mode == 1 ? trip_trigger::Mode::Auto : trip_trigger::Mode::Manual;
+    }
+    if (c == ESP_OK && cont <= 1)
+    {
+        config.continuousPolling = cont == 1;
+    }
+    return ESP_OK;
+}
+
 esp_err_t Settings::factoryReset()
 {
     ESP_LOGW(TAG, "PERFORMING FACTORY RESET: Wiping NVS...");

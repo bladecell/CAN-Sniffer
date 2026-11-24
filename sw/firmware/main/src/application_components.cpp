@@ -70,7 +70,26 @@ esp_err_t stopRecorder(void*)
 
 esp_err_t setupRecorder(void*)
 {
-    return Recorder::getInstance().init();
+    auto& recorder = Recorder::getInstance();
+    // The automatic trigger starts and polls only in Monitor mode, under the same lock as POST /recorder/start.
+    recorder.setModeGate(
+        [](void (*action)(void*), void* ctx)
+        {
+            return can_mode_service::run(can_mode_service::Requirement::monitor,
+                                         [&](bool)
+                                         {
+                                             action(ctx);
+                                             return false;
+                                         }) == can_mode_service::Run::ran;
+        });
+    trip_trigger::Config trigger;
+    if (const esp_err_t err = Settings::getInstance().getRecorderTrigger(trigger); err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Recorder trigger not loaded (%s); manual trips only", esp_err_to_name(err));
+        trigger = trip_trigger::Config{};
+    }
+    recorder.setTrigger(trigger);
+    return recorder.init();
 }
 
 esp_err_t setupPowerManagement(void*)

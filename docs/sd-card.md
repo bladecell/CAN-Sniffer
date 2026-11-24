@@ -2,7 +2,7 @@
 
 The card is a FAT volume on the SDMMC peripheral (slot 1, 1-bit bus, max 20 MHz, `max_files` 5, allocation unit 16 KiB), mounted at `/sdcard` (`SDCard` in `components/sd_card/`, config in `SUPERVISOR::setup_sd_card`). Card detect is a GPIO that reads 0 when a card is present. The supervisor loop checks it once per second, waits 100 ms to debounce, then mounts or unmounts.
 
-Settings are not on the card. Wi-Fi, CAN and supervisor settings are in NVS (namespace `storage`), see `GET /api/v1/settings` in `api.md`.
+Settings are not on the card. Wi-Fi, CAN, supervisor and recorder trigger settings (`rec_trig`, `rec_cont`, set with `PATCH /api/v1/recorder`) are in NVS (namespace `storage`), see `GET /api/v1/settings` in `api.md`.
 
 ## Layout
 ```
