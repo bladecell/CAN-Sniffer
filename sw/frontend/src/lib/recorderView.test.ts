@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   cooldownSeconds,
   elapsedClock,
+  replayRows,
   formatBytes,
   isTripCsvName,
   retryAfterSeconds,
@@ -154,5 +155,22 @@ describe("shouldLoadTrips", () => {
   test("a session or the open view loads", () => {
     expect(shouldLoadTrips(true, false)).toBe(true);
     expect(shouldLoadTrips(false, true)).toBe(true);
+  });
+});
+
+describe("replayRows", () => {
+  const trips = [
+    { index: 3, name: "trip_000003.csv", size: 5000, sidecar: true },
+    { index: 2, name: "trip_000002.csv", size: 9000, sidecar: false },
+  ];
+
+  test("lists finished trips in API order and leaves out the one being written", () => {
+    const rows = replayRows(trips, { state: "recording", trip: 3, fileBytes: 7000 });
+    expect(rows.map((r) => r.name)).toEqual(["trip_000002.csv"]);
+    expect(replayRows(trips, null).map((r) => r.name)).toEqual(["trip_000003.csv", "trip_000002.csv"]);
+  });
+
+  test("a live trip missing from the list adds nothing", () => {
+    expect(replayRows([], { state: "recording", trip: 9, fileBytes: 10 })).toEqual([]);
   });
 });

@@ -2,6 +2,7 @@
   import PidList from "./PidList.svelte";
   import PidChanges from "./PidChanges.svelte";
   import PidSdTab from "./PidSdTab.svelte";
+  import ReplaysTab from "./ReplaysTab.svelte";
   import PidSettingsTab from "./PidSettingsTab.svelte";
   import PidTabs, { type PidPanel } from "./PidTabs.svelte";
 
@@ -14,9 +15,11 @@
     panel?: PidPanel;
     /** rail only: the panel is hidden, the icon rail stays. */
     collapsed?: boolean;
+    /** A replay was picked in the Replays tab. */
+    onReplay?: (name: string) => void;
   }
 
-  let { variant, onNew, onEdit, panel = $bindable("pids"), collapsed = $bindable(false) }: Props = $props();
+  let { variant, onNew, onEdit, panel = $bindable("pids"), collapsed = $bindable(false), onReplay }: Props = $props();
 </script>
 
 <div class="sb" class:rail={variant === "rail"} class:bar={variant === "bar"}>
@@ -31,6 +34,8 @@
     <PidChanges phone={variant === "bar"} />
   {:else if panel === "sd"}
     <PidSdTab phone={variant === "bar"} onSettings={() => (panel = "settings")} />
+  {:else if panel === "replays"}
+    <ReplaysTab phone={variant === "bar"} onPick={(name) => onReplay?.(name)} />
   {:else}
     <PidSettingsTab />
   {/if}

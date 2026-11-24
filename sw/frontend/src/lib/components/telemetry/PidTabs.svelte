@@ -1,5 +1,5 @@
 <script module lang="ts">
-  export type PidPanel = "pids" | "changes" | "sd" | "settings";
+  export type PidPanel = "pids" | "changes" | "sd" | "replays" | "settings";
   export type PhoneTab = "chart" | PidPanel;
 </script>
 
@@ -26,6 +26,7 @@
     { id: "pids", label: "PIDs", icon: "list" },
     { id: "changes", label: pendingCount > 0 ? `Changes, ${pendingCount} pending` : "Changes", icon: "code-compare" },
     { id: "sd", label: "SD card", icon: "sd-card" },
+    { id: "replays", label: "Replays", icon: "timeline-arrow" },
     { id: "settings", label: "Settings", icon: "sliders" },
   ]);
   function select(id: PhoneTab) {

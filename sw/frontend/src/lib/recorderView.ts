@@ -86,3 +86,8 @@ export function elapsedClock(ms: number): string {
 export function shouldLoadTrips(canUseGated: boolean, viewOpen: boolean): boolean {
   return canUseGated || viewOpen;
 }
+
+/** Trips that can be replayed: the finished ones. The file still being written is not readable as a whole. */
+export function replayRows(trips: TripEntry[], live: LiveTrip | null): TripRow[] {
+  return tripRows(trips, live).filter((r) => !r.live);
+}

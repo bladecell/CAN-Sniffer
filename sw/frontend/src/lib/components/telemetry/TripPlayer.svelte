@@ -2,23 +2,20 @@
   import { untrack } from "svelte";
   import Icon from "$lib/Icon.svelte";
   import RangeSlider from "$lib/components/RangeSlider.svelte";
-  import SelectMenu from "$lib/components/SelectMenu.svelte";
   import { chartFrames } from "$lib/chartFrames.svelte";
   import { elapsedClock } from "$lib/recorderView";
   import { atEnd, clampMs, playheadOf } from "$lib/telemetryChart/playback";
   import type { TelemetryView } from "$lib/telemetryChart/viewState.svelte";
   import { freezeWin } from "$lib/telemetryChart/window";
   import type { LoadedTrip } from "$lib/tripViewer.svelte";
-  import type { SelectMenuOption } from "$lib/selectMenu";
 
   interface Props {
     view: TelemetryView;
     trip: LoadedTrip;
-    options: SelectMenuOption<string>[];
-    onPick: (name: string) => void;
+    onBack: () => void;
   }
 
-  let { view, trip, options, onPick }: Props = $props();
+  let { view, trip, onBack }: Props = $props();
 
   const span = $derived(Math.max(1, trip.endMs - trip.startMs));
   const labelId = "trip-pos-label";
@@ -59,7 +56,8 @@
 
 <div class="card bar player">
   <div class="pick">
-    <SelectMenu {options} value={trip.name} ariaLabel="Trip" onChange={onPick} />
+    <span class="nm mono">{trip.name}</span>
+    <button type="button" class="btn" onclick={onBack}>Back to live</button>
   </div>
   <button type="button" class="btn pri play" onclick={toggle} aria-label={playing ? "Pause" : atEnd(pos, trip.endMs) ? "Play again" : "Play"}>
     <Icon name={playing ? "pause" : "play"} size={18} />
@@ -88,11 +86,23 @@
     padding: var(--pad-card);
     border-radius: var(--r-card);
     display: grid;
-    grid-template-columns: minmax(0, 15rem) auto minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 22rem) auto minmax(0, 1fr) auto;
     gap: 12px var(--gap, 20px);
     align-items: center;
   }
-  .pick,
+  .pick {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+  .nm {
+    min-width: 0;
+    overflow: hidden;
+    font-weight: 800;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .seek {
     min-width: 0;
   }

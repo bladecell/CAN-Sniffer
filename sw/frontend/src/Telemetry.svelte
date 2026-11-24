@@ -7,7 +7,7 @@
   import { safeHexColor } from "$lib/color";
     import Sheet from "$lib/components/Sheet.svelte";
   import PidSidebar from "$lib/components/telemetry/PidSidebar.svelte";
-  import PidTabs, { type PhoneTab } from "$lib/components/telemetry/PidTabs.svelte";
+  import PidTabs, { type PhoneTab, type PidPanel } from "$lib/components/telemetry/PidTabs.svelte";
   import PidEditorForm from "$lib/components/telemetry/PidEditorForm.svelte";
   import EditorTabs from "$lib/components/telemetry/EditorTabs.svelte";
   import PidEditorActions from "$lib/components/telemetry/editor/PidEditorActions.svelte";
@@ -22,11 +22,8 @@
   import { formatValue } from "$lib/telemetryChart/math";
   import ContextScope from "$lib/components/telemetry/ContextScope.svelte";
   import TripPlayer from "$lib/components/telemetry/TripPlayer.svelte";
-  import SelectMenu from "$lib/components/SelectMenu.svelte";
   import { tripViewer } from "$lib/tripViewer.svelte";
-  import { recordingStore } from "$lib/recordingStore.svelte";
   import { vehicleStore } from "$lib/vehicleStore.svelte";
-  import { formatBytes, tripRows } from "$lib/recorderView";
   import type { PlotModel } from "$lib/telemetryChart/plotModel";
 
   // Ref-counted: the stream stays on while any view needs it.
@@ -36,20 +33,22 @@
   const view = new TelemetryView();
   setContext(TELEMETRY_VIEW, view);
 
-  // The Recording tab plots a trip from the SD card in the same plots, with its own window and clock (TripPlayer).
+  const phone = new MediaQuery("max-width: 859px");
+
+  // The Replays tab plots a trip from the SD card in the same plots, with its own window and clock (TripPlayer).
   const tripView = new TelemetryView(true);
-  let mode = $state<"live" | "recording">("live");
-  const rec = $derived(mode === "recording");
+  // Replays is a rail tab: on desktop the tab decides the view (any other tab is live); on a phone the page keeps the choice.
+  let railPanel = $state<PidPanel>("pids");
+  let phoneRec = $state(false);
+  const rec = $derived(phone.current ? phoneRec : railPanel === "replays");
   const activeView = $derived(rec ? tripView : view);
   /** PIDs per plot while a trip is open, and the plot the PID chips act on. */
   let recPids = $state<number[][]>([]);
   let recActive = $state(0);
 
-  // Phone: one strip picks what fills the container under the header; the chart is a tab like the PID panels.
-  const phone = new MediaQuery("max-width: 859px");
   let sideCollapsed = $state(true);
   let phoneTab = $state<PhoneTab>("chart");
-  const showChart = $derived(!phone.current || phoneTab === "chart" || rec);
+  const showChart = $derived(!phone.current || phoneTab === "chart");
   let editorOpen = $state(false);
 
   let innerH = $state(800);
@@ -210,29 +209,33 @@
   const count = $derived(telemetryStore.plotCount);
   const activePids = $derived(rec ? (recPids[recActive] ?? []) : chartPidsOf(telemetryStore.chartPids, telemetryStore.activeChartIndex));
 
-  function setMode(next: "live" | "recording") {
-    if (mode === next) return;
-    mode = next;
+  /** A replay was picked in the rail tab (desktop) or the phone sheet. */
+  function openReplay(name: string) {
+    phoneRec = true;
+    phoneTab = "chart";
+    fsIndex = -1;
+    activeStats = [];
+    void tripViewer.load(name);
+  }
+
+  /** The way back: the rail returns to the PIDs tab, the phone to its live chart. */
+  function backToLive() {
+    railPanel = "pids";
+    phoneRec = false;
     fsIndex = -1;
     activeStats = [];
   }
 
-  // The Recorder page asks to open a trip: show the Recording tab and load it.
+  // The Recorder page asks to open a trip: show it in the Replays tab and load it.
   $effect(() => {
     const name = tripViewer.requested;
     if (!name) return;
     tripViewer.requested = null;
     untrack(() => {
-      setMode("recording");
-      void tripViewer.load(name);
+      railPanel = "replays";
+      sideCollapsed = false;
+      openReplay(name);
     });
-  });
-
-  // The Recording tab lists the trips to pick from.
-  $effect(() => {
-    if (!rec) return;
-    void recordingStore.loadTrips();
-    return recordingStore.watchTrips();
   });
 
   // A newly opened trip starts with its first PIDs on plot 1.
@@ -244,11 +247,6 @@
     });
   });
 
-  const tripOptions = $derived(
-    tripRows(recordingStore.trips, recordingStore.status ? { state: recordingStore.status.state, trip: recordingStore.status.trip, fileBytes: recordingStore.status.file_bytes } : null)
-      .filter((t) => !t.live)
-      .map((t) => ({ value: t.name, label: `${t.name}, ${formatBytes(t.size)}` })),
-  );
   const recNote = $derived.by((): { text: string; alert: boolean } | null => {
     if (tripViewer.loading) return { text: "Loading trip...", alert: false };
     if (tripViewer.error) return { text: `Could not open the trip: ${tripViewer.error}`, alert: true };
@@ -260,11 +258,7 @@
       ].filter(Boolean);
       return notes.length ? { text: notes.join(" "), alert: false } : null;
     }
-    if (recordingStore.tripsError === "no-sd") return { text: "No SD card, so there are no trips to open.", alert: true };
-    if (recordingStore.tripsError === "failed") return { text: "The trip list failed to load.", alert: true };
-    if (recordingStore.tripsLoading && tripOptions.length === 0) return { text: "Loading trips...", alert: false };
-    if (tripOptions.length === 0) return { text: "No trips yet. Record one on the Recorder page.", alert: false };
-    return { text: "Pick a trip to plot its PIDs and play it back.", alert: false };
+    return { text: "Pick a recording in the Replays tab to plot its PIDs and play it back.", alert: false };
   });
   const defOf = (pid: number) => vehicleStore.pidDefinitions.find((d) => d.pid === pid);
   function toggleRecPid(pid: number) {
@@ -277,23 +271,19 @@
 <svelte:window bind:innerHeight={innerH} onkeydown={onWindowKey} onpointerdown={onWindowPointer} />
 
 <section class="tel">
-  <div class="wb" class:collapsed={sideCollapsed && !phone.current && !rec} class:rec>
-    {#if !phone.current && !rec}
+  <div class="wb" class:collapsed={sideCollapsed && !phone.current}>
+    {#if !phone.current}
       <aside class="side" aria-label="PID list">
-        <PidSidebar variant="rail" bind:collapsed={sideCollapsed} onNew={newPid} onEdit={editPid} />
+        <PidSidebar variant="rail" bind:panel={railPanel} bind:collapsed={sideCollapsed} onReplay={openReplay} onNew={newPid} onEdit={editPid} />
       </aside>
     {/if}
 
     <div class="main">
       <div class="card bar">
         <h1 tabindex="-1">Telemetry</h1>
-        <div class="seg" role="group" aria-label="Data source">
-          <button type="button" aria-pressed={!rec} onclick={() => setMode("live")}>Live</button>
-          <button type="button" aria-pressed={rec} onclick={() => setMode("recording")}>Recording</button>
-        </div>
       </div>
 
-      {#if phone.current && !rec}
+      {#if phone.current}
         <PidTabs variant="strip" chart bind:panel={phoneTab} />
       {/if}
 
@@ -318,13 +308,7 @@
 
       {#if rec}
         {#if tripViewer.trip}
-          <TripPlayer view={tripView} trip={tripViewer.trip} options={tripOptions} onPick={(name) => void tripViewer.load(name)} />
-        {:else}
-          <div class="card bar pick-bar">
-            <div class="pick-menu">
-              <SelectMenu options={tripOptions} placeholder="Choose a trip" ariaLabel="Trip" disabled={tripViewer.loading} onChange={(name) => void tripViewer.load(name)} />
-            </div>
-          </div>
+          <TripPlayer view={tripView} trip={tripViewer.trip} onBack={backToLive} />
         {/if}
         {#if recNote}
           <p class="rec-note" class:warn={recNote.alert} role={recNote.alert ? "alert" : "status"}>{recNote.text}</p>
@@ -334,7 +318,7 @@
 
       {#if !showChart}
         <div class="card phone-panel">
-          <PidSidebar variant="bar" bind:panel={() => (phoneTab === "chart" ? "pids" : phoneTab), (v) => (phoneTab = v)} onNew={newPid} onEdit={editPid} />
+          <PidSidebar variant="bar" onReplay={openReplay} bind:panel={() => (phoneTab === "chart" ? "pids" : phoneTab), (v) => (phoneTab = v)} onNew={newPid} onEdit={editPid} />
         </div>
       {:else if !rec || tripViewer.trip}
       {#key rec ? tripViewer.trip : "live"}
@@ -563,14 +547,6 @@
     stroke-linecap: round;
     stroke-linejoin: round;
     flex: none;
-  }
-  .wb.rec {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .pick-bar .pick-menu {
-    flex: 1 1 16rem;
-    max-width: 24rem;
-    min-width: 0;
   }
   .rec-note {
     margin: 0;
