@@ -1,6 +1,6 @@
 /** Short "how this page works" hints for the sidebar tabs. Edit the copy here. */
 export const SIDEBAR_HINTS = {
-  pids: "Select a plot, then tick PIDs to chart them. With no plot selected, a tap selects one PID to edit. On a phone, swipe a card left to edit or right to remove. The bottom button edits or removes the selected PIDs.",
+  pids: "Select a plot, then tick PIDs to chart them. With no plot selected, a tap selects one PID to edit. On a phone, swipe a card left to edit or right to remove. The bottom button edits or removes the selected PIDs. Built-in PIDs are always present and cannot be edited or removed.",
   replayPids: "The PIDs recorded in the open trip. Select a plot, then tick PIDs to chart them. Definitions cannot be edited here; go back to live for that.",
   changes: "Ticked changes are applied: they are written to the device and saved. Revert puts a PID back to the device's copy. On a phone, swipe left to apply a change, right to revert it.",
   sd: "Open lists a file's PIDs. Import the ones you pick, then review them in Changes. Save selected PIDs overwrites the chosen file. To save PIDs, select them on the PIDs tab.",
