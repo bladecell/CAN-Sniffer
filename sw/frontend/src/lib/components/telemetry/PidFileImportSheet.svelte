@@ -113,7 +113,7 @@
         >
           {#snippet tags()}
             {#if item.status === "builtin"}
-              <span class="tag"><Icon name="lock" size={14} />Built-in</span>
+              <span class="tag" role="img" title="Built-in PID: cannot be edited or removed" aria-label="Built-in PID: cannot be edited or removed"><Icon name="lock" size={14} /></span>
             {:else}
               <span class="sb-tag {STATUS[item.status].tone}"><i class="dot"></i>{STATUS[item.status].label}</span>
             {/if}

@@ -131,7 +131,7 @@
         {/snippet}
         {#snippet tags()}
           {#if row.builtin}
-            <span class="tag"><Icon name="lock" size={14} />Built-in</span>
+            <span class="tag" role="img" title="Built-in PID: cannot be edited or removed" aria-label="Built-in PID: cannot be edited or removed"><Icon name="lock" size={14} /></span>
           {/if}
           {#if !replay && row.isSupported && !row.isValid}
             <span class="sb-tag k-crit" title="Invalid: the formula gives no usable value"><i class="dot"></i>Invalid</span>
