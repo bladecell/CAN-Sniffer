@@ -198,7 +198,7 @@
           <div class="rv-acts">
             <a class="btn pri" href="#telemetry" onclick={() => tripViewer.request(t.name)}>
               <Icon name="chart" size={16} />
-              Plot and play
+              Open in Telemetry
             </a>
             <button type="button" class="btn" onclick={() => download(t)}>
               <Icon name="save" size={16} />
