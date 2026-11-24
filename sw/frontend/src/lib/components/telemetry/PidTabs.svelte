@@ -15,17 +15,23 @@
     panel?: PhoneTab;
     /** Rail only: a second click on the selected tab hides the panel; another click shows it again. */
     collapsed?: boolean;
+    /** Replay mode: PID definitions are read-only, so the Changes and SD card tabs are left out. */
+    replay?: boolean;
   }
 
-  let { variant, chart = false, panel = $bindable("pids"), collapsed = $bindable(false) }: Props = $props();
+  let { variant, chart = false, panel = $bindable("pids"), collapsed = $bindable(false), replay = false }: Props = $props();
 
   let pendingCount = $derived(telemetryStore.local_piddef.filter((r) => r.pendingChanges === "Yes").length);
 
   const panels: { id: PhoneTab; label: string; icon: string }[] = $derived([
     ...(chart ? [{ id: "chart" as const, label: "Chart", icon: "chart" }] : []),
     { id: "pids", label: "PIDs", icon: "list" },
-    { id: "changes", label: pendingCount > 0 ? `Changes, ${pendingCount} pending` : "Changes", icon: "code-compare" },
-    { id: "sd", label: "SD card", icon: "sd-card" },
+    ...(replay
+      ? []
+      : [
+          { id: "changes" as const, label: pendingCount > 0 ? `Changes, ${pendingCount} pending` : "Changes", icon: "code-compare" },
+          { id: "sd" as const, label: "SD card", icon: "sd-card" },
+        ]),
     { id: "replays", label: "Replays", icon: "timeline-arrow" },
     { id: "settings", label: "Settings", icon: "sliders" },
   ]);

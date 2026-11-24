@@ -135,3 +135,16 @@ export function definitionsToApply<D>(items: ApplyItem<D>[], chosen: ReadonlySet
   }
   return out;
 }
+
+/** Replay mode: the PID list shows only the PIDs the trip has samples for, as one group in list order. */
+export function replayGroups<T>(items: T[], pidOf: (item: T) => number, tripPids: readonly number[]): PidGroup<T>[] {
+  const inTrip = new Set(tripPids);
+  const shown = items.filter((item) => inTrip.has(pidOf(item)));
+  return shown.length > 0 ? [{ key: "trip", title: "In this trip", items: shown }] : [];
+}
+
+/** Which rows are ticked for a plot that holds `plotPids`, one flag per item. */
+export function ticksFor<T>(items: readonly T[], pidOf: (item: T) => number, plotPids: readonly number[]): boolean[] {
+  const on = new Set(plotPids);
+  return items.map((item) => on.has(pidOf(item)));
+}

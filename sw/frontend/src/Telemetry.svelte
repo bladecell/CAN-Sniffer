@@ -13,7 +13,7 @@
   import PidEditorActions from "$lib/components/telemetry/editor/PidEditorActions.svelte";
   import PlotCell from "$lib/components/telemetry/PlotCell.svelte";
   import PlotOverview from "$lib/components/telemetry/PlotOverview.svelte";
-  import { pressRow } from "$lib/telemetryView";
+  import { pressRow, ticksFor } from "$lib/telemetryView";
   import { TELEMETRY_VIEW, TelemetryView } from "$lib/telemetryChart/viewState.svelte";
   import { PLOT_COUNTS, gridColumns, migratePlotCount, type PlotCount } from "$lib/telemetryChart/layout";
   import { canToggleTicks, chartPidsOf, deselectOnEscape, deselectOnPointer } from "$lib/telemetryChart/selection";
@@ -23,7 +23,6 @@
   import ContextScope from "$lib/components/telemetry/ContextScope.svelte";
   import TripPlayer from "$lib/components/telemetry/TripPlayer.svelte";
   import { tripViewer } from "$lib/tripViewer.svelte";
-  import { vehicleStore } from "$lib/vehicleStore.svelte";
   import type { PlotModel } from "$lib/telemetryChart/plotModel";
 
   // Ref-counted: the stream stays on while any view needs it.
@@ -37,10 +36,9 @@
 
   // The Replays tab plots a trip from the SD card in the same plots, with its own window and clock (TripPlayer).
   const tripView = new TelemetryView(true);
-  // Replays is a rail tab: on desktop the tab decides the view (any other tab is live); on a phone the page keeps the choice.
+  // Replay mode: a trip is open. The whole page reads it (plots, PIDs tab, player) until Back to live.
   let railPanel = $state<PidPanel>("pids");
-  let phoneRec = $state(false);
-  const rec = $derived(phone.current ? phoneRec : railPanel === "replays");
+  let rec = $state(false);
   const activeView = $derived(rec ? tripView : view);
   /** PIDs per plot while a trip is open, and the plot the PID chips act on. */
   let recPids = $state<number[][]>([]);
@@ -77,8 +75,10 @@
       : null,
   );
 
+  // Live mode only: replay mode ticks go to the trip's plots (below).
   // With a plot armed, its PIDs are the ticked rows. With none armed, a selection is for Edit and charts nothing.
   $effect(() => {
+    if (rec) return;
     const ticked = telemetryStore.local_piddef.filter((r) => r.selected).map((row) => parseInt(row.pid, 16));
 
     untrack(() => {
@@ -103,7 +103,30 @@
   function plotPids(i: number): number[] {
     return (rec ? recPids[i] : telemetryStore.chartPids[i]) ?? [];
   }
-  const activate = (i: number) => (rec ? (recActive = i) : setActiveChart(i));
+  function activate(i: number) {
+    if (!rec) return setActiveChart(i);
+    recActive = i;
+    syncTicks(recPids[i] ?? []);
+  }
+
+  /** Ticks the PID list for a plot's PIDs. The list is the same one live mode uses. */
+  function syncTicks(pids: number[]) {
+    const on = ticksFor(telemetryStore.local_piddef, (r) => parseInt(r.pid, 16), pids);
+    telemetryStore.local_piddef.forEach((r, i) => (r.selected = on[i]));
+  }
+
+  function setRecPids(plot: number, pids: number[]) {
+    recPids = Array.from({ length: Math.max(recPids.length, plot + 1) }, (_, i) => (i === plot ? pids : (recPids[i] ?? [])));
+  }
+
+  // Replay mode: a tick in the PID list puts the PID on the selected plot, as in live mode.
+  $effect(() => {
+    if (!rec || !tripViewer.trip) return;
+    const ticked = telemetryStore.local_piddef.filter((r) => r.selected).map((row) => parseInt(row.pid, 16));
+    untrack(() => {
+      if (ticked.join() !== (recPids[recActive] ?? []).join()) setRecPids(recActive, ticked);
+    });
+  });
   const activeIdx = $derived(rec ? recActive : telemetryStore.activeChartIndex);
 
   function toggleFullscreen(index: number) {
@@ -207,21 +230,27 @@
     selectedRow && telemetryStore.activeIndex >= 0 ? `Edit ${selectedRow.name} (${selectedRow.pid})` : "New PID",
   );
   const count = $derived(telemetryStore.plotCount);
+  const replayList = $derived(rec ? { pids: tripViewer.trip?.pids ?? [], active: recActive } : undefined);
   const activePids = $derived(rec ? (recPids[recActive] ?? []) : chartPidsOf(telemetryStore.chartPids, telemetryStore.activeChartIndex));
 
-  /** A replay was picked in the rail tab (desktop) or the phone sheet. */
+  /** A replay was picked in the Replays tab: the page switches to replay mode, on the PIDs tab (desktop) or the chart (phone). */
   function openReplay(name: string) {
-    phoneRec = true;
-    phoneTab = "chart";
+    rec = true;
+    if (phone.current) phoneTab = "chart";
+    else {
+      railPanel = "pids";
+      sideCollapsed = false;
+    }
     fsIndex = -1;
     activeStats = [];
     void tripViewer.load(name);
   }
 
-  /** The way back: the rail returns to the PIDs tab, the phone to its live chart. */
+  /** The way back: the live ticks return to the list, the rail to the PIDs tab, the phone to its live chart. */
   function backToLive() {
+    syncTicks(chartPidsOf(telemetryStore.chartPids, telemetryStore.activeChartIndex));
+    rec = false;
     railPanel = "pids";
-    phoneRec = false;
     fsIndex = -1;
     activeStats = [];
   }
@@ -231,11 +260,7 @@
     const name = tripViewer.requested;
     if (!name) return;
     tripViewer.requested = null;
-    untrack(() => {
-      railPanel = "replays";
-      sideCollapsed = false;
-      openReplay(name);
-    });
+    untrack(() => openReplay(name));
   });
 
   // A newly opened trip starts with its first PIDs on plot 1.
@@ -244,6 +269,7 @@
     untrack(() => {
       recPids = Array.from({ length: telemetryStore.plotCount }, (_, i) => (i === 0 ? (trip?.pids.slice(0, 4) ?? []) : []));
       recActive = 0;
+      if (trip) syncTicks(recPids[0]);
     });
   });
 
@@ -260,12 +286,6 @@
     }
     return { text: "Pick a recording in the Replays tab to plot its PIDs and play it back.", alert: false };
   });
-  const defOf = (pid: number) => vehicleStore.pidDefinitions.find((d) => d.pid === pid);
-  function toggleRecPid(pid: number) {
-    const cur = recPids[recActive] ?? [];
-    const next = cur.includes(pid) ? cur.filter((p) => p !== pid) : [...cur, pid];
-    recPids = Array.from({ length: Math.max(recPids.length, recActive + 1) }, (_, i) => (i === recActive ? next : (recPids[i] ?? [])));
-  }
 </script>
 
 <svelte:window bind:innerHeight={innerH} onkeydown={onWindowKey} onpointerdown={onWindowPointer} />
@@ -274,7 +294,7 @@
   <div class="wb" class:collapsed={sideCollapsed && !phone.current}>
     {#if !phone.current}
       <aside class="side" aria-label="PID list">
-        <PidSidebar variant="rail" bind:panel={railPanel} bind:collapsed={sideCollapsed} onReplay={openReplay} onNew={newPid} onEdit={editPid} />
+        <PidSidebar variant="rail" bind:panel={railPanel} bind:collapsed={sideCollapsed} onReplay={openReplay} replay={replayList} onNew={newPid} onEdit={editPid} />
       </aside>
     {/if}
 
@@ -284,7 +304,7 @@
       </div>
 
       {#if phone.current}
-        <PidTabs variant="strip" chart bind:panel={phoneTab} />
+        <PidTabs variant="strip" chart replay={rec} bind:panel={phoneTab} />
       {/if}
 
       {#if showChart}
@@ -318,20 +338,12 @@
 
       {#if !showChart}
         <div class="card phone-panel">
-          <PidSidebar variant="bar" onReplay={openReplay} bind:panel={() => (phoneTab === "chart" ? "pids" : phoneTab), (v) => (phoneTab = v)} onNew={newPid} onEdit={editPid} />
+          <PidSidebar variant="bar" onReplay={openReplay} replay={replayList} bind:panel={() => (phoneTab === "chart" ? "pids" : phoneTab), (v) => (phoneTab = v)} onNew={newPid} onEdit={editPid} />
         </div>
       {:else if !rec || tripViewer.trip}
       {#key rec ? tripViewer.trip : "live"}
       <ContextScope view={activeView} source={rec ? tripViewer.source : undefined}>
-      {#if rec}
-        <div class="chips rec" role="group" aria-label="PIDs on plot {recActive + 1}">
-          {#each tripViewer.trip?.pids ?? [] as pid (pid)}
-            <button type="button" class="tel-pchip" aria-pressed={activePids.includes(pid)} onclick={() => toggleRecPid(pid)}>
-              <i style="--sw: {safeHexColor(defOf(pid)?.color)}"></i>{defOf(pid)?.name || `0x${pid.toString(16).toUpperCase()}`}
-            </button>
-          {/each}
-        </div>
-      {:else}
+      {#if !rec}
       <div class="chips" role="group" aria-label="PIDs on the active plot">
         {#each telemetryStore.local_piddef.filter((r) => r.loaded) as row (row)}
           {@const pid = parseInt(row.pid, 16)}
@@ -604,14 +616,6 @@
     font-weight: 700;
     white-space: nowrap;
     cursor: pointer;
-  }
-  /* The trip's PIDs are the only picker in this tab, so the row shows on every width and wraps. */
-  .chips.rec {
-    display: flex;
-    flex-wrap: wrap;
-    overflow: visible;
-    mask-image: none;
-    touch-action: auto;
   }
   .tel-pchip i {
     display: inline-block;

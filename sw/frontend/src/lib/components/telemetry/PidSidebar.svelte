@@ -17,19 +17,21 @@
     collapsed?: boolean;
     /** A replay was picked in the Replays tab. */
     onReplay?: (name: string) => void;
+    /** Replay mode: the PIDs tab lists the open trip's PIDs and is read-only; Changes and SD are hidden. */
+    replay?: { pids: number[]; active: number };
   }
 
-  let { variant, onNew, onEdit, panel = $bindable("pids"), collapsed = $bindable(false), onReplay }: Props = $props();
+  let { variant, onNew, onEdit, panel = $bindable("pids"), collapsed = $bindable(false), onReplay, replay }: Props = $props();
 </script>
 
 <div class="sb" class:rail={variant === "rail"} class:bar={variant === "bar"}>
   {#if variant === "rail"}
-    <PidTabs variant="rail" bind:panel bind:collapsed />
+    <PidTabs variant="rail" bind:panel bind:collapsed replay={replay !== undefined} />
   {/if}
 
   <div class="pwrap" class:closed={variant === "rail" && collapsed} inert={variant === "rail" && collapsed}>
   {#if panel === "pids"}
-    <PidList phone={variant === "bar"} {onNew} {onEdit} />
+    <PidList phone={variant === "bar"} {onNew} {onEdit} {replay} />
   {:else if panel === "changes"}
     <PidChanges phone={variant === "bar"} />
   {:else if panel === "sd"}
