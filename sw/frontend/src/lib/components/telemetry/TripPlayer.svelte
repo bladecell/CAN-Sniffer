@@ -12,10 +12,9 @@
   interface Props {
     view: TelemetryView;
     trip: LoadedTrip;
-    onBack: () => void;
   }
 
-  let { view, trip, onBack }: Props = $props();
+  let { view, trip }: Props = $props();
 
   const span = $derived(Math.max(1, trip.endMs - trip.startMs));
   const labelId = "trip-pos-label";
@@ -83,7 +82,6 @@
       />
     </div>
     <span class="clock" aria-hidden="true">{elapsedClock(pos - trip.startMs)} <i>/</i> {elapsedClock(span)}</span>
-    <button type="button" class="ghost" onclick={onBack}>Back to live</button>
   </div>
 </div>
 
@@ -94,7 +92,7 @@
   }
   .p1 {
     display: grid;
-    grid-template-columns: auto auto minmax(80px, 1fr) auto auto;
+    grid-template-columns: auto auto minmax(80px, 1fr) auto;
     align-items: center;
     gap: 14px;
     padding: var(--pad-card);
@@ -146,27 +144,6 @@
     color: var(--muted);
     font-style: normal;
   }
-  .ghost {
-    display: inline-flex;
-    align-items: center;
-    height: 36px;
-    margin: 0;
-    padding: 0 14px;
-    border: 1px solid var(--hair);
-    border-radius: var(--r-ctl);
-    background: transparent;
-    color: var(--muted);
-    font-size: 0.9rem;
-    font-weight: 700;
-    white-space: nowrap;
-    cursor: pointer;
-  }
-  @media (hover: hover) {
-    .ghost:hover {
-      background: var(--hov);
-      color: var(--text);
-    }
-  }
   .sr {
     position: absolute;
     width: 1px;
@@ -175,12 +152,12 @@
     clip: rect(0 0 0 0);
     white-space: nowrap;
   }
-  /* Narrow: play, name and Back to live on the first row; the slider and the clock under them. 44 px touch targets. */
+  /* Narrow: play and name on the first row; the slider and the clock under them. 44 px touch targets. */
   @container (max-width: 640px) {
     .p1 {
       grid-template-columns: auto 1fr auto;
       grid-template-areas:
-        "play name back"
+        "play name name"
         "seek seek clock";
       gap: 4px 10px;
       padding: 6px;
@@ -198,10 +175,6 @@
     }
     .clock {
       grid-area: clock;
-    }
-    .ghost {
-      grid-area: back;
-      height: 44px;
     }
   }
 </style>

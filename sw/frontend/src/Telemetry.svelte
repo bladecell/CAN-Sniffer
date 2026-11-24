@@ -301,6 +301,7 @@
     <div class="main">
       <div class="card bar">
         <h1 tabindex="-1">{rec ? "Telemetry · Replay" : "Telemetry"}</h1>
+        {#if rec}<button type="button" class="ghost" onclick={backToLive}>Back to live</button>{/if}
       </div>
 
       {#if phone.current}
@@ -328,7 +329,7 @@
 
       {#if rec}
         {#if tripViewer.trip}
-          <TripPlayer view={tripView} trip={tripViewer.trip} onBack={backToLive} />
+          <TripPlayer view={tripView} trip={tripViewer.trip} />
         {/if}
         {#if recNote}
           <p class="rec-note" class:warn={recNote.alert} role={recNote.alert ? "alert" : "status"}>{recNote.text}</p>
@@ -506,6 +507,27 @@
     gap: 10px var(--gap);
     padding: var(--pad-card);
     border-radius: var(--r-card);
+  }
+  .ghost {
+    display: inline-flex;
+    align-items: center;
+    height: 44px;
+    margin: 0;
+    padding: 0 14px;
+    border: 1px solid var(--hair);
+    border-radius: var(--r-ctl);
+    background: transparent;
+    color: var(--muted);
+    font-size: 0.9rem;
+    font-weight: 700;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  @media (hover: hover) {
+    .ghost:hover {
+      background: var(--hov);
+      color: var(--text);
+    }
   }
   .bar h1 {
     margin: 0 auto 0 0;
