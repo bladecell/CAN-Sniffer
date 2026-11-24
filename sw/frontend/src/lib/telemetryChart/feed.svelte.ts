@@ -1,5 +1,5 @@
 // Reads the stored samples of a set of PIDs. Listeners arrive once per frame that has new samples (chartHistory); `version` bumps with them.
-import { untrack } from "svelte";
+import { getContext, untrack } from "svelte";
 import type { ChartBuffer } from "$lib/chartBuffer";
 import { chartHistoryStore } from "$lib/chartHistoryStore";
 
@@ -8,6 +8,16 @@ export interface Samples {
   v: (number | null)[];
 }
 
+/** Where a plot reads its samples. The page default is the live history; the trip viewer provides recorded buffers in context. */
+export interface SeriesSource {
+  subscribe(pid: number, listener: (buffer: ChartBuffer) => void): () => void;
+  /** Live sources move the present clock with each sample; a recorded one does not (the player owns the clock). */
+  live: boolean;
+}
+
+export const TELEMETRY_SOURCE = "telemetry-source";
+const liveSource: SeriesSource = { subscribe: (pid, listener) => chartHistoryStore.subscribe(pid, listener), live: true };
+
 const NONE: Samples = { t: [], v: [] };
 
 /**
@@ -15,6 +25,7 @@ const NONE: Samples = { t: [], v: [] };
  * onSample receives the newest sample time of each update, for the present clock.
  */
 export function createSeriesFeed(getPids: () => number[], onSample: (deviceMs: number) => void) {
+  const source = getContext<SeriesSource | undefined>(TELEMETRY_SOURCE) ?? liveSource;
   let buffers = new Map<number, ChartBuffer>();
   let version = $state(0);
 
@@ -23,10 +34,10 @@ export function createSeriesFeed(getPids: () => number[], onSample: (deviceMs: n
     const next = new Map<number, ChartBuffer>();
     buffers = next;
     const stops = pids.map((pid) =>
-      chartHistoryStore.subscribe(pid, (buffer) => {
+      source.subscribe(pid, (buffer) => {
         next.set(pid, buffer);
         const last = buffer.lastTime();
-        if (last !== undefined) onSample(last);
+        if (source.live && last !== undefined) onSample(last);
         untrack(() => version++);
       }),
     );

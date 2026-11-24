@@ -391,7 +391,12 @@ export interface RecorderStatus {
   rows: number;
   dropped: number;
   file_bytes: number;
+  trigger: RecorderTrigger;
+  continuous_polling: boolean;
 }
+export type RecorderTrigger = "manual" | "auto";
+/** PATCH /recorder body: at least one key, nothing else. */
+export type RecorderSettingsPatch = { trigger?: RecorderTrigger; continuous_polling?: boolean };
 export interface RecorderTrips {
   trips: { index: number; name: string; size: number; sidecar: boolean }[];
   count: number;

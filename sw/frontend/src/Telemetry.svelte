@@ -20,6 +20,13 @@
   import { statsColumnPx } from "$lib/telemetryChart/statsColumns";
   import { freezeWin, resumeWin } from "$lib/telemetryChart/window";
   import { formatValue } from "$lib/telemetryChart/math";
+  import ContextScope from "$lib/components/telemetry/ContextScope.svelte";
+  import TripPlayer from "$lib/components/telemetry/TripPlayer.svelte";
+  import SelectMenu from "$lib/components/SelectMenu.svelte";
+  import { tripViewer } from "$lib/tripViewer.svelte";
+  import { recordingStore } from "$lib/recordingStore.svelte";
+  import { vehicleStore } from "$lib/vehicleStore.svelte";
+  import { formatBytes, tripRows } from "$lib/recorderView";
   import type { PlotModel } from "$lib/telemetryChart/plotModel";
 
   // Ref-counted: the stream stays on while any view needs it.
@@ -29,11 +36,20 @@
   const view = new TelemetryView();
   setContext(TELEMETRY_VIEW, view);
 
+  // The Recording tab plots a trip from the SD card in the same plots, with its own window and clock (TripPlayer).
+  const tripView = new TelemetryView(true);
+  let mode = $state<"live" | "recording">("live");
+  const rec = $derived(mode === "recording");
+  const activeView = $derived(rec ? tripView : view);
+  /** PIDs per plot while a trip is open, and the plot the PID chips act on. */
+  let recPids = $state<number[][]>([]);
+  let recActive = $state(0);
+
   // Phone: one strip picks what fills the container under the header; the chart is a tab like the PID panels.
   const phone = new MediaQuery("max-width: 859px");
   let sideCollapsed = $state(true);
   let phoneTab = $state<PhoneTab>("chart");
-  const showChart = $derived(!phone.current || phoneTab === "chart");
+  const showChart = $derived(!phone.current || phoneTab === "chart" || rec);
   let editorOpen = $state(false);
 
   let innerH = $state(800);
@@ -47,7 +63,7 @@
   const plotHeight = $derived(fsIndex >= 0 ? Math.max(240, innerH - 330) : PLOT_HEIGHT[telemetryStore.plotCount]);
   const laneHeight = $derived(
     fsIndex >= 0
-      ? Math.max(90, (innerH - 366) / Math.max(1, telemetryStore.chartPids[fsIndex]?.length ?? 1))
+      ? Math.max(90, (innerH - 366) / Math.max(1, plotPids(fsIndex).length))
       : LANE_HEIGHT[telemetryStore.plotCount],
   );
 
@@ -80,11 +96,19 @@
     const newChartPids = [...telemetryStore.chartPids];
     while (newChartPids.length < total) newChartPids.push([]);
     telemetryStore.chartPids = newChartPids;
-    if (telemetryStore.activeChartIndex >= total) setActiveChart(0);
+    recPids = Array.from({ length: total }, (_, i) => recPids[i] ?? []);
+    if (recActive >= total) recActive = 0;
+    if (!rec && telemetryStore.activeChartIndex >= total) setActiveChart(0);
   }
 
+  function plotPids(i: number): number[] {
+    return (rec ? recPids[i] : telemetryStore.chartPids[i]) ?? [];
+  }
+  const activate = (i: number) => (rec ? (recActive = i) : setActiveChart(i));
+  const activeIdx = $derived(rec ? recActive : telemetryStore.activeChartIndex);
+
   function toggleFullscreen(index: number) {
-    setActiveChart(index);
+    activate(index);
     fsIndex = fsIndex === index ? -1 : index;
   }
 
@@ -93,6 +117,7 @@
     if (e.key !== "Escape") return;
     if (document.querySelector("dialog[open]") || document.querySelector(":popover-open")) return;
     if (fsIndex >= 0) return (fsIndex = -1);
+    if (rec) return;
     const focusInPlot = document.activeElement?.closest(".cell") != null;
     if (deselectOnEscape(telemetryStore.activeChartIndex, focusInPlot) !== telemetryStore.activeChartIndex) {
       setActiveChart(-1);
@@ -130,7 +155,7 @@
 
   function onWindowPointer(e: PointerEvent) {
     const t = e.target instanceof Element ? e.target : null;
-    if (!t || telemetryStore.activeChartIndex < 0) return;
+    if (rec || !t || telemetryStore.activeChartIndex < 0) return;
     const next = deselectOnPointer(telemetryStore.activeChartIndex, isRelatedTarget(t));
     if (next !== telemetryStore.activeChartIndex) setActiveChart(next);
   }
@@ -183,14 +208,77 @@
     selectedRow && telemetryStore.activeIndex >= 0 ? `Edit ${selectedRow.name} (${selectedRow.pid})` : "New PID",
   );
   const count = $derived(telemetryStore.plotCount);
-  const activePids = $derived(chartPidsOf(telemetryStore.chartPids, telemetryStore.activeChartIndex));
+  const activePids = $derived(rec ? (recPids[recActive] ?? []) : chartPidsOf(telemetryStore.chartPids, telemetryStore.activeChartIndex));
+
+  function setMode(next: "live" | "recording") {
+    if (mode === next) return;
+    mode = next;
+    fsIndex = -1;
+    activeStats = [];
+  }
+
+  // The Recorder page asks to open a trip: show the Recording tab and load it.
+  $effect(() => {
+    const name = tripViewer.requested;
+    if (!name) return;
+    tripViewer.requested = null;
+    untrack(() => {
+      setMode("recording");
+      void tripViewer.load(name);
+    });
+  });
+
+  // The Recording tab lists the trips to pick from.
+  $effect(() => {
+    if (!rec) return;
+    void recordingStore.loadTrips();
+    return recordingStore.watchTrips();
+  });
+
+  // A newly opened trip starts with its first PIDs on plot 1.
+  $effect(() => {
+    const trip = tripViewer.trip;
+    untrack(() => {
+      recPids = Array.from({ length: telemetryStore.plotCount }, (_, i) => (i === 0 ? (trip?.pids.slice(0, 4) ?? []) : []));
+      recActive = 0;
+    });
+  });
+
+  const tripOptions = $derived(
+    tripRows(recordingStore.trips, recordingStore.status ? { state: recordingStore.status.state, trip: recordingStore.status.trip, fileBytes: recordingStore.status.file_bytes } : null)
+      .filter((t) => !t.live)
+      .map((t) => ({ value: t.name, label: `${t.name}, ${formatBytes(t.size)}` })),
+  );
+  const recNote = $derived.by((): { text: string; alert: boolean } | null => {
+    if (tripViewer.loading) return { text: "Loading trip...", alert: false };
+    if (tripViewer.error) return { text: `Could not open the trip: ${tripViewer.error}`, alert: true };
+    const t = tripViewer.trip;
+    if (t) {
+      const notes = [
+        t.truncated ? "The file has more rows than the viewer reads, so the end is cut off." : "",
+        t.skipped > 0 ? `${t.skipped.toLocaleString("en")} unreadable rows skipped.` : "",
+      ].filter(Boolean);
+      return notes.length ? { text: notes.join(" "), alert: false } : null;
+    }
+    if (recordingStore.tripsError === "no-sd") return { text: "No SD card, so there are no trips to open.", alert: true };
+    if (recordingStore.tripsError === "failed") return { text: "The trip list failed to load.", alert: true };
+    if (recordingStore.tripsLoading && tripOptions.length === 0) return { text: "Loading trips...", alert: false };
+    if (tripOptions.length === 0) return { text: "No trips yet. Record one on the Recorder page.", alert: false };
+    return { text: "Pick a trip to plot its PIDs and play it back.", alert: false };
+  });
+  const defOf = (pid: number) => vehicleStore.pidDefinitions.find((d) => d.pid === pid);
+  function toggleRecPid(pid: number) {
+    const cur = recPids[recActive] ?? [];
+    const next = cur.includes(pid) ? cur.filter((p) => p !== pid) : [...cur, pid];
+    recPids = Array.from({ length: Math.max(recPids.length, recActive + 1) }, (_, i) => (i === recActive ? next : (recPids[i] ?? [])));
+  }
 </script>
 
 <svelte:window bind:innerHeight={innerH} onkeydown={onWindowKey} onpointerdown={onWindowPointer} />
 
 <section class="tel">
-  <div class="wb" class:collapsed={sideCollapsed && !phone.current}>
-    {#if !phone.current}
+  <div class="wb" class:collapsed={sideCollapsed && !phone.current && !rec} class:rec>
+    {#if !phone.current && !rec}
       <aside class="side" aria-label="PID list">
         <PidSidebar variant="rail" bind:collapsed={sideCollapsed} onNew={newPid} onEdit={editPid} />
       </aside>
@@ -199,9 +287,13 @@
     <div class="main">
       <div class="card bar">
         <h1 tabindex="-1">Telemetry</h1>
+        <div class="seg" role="group" aria-label="Data source">
+          <button type="button" aria-pressed={!rec} onclick={() => setMode("live")}>Live</button>
+          <button type="button" aria-pressed={rec} onclick={() => setMode("recording")}>Recording</button>
+        </div>
       </div>
 
-      {#if phone.current}
+      {#if phone.current && !rec}
         <PidTabs variant="strip" chart bind:panel={phoneTab} />
       {/if}
 
@@ -214,18 +306,46 @@
           {/each}
         </div>
 
+        {#if !rec}
         <button type="button" class="btn" class:pri={status !== "live"} onclick={togglePause} aria-label={status === "live" ? "Pause" : "Back to live"}>
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
             {#if status === "live"}<path d="M8 5v14M16 5v14" />{:else}<path d="M5 5v14l10-7zM19 5v14" />{/if}
           </svg>
           {status === "live" ? "Pause" : "Back to live"}
         </button>
+        {/if}
       </div>
+
+      {#if rec}
+        {#if tripViewer.trip}
+          <TripPlayer view={tripView} trip={tripViewer.trip} options={tripOptions} onPick={(name) => void tripViewer.load(name)} />
+        {:else}
+          <div class="card bar pick-bar">
+            <div class="pick-menu">
+              <SelectMenu options={tripOptions} placeholder="Choose a trip" ariaLabel="Trip" disabled={tripViewer.loading} onChange={(name) => void tripViewer.load(name)} />
+            </div>
+          </div>
+        {/if}
+        {#if recNote}
+          <p class="rec-note" class:warn={recNote.alert} role={recNote.alert ? "alert" : "status"}>{recNote.text}</p>
+        {/if}
+      {/if}
       {/if}
 
       {#if !showChart}
         <div class="card phone-panel">
           <PidSidebar variant="bar" bind:panel={() => (phoneTab === "chart" ? "pids" : phoneTab), (v) => (phoneTab = v)} onNew={newPid} onEdit={editPid} />
+        </div>
+      {:else if !rec || tripViewer.trip}
+      {#key rec ? tripViewer.trip : "live"}
+      <ContextScope view={activeView} source={rec ? tripViewer.source : undefined}>
+      {#if rec}
+        <div class="chips rec" role="group" aria-label="PIDs on plot {recActive + 1}">
+          {#each tripViewer.trip?.pids ?? [] as pid (pid)}
+            <button type="button" class="tel-pchip" aria-pressed={activePids.includes(pid)} onclick={() => toggleRecPid(pid)}>
+              <i style="--sw: {safeHexColor(defOf(pid)?.color)}"></i>{defOf(pid)?.name || `0x${pid.toString(16).toUpperCase()}`}
+            </button>
+          {/each}
         </div>
       {:else}
       <div class="chips" role="group" aria-label="PIDs on the active plot">
@@ -251,18 +371,19 @@
           </button>
         {/each}
       </div>
+      {/if}
 
       <div class="cgrid" style="--cols: {gridColumns(count)}">
         {#each Array(count) as _, i (i)}
           <PlotCell
             n={i + 1}
-            pids={telemetryStore.chartPids[i] || []}
-            active={telemetryStore.activeChartIndex === i}
+            pids={plotPids(i)}
+            active={activeIdx === i}
             fullscreen={fsIndex === i}
             dense={count >= 4}
             {plotHeight}
             {laneHeight}
-            onActivate={() => setActiveChart(i)}
+            onActivate={() => activate(i)}
             onFullscreen={() => toggleFullscreen(i)}
             onStats={setStats}
           />
@@ -295,12 +416,14 @@
                 <td class="num"><span class="v">{formatValue(r.max)}</span>{#if r.unit}<span class="u">{r.unit}</span>{/if}</td>
               </tr>
             {:else}
-              <tr><td colspan="4" class="none">{telemetryStore.activeChartIndex < 0 ? "Select a plot to see its stats" : activePids.length === 0 ? "No PIDs on this plot" : "No samples in the visible window"}</td></tr>
+              <tr><td colspan="4" class="none">{activeIdx < 0 ? "Select a plot to see its stats" : activePids.length === 0 ? "No PIDs on this plot" : "No samples in the visible window"}</td></tr>
             {/each}
           </tbody>
         </table>
         </div>
       </section>
+      </ContextScope>
+      {/key}
       {/if}
     </div>
   </div>
@@ -441,6 +564,23 @@
     stroke-linejoin: round;
     flex: none;
   }
+  .wb.rec {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .pick-bar .pick-menu {
+    flex: 1 1 16rem;
+    max-width: 24rem;
+    min-width: 0;
+  }
+  .rec-note {
+    margin: 0;
+    padding: 0 4px;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .rec-note.warn {
+    color: var(--warn, var(--muted));
+  }
   .phone-panel {
     padding: 8px 12px 0;
     border-radius: var(--r-card);
@@ -488,6 +628,14 @@
     font-weight: 700;
     white-space: nowrap;
     cursor: pointer;
+  }
+  /* The trip's PIDs are the only picker in this tab, so the row shows on every width and wraps. */
+  .chips.rec {
+    display: flex;
+    flex-wrap: wrap;
+    overflow: visible;
+    mask-image: none;
+    touch-action: auto;
   }
   .tel-pchip i {
     display: inline-block;

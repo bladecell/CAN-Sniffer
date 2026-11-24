@@ -19,8 +19,8 @@ describe("firmware API client", () => {
     await api.createSdDirectory("logs/new"); await api.deleteSdFile("logs/trip.csv");
     await api.deleteSdFile("logs/old", true); await api.copySdFile("a", "b"); await api.formatSdCard();
     await api.getSettings(); await api.patchSettings({ can: {} }); await api.startWifiScan(); await api.wifiScan();
-    await api.recorder(); await api.startRecorder(); await api.stopRecorder(); await api.recorderTrips();
-    expect(calls).toHaveLength(44);
+    await api.recorder(); await api.startRecorder(); await api.stopRecorder(); await api.recorderTrips(); await api.patchRecorder({ trigger: "auto" });
+    expect(calls).toHaveLength(45);
     expect(calls.filter((call) => call === "GET /api/v1/settings" || call === "GET /api/v1/wifi/scan")).toHaveLength(2);
     expect(calls.some((call) => call.includes("/api/v1/req/clear_dtc"))).toBe(true);
   });
@@ -73,6 +73,7 @@ describe("firmware API client", () => {
     await api.startRecorder([{ pid: 12 }, { pid: 13, min_interval_ms: 500 }]);
     await api.stopRecorder();
     await api.recorderTrips();
+    await api.patchRecorder({ trigger: "auto", continuous_polling: true });
 
     expect(calls.map(({ url, init, gated }) => [init?.method ?? "GET", url, gated])).toEqual([
       ["GET", "/api/v1/pid_data", false],
@@ -93,7 +94,9 @@ describe("firmware API client", () => {
       ["POST", "/api/v1/recorder/start", true],
       ["POST", "/api/v1/recorder/stop", true],
       ["GET", "/api/v1/recorder/trips", true],
+      ["PATCH", "/api/v1/recorder", true],
     ]);
+    expect(calls[18].init?.body).toBe('{"trigger":"auto","continuous_polling":true}');
     expect(calls[14].init?.body).toBeUndefined();
     expect(calls[15].init?.body).toBe('{"pids":[{"pid":12},{"pid":13,"min_interval_ms":500}]}');
     expect(calls[11].init?.method).toBeUndefined();

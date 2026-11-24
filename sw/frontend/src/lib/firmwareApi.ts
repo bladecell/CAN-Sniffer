@@ -1,7 +1,7 @@
 import { sdCardFileEndpoint } from "./api";
 import { retryBusy } from "./retryBusy";
 import type {
-  CanBusStatus, CanModeStatus, CanSendStatus, CaptureList, CaptureStatus, RecorderStatus, RecorderTrips, DtcDescriptionResponse, DtcResponse, Obd2StatusWire, PidDataWire, PidDefinitionWire,
+  CanBusStatus, CanModeStatus, CanSendStatus, CaptureList, CaptureStatus, RecorderSettingsPatch, RecorderStatus, RecorderTrips, DtcDescriptionResponse, DtcResponse, Obd2StatusWire, PidDataWire, PidDefinitionWire,
   SDCardInfo, SdTreeNode, SystemStatus,
 } from "./types";
 
@@ -83,6 +83,8 @@ export function createFirmwareApi(deps: FirmwareApiDeps) {
     recorder: () => open<RecorderStatus>("/api/v1/recorder"),
     /** No `pids` records the PIDs OBD2 currently polls. 409 already recording, 429 start cooldown (Retry-After seconds), 422 bad list, 503 no card. */
     startRecorder: (pids?: readonly { pid: number; min_interval_ms?: number }[]) => gated<RecorderStatus & { status: "success" }>("/api/v1/recorder/start", body("POST", pids === undefined ? undefined : { pids })),
+    /** At least one key. 422 bad body, 503 the NVS write failed (nothing changed). Replies with the new settings plus the GET fields. */
+    patchRecorder: (settings: RecorderSettingsPatch) => gated<RecorderStatus & { status: "success" }>("/api/v1/recorder", body("PATCH", settings)),
     stopRecorder: () => gated<RecorderStatus & { status: "success" }>("/api/v1/recorder/stop", body("POST")),
     recorderTrips: () => gated<RecorderTrips>("/api/v1/recorder/trips"),
   };

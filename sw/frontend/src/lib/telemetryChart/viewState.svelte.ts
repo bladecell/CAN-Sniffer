@@ -1,5 +1,6 @@
 // The one time window every plot shares, the present clock and the cursor. Components reach it through context.
 import { clamp } from "./math";
+import { holdPause, seekWin } from "./playback";
 import { createPresentClock, guardWin, liveWin, winStatus, type Win, type WinStatus } from "./window";
 
 export const TELEMETRY_VIEW = "telemetry-view";
@@ -11,6 +12,13 @@ export class TelemetryView {
   /** Which plot the pointer is over, so only that plot shows the tooltip. */
   hoverKey = $state<string | null>(null);
   #clock = createPresentClock();
+
+  /** A recorded trip: the player alone starts playback, a window move on a paused trip keeps it paused. */
+  constructor(readonly recorded = false) {}
+
+  #commit(next: Win) {
+    this.win = this.recorded ? holdPause(this.win, next) : next;
+  }
 
   get status(): WinStatus {
     return winStatus(this.win);
@@ -30,16 +38,23 @@ export class TelemetryView {
   /** Applies a window change. Without data there is no present, so the window cannot leave live. */
   apply(next: (w: Win, now: number) => Win) {
     const now = this.presentAt();
-    this.win = guardWin(next(this.win, now ?? 0), now);
+    this.#commit(guardWin(next(this.win, now ?? 0), now));
   }
 
   /** Replaces the window, with the same no-data guard as apply(). */
   set(w: Win) {
-    this.win = guardWin(w, this.presentAt());
+    this.#commit(guardWin(w, this.presentAt()));
+  }
+
+  /** Moves the present to a recorded time: a fresh clock, so the present can also go back. */
+  seek(deviceMs: number, playing: boolean) {
+    this.#clock = createPresentClock();
+    this.#clock.observe(deviceMs, performance.now());
+    this.win = seekWin(this.win.len, deviceMs, playing);
   }
 
   reset() {
-    this.win = liveWin(60);
+    this.#commit(liveWin(60));
   }
 
   hover(f: number | null, key: string | null) {

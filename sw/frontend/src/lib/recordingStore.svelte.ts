@@ -14,7 +14,7 @@ import {
   validTrips,
   type TripEntry,
 } from "./recorderView";
-import type { RecorderStatus, RecorderTrips } from "./types";
+import type { RecorderSettingsPatch, RecorderStatus, RecorderTrips } from "./types";
 import type { WsFrame } from "./wsFrames";
 
 const TRIPS_DIR = "logs/trips";
@@ -61,6 +61,8 @@ class RecordingStore {
       rows: frame.rows,
       dropped: frame.dropped,
       file_bytes: this.status?.file_bytes ?? 0,
+      trigger: this.status?.trigger ?? "manual",
+      continuous_polling: this.status?.continuous_polling ?? false,
     });
     if (previous !== frame.state && shouldLoadTrips(auth.canUseGated, this.tripsWatch.count() > 0)) void this.loadTrips();
   }
@@ -143,6 +145,16 @@ class RecordingStore {
       await this.readStatus();
     } finally {
       this.busy = false;
+    }
+  }
+
+  /** Saves the trigger mode and continuous polling (PATCH /recorder). The reply carries the new settings, so the controls follow the device. */
+  async saveSettings(patch: RecorderSettingsPatch) {
+    try {
+      this.setStatus(await parseJsonResponse<RecorderStatus & { status?: string }>(await firmwareApi.patchRecorder(patch)));
+    } catch (e) {
+      alertStore.add(`Failed to save the recorder settings: ${errorText(e)}`, "error");
+      await this.readStatus();
     }
   }
 

@@ -4,6 +4,7 @@
   import { vehicleStore } from "$lib/vehicleStore.svelte";
   import { recordingStore } from "$lib/recordingStore.svelte";
   import { sdCardStore } from "$lib/sdCardStore.svelte";
+  import { tripViewer } from "$lib/tripViewer.svelte";
   import { alertStore } from "$lib/alertStore.svelte";
   import { formatBytes, sidecarName, tripRows, type TripRow } from "$lib/recorderView";
   import Icon from "$lib/Icon.svelte";
@@ -195,6 +196,10 @@
           <p class="rv-muted">Still writing. Stop the recording to download or delete.</p>
         {:else}
           <div class="rv-acts">
+            <a class="btn pri" href="#telemetry" onclick={() => tripViewer.request(t.name)}>
+              <Icon name="chart" size={16} />
+              Plot and play
+            </a>
             <button type="button" class="btn" onclick={() => download(t)}>
               <Icon name="save" size={16} />
               Download
