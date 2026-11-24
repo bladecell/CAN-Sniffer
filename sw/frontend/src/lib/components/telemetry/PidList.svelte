@@ -130,9 +130,6 @@
           {/if}
         {/snippet}
         {#snippet tags()}
-          {#if row.builtin}
-            <span class="muted" role="img" title="Built-in PID: cannot be edited or removed" aria-label="Built-in PID: cannot be edited or removed"><Icon name="lock" size={14} /></span>
-          {/if}
           {#if !replay && row.isSupported && !row.isValid}
             <span class="sb-tag k-crit" title="Invalid: the formula gives no usable value"><i class="dot"></i>Invalid</span>
           {/if}
@@ -181,6 +178,9 @@
     <div class="sb-selrow">
       <span class="num">
         {#if noPlot}{selectedCount ? `${selectedCount} selected` : "No plot selected"}{:else}{selectedCount ? `${selectedCount} on chart` : "None on chart"}{/if}
+        {#if !replay && selectedCount > 0 && removableCount === 0}
+          <span class="sb-tag" title="Built-in PIDs cannot be edited or removed"><i class="dot"></i>Built-in</span>
+        {/if}
       </span>
       <span class="sb-acts">
         {#if !noPlot && selectedCount < (replay ? shownCount : loaded.length)}
