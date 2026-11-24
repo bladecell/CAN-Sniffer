@@ -31,7 +31,7 @@ constexpr uint32_t kStopWindowMs    = 5000;
 constexpr uint32_t kSdWaitMs        = 250;
 constexpr uint32_t kStartWaitMs     = 3000;  // start waits this long for the first file; a slower open still counts as started
 constexpr size_t   kMaxScanEntries  = 20000;  // writer: once per boot, a hit refuses to record
-constexpr uint32_t kTriggerStackBytes = 4096;  // start()/stop() and a PidSel[32] on top of the loop
+constexpr uint32_t kTriggerStackBytes = 6144;  // start()/stop() and a PidSel[32] on top of the loop
 constexpr uint32_t kTriggerTickMs   = 1000;
 constexpr uint32_t kTriggerStopWaitMs = 6000;  // start() may wait 3 s, stop() 5 s
 constexpr uint32_t kSampleMaxAgeMs  = 5000;    // an older RPM or speed reading is stale
@@ -169,7 +169,12 @@ esp_err_t Recorder::deinit()
   triggerAllowed_.store(false);
   const uint32_t t0 = nowMs();
   while (triggerRunning_.load() && static_cast<uint32_t>(nowMs() - t0) < kTriggerStopWaitMs) { vTaskDelay(pdMS_TO_TICKS(20)); }
-  if (triggerRunning_.load()) { return ESP_ERR_TIMEOUT; }
+  if (triggerRunning_.load())
+  {
+    triggerAllowed_.store(true);  // still initialized: the task keeps working, retry later
+    ensureTriggerTask();
+    return ESP_ERR_TIMEOUT;
+  }
   Lock lock(lock_);
   if (!lock) { return ESP_ERR_TIMEOUT; }
   const esp_err_t err = stopLocked();
@@ -209,6 +214,11 @@ void Recorder::ensureTriggerTask()
   const TriggerConfig c = getTrigger();
   if (c.mode != trip_trigger::Mode::Auto && !c.continuousPolling) { return; }
   if (triggerRunning_.exchange(true)) { return; }
+  if (!triggerAllowed_.load())  // deinit() ran meanwhile; it waits for the flag, so clear it before it gives up
+  {
+    triggerRunning_.store(false);
+    return;
+  }
   if (xTaskCreate(triggerEntry, "rec_trigger", kTriggerStackBytes, this, tskIDLE_PRIORITY, nullptr) != pdPASS)
   {
     triggerRunning_.store(false);
@@ -255,7 +265,11 @@ void Recorder::triggerLoop()
     vTaskDelay(pdMS_TO_TICKS(kTriggerTickMs));
     const TriggerConfig cfg = getTrigger();
     const bool          wanted = cfg.mode == trip_trigger::Mode::Auto || cfg.continuousPolling;
-    if (!triggerAllowed_.load()) { break; }
+    if (!triggerAllowed_.load())
+    {
+      if (ownsPolling && state_.get() == State::Idle && obd.isAutoPoll()) { obd.setAutoPoll(false); }
+      break;
+    }
     if (!wanted)
     {
       triggerRunning_.store(false);
