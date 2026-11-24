@@ -56,7 +56,7 @@
 </script>
 
 <div class="player">
-  <div class="p1">
+  <div class="card p1">
     <button type="button" class="ibtn" onclick={toggle} aria-label={label} title={label}>
       {#if playing}
         <Icon name="pause" size={20} />
@@ -97,9 +97,7 @@
     grid-template-columns: auto auto minmax(80px, 1fr) auto auto;
     align-items: center;
     gap: 14px;
-    padding: 6px 8px 6px 6px;
-    border-radius: var(--r-ctl);
-    background: var(--card2);
+    padding: var(--pad-card);
   }
   .ibtn {
     display: inline-grid;
