@@ -318,11 +318,11 @@
         </div>
 
         {#if !rec}
-        <button type="button" class="btn" class:pri={status !== "live"} onclick={togglePause} aria-label={status === "live" ? "Pause" : "Back to live"}>
+        <button type="button" class="btn" class:pri={status !== "live"} onclick={togglePause} aria-label={status === "live" ? "Pause live view" : "Back to live"}>
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
             {#if status === "live"}<path d="M8 5v14M16 5v14" />{:else}<path d="M5 5v14l10-7zM19 5v14" />{/if}
           </svg>
-          {status === "live" ? "Pause" : "Back to live"}
+          Live
         </button>
         {/if}
       </div>
