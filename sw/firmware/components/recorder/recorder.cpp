@@ -4,6 +4,7 @@
 #include <sys/stat.h>
 
 #include <cerrno>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <new>
@@ -12,6 +13,7 @@
 #include "cJSON.h"
 #include "esp_app_desc.h"
 #include "esp_log.h"
+#include "can_driver.hpp"
 #include "freertos/task.h"
 #include "obd2.hpp"
 #include "recorder_queue.hpp"
@@ -29,6 +31,12 @@ constexpr uint32_t kStopWindowMs    = 5000;
 constexpr uint32_t kSdWaitMs        = 250;
 constexpr uint32_t kStartWaitMs     = 3000;  // start waits this long for the first file; a slower open still counts as started
 constexpr size_t   kMaxScanEntries  = 20000;  // writer: once per boot, a hit refuses to record
+constexpr uint32_t kTriggerStackBytes = 4096;  // start()/stop() and a PidSel[32] on top of the loop
+constexpr uint32_t kTriggerTickMs   = 1000;
+constexpr uint32_t kTriggerStopWaitMs = 6000;  // start() may wait 3 s, stop() 5 s
+constexpr uint32_t kSampleMaxAgeMs  = 5000;    // an older RPM or speed reading is stale
+constexpr uint16_t kPidRpm          = 0x0C;
+constexpr uint16_t kPidSpeed        = 0x0D;
 constexpr size_t   kMaxListEntries  = 2000;   // listing: short lease so the writer is not starved
 
 uint32_t nowMs()
@@ -150,11 +158,18 @@ esp_err_t Recorder::init()
   const uint32_t gen = ++gen_;
   OBD2::getInstance().subscribe([gen](uint16_t pid) { Recorder::getInstance().onPid(pid, gen); });
   initialized_ = true;
+  triggerAllowed_.store(true);
+  ensureTriggerTask();
   return ESP_OK;
 }
 
 esp_err_t Recorder::deinit()
 {
+  // The trigger task calls start()/stop(), which take lock_: let it finish before this call holds the lock.
+  triggerAllowed_.store(false);
+  const uint32_t t0 = nowMs();
+  while (triggerRunning_.load() && static_cast<uint32_t>(nowMs() - t0) < kTriggerStopWaitMs) { vTaskDelay(pdMS_TO_TICKS(20)); }
+  if (triggerRunning_.load()) { return ESP_ERR_TIMEOUT; }
   Lock lock(lock_);
   if (!lock) { return ESP_ERR_TIMEOUT; }
   const esp_err_t err = stopLocked();
@@ -175,6 +190,119 @@ void Recorder::onPid(uint16_t pid, uint32_t gen)
     s->queue.push({d.lastUpdated, pid, d.value, d.isValid});
   }
   gate_.leave();
+}
+
+Recorder::TriggerConfig Recorder::getTrigger() const
+{
+  const uint8_t v = trigger_.load();
+  return {(v & 1) != 0 ? trip_trigger::Mode::Auto : trip_trigger::Mode::Manual, (v & 2) != 0};
+}
+
+void Recorder::setTrigger(const TriggerConfig& config)
+{
+  trigger_.store(static_cast<uint8_t>((config.mode == trip_trigger::Mode::Auto ? 1 : 0) | (config.continuousPolling ? 2 : 0)));
+  if (triggerAllowed_.load()) { ensureTriggerTask(); }
+}
+
+void Recorder::ensureTriggerTask()
+{
+  const TriggerConfig c = getTrigger();
+  if (c.mode != trip_trigger::Mode::Auto && !c.continuousPolling) { return; }
+  if (triggerRunning_.exchange(true)) { return; }
+  if (xTaskCreate(triggerEntry, "rec_trigger", kTriggerStackBytes, this, tskIDLE_PRIORITY, nullptr) != pdPASS)
+  {
+    triggerRunning_.store(false);
+    ESP_LOGW(TAG, "No memory for the trip trigger task; automatic trips are off");
+  }
+}
+
+void Recorder::triggerEntry(void* arg)
+{
+  static_cast<Recorder*>(arg)->triggerLoop();
+  vTaskDelete(nullptr);
+}
+
+namespace
+{
+// A fresh, valid, finite reading of `pid`, else NaN (the trigger treats NaN as "not running").
+float sample(uint16_t pid)
+{
+  PIDData_t d;
+  if (OBD2::getInstance().getData(pid, d) != ESP_OK || !d.isValid || !std::isfinite(d.value)) { return NAN; }
+  return static_cast<uint32_t>(nowMs() - d.lastUpdated) <= kSampleMaxAgeMs ? d.value : NAN;
+}
+}  // namespace
+
+// Sets `ok` when the action ran under the gate (or there is none).
+template <class F>
+static bool runGated(Recorder::ModeGate gate, F&& action)
+{
+  if (gate == nullptr)
+  {
+    action();
+    return true;
+  }
+  return gate([](void* c) { (*static_cast<F*>(c))(); }, &action);
+}
+
+void Recorder::triggerLoop()
+{
+  trip_trigger::TripTrigger trigger;
+  bool                      ownsPolling = false;  // we turned polling on and nobody has turned it off since
+  auto&                     obd         = OBD2::getInstance();
+  for (;;)
+  {
+    vTaskDelay(pdMS_TO_TICKS(kTriggerTickMs));
+    const TriggerConfig cfg = getTrigger();
+    const bool          wanted = cfg.mode == trip_trigger::Mode::Auto || cfg.continuousPolling;
+    if (!triggerAllowed_.load()) { break; }
+    if (!wanted)
+    {
+      triggerRunning_.store(false);
+      // setTrigger may have re-enabled it between the check and the store: take the flag back, or leave if a new task has it.
+      const TriggerConfig again = getTrigger();
+      const bool          back  = again.mode == trip_trigger::Mode::Auto || again.continuousPolling;
+      if (!back || triggerRunning_.exchange(true)) { return; }
+      continue;
+    }
+
+    const bool busUp = CanDriver::getInstance().isBusConnected();
+    const State st   = state_.get();
+    if (ownsPolling && !obd.isAutoPoll()) { ownsPolling = false; }
+    if (trip_trigger::wantPolling(cfg, busUp))
+    {
+      if (!obd.isAutoPoll())
+      {
+        bool on = false;
+        runGated(gate_fn_.load(), [&] { on = obd.setAutoPoll(true) == ESP_OK; });
+        ownsPolling = on;
+      }
+    }
+    else if (ownsPolling && st == State::Idle)  // never pull polling from under a live session
+    {
+      obd.setAutoPoll(false);
+      ownsPolling = false;
+    }
+
+    const bool live = st == State::Recording || st == State::Stopping;
+    switch (trigger.step(cfg, {busUp, sample(kPidRpm), sample(kPidSpeed), NAN, live,
+                               st != State::Stopping && startRetryAfterMs() == 0, nowMs()}))
+    {
+      case trip_trigger::Action::Start:
+      {
+        esp_err_t err = ESP_FAIL;
+        if (!runGated(gate_fn_.load(), [&] { err = start({}); })) { err = ESP_ERR_NOT_ALLOWED; }
+        if (err != ESP_OK) { ESP_LOGW(TAG, "Automatic start failed: %s", esp_err_to_name(err)); }
+        break;
+      }
+      case trip_trigger::Action::Stop:
+        ESP_LOGI(TAG, "Automatic stop: no RPM or speed for %u s", static_cast<unsigned>(trip_trigger::kEndIdleMs / 1000));
+        (void)stop();
+        break;
+      case trip_trigger::Action::None: break;
+    }
+  }
+  triggerRunning_.store(false);
 }
 
 esp_err_t Recorder::start(const Config& config)

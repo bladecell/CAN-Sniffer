@@ -50,6 +50,7 @@ void run_response_rules_tests(void);
 void run_ws_broadcast_tests(void);
 void run_recorder_core_tests(void);
 void run_recorder_http_tests(void);
+void run_trip_trigger_tests(void);
 
 /* The linux IDF port starts FreeRTOS and calls app_main(); exit with the failure count. */
 void app_main(void)
@@ -97,6 +98,7 @@ void app_main(void)
     run_ws_broadcast_tests();
     run_recorder_core_tests();
     run_recorder_http_tests();
+    run_trip_trigger_tests();
     run_can_raw_tests();
     run_can_capture_tests();
     run_can_mode_tests();

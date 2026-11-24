@@ -9,6 +9,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "recorder_core.hpp"
+#include "trip_trigger.hpp"
 
 class Recorder
 {
@@ -58,6 +59,18 @@ public:
   // up to 250 ms and may be called while recording. No directory yet is an empty list.
   esp_err_t listTrips(TripInfo* out, size_t max, size_t& count, bool& truncated);
 
+  // Automatic trips (P3-R6). The trigger task runs only while the mode is Auto or continuous polling is on, once a second:
+  // it reads the bus state, RPM (PID 0x0C) and speed (PID 0x0D), and starts or stops a session through start()/stop().
+  // It only stops sessions it started. Auto needs polling on (continuous_polling, or auto_poll set by the user) to see RPM.
+  // setTrigger may be called before init(); it never blocks.
+  using TriggerConfig = trip_trigger::Config;
+  // Runs `action(ctx)` while the CAN mode is Monitor (main wires can_mode_service::run). Returns false when it did not run
+  // (Raw mode, or a mode change in progress). Without a gate the action runs unguarded.
+  using ModeGate = bool (*)(void (*action)(void*), void* ctx);
+  void          setModeGate(ModeGate gate) { gate_fn_.store(gate); }
+  void          setTrigger(const TriggerConfig& config);
+  TriggerConfig getTrigger() const;
+
   State  getState() const { return state_.get(); }
   Status getStatus() const;
 
@@ -79,6 +92,9 @@ private:
   esp_err_t   writeSidecar(Session& s, bool complete);
   uint32_t    defHash(const Session& s) const;
   void        snapshotMeta(Session& s);
+  void        ensureTriggerTask();
+  void        triggerLoop();
+  static void triggerEntry(void* arg);
 
   recorder_core::StateMachine state_;
   recorder_core::CallbackGate gate_;
@@ -95,4 +111,8 @@ private:
   std::atomic<uint32_t>       rows_{0};
   std::atomic<uint32_t>       dropped_{0};
   std::atomic<uint32_t>       fileBytes_{0};
+  std::atomic<uint8_t>        trigger_{0};         // bit 0 Auto, bit 1 continuous polling
+  std::atomic<ModeGate>       gate_fn_{nullptr};
+  std::atomic<bool>           triggerAllowed_{false};  // between init() and deinit()
+  std::atomic<bool>           triggerRunning_{false};
 };
