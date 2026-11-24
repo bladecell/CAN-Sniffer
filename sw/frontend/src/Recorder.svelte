@@ -69,7 +69,7 @@
 
   async function download(t: TripRow) {
     try {
-      await recordingStore.download(t.name, t.sidecar);
+      await recordingStore.download(t.name);
     } catch (e) {
       alertStore.add(`Failed to download ${t.name}: ${errorText(e)}`, "error");
     }

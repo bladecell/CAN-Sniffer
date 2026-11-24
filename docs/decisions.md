@@ -375,7 +375,3 @@ User-approved firmware-wide change.
 - **Trigger:** `trip_trigger::TripTrigger::step` is pure. Start: bus connected and RPM or speed above 0. End: 60 s (`kEndIdleMs`) of bus lost, or RPM and speed at 0, NaN, infinite, negative or stale (a reading older than 5 s). Unreadable counts as not running, so a broken signal ends a trip instead of recording nothing forever. It stops only trips it started, and a trip the user stopped is not restarted until the car has been off for 60 s. IMU `accelG` is an input reserved for HW v2 and ignored.
 - **Continuous polling is opt-in:** default off, so a parked car is not polled. Auto mode without it needs the user to keep `auto_poll` on, because RPM is only known while polling.
 - **Writer values unchanged:** 6 KB writer stack, 10 s / 8 KB batch stay as they are (user decision 2026-11-24).
-
-## 2026-11-24: Trip download is a wide CSV built in the browser (card 0232)
-- **Decision:** the firmware keeps writing the long CSV (`t_ms,pid,value,valid`). The Recorder page's Download builds a wide CSV in the browser: `t_ms` plus one column per PID, one row per distinct `t_ms`, empty where a PID had no valid update. File name `trip_NNNNNN_wide.csv`. Format in `sd-card.md`.
-- **Why:** spreadsheets want one column per signal; a wide file on the card would cost RAM and write time on the device.
