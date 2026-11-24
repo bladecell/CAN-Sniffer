@@ -221,6 +221,9 @@
   </div>
 
   {#snippet footer()}
+    {#if replay}
+      <button type="button" class="btn pri" disabled><Icon name="plus" size={18} />New PID</button>
+    {/if}
     {#each replay ? [] : footerActions(selectedCount) as action (action)}
       {#if action === "new"}
         <button type="button" class="btn pri" onclick={onNew}><Icon name="plus" size={18} />New PID</button>

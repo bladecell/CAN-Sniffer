@@ -15,7 +15,7 @@
     panel?: PhoneTab;
     /** Rail only: a second click on the selected tab hides the panel; another click shows it again. */
     collapsed?: boolean;
-    /** Replay mode: PID definitions are read-only, so the Changes and SD card tabs are left out. */
+    /** Replay mode: PID definitions are read-only, so the Changes and SD card tabs are disabled. */
     replay?: boolean;
   }
 
@@ -23,15 +23,11 @@
 
   let pendingCount = $derived(telemetryStore.local_piddef.filter((r) => r.pendingChanges === "Yes").length);
 
-  const panels: { id: PhoneTab; label: string; icon: string }[] = $derived([
+  const panels: { id: PhoneTab; label: string; icon: string; off?: boolean }[] = $derived([
     ...(chart ? [{ id: "chart" as const, label: "Chart", icon: "chart" }] : []),
     { id: "pids", label: "PIDs", icon: "list" },
-    ...(replay
-      ? []
-      : [
-          { id: "changes" as const, label: pendingCount > 0 ? `Changes, ${pendingCount} pending` : "Changes", icon: "code-compare" },
-          { id: "sd" as const, label: "SD card", icon: "sd-card" },
-        ]),
+    { id: "changes", label: pendingCount > 0 ? `Changes, ${pendingCount} pending` : "Changes", icon: "code-compare", off: replay },
+    { id: "sd", label: "SD card", icon: "sd-card", off: replay },
     { id: "replays", label: "Replays", icon: "timeline-arrow" },
     { id: "settings", label: "Settings", icon: "sliders" },
   ]);
@@ -52,6 +48,7 @@
       aria-current={variant === "strip" && panel === p.id ? "page" : undefined}
       aria-label={p.label}
       title={p.label}
+      disabled={p.off}
       onclick={() => select(p.id)}
     >
       <Icon name={p.icon} size={(variant === "bar" ? 22 : variant === "rail" ? 24 : 20) + (variant === "strip" && p.icon === "list" ? 4 : 0)} />
@@ -128,8 +125,13 @@
     border-radius: 3px;
     background: var(--accent);
   }
+  .strip button:disabled,
+  .switch.rail button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
   @media (hover: hover) {
-    .switch.rail button:hover {
+    .switch.rail button:hover:not(:disabled) {
       background: var(--hov);
     }
   }
