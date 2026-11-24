@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getContext } from "svelte";
-  import { vehicleStore } from "$lib/vehicleStore.svelte";
+  import { pidDefsGetter } from "$lib/telemetryChart/pidDefs";
   import { safeHexColor } from "$lib/color";
   import { buildPlotModel, type PlotMode, type PlotSeries, type PlotModel } from "$lib/telemetryChart/plotModel";
   import { createSeriesFeed } from "$lib/telemetryChart/feed.svelte";
@@ -42,7 +42,8 @@
     (t) => view.observe(t),
   );
 
-  const defs = $derived(new Map(vehicleStore.pidDefinitions.map((d) => [d.pid, d])));
+  const defsOf = pidDefsGetter();
+  const defs = $derived(new Map(defsOf().map((d) => [d.pid, d])));
   const nameOf = (pid: number) => defs.get(pid)?.name || `0x${pid.toString(16).toUpperCase()}`;
 
   // Geometry is built for scroll.anchor and shifted per frame by scroll.shift (telemetryChart/scroll.ts).

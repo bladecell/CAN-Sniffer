@@ -1,9 +1,10 @@
 import { firmwareApi } from "./firmwareApi.svelte";
-import { isTripCsvName } from "./recorderView";
+import { isTripCsvName, sidecarName } from "./recorderView";
 import { createChartBuffer, type ChartBuffer } from "./chartBuffer";
 import type { SeriesSource } from "./telemetryChart/feed.svelte";
 import { tripBuffers } from "./telemetryChart/tripBuffers";
 import { parseTripCsv, readTextLimited } from "./tripCsv";
+import { parseSidecarPids, SIDECAR_MAX_BYTES, type SidecarPid } from "./tripPids";
 
 const TRIPS_DIR = "logs/trips";
 const EMPTY: ChartBuffer = createChartBuffer(1);
@@ -17,6 +18,8 @@ export interface LoadedTrip {
   rows: number;
   skipped: number;
   truncated: boolean;
+  /** Names and units from the trip sidecar; null when it is missing or unusable. */
+  sidecar: Map<number, SidecarPid> | null;
 }
 
 const PARSE_ERRORS = {
@@ -24,6 +27,17 @@ const PARSE_ERRORS = {
   "bad-header": "This is not a recorder trip file (header is not t_ms,pid,value,valid).",
   "no-data": "The trip file has no readable rows.",
 } as const;
+
+/** A missing, oversized or malformed sidecar is not an error: the trip plays with the live PID names. */
+async function loadSidecar(name: string): Promise<Map<number, SidecarPid> | null> {
+  try {
+    const response = await firmwareApi.downloadSdFile(`${TRIPS_DIR}/${sidecarName(name)}`);
+    if (!response.ok) return null;
+    return parseSidecarPids(await readTextLimited(response, SIDECAR_MAX_BYTES));
+  } catch {
+    return null;
+  }
+}
 
 /** The trip shown in the Telemetry Recording tab: one CSV in memory at a time, and the Recorder page's request to open one. */
 class TripViewer {
@@ -59,6 +73,8 @@ class TripViewer {
       const parsed = parseTripCsv(await readTextLimited(response));
       if (token !== this.#token) return;
       if (!parsed.ok) throw new Error(PARSE_ERRORS[parsed.error]);
+      const sidecar = await loadSidecar(name);
+      if (token !== this.#token) return;
       this.#buffers = tripBuffers(parsed.series);
       this.trip = {
         name,
@@ -68,6 +84,7 @@ class TripViewer {
         rows: parsed.rows,
         skipped: parsed.skipped,
         truncated: parsed.truncated,
+        sidecar,
       };
     } catch (e) {
       if (token !== this.#token) return;

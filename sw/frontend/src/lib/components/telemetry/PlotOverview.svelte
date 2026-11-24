@@ -1,7 +1,7 @@
 <script lang="ts">
   import { getContext } from "svelte";
   import SidebarHint from "./SidebarHint.svelte";
-  import { vehicleStore } from "$lib/vehicleStore.svelte";
+  import { pidDefsGetter } from "$lib/telemetryChart/pidDefs";
   import { safeHexColor } from "$lib/color";
   import { TELEMETRY_VIEW, type TelemetryView } from "$lib/telemetryChart/viewState.svelte";
   import { createSeriesFeed } from "$lib/telemetryChart/feed.svelte";
@@ -23,7 +23,8 @@
     () => pids,
     (t) => view.observe(t),
   );
-  const defs = $derived(new Map(vehicleStore.pidDefinitions.map((d) => [d.pid, d])));
+  const defsOf = pidDefsGetter();
+  const defs = $derived(new Map(defsOf().map((d) => [d.pid, d])));
 
   // Lines are built for scroll.anchor and shifted per frame; the window frame and ticks are ago-based, so they stay put.
   const scroll = new ChartScroll(

@@ -4,7 +4,7 @@
   import { vehicleStore } from "$lib/vehicleStore.svelte";
   import { alertStore } from "$lib/alertStore.svelte";
   import { safeHexColor } from "$lib/color";
-  import { footerActions, groupPids, pidHex, pressRow, removeRows, replayGroups } from "$lib/telemetryView";
+  import { footerActions, groupPids, pidHex, pressRow, removeRows } from "$lib/telemetryView";
   import Icon from "$lib/Icon.svelte";
   import { slide } from "svelte/transition";
   import { accordion } from "$lib/components/accordion";
@@ -19,8 +19,8 @@
     phone?: boolean;
     onNew: () => void;
     onEdit: (index: number) => void;
-    /** Replay mode: the list holds the open trip's PIDs, ticks go to plot `active`, and definitions cannot be edited or removed. */
-    replay?: { pids: number[]; active: number };
+    /** Replay mode: the list holds one row per PID of the open trip, ticks go to plot `active`, and definitions cannot be edited or removed. */
+    replay?: { rows: PidRow[]; active: number };
   }
 
   let { phone = false, onNew, onEdit, replay }: Props = $props();
@@ -30,10 +30,10 @@
   const onDevice = (row: PidRow) => vehicleStore.pidDefinitions.some((d) => Number(d.pid) === parseInt(row.pid, 16));
 
   // Rows the device will load. Removed rows are not listed here; Changes shows them.
-  const loaded = $derived(telemetryStore.local_piddef.filter((r) => r.loaded));
+  const loaded = $derived(replay ? replay.rows : telemetryStore.local_piddef.filter((r) => r.loaded));
   const groups = $derived(
     replay
-      ? replayGroups(loaded, (row) => parseInt(row.pid, 16), replay.pids)
+      ? loaded.length > 0 ? [{ key: "trip", title: "In this trip", items: loaded }] : []
       : groupPids(loaded, (row) => ({
           supported: row.isSupported,
           hasValue: hasValue(row),
@@ -213,7 +213,7 @@
       </section>
     {:else}
       {#if replay}
-        <p class="sb-empty"><b>No PIDs to plot</b>None of this trip's PIDs is in the PID list, so there is nothing to tick.</p>
+        <p class="sb-empty"><b>No PIDs</b>This trip has no recorded values.</p>
       {:else}
         <p class="sb-empty"><b>No PIDs here</b>Add one with New PID, or open a file on the SD tab.</p>
       {/if}

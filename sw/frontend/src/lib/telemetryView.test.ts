@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import {
-  replayGroups,
   ticksFor,
   definitionsToApply,
   pressRow,
@@ -208,18 +207,6 @@ describe("definitionsToApply", () => {
 
 describe("replay PID list", () => {
   const rows = [{ pid: 12 }, { pid: 13 }, { pid: 99 }];
-
-  test("lists only the trip's PIDs, in one group, in list order", () => {
-    const groups = replayGroups(rows, (r) => r.pid, [13, 12, 500]);
-    expect(groups).toHaveLength(1);
-    expect(groups[0].key).toBe("trip");
-    expect(groups[0].items).toEqual([{ pid: 12 }, { pid: 13 }]);
-  });
-
-  test("no matching PID gives no group", () => {
-    expect(replayGroups(rows, (r) => r.pid, [])).toEqual([]);
-    expect(replayGroups(rows, (r) => r.pid, [7])).toEqual([]);
-  });
 
   test("ticksFor marks exactly the PIDs on the plot", () => {
     expect(ticksFor(rows, (r) => r.pid, [13])).toEqual([false, true, false]);

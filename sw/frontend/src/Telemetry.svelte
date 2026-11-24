@@ -1,7 +1,7 @@
 <script lang="ts">
   import "$lib/components/telemetry/telemetry.css";
   import { connectionStore } from "$lib/connectionStore.svelte";
-  import { telemetryStore } from "$lib/telemetryStore.svelte";
+  import { telemetryStore, createRowObject, type PidRow } from "$lib/telemetryStore.svelte";
   import { untrack, setContext } from "svelte";
   import { MediaQuery } from "svelte/reactivity";
   import { safeHexColor } from "$lib/color";
@@ -22,6 +22,9 @@
   import { formatValue } from "$lib/telemetryChart/math";
   import ContextScope from "$lib/components/telemetry/ContextScope.svelte";
   import TripPlayer from "$lib/components/telemetry/TripPlayer.svelte";
+  import { tripDefs } from "$lib/tripPids";
+  import { vehicleStore } from "$lib/vehicleStore.svelte";
+  import type { PidDefinition } from "$lib/types";
   import { tripViewer } from "$lib/tripViewer.svelte";
   import type { PlotModel } from "$lib/telemetryChart/plotModel";
 
@@ -43,6 +46,9 @@
   /** PIDs per plot while a trip is open, and the plot the PID chips act on. */
   let recPids = $state<number[][]>([]);
   let recActive = $state(0);
+  /** The open trip's PIDs: names and units from its sidecar, the rest from the live definitions. One list row and one plot definition each. */
+  let replayDefs = $state.raw<PidDefinition[]>([]);
+  let replayRows = $state<PidRow[]>([]);
 
   let sideCollapsed = $state(true);
   let phoneTab = $state<PhoneTab>("chart");
@@ -79,7 +85,7 @@
   // With a plot armed, its PIDs are the ticked rows. With none armed, a selection is for Edit and charts nothing.
   $effect(() => {
     if (rec) return;
-    const ticked = telemetryStore.local_piddef.filter((r) => r.selected).map((row) => parseInt(row.pid, 16));
+    const ticked = replayRows.filter((r) => r.selected).map((row) => parseInt(row.pid, 16));
 
     untrack(() => {
       if (telemetryStore.activeChartIndex >= 0 && telemetryStore.activeChartIndex < telemetryStore.plotCount) {
@@ -111,8 +117,9 @@
 
   /** Ticks the PID list for a plot's PIDs. The list is the same one live mode uses. */
   function syncTicks(pids: number[]) {
-    const on = ticksFor(telemetryStore.local_piddef, (r) => parseInt(r.pid, 16), pids);
-    telemetryStore.local_piddef.forEach((r, i) => (r.selected = on[i]));
+    const rows = rec ? replayRows : telemetryStore.local_piddef;
+    const on = ticksFor(rows, (r) => parseInt(r.pid, 16), pids);
+    rows.forEach((r, i) => (r.selected = on[i]));
   }
 
   function setRecPids(plot: number, pids: number[]) {
@@ -230,7 +237,7 @@
     selectedRow && telemetryStore.activeIndex >= 0 ? `Edit ${selectedRow.name} (${selectedRow.pid})` : "New PID",
   );
   const count = $derived(telemetryStore.plotCount);
-  const replayList = $derived(rec ? { pids: tripViewer.trip?.pids ?? [], active: recActive } : undefined);
+  const replayList = $derived(rec ? { rows: replayRows, active: recActive } : undefined);
   const activePids = $derived(rec ? (recPids[recActive] ?? []) : chartPidsOf(telemetryStore.chartPids, telemetryStore.activeChartIndex));
 
   /** A replay was picked in the Replays tab: the page switches to replay mode, on the PIDs tab (desktop) or the chart (phone). */
@@ -248,8 +255,8 @@
 
   /** The way back: the live ticks return to the list, the rail to the PIDs tab, the phone to its live chart. */
   function backToLive() {
-    syncTicks(chartPidsOf(telemetryStore.chartPids, telemetryStore.activeChartIndex));
     rec = false;
+    syncTicks(chartPidsOf(telemetryStore.chartPids, telemetryStore.activeChartIndex));
     railPanel = "pids";
     fsIndex = -1;
     activeStats = [];
@@ -267,6 +274,8 @@
   $effect(() => {
     const trip = tripViewer.trip;
     untrack(() => {
+      replayDefs = trip ? tripDefs(trip.pids, trip.sidecar, vehicleStore.pidDefinitions) : [];
+      replayRows = replayDefs.map((d) => createRowObject(d, true, false));
       recPids = Array.from({ length: telemetryStore.plotCount }, (_, i) => (i === 0 ? (trip?.pids.slice(0, 4) ?? []) : []));
       recActive = 0;
       if (trip) syncTicks(recPids[0]);
@@ -343,7 +352,7 @@
         </div>
       {:else if !rec || tripViewer.trip}
       {#key rec ? tripViewer.trip : "live"}
-      <ContextScope view={activeView} source={rec ? tripViewer.source : undefined}>
+      <ContextScope view={activeView} source={rec ? tripViewer.source : undefined} defs={rec ? () => replayDefs : undefined}>
       {#if !rec}
       <div class="chips" role="group" aria-label="PIDs on the active plot">
         {#each telemetryStore.local_piddef.filter((r) => r.loaded) as row (row)}

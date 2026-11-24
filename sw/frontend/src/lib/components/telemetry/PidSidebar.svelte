@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { PidRow } from "$lib/telemetryStore.svelte";
   import PidList from "./PidList.svelte";
   import PidChanges from "./PidChanges.svelte";
   import PidSdTab from "./PidSdTab.svelte";
@@ -17,8 +18,8 @@
     collapsed?: boolean;
     /** A replay was picked in the Replays tab. */
     onReplay?: (name: string) => void;
-    /** Replay mode: the PIDs tab lists the open trip's PIDs and is read-only; Changes and SD are hidden. */
-    replay?: { pids: number[]; active: number };
+    /** Replay mode: the PIDs tab lists the open trip's PIDs and is read-only; Changes and SD are disabled. */
+    replay?: { rows: PidRow[]; active: number };
   }
 
   let { variant, onNew, onEdit, panel = $bindable("pids"), collapsed = $bindable(false), onReplay, replay }: Props = $props();
