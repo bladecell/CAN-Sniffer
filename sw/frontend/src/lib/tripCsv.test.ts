@@ -45,6 +45,16 @@ describe("parseTripCsv", () => {
     expect(r.skipped).toBe(2);
   });
 
+  test("a line longer than any real row is skipped before it is split", () => {
+    const r = parseTripCsv(H + "1,12,1,1\n" + ",".repeat(5_000_000) + "\n" + "2,12,2,1\n");
+    if (!r.ok) throw new Error("not ok");
+    expect(r.series[0].t).toEqual([1, 2]);
+    expect(r.skipped).toBe(1);
+    const long = parseTripCsv(H + `1,12,0.${"0".repeat(200)}1,1\n2,12,2,1\n`);
+    if (!long.ok) throw new Error("not ok");
+    expect(long.series[0].t).toEqual([2]);
+  });
+
   test("a wrong header or no data rows is an error", () => {
     expect(parseTripCsv("")).toEqual({ ok: false, error: "empty" });
     expect(parseTripCsv("a,b,c\n1,2,3\n")).toEqual({ ok: false, error: "bad-header" });

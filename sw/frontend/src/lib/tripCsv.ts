@@ -9,6 +9,8 @@ export const TRIP_MAX_PIDS = 64;
 
 const HEADER = "t_ms,pid,value,valid";
 /** t_ms is a 32-bit counter. */
+/** A real row is under 40 characters; longer lines are refused before they are split. */
+const MAX_LINE = 128;
 const MAX_T = 0xffffffff;
 const UINT = /^\d{1,10}$/;
 const NUMBER = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i;
@@ -53,6 +55,10 @@ export function parseTripCsv(text: string, limits: TripLimits = {}): TripParse {
     if (rows >= maxRows) {
       truncated = true;
       break;
+    }
+    if (line.length > MAX_LINE) {
+      skipped++;
+      continue;
     }
     const f = line.split(",");
     const t = f.length === 4 && UINT.test(f[0]) ? Number(f[0]) : -1;
