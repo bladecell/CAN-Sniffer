@@ -22,6 +22,7 @@
   const playing = $derived(view.win.pausedAt === null);
   // Read by the slider and the clock text. Updated from the frame loop, at most 4 times a second.
   let pos = $state(0);
+  const label = $derived(playing ? "Pause" : atEnd(pos, trip.endMs) ? "Replay" : "Play");
 
   $effect(() => {
     void trip;
@@ -54,16 +55,18 @@
   }
 </script>
 
-<div class="card bar player">
-  <div class="title">
-    <h2 class="nm mono">{trip.name}</h2>
-    <button type="button" class="btn" onclick={onBack}>Back to live</button>
-  </div>
-  <div class="controls">
-    <button type="button" class="btn pri play" onclick={toggle} aria-label={playing ? "Pause" : atEnd(pos, trip.endMs) ? "Play again" : "Play"}>
-      <Icon name={playing ? "pause" : "play"} size={18} />
-      {playing ? "Pause" : atEnd(pos, trip.endMs) ? "Replay" : "Play"}
+<div class="player">
+  <div class="p1">
+    <button type="button" class="ibtn" onclick={toggle} aria-label={label} title={label}>
+      {#if playing}
+        <Icon name="pause" size={20} />
+      {:else if atEnd(pos, trip.endMs)}
+        <svg class="replay" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5v4h4" /><path d="M5.6 8.5A7.5 7.5 0 1 1 4.5 12" /></svg>
+      {:else}
+        <Icon name="play" size={20} />
+      {/if}
     </button>
+    <span class="name" title={trip.name}>{trip.name}</span>
     <div class="seek">
       <span id={labelId} class="sr">Position in {trip.name}</span>
       <RangeSlider
@@ -79,53 +82,92 @@
         onChange={([v]) => seek(v)}
       />
     </div>
-    <span class="clock mono" aria-hidden="true">{elapsedClock(pos - trip.startMs)} / {elapsedClock(span)}</span>
+    <span class="clock" aria-hidden="true">{elapsedClock(pos - trip.startMs)} <i>/</i> {elapsedClock(span)}</span>
+    <button type="button" class="ghost" onclick={onBack}>Back to live</button>
   </div>
 </div>
 
 <style>
+  /* Replay player, mockup 1 (plan/mockups/replay-player-1.html): one compact row that folds to two rows on a narrow card. */
   .player {
+    container-type: inline-size;
+  }
+  .p1 {
     display: grid;
-    gap: 12px;
-    padding: var(--pad-card);
-    border-radius: var(--r-card);
-  }
-  .title {
-    display: flex;
+    grid-template-columns: auto auto minmax(80px, 1fr) auto auto;
     align-items: center;
-    gap: 12px;
-    min-width: 0;
+    gap: 14px;
+    padding: 6px 8px 6px 6px;
+    border-radius: var(--r-ctl);
+    background: var(--card2);
   }
-  .nm {
-    flex: 1 1 auto;
-    min-width: 0;
+  .ibtn {
+    display: inline-grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
     margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: var(--r-ctl);
+    background: var(--ctl);
+    color: inherit;
+    cursor: pointer;
+  }
+  .ibtn:hover {
+    background: var(--ctl-h2, var(--hov));
+  }
+  .replay {
+    width: 20px;
+    height: 20px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .name {
+    min-width: 0;
     overflow: hidden;
-    font-size: 1.15rem;
-    font-weight: 800;
+    color: var(--muted);
+    font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+    font-size: 0.85rem;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-  .title .btn {
-    flex: none;
-  }
-  .controls {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 12px 20px;
   }
   .seek {
     min-width: 0;
   }
-  .play {
-    justify-content: center;
-    min-width: 8rem;
-  }
   .clock {
-    color: var(--muted);
+    font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+    font-size: 0.85rem;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+  }
+  .clock i {
+    color: var(--muted);
+    font-style: normal;
+  }
+  .ghost {
+    display: inline-flex;
+    align-items: center;
+    height: 36px;
+    margin: 0;
+    padding: 0 14px;
+    border: 1px solid var(--hair);
+    border-radius: var(--r-ctl);
+    background: transparent;
+    color: var(--muted);
+    font-size: 0.9rem;
+    font-weight: 700;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  @media (hover: hover) {
+    .ghost:hover {
+      background: var(--hov);
+      color: var(--text);
+    }
   }
   .sr {
     position: absolute;
@@ -135,17 +177,33 @@
     clip: rect(0 0 0 0);
     white-space: nowrap;
   }
-  /* Phone: the clock wraps to its own line under the slider. */
-  @media (max-width: 859px) {
-    .controls {
-      grid-template-columns: auto minmax(0, 1fr);
+  /* Narrow: play, name and Back to live on the first row; the slider and the clock under them. 44 px touch targets. */
+  @container (max-width: 640px) {
+    .p1 {
+      grid-template-columns: auto 1fr auto;
+      grid-template-areas:
+        "play name back"
+        "seek seek clock";
+      gap: 4px 10px;
+      padding: 6px;
     }
-    .play {
-      min-width: 0;
+    .ibtn {
+      grid-area: play;
+      width: 44px;
+      height: 44px;
+    }
+    .name {
+      grid-area: name;
+    }
+    .seek {
+      grid-area: seek;
     }
     .clock {
-      grid-column: 1 / -1;
-      justify-self: end;
+      grid-area: clock;
+    }
+    .ghost {
+      grid-area: back;
+      height: 44px;
     }
   }
 </style>
