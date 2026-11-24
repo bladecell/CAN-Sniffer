@@ -179,7 +179,7 @@
       <span class="num">
         {#if noPlot}{selectedCount ? `${selectedCount} selected` : "No plot selected"}{:else}{selectedCount ? `${selectedCount} on chart` : "None on chart"}{/if}
         {#if !replay && selectedCount > 0 && removableCount === 0}
-          <span class="sb-tag" title="Built-in PIDs cannot be edited or removed"><i class="dot"></i>Built-in</span>
+          <span title="Built-in PIDs cannot be edited or removed">&middot; Built-in</span>
         {/if}
       </span>
       <span class="sb-acts">
