@@ -35,6 +35,19 @@ Read a doc before changing what it describes. If your change alters a contract o
 - `docs/ota.md`: partition layout, the update flow and rollback
 - `docs/decisions.md`: decisions made and why
 
+## Frontend UI rules
+UI work follows `plan/DESIGN.md`. Read its Surfaces table, "Blur variables and in-flow tiers" and "Reuse before you write CSS" before writing any style.
+- **Reuse.** Use the shared classes (`.card`, `.btn`, `.in`, `.seg`, `.chip`, `.float-layer`, `.popup`) and components (`Dialog`, `Sheet`, `Toast`, `SelectMenu`, `RangeSlider`, `SettingRow`, `MasterDetail`). No second dropdown, dialog, sheet, toast, slider or view-prefixed copy of a shared class. If you add a token, class or component, add it to DESIGN.md in the same commit.
+- **Tokens.** Fills come from the Surfaces table, radii from `--r-*`, sizes from `--ctl-h` and `--pad-card`. No literal colours, `color-mix` fills or one-off radii.
+- **Blur.** Three tokens only: `--blur` (user setting), `--float-blur` (float layers), `--card-blur` (in-flow surfaces; `none` on the plain background, blurred over a generated one). Never write your own `blur()`. Every in-flow fill that sits directly on the page (`--card`, or `--row`/`--card2`/`--ctl` on a top-level panel or button) is followed by `-webkit-backdrop-filter: var(--card-blur); backdrop-filter: var(--card-blur);`.
+- **No nesting.** A blurred box never contains another blurred box (Firefox drops the blur). Rows, chips and buttons inside a blurred card get no blur. A panel holding blurred children puts its fill and blur on a `::before` (see `.db-section.editing`).
+- **Firefox.** No page cross-fade on Gecko, and no opacity, transform, filter or mask animation on an ancestor of a blurred layer.
+- **Flat surfaces.** No borders or outlines on cards, no tinted "selected" backgrounds, no 3D. The only shadow is the soft one on floating layers. A selected or active state is a 3px accent bar plus accent text; inside a segmented control or chip the text stays plain, because accent text fails AA on the control fill.
+- **Float layers.** Anything drawn over other content, including sticky or fixed bars, uses `.float-layer` or `.popup`. In-flow surfaces use `--card-blur` instead.
+- **Copy.** No subtitles or hints that explain how something works. Add text only when needed, short and to the point.
+- **Accessibility floor.** Text contrast at least AA 4.5, targets at least 44px on `pointer:coarse`, `:focus-visible` never removed, `prefers-reduced-motion` honoured, status colours always carry an icon or label, light and dark get equal care.
+- **Dropdowns.** Native `<select>` is not used: use `SelectMenu`.
+
 ## Never crash (outranks feature work)
 The device sits in a car unattended. A reboot loop drains the battery, and a hang stops logging. Bad input must produce an error, never an abort.
 - **Inputs are hostile.** That covers CAN frames (DLC, ISO-TP lengths and sequence numbers), PID JSON, formulas, HTTP and WebSocket params, files on the SD card, the DTC bin and OTA images. Bounds-check every index and length derived from them, and cap any allocation sized by input.
